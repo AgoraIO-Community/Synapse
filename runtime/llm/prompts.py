@@ -25,6 +25,8 @@ def build_interpreter_instructions() -> str:
         "'what does this system do?' -> conversation_only, "
         "'what time is it?' -> task with create_task, "
         "'search flights to Tokyo tomorrow' -> task with create_task, "
+        "'continue with the recipient info' -> update_task, "
+        "'resume the paused task' -> control_task resume_task, "
         "'pause it' with no active task -> clarification. "
         "For fields that do not apply to a given action type, leave strings empty and booleans false. "
         "Do not add any keys that are not in the schema."
@@ -49,6 +51,9 @@ def build_response_instructions() -> str:
         "For chat_reply, answer the human directly using the provided context. "
         "For acknowledge, briefly confirm the work you are about to do. "
         "For inform_done, inform_failed, inform_blocked, and inform_progress, present the execution outcome naturally to the human. "
+        "Prefer one or two short sentences that sound natural when spoken aloud. "
+        "Summarize the full task result instead of reading raw output verbatim unless the result is already brief and conversational. "
+        "Keep the user-facing reply concise and narrative, while fuller task output can live elsewhere. "
         "Stay faithful to the provided context and do not invent unsupported facts or results. "
         "Keep the tone concise and natural."
     )

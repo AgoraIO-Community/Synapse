@@ -23,16 +23,24 @@ CONTROL_KEYWORDS = {
     "stop": "cancel_task",
     "pause": "pause_task",
     "resume": "resume_task",
-    "continue": "resume_task",
     "retry": "retry_task",
 }
 
-UPDATE_KEYWORDS = ("update", "change", "instead", "modify", "make it", "use")
+UPDATE_KEYWORDS = ("update", "change", "instead", "modify", "make it", "use", "continue")
 
 
 def _extract_explicit_task_id(text: str) -> str | None:
     match = re.search(r"\b(task_[a-zA-Z0-9]+)\b", text)
     return match.group(1) if match else None
+
+
+def _is_explicit_resume_intent(text: str) -> bool:
+    normalized = text.strip()
+    if normalized in {"resume", "resume it", "resume task", "unpause"}:
+        return True
+    return bool(
+        re.search(r"\bcontinue (the )?(paused|blocked|stopped)\b", normalized)
+    )
 
 
 def heuristic_interpretation(
@@ -55,8 +63,28 @@ def heuristic_interpretation(
     needs_clarification = False
     clarification_reason = None
 
+    if _is_explicit_resume_intent(normalized):
+        priority = Priority.HIGH
+        if not has_existing_tasks:
+            needs_clarification = True
+            clarification_reason = "No active task is available to control."
+        actions.append(
+            RuntimeAction(
+                action_id=new_id("action"),
+                action_type=RuntimeActionType.CONTROL_TASK,
+                target_scope=TargetScope.EXISTING_TASK,
+                target_task_ref=task_ref,
+                payload={"command_type": "resume_task", "reason": text},
+                priority=priority,
+                execution_trigger=ExecutionTrigger.SOFT,
+                scope_of_effect=ScopeOfEffect.TASK,
+            )
+        )
+
     for keyword, command_type in CONTROL_KEYWORDS.items():
-        if keyword in normalized:
+        if actions:
+            break
+        if re.search(rf"\b{re.escape(keyword)}\b", normalized):
             priority = Priority.URGENT if command_type == "cancel_task" else Priority.HIGH
             if not has_existing_tasks:
                 needs_clarification = True

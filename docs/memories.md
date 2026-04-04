@@ -24,3 +24,5 @@ Short log of important design decisions and changes for Synopse.
 - Added a runtime guard so capability-gated questions are blocked with a clear explanation when only the mock executor is active, instead of producing misleading fake-success task flows.
 - Simplified task creation so every `create_task` now requires a real executor, closing the hole where some LLM-produced tasks could still bypass the mock-executor guard.
 - Added streamed response generation on the existing session websocket, with transient partial communication chunks updating one live assistant bubble while only the final communication event is persisted.
+- Separated concise spoken-style communication from fuller task output, keeping task-board results sourced from artifacts while response generation summarizes them for TTS-friendly delivery.
+- Made unsupported pause/resume requests from conversational messages degrade into assistant replies instead of 500s, and tightened fallback/interpreter handling so generic “continue” prefers task update over executor resume.

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { createSession, openSessionStream, openTraceStream, sendCommand, sendMessage } from "./client";
 import type {
+  Artifact,
   CommandType,
   CommunicationChunkPayload,
   CommunicationEventPayload,
@@ -16,6 +17,11 @@ import type {
 } from "./types";
 
 const MAX_EVENTS = 40;
+const HIDDEN_TRACE_EVENT_TYPES = new Set([
+  "llm_response_stream_request",
+  "llm_response_stream_response",
+  "llm_response_stream_error",
+]);
 
 function formatTime(timestamp: string) {
   return new Date(timestamp).toLocaleTimeString([], {
@@ -31,6 +37,15 @@ function formatMessageTime(timestamp: string) {
   const seconds = String(date.getSeconds()).padStart(2, "0");
   const milliseconds = String(date.getMilliseconds()).padStart(3, "0");
   return `${hours}:${minutes}:${seconds}.${milliseconds}`;
+}
+
+function extractFullTaskResult(task: Task) {
+  for (const artifact of task.artifacts) {
+    if (typeof artifact.inline_value === "string" && artifact.inline_value.trim()) {
+      return artifact.inline_value.trim();
+    }
+  }
+  return task.output_summary ?? task.goal;
 }
 
 function canRunCommand(
@@ -80,6 +95,7 @@ export default function App() {
   const [expandedTraceEventId, setExpandedTraceEventId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [pendingTaskCommand, setPendingTaskCommand] = useState<string | null>(null);
+  const [copyStatus, setCopyStatus] = useState<string | null>(null);
 
   useEffect(() => {
     if (didBootRef.current) {
@@ -275,9 +291,26 @@ export default function App() {
             ...existing,
             status: payload.status,
             updated_at: payload.timestamp,
+            artifacts:
+              payload.event_type === "completed"
+                ? [...existing.artifacts, ...payload.artifacts_delta]
+                : existing.artifacts,
             output_summary:
               payload.event_type === "completed"
-                ? payload.progress_message ?? existing.output_summary
+                ? (() => {
+                    const fullResultArtifact = payload.artifacts_delta.find(
+                      (artifact: Artifact) =>
+                        typeof artifact.inline_value === "string" &&
+                        artifact.inline_value.trim().length > 0,
+                    );
+                    if (
+                      fullResultArtifact &&
+                      typeof fullResultArtifact.inline_value === "string"
+                    ) {
+                      return fullResultArtifact.inline_value.trim();
+                    }
+                    return payload.progress_message ?? existing.output_summary;
+                  })()
                 : existing.output_summary,
             block_reason:
               payload.event_type === "blocked"
@@ -293,12 +326,48 @@ export default function App() {
     if (event.event_type === "trace_snapshot") {
       setTraceConnectionStatus("connected");
       const snapshot = event.payload as unknown as TraceSnapshot;
-      setTraceEvents(snapshot.recent_traces.slice().reverse());
+      setTraceEvents(
+        snapshot.recent_traces
+          .filter((trace) => !HIDDEN_TRACE_EVENT_TYPES.has(trace.event_type))
+          .slice()
+          .reverse(),
+      );
       return;
     }
 
     setTraceConnectionStatus("connected");
+    if (HIDDEN_TRACE_EVENT_TYPES.has(event.event_type)) {
+      return;
+    }
     setTraceEvents((current) => [event, ...current].slice(0, MAX_EVENTS));
+  }
+
+  async function handleCopyEvents() {
+    if (!sessionId) {
+      return;
+    }
+
+    const diagnosticPayload = [
+      `session_id: ${sessionId}`,
+      `runtime_connection: ${connectionStatus}`,
+      `trace_connection: ${traceConnectionStatus}`,
+      "",
+      "== Runtime Events ==",
+      JSON.stringify(events, null, 2),
+      "",
+      "== Trace Events ==",
+      JSON.stringify(traceEvents, null, 2),
+    ].join("\n");
+
+    try {
+      await navigator.clipboard.writeText(diagnosticPayload);
+      setCopyStatus("Copied");
+      setActionError(null);
+      window.setTimeout(() => setCopyStatus((current) => (current === "Copied" ? null : current)), 2000);
+    } catch (error) {
+      setCopyStatus(null);
+      setActionError(error instanceof Error ? error.message : "Failed to copy events.");
+    }
   }
 
   async function submitComposerMessage() {
@@ -515,7 +584,7 @@ export default function App() {
                     <div className="task-head">
                       <div>
                         <strong>{task.title}</strong>
-                        <p>{task.output_summary ?? task.goal}</p>
+                        <p>{extractFullTaskResult(task)}</p>
                       </div>
                       <span className="task-status">{task.status}</span>
                     </div>
@@ -532,6 +601,9 @@ export default function App() {
               <p className="panel-kicker">Runtime Bus</p>
               <h2>Live Activity</h2>
             </div>
+            <button type="button" className="ghost-button" onClick={() => void handleCopyEvents()}>
+              {copyStatus ?? "Copy Events"}
+            </button>
           </div>
 
           <div className="events">

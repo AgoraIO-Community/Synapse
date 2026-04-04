@@ -117,3 +117,52 @@ async def test_capability_gated_task_is_blocked_when_only_mock_executor_is_avail
     assert snapshot.task_registry == []
     assert event.event_type == "chat_reply"
     assert "mock executor" in event.payload["action"]["render_text"].lower()
+
+
+@pytest.mark.anyio
+async def test_unsupported_resume_control_from_message_bundle_emits_reply_instead_of_raising(
+    monkeypatch,
+):
+    monkeypatch.setenv("SYNOPSE_CODEX_EXECUTOR_ENABLED", "true")
+    monkeypatch.setattr(bootstrap_module, "_codex_cli_available", lambda _: True)
+
+    services = build_services(build_test_services())
+    session = services.runtime_state_store.create_session()
+    queue = services.runtime_state_store.subscribe(session.session_id)
+    task = Task(
+        task_id="task_codex",
+        root_task_id="task_codex",
+        title="Codex task",
+        goal="Codex task",
+        status=TaskStatus.RUNNING,
+        assigned_executor="codex_executor",
+        candidate_executors=["codex_executor"],
+    )
+    session.task_registry[task.task_id] = task
+
+    bundle = ActionBundle(
+        bundle_id="bundle_resume",
+        message_id="message_resume",
+        actions=[
+            RuntimeAction(
+                action_id="action_resume",
+                action_type=RuntimeActionType.CONTROL_TASK,
+                target_scope=TargetScope.EXISTING_TASK,
+                target_task_ref=TaskReference(
+                    reference_type=TaskReferenceType.TASK_ID,
+                    value=task.task_id,
+                ),
+                payload={"command_type": "resume_task", "reason": "resume it"},
+                execution_trigger=ExecutionTrigger.SOFT,
+                scope_of_effect=ScopeOfEffect.TASK,
+            )
+        ],
+    )
+
+    await services.execution_orchestrator.process_bundle(session.session_id, bundle)
+
+    event = await queue.get()
+
+    assert event.event_type == "chat_reply"
+    assert "does not support" in event.payload["action"]["render_text"].lower()
+    assert session.task_registry[task.task_id].status == TaskStatus.RUNNING

@@ -28,6 +28,17 @@ export type TaskStatus =
 
 export type CommandType = "pause_task" | "resume_task" | "cancel_task";
 
+export interface Artifact {
+  artifact_id: string;
+  task_id: string;
+  artifact_type: string;
+  name: string;
+  mime_type: string | null;
+  uri: string | null;
+  inline_value: string | Record<string, unknown> | null;
+  metadata: Record<string, unknown>;
+}
+
 export interface ExecutorCapability {
   executor_id: string;
   label: string;
@@ -61,6 +72,7 @@ export interface Task {
   block_reason: string | null;
   failure_reason: string | null;
   latest_instruction: string | null;
+  artifacts: Artifact[];
   updated_at: string;
 }
 
@@ -113,6 +125,7 @@ export interface ExecutionEventPayload {
   progress_message: string | null;
   progress_percent: number | null;
   source: string;
+  artifacts_delta: Artifact[];
   timestamp: string;
 }
 

@@ -242,6 +242,13 @@ Message outcomes should be treated as four distinct cases:
 
 Response generation should operate from the agent’s perspective, using the typed action plus all supplied context, instead of mechanically rewriting a thin action shell.
 
+Natural-language control requests should also respect executor capabilities. If a message asks to pause or resume a task on an executor that does not support that command, the runtime should answer conversationally instead of raising a transport-level failure.
+
+User-facing communication and stored task output have different goals:
+
+- communication replies should be concise, narrative, and suitable for spoken delivery
+- full task results should remain available on the task board, preferably from task artifacts rather than the shorter spoken summary
+
 ### Task Protocol
 
 Defines the task lifecycle and future-safe task identity model.

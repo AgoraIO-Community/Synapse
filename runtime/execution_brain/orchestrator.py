@@ -184,7 +184,15 @@ class ExecutionOrchestrator:
                     command_type=command_type,
                     reason=action.payload.get("reason"),
                 )
-                await self.apply_control_command(session_id, command)
+                try:
+                    await self.apply_control_command(session_id, command)
+                except UnsupportedExecutorCommandError as exc:
+                    await self._emit_unsupported_command(
+                        session_id,
+                        executor_id=exc.executor_id,
+                        command_type=exc.command_type,
+                        message_id=bundle.message_id,
+                    )
         await self._trace_state_store.publish(
             session_id,
             TraceStage.EXECUTION_ORCHESTRATOR,
@@ -435,6 +443,35 @@ class ExecutionOrchestrator:
             render_text=(
                 "I can't check that right now because this runtime is still using the mock executor. "
                 "Enable Codex to handle system or external lookup requests."
+            ),
+        )
+        await self.emit_conversation_action(
+            session_id,
+            action,
+            related_message_id=message_id,
+        )
+
+    async def _emit_unsupported_command(
+        self,
+        session_id: str,
+        *,
+        executor_id: str,
+        command_type: str,
+        message_id: str | None,
+    ) -> None:
+        capability = self._registry.get_capability(executor_id)
+        verb = command_type.replace("_task", "").replace("_", " ")
+        action = ConversationAction(
+            action_id=new_id("conv"),
+            action_type=ConversationActionType.CHAT_REPLY,
+            metadata={
+                "executor_id": executor_id,
+                "executor_label": capability.label,
+                "unsupported_command": command_type,
+            },
+            render_text=(
+                f"I can't {verb} that task because it is running on {capability.label}, "
+                "and that executor does not support it."
             ),
         )
         await self.emit_conversation_action(

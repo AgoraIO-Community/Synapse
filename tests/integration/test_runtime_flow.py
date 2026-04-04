@@ -443,10 +443,10 @@ async def test_trace_flow_emits_module_level_causality_events():
     assert "bundle_processing_started" in event_types
     assert "llm_interpreter_request" in event_types
     assert "llm_interpreter_response" in event_types
-    assert "llm_response_request" in event_types
-    assert "llm_response_response" in event_types
+    assert "llm_response_stream_request" in event_types
+    assert "llm_response_stream_response" in event_types
     assert "instructions" in payloads_by_type["llm_interpreter_request"]
     assert "input" in payloads_by_type["llm_interpreter_request"]
     assert "parsed_output" in payloads_by_type["llm_interpreter_response"]
-    assert "instructions" in payloads_by_type["llm_response_request"]
-    assert "output_text" in payloads_by_type["llm_response_response"]
+    assert "instructions" in payloads_by_type["llm_response_stream_request"]
+    assert "output_text" in payloads_by_type["llm_response_stream_response"]
