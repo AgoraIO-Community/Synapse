@@ -13,7 +13,7 @@ async def submit_command(
     session_id: str, request: CommandRequest, services=Depends(get_services)
 ):
     try:
-        services.store.get_session(session_id)
+        services.runtime_state_store.get_session(session_id)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 

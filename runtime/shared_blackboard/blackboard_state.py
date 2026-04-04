@@ -9,7 +9,7 @@ from runtime.protocols.tasks import Task
 
 
 @dataclass(slots=True)
-class SessionState:
+class BlackboardSessionState:
     session_id: str
     conversation_state: dict = field(default_factory=dict)
     task_registry: dict[str, Task] = field(default_factory=dict)

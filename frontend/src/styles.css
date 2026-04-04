@@ -345,6 +345,32 @@ button {
   padding-bottom: 24px;
 }
 
+.trace-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.trace-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.trace-section-header h3 {
+  margin: 0;
+  font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", serif;
+  font-size: 1.05rem;
+}
+
+.trace-status {
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
 .event-row {
   border: 1px solid var(--line);
   border-radius: 18px;
@@ -364,6 +390,18 @@ button {
   text-align: left;
 }
 
+.trace-summary {
+  width: 100%;
+  display: grid;
+  grid-template-columns: auto auto 1fr auto auto;
+  gap: 10px;
+  align-items: center;
+  border: none;
+  background: transparent;
+  padding: 14px 16px;
+  text-align: left;
+}
+
 .event-row pre {
   margin: 0;
   padding: 0 16px 16px;
@@ -374,7 +412,9 @@ button {
 
 .event-seq,
 .event-time,
-.event-category {
+.event-category,
+.trace-stage,
+.trace-source {
   color: var(--muted);
   font-size: 0.82rem;
 }

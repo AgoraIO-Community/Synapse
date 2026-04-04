@@ -29,6 +29,69 @@ This prototype is designed as:
 - Keep executor-specific behavior behind a normalized adapter layer.
 - Preserve future extension points for multiple executors and task graphs without complicating V1 runtime behavior.
 
+## Architecture Diagram
+
+```mermaid
+flowchart LR
+    subgraph L1[Input Layer]
+        A1[Voice/Text Input]
+        A2[System / Executor Events]
+    end
+
+    subgraph L2[Interpretation and Routing Layer]
+        B1[Message Interpreter]
+        B2[Action Router]
+    end
+
+    subgraph L3[Interaction Layer]
+        C1[Communication Brain]
+        C2[Response Generator]
+    end
+
+    subgraph L4[Runtime Core]
+        D1[Shared Context]
+        D2[Task Blackboard]
+        D3[Task Graph Builder]
+        D4[Execution Orchestrator]
+    end
+
+    subgraph L5[Execution Abstraction Layer]
+        E1[Executor Adapter]
+        E2[Unified Event / Result Protocol]
+        E3[Control API<br/>submit / pause / cancel / update]
+    end
+
+    subgraph L6[Concrete Executors]
+        F1[Claude Code]
+        F2[Hermes]
+        F3[OpenClaw]
+        F4[Future Agent Network]
+    end
+
+    A1 --> B1
+    A2 --> B1
+    B1 --> B2
+    B2 --> C1
+    B2 --> D1
+    B2 --> D3
+    C1 --> C2
+    C2 --> A1
+    D1 --> C1
+    D1 --> D3
+    D3 --> D4
+    D4 --> E1
+    E1 --> F1
+    E1 --> F2
+    E1 --> F3
+    E1 -.-> F4
+    F1 --> E2
+    F2 --> E2
+    F3 --> E2
+    F4 -.-> E2
+    E2 --> D1
+    E2 --> C1
+```
+
 ## Top-Level Modules
 
 The backend code now lives under the `runtime/` package root.
@@ -37,10 +100,10 @@ The backend code now lives under the `runtime/` package root.
 
 Responsible for user-facing interaction semantics.
 
-- `interpreter.py`
+- `interaction_policy.py`
   - Builds the initial communication action for a routed message.
-- `dialog_manager.py`
-  - Maps execution events to communication actions.
+- `event_to_response.py`
+  - Maps execution events into communication-brain responses.
 - `response_generator.py`
   - Produces user-facing text from typed communication actions.
 
@@ -52,28 +115,28 @@ Responsible for task orchestration and executor coordination.
   - Applies routed actions, mutates task state, starts/resumes/cancels work, and emits normalized events.
 - `task_graph.py`
   - Builds task objects from routed actions.
-- `executor_router.py`
-  - Selects which executor should handle a task.
+- `executor_adapter_router.py`
+  - Selects which executor adapter should handle a task.
 - `event_normalizer.py`
   - Applies execution events back onto task state.
 
 ### `shared_blackboard`
 
-Responsible for synchronized session state.
+Responsible for synchronized runtime state.
 
-- `models.py`
-  - Defines in-memory session state.
+- `blackboard_state.py`
+  - Defines blackboard session state across shared context and task-blackboard data.
 - `mutations.py`
   - Applies context patches, task updates, and control transitions.
-- `store.py`
+- `runtime_state.py`
   - Manages sessions, snapshots, subscriptions, and ordered stream events.
 
-### `message_router`
+### `action_router`
 
 Responsible for translating one user message into multiple structured effects.
 
-- `router.py`
-  - Calls the interpreter and returns `RoutingDecision + ActionBundle`.
+- `action_router.py`
+  - Calls the message interpreter and returns `RoutingDecision + ActionBundle`.
 - `resolver.py`
   - Resolves implicit task references to concrete tasks.
 - `priorities.py`
@@ -110,6 +173,7 @@ Thin transport layer.
 - `POST /sessions/{session_id}/messages`
 - `POST /sessions/{session_id}/commands`
 - `WS /sessions/{session_id}/stream`
+- `WS /sessions/{session_id}/trace`
 
 ### `frontend`
 
@@ -119,6 +183,7 @@ Separate minimal React + Vite experience layer.
 - chat-first interaction
 - live task cards
 - ordered runtime event feed
+- dedicated trace flow panel
 - basic task controls
 
 ## Protocol Model
@@ -211,9 +276,28 @@ Defines the unified ordered stream to clients.
 
 The stream is intentionally unified so clients consume one ordered event channel instead of stitching multiple streams together.
 
+### Trace Protocol
+
+Defines the separate causality-oriented trace stream.
+
+- `TraceEvent`
+- `TraceSnapshot`
+
+The trace stream is intentionally separate from the outcome stream so module-level diagnostics do not pollute the main product-facing event feed.
+
 ## Shared Blackboard
 
 The blackboard is the single source of truth for a session.
+
+Conceptually it contains two closely related parts:
+
+- `Shared Context`
+  - conversation state
+  - strategy state
+- `Task Blackboard`
+  - task registry
+  - pending clarifications
+  - event history and sequence tracking
 
 It currently stores:
 
@@ -231,7 +315,7 @@ The communication brain and execution brain do not share state directly. They sy
 ### Message Handling
 
 1. Client sends `UserMessage`.
-2. `MessageRouter` produces `RoutingDecision + ActionBundle`.
+2. `ActionRouter` produces `RoutingDecision + ActionBundle`.
 3. `Communication Brain` emits an immediate acknowledgement or clarification.
 4. `Execution Brain` applies the action bundle.
 5. `Shared Blackboard` stores mutations and publishes stream events.

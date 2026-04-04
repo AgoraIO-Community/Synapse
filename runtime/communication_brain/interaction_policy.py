@@ -5,7 +5,7 @@ from runtime.protocols.conversation import ConversationAction, ConversationActio
 from runtime.protocols.runtime import ActionBundle, RoutingDecision
 
 
-class CommunicationInterpreter:
+class InteractionPolicy:
     def build_initial_action(
         self, decision: RoutingDecision, bundle: ActionBundle
     ) -> ConversationAction:

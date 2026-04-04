@@ -6,19 +6,19 @@ from runtime.infrastructure.ids import new_id
 from runtime.infrastructure.time import utc_now
 from runtime.protocols.conversation import ConversationAction
 from runtime.protocols.stream import SessionSnapshot, StreamCategory, StreamEvent
-from runtime.shared_blackboard.models import SessionState
+from runtime.shared_blackboard.blackboard_state import BlackboardSessionState
 
 
-class SharedBlackboardStore:
+class RuntimeStateStore:
     def __init__(self) -> None:
-        self._sessions: dict[str, SessionState] = {}
+        self._sessions: dict[str, BlackboardSessionState] = {}
 
-    def create_session(self) -> SessionState:
-        session = SessionState(session_id=new_id("session"))
+    def create_session(self) -> BlackboardSessionState:
+        session = BlackboardSessionState(session_id=new_id("session"))
         self._sessions[session.session_id] = session
         return session
 
-    def get_session(self, session_id: str) -> SessionState:
+    def get_session(self, session_id: str) -> BlackboardSessionState:
         if session_id not in self._sessions:
             raise KeyError(f"Unknown session: {session_id}")
         return self._sessions[session_id]

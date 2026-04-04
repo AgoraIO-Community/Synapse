@@ -1,8 +1,8 @@
-from runtime.message_router.priorities import sort_actions
-from runtime.message_router.resolver import resolve_task_reference
+from runtime.action_router.priorities import sort_actions
+from runtime.action_router.resolver import resolve_task_reference
 from runtime.protocols.runtime import ExecutionTrigger, RuntimeAction, RuntimeActionType, ScopeOfEffect, TargetScope
 from runtime.protocols.tasks import Priority, Task, TaskReference, TaskReferenceType, TaskStatus
-from runtime.shared_blackboard.models import SessionState
+from runtime.shared_blackboard.blackboard_state import BlackboardSessionState
 
 
 def test_control_actions_sort_ahead_of_new_tasks():
@@ -44,7 +44,10 @@ def test_resolve_latest_active_prefers_running_task():
         goal="New goal",
         status=TaskStatus.RUNNING,
     )
-    session = SessionState(session_id="session_test", task_registry={older.task_id: older, newer.task_id: newer})
+    session = BlackboardSessionState(
+        session_id="session_test",
+        task_registry={older.task_id: older, newer.task_id: newer},
+    )
     resolved = resolve_task_reference(
         session, TaskReference(reference_type=TaskReferenceType.LATEST_ACTIVE)
     )

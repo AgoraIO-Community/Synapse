@@ -9,7 +9,7 @@ from runtime.protocols.conversation import (
 from runtime.protocols.execution import ExecutionEvent, ExecutionEventType
 
 
-class DialogManager:
+class EventToResponseMapper:
     def on_execution_event(
         self, session_id: str, event: ExecutionEvent
     ) -> ConversationAction | None:

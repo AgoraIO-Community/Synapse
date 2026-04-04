@@ -5,8 +5,8 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 router = APIRouter()
 
 
-@router.websocket("/sessions/{session_id}/stream")
-async def session_stream(websocket: WebSocket, session_id: str):
+@router.websocket("/sessions/{session_id}/trace")
+async def session_trace_stream(websocket: WebSocket, session_id: str):
     services = websocket.app.state.services
     try:
         services.runtime_state_store.get_session(session_id)
@@ -15,13 +15,13 @@ async def session_stream(websocket: WebSocket, session_id: str):
         return
 
     await websocket.accept()
-    queue = services.runtime_state_store.subscribe(session_id)
+    queue = services.trace_state_store.subscribe(session_id)
     try:
-        await services.runtime_state_store.publish_snapshot(session_id)
+        await services.trace_state_store.publish_snapshot(session_id)
         while True:
             event = await queue.get()
             await websocket.send_json(event.model_dump(mode="json"))
     except (WebSocketDisconnect, asyncio.CancelledError):
         pass
     finally:
-        services.runtime_state_store.unsubscribe(session_id, queue)
+        services.trace_state_store.unsubscribe(session_id, queue)

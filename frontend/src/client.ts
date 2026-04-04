@@ -1,4 +1,10 @@
-import type { CommandType, MessageResponse, SessionResponse, StreamEvent } from "./types";
+import type {
+  CommandType,
+  MessageResponse,
+  SessionResponse,
+  StreamEvent,
+  TraceEvent,
+} from "./types";
 
 const JSON_HEADERS = {
   "Content-Type": "application/json",
@@ -47,6 +53,29 @@ export async function sendCommand(
   await ensureOk(response);
 }
 
+function openSocket<TEvent>(
+  path: string,
+  handlers: {
+    onOpen: () => void;
+    onMessage: (event: TEvent) => void;
+    onClose: () => void;
+    onError: () => void;
+  },
+): WebSocket {
+  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+  const socket = new WebSocket(`${protocol}//${window.location.host}${path}`);
+
+  socket.addEventListener("open", handlers.onOpen);
+  socket.addEventListener("close", handlers.onClose);
+  socket.addEventListener("error", handlers.onError);
+  socket.addEventListener("message", (messageEvent) => {
+    const parsed = JSON.parse(messageEvent.data) as TEvent;
+    handlers.onMessage(parsed);
+  });
+
+  return socket;
+}
+
 export function openSessionStream(
   sessionId: string,
   handlers: {
@@ -56,16 +85,17 @@ export function openSessionStream(
     onError: () => void;
   },
 ): WebSocket {
-  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-  const socket = new WebSocket(`${protocol}//${window.location.host}/sessions/${sessionId}/stream`);
+  return openSocket<StreamEvent>(`/sessions/${sessionId}/stream`, handlers);
+}
 
-  socket.addEventListener("open", handlers.onOpen);
-  socket.addEventListener("close", handlers.onClose);
-  socket.addEventListener("error", handlers.onError);
-  socket.addEventListener("message", (messageEvent) => {
-    const parsed = JSON.parse(messageEvent.data) as StreamEvent;
-    handlers.onMessage(parsed);
-  });
-
-  return socket;
+export function openTraceStream(
+  sessionId: string,
+  handlers: {
+    onOpen: () => void;
+    onMessage: (event: TraceEvent) => void;
+    onClose: () => void;
+    onError: () => void;
+  },
+): WebSocket {
+  return openSocket<TraceEvent>(`/sessions/${sessionId}/trace`, handlers);
 }

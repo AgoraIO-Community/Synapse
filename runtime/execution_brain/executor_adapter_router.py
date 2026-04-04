@@ -4,7 +4,7 @@ from runtime.executors.registry import ExecutorRegistry
 from runtime.protocols.tasks import Task
 
 
-class ExecutorRouter:
+class ExecutorAdapterRouter:
     def __init__(self, registry: ExecutorRegistry, default_executor_id: str) -> None:
         self._registry = registry
         self._default_executor_id = default_executor_id

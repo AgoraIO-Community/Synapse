@@ -3,10 +3,10 @@ from __future__ import annotations
 from runtime.infrastructure.time import utc_now
 from runtime.protocols.runtime import ContextPatch, PatchScope
 from runtime.protocols.tasks import ControlCommandType, Task, TaskStatus
-from runtime.shared_blackboard.models import SessionState
+from runtime.shared_blackboard.blackboard_state import BlackboardSessionState
 
 
-def apply_context_patch(session: SessionState, patch: ContextPatch) -> None:
+def apply_context_patch(session: BlackboardSessionState, patch: ContextPatch) -> None:
     target: dict
     if patch.scope == PatchScope.CONVERSATION:
         target = session.conversation_state
@@ -23,7 +23,7 @@ def apply_context_patch(session: SessionState, patch: ContextPatch) -> None:
     target.update(patch.patch)
 
 
-def upsert_task(session: SessionState, task: Task) -> Task:
+def upsert_task(session: BlackboardSessionState, task: Task) -> Task:
     task.updated_at = utc_now()
     session.task_registry[task.task_id] = task
     return task

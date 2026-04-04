@@ -1,28 +1,154 @@
 import asyncio
+import json
+from types import SimpleNamespace
 
 import pytest
 
 from runtime.infrastructure.ids import new_id
+from runtime.infrastructure.config import Settings
+from runtime.llm.client import LLMServices
+from runtime.llm.interpreter_schema import (
+    InterpreterAction,
+    InterpretationEnvelope,
+    InterpreterActionBundle,
+    InterpreterRoutingDecision,
+)
+from runtime.llm.openai_client import OpenAIProvider
 from runtime.main import build_services
 from runtime.protocols.conversation import UserMessage
-from runtime.protocols.runtime import ActionBundle, RuntimeActionType
+from runtime.protocols.runtime import (
+    ActionBundle,
+    ExecutionTrigger,
+    ResolverStrategy,
+    RuntimeActionType,
+    ScopeOfEffect,
+    TargetScope,
+)
+from runtime.protocols.trace import TraceStage
+from runtime.protocols.tasks import (
+    ControlCommandType,
+    Priority,
+    TaskReference,
+    TaskReferenceRelation,
+    TaskReferenceType,
+)
+
+
+class FakeResponses:
+    def __init__(self, parsed=None, text: str | None = None):
+        self._parsed = parsed
+        self._text = text
+
+    def parse(self, **kwargs):
+        return SimpleNamespace(output_parsed=self._parsed)
+
+    def create(self, **kwargs):
+        return SimpleNamespace(output_text=self._text)
+
+
+class FakeOpenAIClient:
+    def __init__(self, parsed=None, text: str | None = None):
+        self.responses = FakeResponses(parsed=parsed, text=text)
+
+
+def make_interpretation(message_id: str, text: str) -> InterpretationEnvelope:
+    lowered = text.lower()
+    if "update" in lowered or "continue" in lowered:
+        actions = [
+            InterpreterAction(
+                action_id="action_1",
+                action_type=RuntimeActionType.UPDATE_TASK,
+                target_scope=TargetScope.EXISTING_TASK,
+                priority=Priority.HIGH,
+                execution_trigger=ExecutionTrigger.SOFT,
+                scope_of_effect=ScopeOfEffect.TASK,
+                target_task_reference_type=TaskReferenceType.LATEST_ACTIVE,
+                target_task_reference_relation=TaskReferenceRelation.CURRENT,
+                latest_instruction=text,
+            )
+        ]
+    else:
+        actions = [
+            InterpreterAction(
+                action_id="action_1",
+                action_type=RuntimeActionType.CREATE_TASK,
+                target_scope=TargetScope.NEW_TASK,
+                priority=Priority.NORMAL,
+                execution_trigger=ExecutionTrigger.HARD,
+                scope_of_effect=ScopeOfEffect.TASK,
+                title=text[:80],
+                goal=text,
+                simulate_blocked="need info" in lowered or "ask me" in lowered,
+            )
+        ]
+
+    actions.append(
+        InterpreterAction(
+            action_id="action_2",
+            action_type=RuntimeActionType.APPLY_CONTEXT_PATCH,
+            target_scope=TargetScope.SESSION,
+            priority=Priority.NORMAL,
+            execution_trigger=ExecutionTrigger.NONE,
+            scope_of_effect=ScopeOfEffect.SESSION,
+            command_type=ControlCommandType.PAUSE_TASK,
+            target_task_reference_type=TaskReferenceType.LATEST_ACTIVE,
+            target_task_reference_relation=TaskReferenceRelation.CURRENT,
+            latest_user_goal=text,
+        )
+    )
+    return InterpretationEnvelope(
+        routing_decision=InterpreterRoutingDecision(
+            decision_id="decision_1",
+            message_id=message_id,
+            priority_hint=Priority.HIGH if "update" in lowered or "continue" in lowered else Priority.NORMAL,
+            resolver_strategy=ResolverStrategy.IMPLICIT,
+        ),
+        action_bundle=InterpreterActionBundle(
+            bundle_id="bundle_1",
+            message_id=message_id,
+            actions=actions,
+        ),
+    )
+
+
+def build_test_services() -> LLMServices:
+    settings = Settings(openai_api_key="test-key")
+
+    class DynamicFakeOpenAIClient:
+        def __init__(self):
+            self.responses = self
+
+        def parse(self, **kwargs):
+            payload = json.loads(kwargs["input"])
+            return SimpleNamespace(
+                output_parsed=make_interpretation(
+                    message_id=payload["message_id"],
+                    text=payload["latest_user_message"],
+                )
+            )
+
+        def create(self, **kwargs):
+            return SimpleNamespace(output_text="Understood. I am starting that now.")
+
+    provider = OpenAIProvider(settings, client=DynamicFakeOpenAIClient())
+    return LLMServices(settings, provider=provider)
 
 
 @pytest.mark.anyio
 async def test_runtime_message_pipeline_stream_events():
-    services = build_services()
-    session = services.store.create_session()
-    queue = services.store.subscribe(session.session_id)
+    services = build_services(build_test_services())
+    session = services.runtime_state_store.create_session()
+    queue = services.runtime_state_store.subscribe(session.session_id)
 
     message = UserMessage(
         message_id=new_id("message"),
         session_id=session.session_id,
         text="search flights to Tokyo tomorrow",
     )
-    snapshot = services.store.snapshot(session.session_id)
-    routing_decision, bundle = services.message_router.route(message, snapshot)
+    snapshot = services.runtime_state_store.snapshot(session.session_id)
+    routing_decision, bundle = services.action_router.route(message, snapshot)
 
-    initial_action = services.communication_interpreter.build_initial_action(
+    initial_action = services.interaction_policy.build_initial_action(
         routing_decision, bundle
     )
     await services.execution_orchestrator.emit_conversation_action(
@@ -47,19 +173,19 @@ async def test_runtime_message_pipeline_stream_events():
 
 @pytest.mark.anyio
 async def test_blocked_task_can_be_resumed_via_update_message():
-    services = build_services()
-    session = services.store.create_session()
-    queue = services.store.subscribe(session.session_id)
+    services = build_services(build_test_services())
+    session = services.runtime_state_store.create_session()
+    queue = services.runtime_state_store.subscribe(session.session_id)
 
     create_message = UserMessage(
         message_id=new_id("message"),
         session_id=session.session_id,
         text="draft an outreach email and ask me for details need info",
     )
-    decision, bundle = services.message_router.route(
-        create_message, services.store.snapshot(session.session_id)
+    decision, bundle = services.action_router.route(
+        create_message, services.runtime_state_store.snapshot(session.session_id)
     )
-    initial = services.communication_interpreter.build_initial_action(decision, bundle)
+    initial = services.interaction_policy.build_initial_action(decision, bundle)
     await services.execution_orchestrator.emit_conversation_action(
         session.session_id,
         initial,
@@ -80,10 +206,10 @@ async def test_blocked_task_can_be_resumed_via_update_message():
         session_id=session.session_id,
         text="update that with the recipient and continue",
     )
-    decision, bundle = services.message_router.route(
-        update_message, services.store.snapshot(session.session_id)
+    decision, bundle = services.action_router.route(
+        update_message, services.runtime_state_store.snapshot(session.session_id)
     )
-    initial = services.communication_interpreter.build_initial_action(decision, bundle)
+    initial = services.interaction_policy.build_initial_action(decision, bundle)
     await services.execution_orchestrator.emit_conversation_action(
         session.session_id,
         initial,
@@ -109,3 +235,66 @@ async def test_blocked_task_can_be_resumed_via_update_message():
             completed = True
             break
     assert completed is True
+
+
+def test_publish_snapshot_emits_system_snapshot_event():
+    services = build_services(build_test_services())
+    session = services.runtime_state_store.create_session()
+
+    event = asyncio.run(services.runtime_state_store.publish_snapshot(session.session_id))
+
+    assert event.event_type == "session_snapshot"
+    assert event.category == "system"
+    assert event.session_id == session.session_id
+
+
+@pytest.mark.anyio
+async def test_trace_flow_emits_module_level_causality_events():
+    services = build_services(build_test_services())
+    session = services.runtime_state_store.create_session()
+    trace_queue = services.trace_state_store.subscribe(session.session_id)
+
+    message = UserMessage(
+        message_id=new_id("message"),
+        session_id=session.session_id,
+        text="search flights to Tokyo tomorrow",
+    )
+    snapshot = services.runtime_state_store.snapshot(session.session_id)
+    routing_decision, bundle = services.action_router.route(
+        message,
+        snapshot,
+        span_id="span_trace_1",
+    )
+    initial_action = services.interaction_policy.build_initial_action(
+        routing_decision,
+        bundle,
+    )
+    await services.execution_orchestrator.emit_conversation_action(
+        session.session_id,
+        initial_action,
+        related_message_id=message.message_id,
+        span_id="span_trace_1",
+    )
+    await services.execution_orchestrator.process_bundle(
+        session.session_id,
+        bundle,
+        span_id="span_trace_1",
+    )
+    await asyncio.sleep(0)
+
+    stages: list[TraceStage] = []
+    event_types: list[str] = []
+    for _ in range(20):
+        try:
+            trace = await asyncio.wait_for(trace_queue.get(), timeout=0.2)
+        except TimeoutError:
+            break
+        stages.append(trace.stage)
+        event_types.append(trace.event_type)
+
+    assert TraceStage.ACTION_ROUTER in stages
+    assert TraceStage.MESSAGE_INTERPRETER in stages
+    assert TraceStage.EXECUTION_ORCHESTRATOR in stages
+    assert "routing_started" in event_types
+    assert "interpreter_response_received" in event_types
+    assert "bundle_processing_started" in event_types

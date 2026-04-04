@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from runtime.protocols.tasks import Task, TaskReference, TaskReferenceRelation, TaskReferenceType, TaskStatus
-from runtime.shared_blackboard.models import SessionState
+from runtime.shared_blackboard.blackboard_state import BlackboardSessionState
 
 
 ACTIVE_STATUSES = {
@@ -12,7 +12,9 @@ ACTIVE_STATUSES = {
 }
 
 
-def resolve_task_reference(session: SessionState, reference: TaskReference | None) -> Task | None:
+def resolve_task_reference(
+    session: BlackboardSessionState, reference: TaskReference | None
+) -> Task | None:
     tasks = list(session.task_registry.values())
     if not tasks or reference is None:
         return None

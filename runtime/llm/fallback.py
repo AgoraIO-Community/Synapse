@@ -115,7 +115,7 @@ def heuristic_interpretation(
     patch = ContextPatch(
         patch_id=new_id("patch"),
         scope=PatchScope.SESSION,
-        producer="message_router",
+        producer="action_router",
         patch={"latest_user_goal": text},
     )
     actions.append(

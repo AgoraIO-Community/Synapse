@@ -1,6 +1,21 @@
-export type ConnectionStatus = "booting" | "connecting" | "connected" | "disconnected" | "error";
+export type ConnectionStatus =
+  | "booting"
+  | "connecting"
+  | "connected"
+  | "disconnected"
+  | "error";
 
 export type StreamCategory = "communication" | "task" | "execution" | "context" | "system";
+export type TraceStage =
+  | "api"
+  | "message_interpreter"
+  | "action_router"
+  | "interaction_policy"
+  | "runtime_state"
+  | "task_graph"
+  | "execution_orchestrator"
+  | "executor_adapter"
+  | "response_generator";
 
 export type TaskStatus =
   | "queued"
@@ -89,6 +104,28 @@ export interface StreamEvent {
   related_message_id: string | null;
   timestamp: string;
   payload: Record<string, unknown>;
+}
+
+export interface TraceEvent {
+  trace_sequence: number;
+  trace_event_id: string;
+  session_id: string;
+  stage: TraceStage;
+  event_type: string;
+  source_module: string;
+  span_id: string | null;
+  parent_span_id: string | null;
+  related_message_id: string | null;
+  related_task_id: string | null;
+  timestamp: string;
+  payload: Record<string, unknown>;
+}
+
+export interface TraceSnapshot {
+  session_id: string;
+  recent_traces: TraceEvent[];
+  last_trace_sequence: number;
+  timestamp: string;
 }
 
 export interface TimelineMessage {
