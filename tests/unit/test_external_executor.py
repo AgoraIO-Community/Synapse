@@ -2,14 +2,15 @@ import asyncio
 
 import pytest
 
+from runtime.executors.base import durable_execution_update, transient_execution_update
 from runtime.executors.external import ExternalAsyncExecutor
 from runtime.executors.external_backend import (
     ExternalArtifact,
     ExternalExecutionRequest,
     ExternalExecutionResult,
 )
-from runtime.protocols.execution import ExecutorCapability
-from runtime.protocols.tasks import Task
+from runtime.protocols.execution import ExecutionEvent, ExecutionEventType, ExecutorCapability
+from runtime.protocols.tasks import Task, TaskStatus
 
 
 class FakeRun:
@@ -46,10 +47,12 @@ class FakeBackend:
         *,
         error: Exception | None = None,
         run=None,
+        supports_streaming: bool = False,
     ) -> None:
         self._result = result or ExternalExecutionResult(summary="done")
         self._error = error
         self._run = run
+        self._supports_streaming = supports_streaming
         self.requests: list[ExternalExecutionRequest] = []
 
     def get_capabilities(self) -> ExecutorCapability:
@@ -57,14 +60,48 @@ class FakeBackend:
             executor_id="external_executor",
             label="External Executor",
             supports_cancel=True,
-            supports_streaming=False,
+            supports_streaming=self._supports_streaming,
         )
 
-    async def start(self, request: ExternalExecutionRequest):
+    async def start(self, request: ExternalExecutionRequest, update_callback=None):
         self.requests.append(request)
         if self._error is not None:
             raise self._error
         return self._run or FakeRun(self._result)
+
+
+class StreamingFakeBackend(FakeBackend):
+    def __init__(self, result: ExternalExecutionResult | None = None) -> None:
+        super().__init__(result, supports_streaming=True)
+
+    async def start(self, request: ExternalExecutionRequest, update_callback=None):
+        self.requests.append(request)
+        if update_callback is not None:
+            await update_callback(
+                durable_execution_update(
+                    ExecutionEvent(
+                        event_id="exec_started",
+                        task_id=request.task_id,
+                        executor_id=request.executor_id,
+                        event_type=ExecutionEventType.STARTED,
+                        status=TaskStatus.RUNNING,
+                        progress_message="Task started.",
+                    )
+                )
+            )
+            await update_callback(
+                transient_execution_update(
+                    ExecutionEvent(
+                        event_id="exec_progress",
+                        task_id=request.task_id,
+                        executor_id=request.executor_id,
+                        event_type=ExecutionEventType.PROGRESS,
+                        status=TaskStatus.RUNNING,
+                        progress_message="Streaming progress update.",
+                    )
+                )
+            )
+        return self._run or FakeRun(self._result or ExternalExecutionResult(summary="done"))
 
 
 def make_task() -> Task:
@@ -92,23 +129,23 @@ async def test_external_executor_emits_completed_event_with_artifacts():
     )
     executor = ExternalAsyncExecutor(backend, "external_executor")
     task = make_task()
-    events = []
+    updates = []
 
-    async def callback(event):
-        events.append(event)
+    async def callback(update):
+        updates.append(update)
 
     await executor.start_task(task, callback, session_id="session_1")
     for _ in range(10):
-        if len(events) == 3:
+        if len(updates) == 3:
             break
         await asyncio.sleep(0)
 
-    assert [event.event_type.value for event in events] == [
+    assert [update.event.event_type.value for update in updates] == [
         "accepted",
         "started",
         "completed",
     ]
-    assert events[-1].artifacts_delta[0].inline_value == "Completed externally."
+    assert updates[-1].event.artifacts_delta[0].inline_value == "Completed externally."
     assert backend.requests[0].session_id == "session_1"
 
 
@@ -119,15 +156,44 @@ async def test_external_executor_emits_failed_event_when_backend_cannot_start():
         "external_executor",
     )
     task = make_task()
-    events = []
+    updates = []
 
-    async def callback(event):
-        events.append(event)
+    async def callback(update):
+        updates.append(update)
 
     await executor.start_task(task, callback, session_id="session_1")
 
-    assert [event.event_type.value for event in events] == ["accepted", "failed"]
-    assert "backend unavailable" in (events[-1].progress_message or "")
+    assert [update.event.event_type.value for update in updates] == ["accepted", "failed"]
+    assert "backend unavailable" in (updates[-1].event.progress_message or "")
+
+
+@pytest.mark.anyio
+async def test_external_executor_preserves_streaming_backend_updates():
+    backend = StreamingFakeBackend(
+        ExternalExecutionResult(summary="Completed externally.")
+    )
+    executor = ExternalAsyncExecutor(backend, "external_executor")
+    task = make_task()
+    updates = []
+
+    async def callback(update):
+        updates.append(update)
+
+    await executor.start_task(task, callback, session_id="session_1")
+    for _ in range(10):
+        if len(updates) == 4:
+            break
+        await asyncio.sleep(0)
+
+    assert [update.event.event_type.value for update in updates] == [
+        "accepted",
+        "started",
+        "progress",
+        "completed",
+    ]
+    assert updates[2].persist is False
+    assert updates[2].apply_to_task is False
+    assert updates[2].emit_conversation is False
 
 
 @pytest.mark.anyio

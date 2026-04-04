@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
+from runtime.executors.base import ExecutionCallback
 from runtime.protocols.execution import ExecutorCapability
 
 
@@ -31,6 +32,7 @@ class ExternalExecutionRequest:
 @dataclass(slots=True)
 class ExternalExecutionResult:
     summary: str | None = None
+    blocked_reason: str | None = None
     failure_reason: str | None = None
     artifacts: list[ExternalArtifact] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
@@ -45,4 +47,8 @@ class ExternalExecutionRun(Protocol):
 class ExternalExecutorBackend(Protocol):
     def get_capabilities(self) -> ExecutorCapability: ...
 
-    async def start(self, request: ExternalExecutionRequest) -> ExternalExecutionRun: ...
+    async def start(
+        self,
+        request: ExternalExecutionRequest,
+        update_callback: ExecutionCallback | None = None,
+    ) -> ExternalExecutionRun: ...

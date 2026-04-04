@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 
-from runtime.executors.base import ExecutionCallback
+from runtime.executors.base import ExecutionCallback, durable_execution_update
 from runtime.infrastructure.config import Settings
 from runtime.infrastructure.ids import new_id
 from runtime.protocols.execution import ExecutionEvent, ExecutionEventType, ExecutorCapability
@@ -46,36 +46,42 @@ class MockExecutor:
         callback: ExecutionCallback,
     ) -> None:
         await callback(
-            ExecutionEvent(
-                event_id=new_id("exec"),
-                task_id=task.task_id,
-                executor_id=self._executor_id,
-                event_type=ExecutionEventType.ACCEPTED,
-                status=TaskStatus.QUEUED,
-                progress_message="Task accepted by executor.",
+            durable_execution_update(
+                ExecutionEvent(
+                    event_id=new_id("exec"),
+                    task_id=task.task_id,
+                    executor_id=self._executor_id,
+                    event_type=ExecutionEventType.ACCEPTED,
+                    status=TaskStatus.QUEUED,
+                    progress_message="Task accepted by executor.",
+                )
             )
         )
         await asyncio.sleep(self._settings.mock_executor_tick_seconds)
         await callback(
-            ExecutionEvent(
-                event_id=new_id("exec"),
-                task_id=task.task_id,
-                executor_id=self._executor_id,
-                event_type=ExecutionEventType.STARTED,
-                status=TaskStatus.RUNNING,
-                progress_message="Task started.",
+            durable_execution_update(
+                ExecutionEvent(
+                    event_id=new_id("exec"),
+                    task_id=task.task_id,
+                    executor_id=self._executor_id,
+                    event_type=ExecutionEventType.STARTED,
+                    status=TaskStatus.RUNNING,
+                    progress_message="Task started.",
+                )
             )
         )
         await asyncio.sleep(self._settings.mock_executor_tick_seconds)
         await callback(
-            ExecutionEvent(
-                event_id=new_id("exec"),
-                task_id=task.task_id,
-                executor_id=self._executor_id,
-                event_type=ExecutionEventType.PROGRESS,
-                status=TaskStatus.RUNNING,
-                progress_message="Task is making progress.",
-                progress_percent=0.5,
+            durable_execution_update(
+                ExecutionEvent(
+                    event_id=new_id("exec"),
+                    task_id=task.task_id,
+                    executor_id=self._executor_id,
+                    event_type=ExecutionEventType.PROGRESS,
+                    status=TaskStatus.RUNNING,
+                    progress_message="Task is making progress.",
+                    progress_percent=0.5,
+                )
             )
         )
         await asyncio.sleep(self._settings.mock_executor_tick_seconds)
@@ -85,13 +91,15 @@ class MockExecutor:
         ):
             self._running.pop(task.task_id, None)
             await callback(
-                ExecutionEvent(
-                    event_id=new_id("exec"),
-                    task_id=task.task_id,
-                    executor_id=self._executor_id,
-                    event_type=ExecutionEventType.BLOCKED,
-                    status=TaskStatus.BLOCKED,
-                    progress_message="Task needs clarification before it can continue.",
+                durable_execution_update(
+                    ExecutionEvent(
+                        event_id=new_id("exec"),
+                        task_id=task.task_id,
+                        executor_id=self._executor_id,
+                        event_type=ExecutionEventType.BLOCKED,
+                        status=TaskStatus.BLOCKED,
+                        progress_message="Task needs clarification before it can continue.",
+                    )
                 )
             )
             return
@@ -105,14 +113,16 @@ class MockExecutor:
         )
         self._running.pop(task.task_id, None)
         await callback(
-            ExecutionEvent(
-                event_id=new_id("exec"),
-                task_id=task.task_id,
-                executor_id=self._executor_id,
-                event_type=ExecutionEventType.COMPLETED,
-                status=TaskStatus.DONE,
-                progress_message="Task completed successfully.",
-                progress_percent=1.0,
-                artifacts_delta=[artifact],
+            durable_execution_update(
+                ExecutionEvent(
+                    event_id=new_id("exec"),
+                    task_id=task.task_id,
+                    executor_id=self._executor_id,
+                    event_type=ExecutionEventType.COMPLETED,
+                    status=TaskStatus.DONE,
+                    progress_message="Task completed successfully.",
+                    progress_percent=1.0,
+                    artifacts_delta=[artifact],
+                )
             )
         )

@@ -4,6 +4,8 @@ from types import SimpleNamespace
 
 import pytest
 
+from runtime.execution_brain import orchestrator as orchestrator_module
+from runtime.execution_brain import task_graph as task_graph_module
 from runtime.infrastructure.ids import new_id
 from runtime.infrastructure.config import Settings
 from runtime.llm.client import LLMServices
@@ -117,6 +119,7 @@ def make_interpretation(message_id: str, text: str) -> InterpretationEnvelope:
                 title=text[:80],
                 goal=text,
                 simulate_blocked="need info" in lowered or "ask me" in lowered,
+                requires_executor_capability=False,
             )
         ]
         actions.append(
@@ -181,8 +184,34 @@ def build_test_services() -> LLMServices:
     return LLMServices(settings, provider=provider)
 
 
+def allow_mock_executor_tasks(bundle: ActionBundle) -> ActionBundle:
+    for action in bundle.actions:
+        if action.action_type == RuntimeActionType.CREATE_TASK:
+            action.payload.setdefault("input_context", {})
+            action.payload["input_context"]["requires_executor_capability"] = False
+    return bundle
+
+
+def allow_mock_executor_task_graph(monkeypatch) -> None:
+    def build_task_without_executor_requirement(action, *, message_id: str, executor_id: str):
+        task = task_graph_module.build_task(
+            action,
+            message_id=message_id,
+            executor_id=executor_id,
+        )
+        task.input_context["requires_executor_capability"] = False
+        return task
+
+    monkeypatch.setattr(
+        orchestrator_module,
+        "build_task",
+        build_task_without_executor_requirement,
+    )
+
+
 @pytest.mark.anyio
-async def test_runtime_message_pipeline_stream_events():
+async def test_runtime_message_pipeline_stream_events(monkeypatch):
+    allow_mock_executor_task_graph(monkeypatch)
     services = build_services(build_test_services())
     session = services.runtime_state_store.create_session()
     queue = services.runtime_state_store.subscribe(session.session_id)
@@ -194,6 +223,7 @@ async def test_runtime_message_pipeline_stream_events():
     )
     snapshot = services.runtime_state_store.snapshot(session.session_id)
     routing_decision, bundle = await services.action_router.route(message, snapshot)
+    bundle = allow_mock_executor_tasks(bundle)
 
     initial_action = services.interaction_policy.build_initial_action(
         routing_decision,
@@ -208,7 +238,7 @@ async def test_runtime_message_pipeline_stream_events():
     await services.execution_orchestrator.process_bundle(session.session_id, bundle)
 
     event_types: list[str] = []
-    for _ in range(8):
+    for _ in range(12):
         event = await asyncio.wait_for(queue.get(), timeout=1)
         event_types.append(event.event_type)
         if event.event_type == "completed":
@@ -221,7 +251,8 @@ async def test_runtime_message_pipeline_stream_events():
 
 
 @pytest.mark.anyio
-async def test_blocked_task_can_continue_via_update_message():
+async def test_blocked_task_can_continue_via_update_message(monkeypatch):
+    allow_mock_executor_task_graph(monkeypatch)
     services = build_services(build_test_services())
     session = services.runtime_state_store.create_session()
     queue = services.runtime_state_store.subscribe(session.session_id)
@@ -234,6 +265,7 @@ async def test_blocked_task_can_continue_via_update_message():
     decision, bundle = await services.action_router.route(
         create_message, services.runtime_state_store.snapshot(session.session_id)
     )
+    bundle = allow_mock_executor_tasks(bundle)
     initial = services.interaction_policy.build_initial_action(
         decision,
         bundle,
@@ -247,10 +279,11 @@ async def test_blocked_task_can_continue_via_update_message():
     await services.execution_orchestrator.process_bundle(session.session_id, bundle)
 
     blocked_seen = False
-    for _ in range(8):
+    for _ in range(12):
         event = await asyncio.wait_for(queue.get(), timeout=1)
         if event.event_type == "blocked":
             blocked_seen = True
+        if event.event_type == "inform_blocked":
             break
     assert blocked_seen is True
 
@@ -318,6 +351,7 @@ async def test_regular_chat_emits_chat_reply_without_creating_task():
     )
     snapshot = services.runtime_state_store.snapshot(session.session_id)
     decision, bundle = await services.action_router.route(message, snapshot)
+    bundle = allow_mock_executor_tasks(bundle)
 
     assert decision.conversation_mode == ConversationMode.CONVERSATION_ONLY
     initial = services.interaction_policy.build_initial_action(
@@ -347,7 +381,8 @@ async def test_regular_chat_emits_chat_reply_without_creating_task():
 
 
 @pytest.mark.anyio
-async def test_capability_gated_question_creates_task_instead_of_chat_reply():
+async def test_capability_gated_question_creates_task_instead_of_chat_reply(monkeypatch):
+    allow_mock_executor_task_graph(monkeypatch)
     services = build_services(build_test_services())
     session = services.runtime_state_store.create_session()
     queue = services.runtime_state_store.subscribe(session.session_id)
@@ -376,7 +411,7 @@ async def test_capability_gated_question_creates_task_instead_of_chat_reply():
     await services.execution_orchestrator.process_bundle(session.session_id, bundle)
 
     received_types = []
-    for _ in range(8):
+    for _ in range(12):
         event = await asyncio.wait_for(queue.get(), timeout=1)
         received_types.append(event.event_type)
         if event.event_type == "completed":

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 
-from runtime.executors.base import ExecutionCallback
+from runtime.executors.base import ExecutionCallback, durable_execution_update
 from runtime.executors.external_backend import (
     ExternalExecutionRequest,
     ExternalExecutionResult,
@@ -28,13 +28,15 @@ class ExternalAsyncExecutor:
     ) -> None:
         await self.cancel_task(task.task_id)
         await callback(
-            ExecutionEvent(
-                event_id=new_id("exec"),
-                task_id=task.task_id,
-                executor_id=self._executor_id,
-                event_type=ExecutionEventType.ACCEPTED,
-                status=TaskStatus.QUEUED,
-                progress_message="Task accepted by executor.",
+            durable_execution_update(
+                ExecutionEvent(
+                    event_id=new_id("exec"),
+                    task_id=task.task_id,
+                    executor_id=self._executor_id,
+                    event_type=ExecutionEventType.ACCEPTED,
+                    status=TaskStatus.QUEUED,
+                    progress_message="Task accepted by executor.",
+                )
             )
         )
         request = ExternalExecutionRequest(
@@ -47,32 +49,41 @@ class ExternalAsyncExecutor:
             latest_instruction=task.latest_instruction,
             input_context=dict(task.input_context),
         )
+        capabilities = self._backend.get_capabilities()
         try:
-            run = await self._backend.start(request)
+            run = await self._backend.start(
+                request,
+                update_callback=callback if capabilities.supports_streaming else None,
+            )
         except Exception as exc:
             await callback(
-                ExecutionEvent(
-                    event_id=new_id("exec"),
-                    task_id=task.task_id,
-                    executor_id=self._executor_id,
-                    event_type=ExecutionEventType.FAILED,
-                    status=TaskStatus.FAILED,
-                    progress_message=f"Executor failed to start task: {exc}",
+                durable_execution_update(
+                    ExecutionEvent(
+                        event_id=new_id("exec"),
+                        task_id=task.task_id,
+                        executor_id=self._executor_id,
+                        event_type=ExecutionEventType.FAILED,
+                        status=TaskStatus.FAILED,
+                        progress_message=f"Executor failed to start task: {exc}",
+                    )
                 )
             )
             return
 
         self._runs[task.task_id] = run
-        await callback(
-            ExecutionEvent(
-                event_id=new_id("exec"),
-                task_id=task.task_id,
-                executor_id=self._executor_id,
-                event_type=ExecutionEventType.STARTED,
-                status=TaskStatus.RUNNING,
-                progress_message="Task started.",
+        if not capabilities.supports_streaming:
+            await callback(
+                durable_execution_update(
+                    ExecutionEvent(
+                        event_id=new_id("exec"),
+                        task_id=task.task_id,
+                        executor_id=self._executor_id,
+                        event_type=ExecutionEventType.STARTED,
+                        status=TaskStatus.RUNNING,
+                        progress_message="Task started.",
+                    )
+                )
             )
-        )
         self._running[task.task_id] = asyncio.create_task(
             self._watch(task, run, callback), name=f"external-executor:{task.task_id}"
         )
@@ -95,13 +106,15 @@ class ExternalAsyncExecutor:
             raise
         except Exception as exc:
             await callback(
-                ExecutionEvent(
-                    event_id=new_id("exec"),
-                    task_id=task.task_id,
-                    executor_id=self._executor_id,
-                    event_type=ExecutionEventType.FAILED,
-                    status=TaskStatus.FAILED,
-                    progress_message=f"Executor run failed: {exc}",
+                durable_execution_update(
+                    ExecutionEvent(
+                        event_id=new_id("exec"),
+                        task_id=task.task_id,
+                        executor_id=self._executor_id,
+                        event_type=ExecutionEventType.FAILED,
+                        status=TaskStatus.FAILED,
+                        progress_message=f"Executor run failed: {exc}",
+                    )
                 )
             )
             return
@@ -109,7 +122,7 @@ class ExternalAsyncExecutor:
             self._runs.pop(task.task_id, None)
             self._running.pop(task.task_id, None)
 
-        await callback(self._result_to_event(task, result))
+        await callback(durable_execution_update(self._result_to_event(task, result)))
 
     def _result_to_event(
         self, task: Task, result: ExternalExecutionResult
@@ -127,6 +140,16 @@ class ExternalAsyncExecutor:
             )
             for artifact in result.artifacts
         ]
+        if result.blocked_reason:
+            return ExecutionEvent(
+                event_id=new_id("exec"),
+                task_id=task.task_id,
+                executor_id=self._executor_id,
+                event_type=ExecutionEventType.BLOCKED,
+                status=TaskStatus.BLOCKED,
+                progress_message=result.blocked_reason,
+                metadata=result.metadata,
+            )
         if result.failure_reason:
             return ExecutionEvent(
                 event_id=new_id("exec"),

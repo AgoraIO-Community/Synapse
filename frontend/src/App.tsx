@@ -23,6 +23,7 @@ const HIDDEN_TRACE_EVENT_TYPES = new Set([
   "llm_response_stream_response",
   "llm_response_stream_error",
 ]);
+const TIMELINE_FOLLOW_THRESHOLD_PX = 32;
 
 function formatTime(timestamp: string) {
   return new Date(timestamp).toLocaleTimeString([], {
@@ -66,9 +67,18 @@ function canRunCommand(
   return false;
 }
 
+function isNearTimelineBottom(element: HTMLDivElement) {
+  return (
+    element.scrollHeight - element.scrollTop - element.clientHeight <=
+    TIMELINE_FOLLOW_THRESHOLD_PX
+  );
+}
+
 export default function App() {
   const socketRef = useRef<WebSocket | null>(null);
   const traceSocketRef = useRef<WebSocket | null>(null);
+  const timelineRef = useRef<HTMLDivElement | null>(null);
+  const shouldFollowTimelineRef = useRef(true);
   const didBootRef = useRef(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>("booting");
@@ -91,6 +101,14 @@ export default function App() {
   const visibleOutcomeEvents = events.filter(
     (event) => !HIDDEN_RUNTIME_EVENT_TYPES.has(event.event_type),
   );
+
+  useEffect(() => {
+    const timelineElement = timelineRef.current;
+    if (!timelineElement || !shouldFollowTimelineRef.current || timeline.length === 0) {
+      return;
+    }
+    timelineElement.scrollTop = timelineElement.scrollHeight;
+  }, [timeline]);
 
   useEffect(() => {
     if (didBootRef.current) {
@@ -337,6 +355,14 @@ export default function App() {
     setTraceEvents((current) => [event, ...current].slice(0, MAX_EVENTS));
   }
 
+  function handleTimelineScroll() {
+    const timelineElement = timelineRef.current;
+    if (!timelineElement) {
+      return;
+    }
+    shouldFollowTimelineRef.current = isNearTimelineBottom(timelineElement);
+  }
+
   async function handleCopyEvents() {
     if (!sessionId) {
       return;
@@ -462,7 +488,7 @@ export default function App() {
             </div>
           </div>
 
-          <div className="timeline">
+          <div ref={timelineRef} className="timeline" onScroll={handleTimelineScroll}>
             {timeline.length === 0 ? (
               <div className="empty-state">
                 {isStreamReady

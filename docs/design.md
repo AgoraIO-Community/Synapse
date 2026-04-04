@@ -288,6 +288,7 @@ Defines the executor adapter boundary.
 - `Artifact`
 
 Executors are expected to emit normalized execution events rather than leaking executor-native state into the communication layer.
+Executor-native activity streams may be richer than the public protocol; adapters must collapse them back into `ExecutionEvent` updates instead of exposing backend-specific event schemas. Mid-run executor activity can be published as transient execution stream events while terminal lifecycle state remains durable.
 
 ### Stream Protocol
 
@@ -390,6 +391,8 @@ The Codex executor:
 - becomes the effective default executor when enabled unless another valid default is explicitly configured
 - is isolated behind a generic external-backend adapter layer
 - emits the same normalized `ExecutionEvent` protocol as any other executor
+- consumes `codex exec --json` internally, but translates Codex JSONL activity back into normalized execution updates instead of exposing Codex-native event types
+- uses transient `execution` stream events for meaningful in-flight agent activity while keeping final lifecycle outcomes on the durable execution history
 - exposes capabilities so the UI can disable unsupported controls such as pause/resume
 - keeps Codex-specific subprocess and prompt logic out of the execution brain and main app bootstrap
 

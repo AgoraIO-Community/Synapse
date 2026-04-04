@@ -3,6 +3,7 @@ from __future__ import annotations
 from runtime.communication_brain.event_to_response import EventToResponseMapper
 from runtime.executors.bootstrap import MOCK_EXECUTOR_ID
 from runtime.communication_brain.response_generator import ResponseGenerator
+from runtime.executors.base import ExecutionUpdate, durable_execution_update
 from runtime.executors.registry import ExecutorRegistry
 from runtime.execution_brain.executor_adapter_router import ExecutorAdapterRouter
 from runtime.execution_brain.event_normalizer import apply_execution_event_to_task
@@ -239,19 +240,40 @@ class ExecutionOrchestrator:
     async def handle_execution_event(
         self, session_id: str, event: ExecutionEvent
     ) -> None:
+        await self.handle_execution_update(
+            session_id, durable_execution_update(event)
+        )
+
+    async def handle_execution_update(
+        self, session_id: str, update: ExecutionUpdate
+    ) -> None:
         session = self._runtime_state_store.get_session(session_id)
+        event = update.event
         await self._trace_state_store.publish(
             session_id,
             TraceStage.EXECUTION_ORCHESTRATOR,
             "execution_event_received",
             "execution_orchestrator",
-            {"event_type": event.event_type.value, "status": event.status.value},
+            {
+                "event_type": event.event_type.value,
+                "status": event.status.value,
+                "persist": update.persist,
+                "apply_to_task": update.apply_to_task,
+                "emit_conversation": update.emit_conversation,
+            },
             related_task_id=event.task_id,
         )
-        task = session.task_registry[event.task_id]
-        apply_execution_event_to_task(task, event)
-        task.updated_at = utc_now()
-        await self._runtime_state_store.publish(
+        if update.apply_to_task:
+            task = session.task_registry[event.task_id]
+            apply_execution_event_to_task(task, event)
+            task.updated_at = utc_now()
+
+        publisher = (
+            self._runtime_state_store.publish
+            if update.persist
+            else self._runtime_state_store.publish_transient
+        )
+        await publisher(
             session_id,
             StreamCategory.EXECUTION,
             event.event_type.value,
@@ -259,8 +281,11 @@ class ExecutionOrchestrator:
             event.model_dump(mode="json"),
             related_task_id=event.task_id,
         )
+        if not update.emit_conversation:
+            return
+
         conv_action = self._event_to_response_mapper.on_execution_event(session_id, event)
-        if conv_action:
+        if conv_action is not None:
             await self._trace_state_store.publish(
                 session_id,
                 TraceStage.RESPONSE_GENERATOR,
@@ -468,7 +493,7 @@ class ExecutionOrchestrator:
         executor = self._registry.get(executor_id)
         await executor.start_task(
             task,
-            lambda event: self.handle_execution_event(session_id, event),
+            lambda update: self.handle_execution_update(session_id, update),
             session_id=session_id,
         )
         await self._trace_state_store.publish(

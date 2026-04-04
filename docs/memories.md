@@ -29,3 +29,4 @@ Short log of important design decisions and changes for Synopse.
 - Added blackboard-backed message history for both message interpretation and response generation, capped at 30 persisted user/assistant messages and excluding transient stream chunks.
 - Added LLM latency diagnostics to trace payloads, recording total request duration for normal calls and `ttfb_ms` for true streamed responses, while hiding transient `response_chunk` entries from the operator activity feed/export.
 - Enriched `response_render_completed` so it now carries a nested `llm_response` summary with final rendered text plus duration and optional `ttfb_ms` when the response came from the LLM.
+- Switched the Codex executor to `codex exec --json`, normalizing in-flight agent activity back into `ExecutionEvent` updates and keeping those mid-run updates transient on the execution stream instead of introducing a Codex-specific protocol surface.
