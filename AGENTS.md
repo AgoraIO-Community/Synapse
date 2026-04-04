@@ -14,10 +14,13 @@ Core concepts:
 - FastAPI
 - Pydantic
 - Pytest
+- React
+- Vite
+- TypeScript
 
 ## Run
 ```bash
-uvicorn app.main:app --reload
+uvicorn runtime.main:app --reload
 ```
 
 ## Test

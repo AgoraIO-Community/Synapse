@@ -12,11 +12,26 @@ Backend-first prototype for a communication-brain / execution-brain runtime.
 ## Run
 
 ```bash
-uvicorn app.main:app --reload
+uvicorn runtime.main:app --reload
+```
+
+Frontend:
+
+```bash
+cd frontend
+bun install
+bun run dev
 ```
 
 ## Test
 
 ```bash
 pytest
+```
+
+Frontend build check:
+
+```bash
+cd frontend
+npm run build
 ```

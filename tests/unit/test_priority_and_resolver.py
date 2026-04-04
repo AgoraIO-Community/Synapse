@@ -1,8 +1,8 @@
-from app.message_router.priorities import sort_actions
-from app.message_router.resolver import resolve_task_reference
-from app.protocols.runtime import ExecutionTrigger, RuntimeAction, RuntimeActionType, ScopeOfEffect, TargetScope
-from app.protocols.tasks import Priority, Task, TaskReference, TaskReferenceType, TaskStatus
-from app.shared_blackboard.models import SessionState
+from runtime.message_router.priorities import sort_actions
+from runtime.message_router.resolver import resolve_task_reference
+from runtime.protocols.runtime import ExecutionTrigger, RuntimeAction, RuntimeActionType, ScopeOfEffect, TargetScope
+from runtime.protocols.tasks import Priority, Task, TaskReference, TaskReferenceType, TaskStatus
+from runtime.shared_blackboard.models import SessionState
 
 
 def test_control_actions_sort_ahead_of_new_tasks():

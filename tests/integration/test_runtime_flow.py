@@ -2,10 +2,10 @@ import asyncio
 
 import pytest
 
-from app.infrastructure.ids import new_id
-from app.main import build_services
-from app.protocols.conversation import UserMessage
-from app.protocols.runtime import ActionBundle, RuntimeActionType
+from runtime.infrastructure.ids import new_id
+from runtime.main import build_services
+from runtime.protocols.conversation import UserMessage
+from runtime.protocols.runtime import ActionBundle, RuntimeActionType
 
 
 @pytest.mark.anyio

@@ -4,3 +4,8 @@ __pycache__/
 *.pyc
 synopse.egg-info/
 .codex
+frontend/node_modules/
+frontend/dist/
+frontend/*.tsbuildinfo
+frontend/*.d.ts
+frontend/vite.config.js

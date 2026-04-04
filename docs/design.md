@@ -19,6 +19,8 @@ This prototype is designed as:
 
 - `Runtime V1 = single executor`
 - `Protocol V1 = multi-executor ready`
+- `Frontend V1 = separate React + Vite demo workspace`
+- `Backend package root = runtime/`
 
 ## Architectural Goals
 
@@ -28,6 +30,8 @@ This prototype is designed as:
 - Preserve future extension points for multiple executors and task graphs without complicating V1 runtime behavior.
 
 ## Top-Level Modules
+
+The backend code now lives under the `runtime/` package root.
 
 ### `communication_brain`
 
@@ -106,6 +110,16 @@ Thin transport layer.
 - `POST /sessions/{session_id}/messages`
 - `POST /sessions/{session_id}/commands`
 - `WS /sessions/{session_id}/stream`
+
+### `frontend`
+
+Separate minimal React + Vite experience layer.
+
+- one single-screen demo
+- chat-first interaction
+- live task cards
+- ordered runtime event feed
+- basic task controls
 
 ## Protocol Model
 
@@ -258,6 +272,14 @@ It simulates:
 This keeps the runtime behavior observable without depending on an external tool or agent.
 
 ## V1 Scope
+
+Included:
+
+- FastAPI backend runtime
+- separate React + Vite frontend demo
+- chat-first UI for communication events
+- task cards with pause, resume, and cancel controls
+- live activity feed with expandable event payloads
 
 Included:
 

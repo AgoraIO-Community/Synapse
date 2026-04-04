@@ -1,8 +1,8 @@
-from app.infrastructure.ids import new_id
-from app.protocols.runtime import ContextPatch, PatchScope
-from app.protocols.tasks import ControlCommandType, Task, TaskStatus
-from app.shared_blackboard.models import SessionState
-from app.shared_blackboard.mutations import apply_context_patch, apply_control, apply_task_update
+from runtime.infrastructure.ids import new_id
+from runtime.protocols.runtime import ContextPatch, PatchScope
+from runtime.protocols.tasks import ControlCommandType, Task, TaskStatus
+from runtime.shared_blackboard.models import SessionState
+from runtime.shared_blackboard.mutations import apply_context_patch, apply_control, apply_task_update
 
 
 def test_apply_context_patch_updates_session_conversation_state():
