@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 from pydantic import BaseModel
 
 from runtime.infrastructure.config import Settings
 from runtime.llm.errors import LLMConfigurationError, LLMInvocationError
+from runtime.protocols.trace import TraceStage
+from runtime.shared_blackboard.trace_state import TraceStateStore
 
 
 class OpenAIProvider:
@@ -34,41 +37,175 @@ class OpenAIProvider:
             raise LLMConfigurationError("OpenAI provider is not available.")
         return self._client
 
-    def parse_structured(
+    async def _emit_trace(
+        self,
+        trace_state_store: TraceStateStore | None,
+        *,
+        session_id: str | None,
+        stage: TraceStage,
+        event_type: str,
+        source_module: str,
+        payload: dict[str, Any],
+        span_id: str | None = None,
+        related_message_id: str | None = None,
+        related_task_id: str | None = None,
+    ) -> None:
+        if trace_state_store is None or session_id is None:
+            return
+        await trace_state_store.publish(
+            session_id,
+            stage,
+            event_type,
+            source_module,
+            payload,
+            span_id=span_id,
+            related_message_id=related_message_id,
+            related_task_id=related_task_id,
+        )
+
+    async def parse_structured(
         self,
         *,
         instructions: str,
         input_text: str,
         schema: type[BaseModel],
+        trace_state_store: TraceStateStore | None = None,
+        session_id: str | None = None,
+        span_id: str | None = None,
+        related_message_id: str | None = None,
+        related_task_id: str | None = None,
     ) -> BaseModel:
         client = self._require_client()
+        await self._emit_trace(
+            trace_state_store,
+            session_id=session_id,
+            stage=TraceStage.MESSAGE_INTERPRETER,
+            event_type="llm_interpreter_request",
+            source_module="openai_provider",
+            payload={
+                "model": self._settings.openai_model,
+                "instructions": instructions,
+                "input": input_text,
+                "schema_name": schema.__name__,
+            },
+            span_id=span_id,
+            related_message_id=related_message_id,
+            related_task_id=related_task_id,
+        )
         try:
-            response = client.responses.parse(
+            response = await asyncio.to_thread(
+                client.responses.parse,
                 model=self._settings.openai_model,
                 instructions=instructions,
                 input=input_text,
                 text_format=schema,
             )
         except Exception as exc:  # pragma: no cover
+            await self._emit_trace(
+                trace_state_store,
+                session_id=session_id,
+                stage=TraceStage.MESSAGE_INTERPRETER,
+                event_type="llm_interpreter_error",
+                source_module="openai_provider",
+                payload={
+                    "model": self._settings.openai_model,
+                    "error": str(exc),
+                },
+                span_id=span_id,
+                related_message_id=related_message_id,
+                related_task_id=related_task_id,
+            )
             raise LLMInvocationError(f"OpenAI structured call failed: {exc}") from exc
 
         parsed = getattr(response, "output_parsed", None)
         if parsed is None:
             raise LLMInvocationError("OpenAI did not return a structured output payload.")
+        if isinstance(parsed, BaseModel):
+            parsed_output: Any = parsed.model_dump(mode="json")
+        else:
+            parsed_output = parsed
+        await self._emit_trace(
+            trace_state_store,
+            session_id=session_id,
+            stage=TraceStage.MESSAGE_INTERPRETER,
+            event_type="llm_interpreter_response",
+            source_module="openai_provider",
+            payload={
+                "model": self._settings.openai_model,
+                "parsed_output": parsed_output,
+            },
+            span_id=span_id,
+            related_message_id=related_message_id,
+            related_task_id=related_task_id,
+        )
         return parsed
 
-    def render_text(self, *, instructions: str, input_text: str) -> str:
+    async def render_text(
+        self,
+        *,
+        instructions: str,
+        input_text: str,
+        trace_state_store: TraceStateStore | None = None,
+        session_id: str | None = None,
+        span_id: str | None = None,
+        related_message_id: str | None = None,
+        related_task_id: str | None = None,
+    ) -> str:
         client = self._require_client()
+        await self._emit_trace(
+            trace_state_store,
+            session_id=session_id,
+            stage=TraceStage.RESPONSE_GENERATOR,
+            event_type="llm_response_request",
+            source_module="openai_provider",
+            payload={
+                "model": self._settings.openai_model,
+                "instructions": instructions,
+                "input": input_text,
+            },
+            span_id=span_id,
+            related_message_id=related_message_id,
+            related_task_id=related_task_id,
+        )
         try:
-            response = client.responses.create(
+            response = await asyncio.to_thread(
+                client.responses.create,
                 model=self._settings.openai_model,
                 instructions=instructions,
                 input=input_text,
             )
         except Exception as exc:  # pragma: no cover
+            await self._emit_trace(
+                trace_state_store,
+                session_id=session_id,
+                stage=TraceStage.RESPONSE_GENERATOR,
+                event_type="llm_response_error",
+                source_module="openai_provider",
+                payload={
+                    "model": self._settings.openai_model,
+                    "error": str(exc),
+                },
+                span_id=span_id,
+                related_message_id=related_message_id,
+                related_task_id=related_task_id,
+            )
             raise LLMInvocationError(f"OpenAI text generation failed: {exc}") from exc
 
         output_text = getattr(response, "output_text", None)
         if not output_text:
             raise LLMInvocationError("OpenAI did not return any output text.")
+        await self._emit_trace(
+            trace_state_store,
+            session_id=session_id,
+            stage=TraceStage.RESPONSE_GENERATOR,
+            event_type="llm_response_response",
+            source_module="openai_provider",
+            payload={
+                "model": self._settings.openai_model,
+                "output_text": str(output_text).strip(),
+            },
+            span_id=span_id,
+            related_message_id=related_message_id,
+            related_task_id=related_task_id,
+        )
         return str(output_text).strip()

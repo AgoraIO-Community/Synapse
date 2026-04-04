@@ -1,17 +1,25 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 
 from runtime.infrastructure.ids import new_id
 from runtime.infrastructure.time import utc_now
 from runtime.protocols.conversation import ConversationAction
+from runtime.protocols.execution import ExecutorCapability
 from runtime.protocols.stream import SessionSnapshot, StreamCategory, StreamEvent
 from runtime.shared_blackboard.blackboard_state import BlackboardSessionState
 
 
 class RuntimeStateStore:
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        executor_capabilities_provider: Callable[[], list[ExecutorCapability]] | None = None,
+    ) -> None:
         self._sessions: dict[str, BlackboardSessionState] = {}
+        self._executor_capabilities_provider = (
+            executor_capabilities_provider or (lambda: [])
+        )
 
     def create_session(self) -> BlackboardSessionState:
         session = BlackboardSessionState(session_id=new_id("session"))
@@ -29,6 +37,7 @@ class RuntimeStateStore:
             session_id=session.session_id,
             conversation_state=dict(session.conversation_state),
             task_registry=list(session.task_registry.values()),
+            executor_capabilities=self._executor_capabilities_provider(),
             strategy_state=dict(session.strategy_state),
             pending_clarifications=list(session.pending_clarifications),
             last_sequence=session.last_sequence,

@@ -17,45 +17,39 @@ class ActionRouter:
         self._message_interpreter = message_interpreter
         self._trace_state_store = trace_state_store
 
-    def route(
+    async def route(
         self,
         user_message: UserMessage,
         snapshot: SessionSnapshot,
         *,
         span_id: str | None = None,
     ) -> tuple[RoutingDecision, ActionBundle]:
-        import asyncio
-
-        asyncio.create_task(
-            self._trace_state_store.publish(
-                user_message.session_id,
-                TraceStage.ACTION_ROUTER,
-                "routing_started",
-                "action_router",
-                {"text": user_message.text},
-                span_id=span_id,
-                related_message_id=user_message.message_id,
-            )
+        await self._trace_state_store.publish(
+            user_message.session_id,
+            TraceStage.ACTION_ROUTER,
+            "routing_started",
+            "action_router",
+            {"text": user_message.text},
+            span_id=span_id,
+            related_message_id=user_message.message_id,
         )
-        decision, bundle = self._message_interpreter.interpret(
+        decision, bundle = await self._message_interpreter.interpret(
             session_id=user_message.session_id,
             message_id=user_message.message_id,
             text=user_message.text,
             snapshot=snapshot,
             span_id=span_id,
         )
-        asyncio.create_task(
-            self._trace_state_store.publish(
-                user_message.session_id,
-                TraceStage.ACTION_ROUTER,
-                "routing_completed",
-                "action_router",
-                {
-                    "needs_clarification": decision.needs_clarification,
-                    "action_count": len(bundle.actions),
-                },
-                span_id=span_id,
-                related_message_id=user_message.message_id,
-            )
+        await self._trace_state_store.publish(
+            user_message.session_id,
+            TraceStage.ACTION_ROUTER,
+            "routing_completed",
+            "action_router",
+            {
+                "needs_clarification": decision.needs_clarification,
+                "action_count": len(bundle.actions),
+            },
+            span_id=span_id,
+            related_message_id=user_message.message_id,
         )
         return decision, bundle

@@ -15,9 +15,10 @@ from runtime.llm.interpreter_schema import (
 )
 from runtime.llm.openai_client import OpenAIProvider
 from runtime.main import build_services
-from runtime.protocols.conversation import UserMessage
+from runtime.protocols.conversation import ConversationActionType, UserMessage
 from runtime.protocols.runtime import (
     ActionBundle,
+    ConversationMode,
     ExecutionTrigger,
     ResolverStrategy,
     RuntimeActionType,
@@ -53,7 +54,28 @@ class FakeOpenAIClient:
 
 def make_interpretation(message_id: str, text: str) -> InterpretationEnvelope:
     lowered = text.lower()
-    if "update" in lowered or "continue" in lowered:
+    if (
+        lowered in {"hi", "hello", "hey"}
+        or "how are you" in lowered
+        or "what does this system do" in lowered
+    ):
+        actions = [
+            InterpreterAction(
+                action_id="action_1",
+                action_type=RuntimeActionType.APPLY_CONTEXT_PATCH,
+                target_scope=TargetScope.SESSION,
+                priority=Priority.NORMAL,
+                execution_trigger=ExecutionTrigger.NONE,
+                scope_of_effect=ScopeOfEffect.SESSION,
+                command_type=ControlCommandType.PAUSE_TASK,
+                target_task_reference_type=TaskReferenceType.LATEST_ACTIVE,
+                target_task_reference_relation=TaskReferenceRelation.CURRENT,
+                latest_user_goal=text,
+            )
+        ]
+        conversation_mode = ConversationMode.CONVERSATION_ONLY
+        priority = Priority.NORMAL
+    elif "update" in lowered or "continue" in lowered:
         actions = [
             InterpreterAction(
                 action_id="action_1",
@@ -67,6 +89,22 @@ def make_interpretation(message_id: str, text: str) -> InterpretationEnvelope:
                 latest_instruction=text,
             )
         ]
+        actions.append(
+            InterpreterAction(
+                action_id="action_2",
+                action_type=RuntimeActionType.APPLY_CONTEXT_PATCH,
+                target_scope=TargetScope.SESSION,
+                priority=Priority.NORMAL,
+                execution_trigger=ExecutionTrigger.NONE,
+                scope_of_effect=ScopeOfEffect.SESSION,
+                command_type=ControlCommandType.PAUSE_TASK,
+                target_task_reference_type=TaskReferenceType.LATEST_ACTIVE,
+                target_task_reference_relation=TaskReferenceRelation.CURRENT,
+                latest_user_goal=text,
+            )
+        )
+        conversation_mode = ConversationMode.TASK
+        priority = Priority.HIGH
     else:
         actions = [
             InterpreterAction(
@@ -81,26 +119,29 @@ def make_interpretation(message_id: str, text: str) -> InterpretationEnvelope:
                 simulate_blocked="need info" in lowered or "ask me" in lowered,
             )
         ]
-
-    actions.append(
-        InterpreterAction(
-            action_id="action_2",
-            action_type=RuntimeActionType.APPLY_CONTEXT_PATCH,
-            target_scope=TargetScope.SESSION,
-            priority=Priority.NORMAL,
-            execution_trigger=ExecutionTrigger.NONE,
-            scope_of_effect=ScopeOfEffect.SESSION,
-            command_type=ControlCommandType.PAUSE_TASK,
-            target_task_reference_type=TaskReferenceType.LATEST_ACTIVE,
-            target_task_reference_relation=TaskReferenceRelation.CURRENT,
-            latest_user_goal=text,
+        actions.append(
+            InterpreterAction(
+                action_id="action_2",
+                action_type=RuntimeActionType.APPLY_CONTEXT_PATCH,
+                target_scope=TargetScope.SESSION,
+                priority=Priority.NORMAL,
+                execution_trigger=ExecutionTrigger.NONE,
+                scope_of_effect=ScopeOfEffect.SESSION,
+                command_type=ControlCommandType.PAUSE_TASK,
+                target_task_reference_type=TaskReferenceType.LATEST_ACTIVE,
+                target_task_reference_relation=TaskReferenceRelation.CURRENT,
+                latest_user_goal=text,
+            )
         )
-    )
+        conversation_mode = ConversationMode.TASK
+        priority = Priority.NORMAL
     return InterpretationEnvelope(
         routing_decision=InterpreterRoutingDecision(
             decision_id="decision_1",
             message_id=message_id,
-            priority_hint=Priority.HIGH if "update" in lowered or "continue" in lowered else Priority.NORMAL,
+            conversation_mode=conversation_mode,
+            task_action_enabled=conversation_mode == ConversationMode.TASK,
+            priority_hint=priority,
             resolver_strategy=ResolverStrategy.IMPLICIT,
         ),
         action_bundle=InterpreterActionBundle(
@@ -128,6 +169,12 @@ def build_test_services() -> LLMServices:
             )
 
         def create(self, **kwargs):
+            payload = json.loads(kwargs["input"])
+            action_type = payload["action_type"]
+            if action_type == "chat_reply":
+                return SimpleNamespace(output_text="Hey there.")
+            if action_type == "inform_done":
+                return SimpleNamespace(output_text="Here is the answer.")
             return SimpleNamespace(output_text="Understood. I am starting that now.")
 
     provider = OpenAIProvider(settings, client=DynamicFakeOpenAIClient())
@@ -146,10 +193,12 @@ async def test_runtime_message_pipeline_stream_events():
         text="search flights to Tokyo tomorrow",
     )
     snapshot = services.runtime_state_store.snapshot(session.session_id)
-    routing_decision, bundle = services.action_router.route(message, snapshot)
+    routing_decision, bundle = await services.action_router.route(message, snapshot)
 
     initial_action = services.interaction_policy.build_initial_action(
-        routing_decision, bundle
+        routing_decision,
+        bundle,
+        user_message_text=message.text,
     )
     await services.execution_orchestrator.emit_conversation_action(
         session.session_id,
@@ -182,10 +231,14 @@ async def test_blocked_task_can_be_resumed_via_update_message():
         session_id=session.session_id,
         text="draft an outreach email and ask me for details need info",
     )
-    decision, bundle = services.action_router.route(
+    decision, bundle = await services.action_router.route(
         create_message, services.runtime_state_store.snapshot(session.session_id)
     )
-    initial = services.interaction_policy.build_initial_action(decision, bundle)
+    initial = services.interaction_policy.build_initial_action(
+        decision,
+        bundle,
+        user_message_text=create_message.text,
+    )
     await services.execution_orchestrator.emit_conversation_action(
         session.session_id,
         initial,
@@ -206,10 +259,14 @@ async def test_blocked_task_can_be_resumed_via_update_message():
         session_id=session.session_id,
         text="update that with the recipient and continue",
     )
-    decision, bundle = services.action_router.route(
+    decision, bundle = await services.action_router.route(
         update_message, services.runtime_state_store.snapshot(session.session_id)
     )
-    initial = services.interaction_policy.build_initial_action(decision, bundle)
+    initial = services.interaction_policy.build_initial_action(
+        decision,
+        bundle,
+        user_message_text=update_message.text,
+    )
     await services.execution_orchestrator.emit_conversation_action(
         session.session_id,
         initial,
@@ -249,6 +306,89 @@ def test_publish_snapshot_emits_system_snapshot_event():
 
 
 @pytest.mark.anyio
+async def test_regular_chat_emits_chat_reply_without_creating_task():
+    services = build_services(build_test_services())
+    session = services.runtime_state_store.create_session()
+    queue = services.runtime_state_store.subscribe(session.session_id)
+
+    message = UserMessage(
+        message_id=new_id("message"),
+        session_id=session.session_id,
+        text="hi",
+    )
+    snapshot = services.runtime_state_store.snapshot(session.session_id)
+    decision, bundle = await services.action_router.route(message, snapshot)
+
+    assert decision.conversation_mode == ConversationMode.CONVERSATION_ONLY
+    initial = services.interaction_policy.build_initial_action(
+        decision,
+        bundle,
+        user_message_text=message.text,
+    )
+    assert initial.action_type == ConversationActionType.CHAT_REPLY
+
+    await services.execution_orchestrator.emit_conversation_action(
+        session.session_id,
+        initial,
+        related_message_id=message.message_id,
+    )
+    if bundle.actions:
+        await services.execution_orchestrator.process_bundle(session.session_id, bundle)
+
+    received = []
+    for _ in range(3):
+        event = await asyncio.wait_for(queue.get(), timeout=1)
+        received.append(event)
+        if event.event_type == "context_patch_applied":
+            break
+
+    assert "task_created" not in [event.event_type for event in received]
+    assert any(event.event_type == "chat_reply" for event in received)
+
+
+@pytest.mark.anyio
+async def test_capability_gated_question_creates_task_instead_of_chat_reply():
+    services = build_services(build_test_services())
+    session = services.runtime_state_store.create_session()
+    queue = services.runtime_state_store.subscribe(session.session_id)
+
+    message = UserMessage(
+        message_id=new_id("message"),
+        session_id=session.session_id,
+        text="tell me what time is it",
+    )
+    snapshot = services.runtime_state_store.snapshot(session.session_id)
+    decision, bundle = await services.action_router.route(message, snapshot)
+
+    assert decision.conversation_mode == ConversationMode.TASK
+    assert any(action.action_type == RuntimeActionType.CREATE_TASK for action in bundle.actions)
+
+    initial = services.interaction_policy.build_initial_action(
+        decision,
+        bundle,
+        user_message_text=message.text,
+    )
+    await services.execution_orchestrator.emit_conversation_action(
+        session.session_id,
+        initial,
+        related_message_id=message.message_id,
+    )
+    await services.execution_orchestrator.process_bundle(session.session_id, bundle)
+
+    received_types = []
+    for _ in range(8):
+        event = await asyncio.wait_for(queue.get(), timeout=1)
+        received_types.append(event.event_type)
+        if event.event_type == "completed":
+            break
+
+    assert "chat_reply" not in received_types
+    assert "acknowledge" in received_types
+    assert "task_created" in received_types
+    assert "completed" in received_types
+
+
+@pytest.mark.anyio
 async def test_trace_flow_emits_module_level_causality_events():
     services = build_services(build_test_services())
     session = services.runtime_state_store.create_session()
@@ -260,7 +400,7 @@ async def test_trace_flow_emits_module_level_causality_events():
         text="search flights to Tokyo tomorrow",
     )
     snapshot = services.runtime_state_store.snapshot(session.session_id)
-    routing_decision, bundle = services.action_router.route(
+    routing_decision, bundle = await services.action_router.route(
         message,
         snapshot,
         span_id="span_trace_1",
@@ -268,6 +408,7 @@ async def test_trace_flow_emits_module_level_causality_events():
     initial_action = services.interaction_policy.build_initial_action(
         routing_decision,
         bundle,
+        user_message_text=message.text,
     )
     await services.execution_orchestrator.emit_conversation_action(
         session.session_id,
@@ -284,6 +425,7 @@ async def test_trace_flow_emits_module_level_causality_events():
 
     stages: list[TraceStage] = []
     event_types: list[str] = []
+    payloads_by_type: dict[str, dict] = {}
     for _ in range(20):
         try:
             trace = await asyncio.wait_for(trace_queue.get(), timeout=0.2)
@@ -291,6 +433,7 @@ async def test_trace_flow_emits_module_level_causality_events():
             break
         stages.append(trace.stage)
         event_types.append(trace.event_type)
+        payloads_by_type[trace.event_type] = trace.payload
 
     assert TraceStage.ACTION_ROUTER in stages
     assert TraceStage.MESSAGE_INTERPRETER in stages
@@ -298,3 +441,12 @@ async def test_trace_flow_emits_module_level_causality_events():
     assert "routing_started" in event_types
     assert "interpreter_response_received" in event_types
     assert "bundle_processing_started" in event_types
+    assert "llm_interpreter_request" in event_types
+    assert "llm_interpreter_response" in event_types
+    assert "llm_response_request" in event_types
+    assert "llm_response_response" in event_types
+    assert "instructions" in payloads_by_type["llm_interpreter_request"]
+    assert "input" in payloads_by_type["llm_interpreter_request"]
+    assert "parsed_output" in payloads_by_type["llm_interpreter_response"]
+    assert "instructions" in payloads_by_type["llm_response_request"]
+    assert "output_text" in payloads_by_type["llm_response_response"]

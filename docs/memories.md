@@ -17,3 +17,9 @@ Short log of important design decisions and changes for Synopse.
 - Removed stub LLM mode from normal runtime behavior; OpenAI is now required for development/demo, while fake providers remain available only in tests.
 - Added auto-loaded `.env.local` support plus `.env.example` so local runtime configuration no longer requires manual shell exports.
 - Added a dedicated trace stream beside the main event stream so module-level causality can be inspected without mixing trace records into the product-facing runtime feed.
+- Added a first-class conversation-only path with `chat_reply` so ordinary chat is no longer forced into `clarify`; clarification is now reserved for unresolved task/control intent.
+- Added a generic external-executor integration layer plus an isolated Codex-backed executor adapter, while keeping the execution brain and transport on normalized executor protocols and exposing executor capabilities through session snapshots.
+- Tightened `conversation-only` to social/meta chat only, routing capability-gated questions into normal executor tasks, and enriched response generation context so replies are authored from the agent’s perspective instead of echoing the user message.
+- Switched task defaulting so Codex becomes the effective default executor when enabled, while completion replies prefer real executor result text over generic success status when available.
+- Added a runtime guard so capability-gated questions are blocked with a clear explanation when only the mock executor is active, instead of producing misleading fake-success task flows.
+- Simplified task creation so every `create_task` now requires a real executor, closing the hole where some LLM-produced tasks could still bypass the mock-executor guard.

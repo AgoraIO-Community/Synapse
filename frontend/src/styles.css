@@ -74,7 +74,7 @@ button {
   margin: 0;
   font-size: clamp(2.4rem, 6vw, 4.6rem);
   line-height: 0.95;
-  max-width: 9ch;
+  max-width: 16ch;
 }
 
 .intro {
@@ -132,6 +132,7 @@ button {
   display: grid;
   grid-template-columns: 1.25fr 1fr 0.95fr;
   gap: 18px;
+  align-items: start;
 }
 
 .panel {
@@ -144,6 +145,13 @@ button {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  min-height: 0;
+}
+
+.panel-chat,
+.panel-tasks,
+.panel-events {
+  height: min(78vh, calc(100vh - 160px));
 }
 
 .panel-header {
@@ -160,13 +168,14 @@ button {
 
 .timeline,
 .events,
-.task-section {
+.task-sections {
   padding: 18px 24px 0;
 }
 
 .timeline,
 .events {
   overflow: auto;
+  min-height: 0;
 }
 
 .timeline {
@@ -267,6 +276,17 @@ button {
   gap: 12px;
 }
 
+.task-sections {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 18px;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-bottom: 24px;
+}
+
 .task-section h3 {
   margin: 0 0 4px;
   font-size: 1.08rem;
@@ -343,6 +363,8 @@ button {
   gap: 10px;
   flex: 1;
   padding-bottom: 24px;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .trace-section {
@@ -450,6 +472,12 @@ button {
   .panel {
     min-height: auto;
   }
+
+  .panel-chat,
+  .panel-tasks,
+  .panel-events {
+    height: auto;
+  }
 }
 
 @media (max-width: 720px) {
@@ -462,13 +490,13 @@ button {
   }
 
   .hero h1 {
-    max-width: 12ch;
+    max-width: 16ch;
   }
 
   .panel-header,
   .timeline,
   .events,
-  .task-section,
+  .task-sections,
   .composer {
     padding-left: 16px;
     padding-right: 16px;

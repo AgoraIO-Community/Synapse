@@ -15,6 +15,7 @@ class Modality(StrEnum):
 
 class ConversationActionType(StrEnum):
     ACKNOWLEDGE = "acknowledge"
+    CHAT_REPLY = "chat_reply"
     CLARIFY = "clarify"
     ASK_CONFIRMATION = "ask_confirmation"
     INFORM_PROGRESS = "inform_progress"

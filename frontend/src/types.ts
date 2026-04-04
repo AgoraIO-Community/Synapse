@@ -28,6 +28,15 @@ export type TaskStatus =
 
 export type CommandType = "pause_task" | "resume_task" | "cancel_task";
 
+export interface ExecutorCapability {
+  executor_id: string;
+  label: string;
+  capability_tags: string[];
+  supports_cancel: boolean;
+  supports_pause: boolean;
+  supports_streaming: boolean;
+}
+
 export interface SessionResponse {
   session_id: string;
 }
@@ -59,6 +68,7 @@ export interface SessionSnapshot {
   session_id: string;
   conversation_state: Record<string, unknown>;
   task_registry: Task[];
+  executor_capabilities: ExecutorCapability[];
   strategy_state: Record<string, unknown>;
   pending_clarifications: Array<Record<string, unknown>>;
   last_sequence: number;

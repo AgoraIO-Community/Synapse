@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from runtime.api.deps import get_services
 from runtime.api.models import CommandRequest
+from runtime.executors.errors import UnsupportedExecutorCommandError
 from runtime.infrastructure.ids import new_id
 from runtime.protocols.tasks import ControlCommand
 
@@ -25,5 +26,8 @@ async def submit_command(
         payload=request.payload,
         reason=request.reason,
     )
-    await services.execution_orchestrator.apply_control_command(session_id, command)
+    try:
+        await services.execution_orchestrator.apply_control_command(session_id, command)
+    except UnsupportedExecutorCommandError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     return {"command_id": command.command_id, "status": "accepted"}

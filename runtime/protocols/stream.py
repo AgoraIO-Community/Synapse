@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 
 from runtime.infrastructure.time import utc_now
 from runtime.protocols.conversation import ConversationAction
+from runtime.protocols.execution import ExecutorCapability
 from runtime.protocols.tasks import Task
 
 
@@ -35,6 +36,7 @@ class SessionSnapshot(BaseModel):
     session_id: str
     conversation_state: dict[str, Any] = Field(default_factory=dict)
     task_registry: list[Task] = Field(default_factory=list)
+    executor_capabilities: list[ExecutorCapability] = Field(default_factory=list)
     strategy_state: dict[str, Any] = Field(default_factory=dict)
     pending_clarifications: list[ConversationAction] = Field(default_factory=list)
     last_sequence: int = 0

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from runtime.executors.base import AsyncExecutor
+from runtime.protocols.execution import ExecutorCapability
 
 
 class ExecutorRegistry:
@@ -15,3 +16,9 @@ class ExecutorRegistry:
 
     def list_ids(self) -> list[str]:
         return list(self._executors.keys())
+
+    def list_capabilities(self) -> list[ExecutorCapability]:
+        return [executor.get_capabilities() for executor in self._executors.values()]
+
+    def get_capability(self, executor_id: str) -> ExecutorCapability:
+        return self.get(executor_id).get_capabilities()

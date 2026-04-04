@@ -13,8 +13,7 @@ from runtime.action_router.action_router import ActionRouter
 from runtime.communication_brain.event_to_response import EventToResponseMapper
 from runtime.communication_brain.interaction_policy import InteractionPolicy
 from runtime.communication_brain.response_generator import ResponseGenerator
-from runtime.executors.mock import MockExecutor
-from runtime.executors.registry import ExecutorRegistry
+from runtime.executors.bootstrap import build_executor_runtime
 from runtime.execution_brain.executor_adapter_router import ExecutorAdapterRouter
 from runtime.execution_brain.orchestrator import ExecutionOrchestrator
 from runtime.infrastructure.config import Settings, load_settings
@@ -36,7 +35,10 @@ class AppServices:
 
 def build_services(llm_services: LLMServices | None = None) -> AppServices:
     settings = load_settings()
-    runtime_state_store = RuntimeStateStore()
+    executor_runtime = build_executor_runtime(settings)
+    runtime_state_store = RuntimeStateStore(
+        executor_capabilities_provider=executor_runtime.registry.list_capabilities
+    )
     trace_state_store = TraceStateStore()
     llm_services = llm_services or LLMServices(settings, trace_state_store=trace_state_store)
     if getattr(llm_services.message_interpreter, "_trace_state_store", None) is None:
@@ -45,16 +47,13 @@ def build_services(llm_services: LLMServices | None = None) -> AppServices:
     interaction_policy = InteractionPolicy()
     event_to_response_mapper = EventToResponseMapper()
     response_generator = ResponseGenerator(llm_services.responder)
-    registry = ExecutorRegistry()
-    registry.register(
-        settings.default_executor_id,
-        MockExecutor(settings, executor_id=settings.default_executor_id),
+    executor_adapter_router = ExecutorAdapterRouter(
+        executor_runtime.registry, executor_runtime.default_executor_id
     )
-    executor_adapter_router = ExecutorAdapterRouter(registry, settings.default_executor_id)
     execution_orchestrator = ExecutionOrchestrator(
         runtime_state_store=runtime_state_store,
         trace_state_store=trace_state_store,
-        registry=registry,
+        registry=executor_runtime.registry,
         executor_adapter_router=executor_adapter_router,
         event_to_response_mapper=event_to_response_mapper,
         response_generator=response_generator,

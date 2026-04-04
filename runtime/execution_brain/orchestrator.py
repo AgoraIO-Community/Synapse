@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from runtime.communication_brain.event_to_response import EventToResponseMapper
+from runtime.executors.bootstrap import MOCK_EXECUTOR_ID
+from runtime.executors.errors import UnsupportedExecutorCommandError
 from runtime.communication_brain.response_generator import ResponseGenerator
 from runtime.executors.registry import ExecutorRegistry
 from runtime.execution_brain.executor_adapter_router import ExecutorAdapterRouter
@@ -88,6 +90,21 @@ class ExecutionOrchestrator:
                     message_id=bundle.message_id,
                     executor_id=self._executor_adapter_router.default_executor_id,
                 )
+                if self._requires_real_executor(task):
+                    await self._emit_executor_unavailable(
+                        session_id,
+                        message_id=bundle.message_id,
+                    )
+                    await self._trace_state_store.publish(
+                        session_id,
+                        TraceStage.EXECUTION_ORCHESTRATOR,
+                        "task_skipped_real_executor_unavailable",
+                        "execution_orchestrator",
+                        {"goal": task.goal},
+                        span_id=span_id,
+                        related_message_id=bundle.message_id,
+                    )
+                    continue
                 await self._trace_state_store.publish(
                     session_id,
                     TraceStage.TASK_GRAPH,
@@ -140,7 +157,11 @@ class ExecutionOrchestrator:
                     related_task_id=task.task_id,
                     related_message_id=bundle.message_id,
                 )
-                if task.status in {TaskStatus.RUNNING, TaskStatus.BLOCKED, TaskStatus.PAUSED}:
+                if task.status in {
+                    TaskStatus.RUNNING,
+                    TaskStatus.BLOCKED,
+                    TaskStatus.PAUSED,
+                } and self._supports_command(task, ControlCommandType.RESUME_TASK):
                     await self._resume_task(session_id, task, span_id=span_id)
             elif action.action_type == RuntimeActionType.CONTROL_TASK:
                 task = resolve_task_reference(session, action.target_task_ref)
@@ -185,8 +206,9 @@ class ExecutionOrchestrator:
             )
             return
 
-        apply_control(task, command.command_type)
         executor_id = self._executor_adapter_router.select_executor_id(task)
+        self._ensure_command_supported(executor_id, command.command_type)
+        apply_control(task, command.command_type)
         executor = self._registry.get(executor_id)
         if command.command_type == ControlCommandType.PAUSE_TASK:
             await executor.pause_task(task.task_id)
@@ -278,7 +300,14 @@ class ExecutionOrchestrator:
             related_message_id=related_message_id,
         )
         try:
-            action = self._response_generator.finalize(action)
+            action = await self._response_generator.finalize(
+                action,
+                trace_state_store=self._trace_state_store,
+                session_id=session_id,
+                span_id=span_id,
+                related_message_id=related_message_id,
+                related_task_id=related_task_id or action.target_task_id,
+            )
         except (LLMConfigurationError, LLMInvocationError) as exc:
             await self._trace_state_store.publish(
                 session_id,
@@ -340,6 +369,59 @@ class ExecutionOrchestrator:
             session_id,
             action,
             related_message_id=message_id,
+        )
+
+    async def _emit_executor_unavailable(
+        self, session_id: str, *, message_id: str | None
+    ) -> None:
+        action = ConversationAction(
+            action_id=new_id("conv"),
+            action_type=ConversationActionType.CHAT_REPLY,
+            reason="A real executor is required for that request, but Codex is not enabled in this runtime.",
+            render_text=(
+                "I can't check that right now because this runtime is still using the mock executor. "
+                "Enable Codex to handle system or external lookup requests."
+            ),
+        )
+        await self.emit_conversation_action(
+            session_id,
+            action,
+            related_message_id=message_id,
+        )
+
+    def _requires_real_executor(self, task) -> bool:
+        if not task.input_context.get("requires_executor_capability"):
+            return False
+        executor_id = self._executor_adapter_router.select_executor_id(task)
+        return executor_id == MOCK_EXECUTOR_ID
+
+    def _supports_command(self, task, command_type: ControlCommandType) -> bool:
+        executor_id = self._executor_adapter_router.select_executor_id(task)
+        capability = self._registry.get_capability(executor_id)
+        if command_type == ControlCommandType.CANCEL_TASK:
+            return capability.supports_cancel
+        if command_type in {
+            ControlCommandType.PAUSE_TASK,
+            ControlCommandType.RESUME_TASK,
+        }:
+            return capability.supports_pause
+        return True
+
+    def _ensure_command_supported(
+        self, executor_id: str, command_type: ControlCommandType
+    ) -> None:
+        capability = self._registry.get_capability(executor_id)
+        if command_type == ControlCommandType.CANCEL_TASK and capability.supports_cancel:
+            return
+        if (
+            command_type in {ControlCommandType.PAUSE_TASK, ControlCommandType.RESUME_TASK}
+            and capability.supports_pause
+        ):
+            return
+        if command_type == ControlCommandType.RETRY_TASK:
+            return
+        raise UnsupportedExecutorCommandError(
+            executor_id=executor_id, command_type=command_type.value
         )
 
     async def _start_task(self, session_id: str, task, *, span_id: str | None = None) -> None:

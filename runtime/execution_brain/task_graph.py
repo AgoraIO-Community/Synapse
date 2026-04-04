@@ -8,6 +8,8 @@ from runtime.protocols.tasks import Task
 def build_task(action: RuntimeAction, *, message_id: str, executor_id: str) -> Task:
     task_id = new_id("task")
     goal = action.payload["goal"]
+    input_context = dict(action.payload.get("input_context", {}))
+    input_context["requires_executor_capability"] = True
     return Task(
         task_id=task_id,
         root_task_id=task_id,
@@ -18,5 +20,5 @@ def build_task(action: RuntimeAction, *, message_id: str, executor_id: str) -> T
         candidate_executors=[executor_id],
         created_from_message_id=message_id,
         latest_instruction=goal,
-        input_context=action.payload.get("input_context", {}),
+        input_context=input_context,
     )

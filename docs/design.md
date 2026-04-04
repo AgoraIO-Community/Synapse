@@ -158,10 +158,18 @@ Defines concrete execution implementations.
 
 - `base.py`
   - Async executor contract.
+- `bootstrap.py`
+  - Registry composition and default-executor selection.
+- `external_backend.py`
+  - Generic boundary for external worker integrations.
+- `external.py`
+  - Generic adapter that converts external backend results into normalized execution events.
 - `registry.py`
   - Executor registry.
-- `mock.py`
-  - Mock executor used in V1.
+- `mock/`
+  - Mock executor package used in V1.
+- `codex/`
+  - Codex-specific backend and executor adapter, isolated from core runtime files.
 
 ### `api`
 
@@ -195,7 +203,7 @@ Defines what the communication brain receives and emits.
 - `UserMessage`
   - raw user input
 - `ConversationAction`
-  - typed communication intent such as `acknowledge`, `clarify`, `inform_progress`, `inform_done`
+  - typed communication intent such as `acknowledge`, `chat_reply`, `clarify`, `inform_progress`, `inform_done`
 - `CommunicationEvent`
   - emitted communication event
 
@@ -220,6 +228,17 @@ Defines how one message can produce multiple coordinated system effects.
   - scoped shared-state patch
 
 This is where the “one utterance, multiple effects” concept is encoded.
+
+Message outcomes should be treated as four distinct cases:
+
+- new task
+- task update/control
+- conversation-only
+- clarification
+
+`clarify` should only be used when task/control intent exists but cannot be resolved safely. `conversation-only` is reserved for social chat and meta questions about Synopse itself. All `create_task` requests are treated as requiring a real executor. If only the mock executor is active, task creation should fail clearly instead of producing fake-success task output.
+
+Response generation should operate from the agent’s perspective, using the typed action plus all supplied context, instead of mechanically rewriting a thin action shell.
 
 ### Task Protocol
 
@@ -339,11 +358,11 @@ Priority rules are deterministic:
 4. create new task
 5. low-priority conversation feedback
 
-## Mock Executor
+## Executor Integrations
 
-V1 uses one in-process mock executor.
+V1 keeps one in-process mock executor and adds an optional Codex-backed executor through the same normalized executor contract. When Codex is enabled and no explicit default is configured, new tasks use Codex by default while the mock remains registered for fallback and testing.
 
-It simulates:
+The mock executor simulates:
 
 - `accepted`
 - `started`
@@ -353,7 +372,16 @@ It simulates:
 - `completed`
 - `canceled`
 
-This keeps the runtime behavior observable without depending on an external tool or agent.
+This keeps the runtime behavior observable without depending on an external tool or agent, but it is not the intended default path for capability-gated question answering. When only the mock executor is active, capability-gated questions should be blocked with a clear user-facing message rather than simulated as successful answers.
+
+The Codex executor:
+
+- is registered independently from the mock executor
+- becomes the effective default executor when enabled unless another valid default is explicitly configured
+- is isolated behind a generic external-backend adapter layer
+- emits the same normalized `ExecutionEvent` protocol as any other executor
+- exposes capabilities so the UI can disable unsupported controls such as pause/resume
+- keeps Codex-specific subprocess and prompt logic out of the execution brain and main app bootstrap
 
 ## V1 Scope
 
@@ -374,6 +402,8 @@ Included:
 - implicit task resolution
 - executor registry
 - one mock executor
+- one optional Codex-backed executor integration
+- Codex-first task execution when enabled
 - HTTP endpoints
 - WebSocket event stream
 - unit and integration tests for runtime behavior
@@ -384,7 +414,6 @@ Not included:
 - authentication
 - production LLM integration
 - real voice I/O
-- real external executors
 - distributed runtime coordination
 - multi-executor scheduling
 
@@ -410,6 +439,8 @@ The existing schema already reserves the key fields needed for this:
 - `parent_task_id`
 - `depends_on_task_ids`
 - `executor_id` on execution events
+
+The current runtime also exposes executor capabilities in session snapshots so transport and UI layers can stay generic while respecting executor-specific control support.
 
 ### LLM Evolution
 

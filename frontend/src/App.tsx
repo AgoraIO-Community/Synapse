@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { createSession, openSessionStream, openTraceStream, sendCommand, sendMessage } from "./client";
 import type {
   CommandType,
   CommunicationEventPayload,
   ConnectionStatus,
+  ExecutorCapability,
   ExecutionEventPayload,
   SessionSnapshot,
   StreamEvent,
@@ -31,15 +32,28 @@ function formatMessageTime(timestamp: string) {
   return `${hours}:${minutes}:${seconds}.${milliseconds}`;
 }
 
-function canRunCommand(task: Task, command: CommandType) {
+function canRunCommand(
+  task: Task,
+  command: CommandType,
+  capabilitiesByExecutor: Record<string, ExecutorCapability>,
+) {
+  const capability = task.assigned_executor
+    ? capabilitiesByExecutor[task.assigned_executor]
+    : undefined;
   if (command === "pause_task") {
-    return task.status === "running";
+    return task.status === "running" && (capability?.supports_pause ?? true);
   }
   if (command === "resume_task") {
-    return task.status === "paused" || task.status === "blocked";
+    return (
+      (task.status === "paused" || task.status === "blocked") &&
+      (capability?.supports_pause ?? true)
+    );
   }
   if (command === "cancel_task") {
-    return ["queued", "running", "blocked", "paused"].includes(task.status);
+    return (
+      ["queued", "running", "blocked", "paused"].includes(task.status) &&
+      (capability?.supports_cancel ?? true)
+    );
   }
   return false;
 }
@@ -58,6 +72,9 @@ export default function App() {
   const [traceEvents, setTraceEvents] = useState<TraceEvent[]>([]);
   const [timeline, setTimeline] = useState<TimelineMessage[]>([]);
   const [tasks, setTasks] = useState<Record<string, Task>>({});
+  const [executorCapabilities, setExecutorCapabilities] = useState<
+    Record<string, ExecutorCapability>
+  >({});
   const [expandedEventId, setExpandedEventId] = useState<string | null>(null);
   const [expandedTraceEventId, setExpandedTraceEventId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -171,7 +188,14 @@ export default function App() {
       const nextTasks = Object.fromEntries(
         snapshot.task_registry.map((task) => [task.task_id, task]),
       );
+      const nextCapabilities = Object.fromEntries(
+        snapshot.executor_capabilities.map((capability) => [
+          capability.executor_id,
+          capability,
+        ]),
+      );
       setTasks(nextTasks);
+      setExecutorCapabilities(nextCapabilities);
       return;
     }
 
@@ -238,8 +262,7 @@ export default function App() {
     setTraceEvents((current) => [event, ...current].slice(0, MAX_EVENTS));
   }
 
-  async function handleSendMessage(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function submitComposerMessage() {
     if (!sessionId || !composer.trim() || !isStreamReady) {
       return;
     }
@@ -265,6 +288,20 @@ export default function App() {
     } finally {
       setIsSending(false);
     }
+  }
+
+  async function handleSendMessage(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    await submitComposerMessage();
+  }
+
+  async function handleComposerKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) {
+      return;
+    }
+
+    event.preventDefault();
+    await submitComposerMessage();
   }
 
   async function handleCommand(taskId: string, commandType: CommandType) {
@@ -297,7 +334,7 @@ export default function App() {
       <section className="hero">
         <div>
           <p className="eyebrow">Synopse Runtime Experience</p>
-          <h1>Front-stage conversation, back-stage execution.</h1>
+          <h1>Synopse</h1>
           <p className="intro">
             This UI lets you experience the communication brain and execution brain as one
             coordinated runtime: speak through the chat lane, watch tasks unfold beside it,
@@ -347,6 +384,7 @@ export default function App() {
             <textarea
               value={composer}
               onChange={(event) => setComposer(event.target.value)}
+              onKeyDown={(event) => void handleComposerKeyDown(event)}
               placeholder={
                 isStreamReady
                   ? "Ask Synopse to do something while you keep talking..."
@@ -372,76 +410,80 @@ export default function App() {
             </div>
           </div>
 
-          <div className="task-section">
-            <h3>Active</h3>
-            {activeTasks.length === 0 ? (
-              <div className="empty-state">No active tasks yet.</div>
-            ) : (
-              activeTasks.map((task) => (
-                <article key={task.task_id} className={`task-card status-${task.status}`}>
-                  <div className="task-head">
-                    <div>
-                      <strong>{task.title}</strong>
-                      <p>{task.goal}</p>
-                    </div>
-                    <span className="task-status">{task.status}</span>
-                  </div>
-                  <dl className="task-meta">
-                    <div>
-                      <dt>Executor</dt>
-                      <dd>{task.assigned_executor ?? "unassigned"}</dd>
-                    </div>
-                    <div>
-                      <dt>Updated</dt>
-                      <dd>{formatTime(task.updated_at)}</dd>
-                    </div>
-                    {task.block_reason ? (
+          <div className="task-sections">
+            <div className="task-section">
+              <h3>Active</h3>
+              {activeTasks.length === 0 ? (
+                <div className="empty-state">No active tasks yet.</div>
+              ) : (
+                activeTasks.map((task) => (
+                  <article key={task.task_id} className={`task-card status-${task.status}`}>
+                    <div className="task-head">
                       <div>
-                        <dt>Blocked</dt>
-                        <dd>{task.block_reason}</dd>
+                        <strong>{task.title}</strong>
+                        <p>{task.goal}</p>
                       </div>
-                    ) : null}
-                  </dl>
-                  <div className="task-actions">
-                    {(["pause_task", "resume_task", "cancel_task"] as CommandType[]).map(
-                      (commandType) => {
-                        const busy = pendingTaskCommand === `${task.task_id}:${commandType}`;
-                        return (
-                          <button
-                            key={commandType}
-                            type="button"
-                            className="ghost-button"
-                            disabled={!canRunCommand(task, commandType) || busy}
-                            onClick={() => handleCommand(task.task_id, commandType)}
-                          >
-                            {busy ? "..." : commandType.replace("_task", "").replace("_", " ")}
-                          </button>
-                        );
-                      },
-                    )}
-                  </div>
-                </article>
-              ))
-            )}
-          </div>
-
-          <div className="task-section">
-            <h3>Completed</h3>
-            {archivedTasks.length === 0 ? (
-              <div className="empty-state">Finished tasks will appear here.</div>
-            ) : (
-              archivedTasks.map((task) => (
-                <article key={task.task_id} className={`task-card status-${task.status}`}>
-                  <div className="task-head">
-                    <div>
-                      <strong>{task.title}</strong>
-                      <p>{task.output_summary ?? task.goal}</p>
+                      <span className="task-status">{task.status}</span>
                     </div>
-                    <span className="task-status">{task.status}</span>
-                  </div>
-                </article>
-              ))
-            )}
+                    <dl className="task-meta">
+                      <div>
+                        <dt>Executor</dt>
+                        <dd>{task.assigned_executor ?? "unassigned"}</dd>
+                      </div>
+                      <div>
+                        <dt>Updated</dt>
+                        <dd>{formatTime(task.updated_at)}</dd>
+                      </div>
+                      {task.block_reason ? (
+                        <div>
+                          <dt>Blocked</dt>
+                          <dd>{task.block_reason}</dd>
+                        </div>
+                      ) : null}
+                    </dl>
+                    <div className="task-actions">
+                      {(["pause_task", "resume_task", "cancel_task"] as CommandType[]).map(
+                        (commandType) => {
+                          const busy = pendingTaskCommand === `${task.task_id}:${commandType}`;
+                          return (
+                            <button
+                              key={commandType}
+                              type="button"
+                              className="ghost-button"
+                              disabled={
+                                !canRunCommand(task, commandType, executorCapabilities) || busy
+                              }
+                              onClick={() => handleCommand(task.task_id, commandType)}
+                            >
+                              {busy ? "..." : commandType.replace("_task", "").replace("_", " ")}
+                            </button>
+                          );
+                        },
+                      )}
+                    </div>
+                  </article>
+                ))
+              )}
+            </div>
+
+            <div className="task-section">
+              <h3>Completed</h3>
+              {archivedTasks.length === 0 ? (
+                <div className="empty-state">Finished tasks will appear here.</div>
+              ) : (
+                archivedTasks.map((task) => (
+                  <article key={task.task_id} className={`task-card status-${task.status}`}>
+                    <div className="task-head">
+                      <div>
+                        <strong>{task.title}</strong>
+                        <p>{task.output_summary ?? task.goal}</p>
+                      </div>
+                      <span className="task-status">{task.status}</span>
+                    </div>
+                  </article>
+                ))
+              )}
+            </div>
           </div>
         </section>
 

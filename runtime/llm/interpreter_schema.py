@@ -5,6 +5,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from runtime.infrastructure.ids import new_id
 from runtime.protocols.runtime import (
     ActionBundle,
+    ConversationMode,
     ContextPatch,
     ExecutionTrigger,
     PatchScope,
@@ -34,6 +35,7 @@ class InterpreterRoutingDecision(StrictSchemaModel):
     conversation_action_enabled: bool = True
     task_action_enabled: bool = True
     context_action_enabled: bool = True
+    conversation_mode: ConversationMode = ConversationMode.TASK
     needs_clarification: bool = False
     clarification_reason: str = ""
     priority_hint: Priority = Priority.NORMAL
@@ -57,6 +59,7 @@ class InterpreterAction(StrictSchemaModel):
     title: str = ""
     goal: str = ""
     simulate_blocked: bool = False
+    requires_executor_capability: bool = True
     latest_instruction: str = ""
     command_type: ControlCommandType = ControlCommandType.PAUSE_TASK
     reason: str = ""
@@ -94,6 +97,7 @@ def to_runtime_routing_decision(
         conversation_action_enabled=decision.conversation_action_enabled,
         task_action_enabled=decision.task_action_enabled,
         context_action_enabled=decision.context_action_enabled,
+        conversation_mode=decision.conversation_mode,
         needs_clarification=decision.needs_clarification,
         clarification_reason=decision.clarification_reason or None,
         priority_hint=decision.priority_hint,
@@ -109,6 +113,7 @@ def to_runtime_action(action: InterpreterAction) -> RuntimeAction:
             "goal": action.goal,
             "input_context": {
                 "simulate_blocked": action.simulate_blocked,
+                "requires_executor_capability": True,
             },
         }
         return RuntimeAction(

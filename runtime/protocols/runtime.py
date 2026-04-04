@@ -14,6 +14,12 @@ class ResolverStrategy(StrEnum):
     DIRECT_ID = "direct_id"
 
 
+class ConversationMode(StrEnum):
+    TASK = "task"
+    CONVERSATION_ONLY = "conversation_only"
+    CLARIFICATION = "clarification"
+
+
 class TargetScope(StrEnum):
     NEW_TASK = "new_task"
     EXISTING_TASK = "existing_task"
@@ -56,6 +62,7 @@ class RoutingDecision(BaseModel):
     conversation_action_enabled: bool = True
     task_action_enabled: bool = True
     context_action_enabled: bool = True
+    conversation_mode: ConversationMode = ConversationMode.TASK
     needs_clarification: bool = False
     clarification_reason: str | None = None
     priority_hint: Priority = Priority.NORMAL

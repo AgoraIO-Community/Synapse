@@ -5,7 +5,7 @@ from runtime.api.models import MessageRequest, MessageResponse
 from runtime.infrastructure.ids import new_id
 from runtime.llm.errors import LLMConfigurationError, LLMInvocationError
 from runtime.protocols.conversation import UserMessage
-from runtime.protocols.runtime import ActionBundle, RuntimeActionType
+from runtime.protocols.runtime import ActionBundle, ConversationMode, RuntimeActionType
 from runtime.protocols.trace import TraceStage
 
 router = APIRouter()
@@ -43,14 +43,16 @@ async def submit_message(
             span_id=span_id,
             related_message_id=message.message_id,
         )
-        routing_decision, bundle = services.action_router.route(
+        routing_decision, bundle = await services.action_router.route(
             message,
             snapshot,
             span_id=span_id,
         )
 
         initial_action = services.interaction_policy.build_initial_action(
-            routing_decision, bundle
+            routing_decision,
+            bundle,
+            user_message_text=message.text,
         )
         await services.trace_state_store.publish(
             session_id,
@@ -75,7 +77,19 @@ async def submit_message(
     except LLMInvocationError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
-    if routing_decision.needs_clarification:
+    if routing_decision.conversation_mode == ConversationMode.CLARIFICATION or routing_decision.needs_clarification:
+        safe_actions = [
+            action
+            for action in bundle.actions
+            if action.action_type == RuntimeActionType.APPLY_CONTEXT_PATCH
+        ]
+        bundle = ActionBundle(
+            bundle_id=bundle.bundle_id,
+            message_id=bundle.message_id,
+            actions=safe_actions,
+            relations=bundle.relations,
+        )
+    elif routing_decision.conversation_mode == ConversationMode.CONVERSATION_ONLY:
         safe_actions = [
             action
             for action in bundle.actions
@@ -89,11 +103,12 @@ async def submit_message(
         )
 
     try:
-        await services.execution_orchestrator.process_bundle(
-            session_id,
-            bundle,
-            span_id=span_id,
-        )
+        if bundle.actions:
+            await services.execution_orchestrator.process_bundle(
+                session_id,
+                bundle,
+                span_id=span_id,
+            )
     except LLMConfigurationError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except LLMInvocationError as exc:
