@@ -238,7 +238,7 @@ Message outcomes should be treated as four distinct cases:
 - conversation-only
 - clarification
 
-`clarify` should only be used when task/control intent exists but cannot be resolved safely. `conversation-only` is reserved for social chat and meta questions about Synopse itself. All `create_task` requests are treated as requiring a real executor. If only the mock executor is active, task creation should fail clearly instead of producing fake-success task output.
+`clarify` should only be used when task/control intent exists but cannot be resolved safely. `conversation-only` is reserved for social chat, subjective or persona-directed questions the agent can answer directly, and meta questions about Synopse itself. `create_task` requests default to requiring a real executor, but the action bundle may explicitly mark a task as mock-safe through `input_context.requires_executor_capability = false`. If only the mock executor is active, capability-gated task creation should fail clearly instead of producing fake-success task output.
 
 Response generation should operate from the agent’s perspective, using the typed action plus all supplied context, instead of mechanically rewriting a thin action shell.
 
@@ -276,6 +276,8 @@ The important future hooks are:
 - `depends_on_task_ids`
 
 These keep the schema compatible with later multi-executor or subtask flows.
+
+Runtime task creation is fail-fast: a `create_task` action must resolve to a non-empty `goal`, and to a non-empty `title` after runtime derivation. Malformed interpreter output should be rejected before task creation rather than normalized into blank task content.
 
 ### Execution Protocol
 
@@ -339,7 +341,11 @@ It currently stores:
 - `event_log`
 - `last_sequence`
 
-`conversation_state` now also carries a bounded `message_history` for LLM context. It stores the latest 30 persisted user/assistant messages. Transient streamed response chunks are excluded; only final assistant messages are durable history.
+`conversation_state` now also carries a bounded `message_history` for LLM context. It stores the latest 30 persisted user/assistant messages. Transient streamed response chunks are excluded; only final assistant messages are durable history. The message interpreter should consume only a compact slice of recent history plus clarification and executor-capability context, rather than serializing the full session snapshot into every interpreter request. Its Structured Outputs schema should stay lean, with a compact action object that avoids unnecessary padding fields, and its static prompt prefix should remain stable so prompt caching can reduce repeated interpreter latency.
+
+The message interpreter should treat the LLM's structured routing result as authoritative once it passes schema validation. Local code should enforce structural integrity, not reclassify social chat into tasks or vice versa after the model responds.
+
+Task completion replies should be rendered from the originating task thread, not from the latest unrelated session chat. Task-related user messages should be associated back to their resolved `task_id`, and terminal task replies should use task-scoped history plus the task's originating user message as response context.
 
 The communication brain and execution brain do not share state directly. They synchronize through the blackboard and protocol events.
 

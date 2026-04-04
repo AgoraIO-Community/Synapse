@@ -3,7 +3,10 @@ import json
 from types import SimpleNamespace
 
 import pytest
+from fastapi import HTTPException
 
+from runtime.api.messages import submit_message
+from runtime.api.models import MessageRequest
 from runtime.execution_brain import orchestrator as orchestrator_module
 from runtime.execution_brain import task_graph as task_graph_module
 from runtime.infrastructure.ids import new_id
@@ -69,9 +72,6 @@ def make_interpretation(message_id: str, text: str) -> InterpretationEnvelope:
                 priority=Priority.NORMAL,
                 execution_trigger=ExecutionTrigger.NONE,
                 scope_of_effect=ScopeOfEffect.SESSION,
-                command_type=ControlCommandType.CANCEL_TASK,
-                target_task_reference_type=TaskReferenceType.LATEST_ACTIVE,
-                target_task_reference_relation=TaskReferenceRelation.CURRENT,
                 latest_user_goal=text,
             )
         ]
@@ -99,9 +99,6 @@ def make_interpretation(message_id: str, text: str) -> InterpretationEnvelope:
                 priority=Priority.NORMAL,
                 execution_trigger=ExecutionTrigger.NONE,
                 scope_of_effect=ScopeOfEffect.SESSION,
-                command_type=ControlCommandType.CANCEL_TASK,
-                target_task_reference_type=TaskReferenceType.LATEST_ACTIVE,
-                target_task_reference_relation=TaskReferenceRelation.CURRENT,
                 latest_user_goal=text,
             )
         )
@@ -118,8 +115,6 @@ def make_interpretation(message_id: str, text: str) -> InterpretationEnvelope:
                 scope_of_effect=ScopeOfEffect.TASK,
                 title=text[:80],
                 goal=text,
-                simulate_blocked="need info" in lowered or "ask me" in lowered,
-                requires_executor_capability=False,
             )
         ]
         actions.append(
@@ -130,9 +125,6 @@ def make_interpretation(message_id: str, text: str) -> InterpretationEnvelope:
                 priority=Priority.NORMAL,
                 execution_trigger=ExecutionTrigger.NONE,
                 scope_of_effect=ScopeOfEffect.SESSION,
-                command_type=ControlCommandType.CANCEL_TASK,
-                target_task_reference_type=TaskReferenceType.LATEST_ACTIVE,
-                target_task_reference_relation=TaskReferenceRelation.CURRENT,
                 latest_user_goal=text,
             )
         )
@@ -143,7 +135,6 @@ def make_interpretation(message_id: str, text: str) -> InterpretationEnvelope:
             decision_id="decision_1",
             message_id=message_id,
             conversation_mode=conversation_mode,
-            task_action_enabled=conversation_mode == ConversationMode.TASK,
             priority_hint=priority,
             resolver_strategy=ResolverStrategy.IMPLICIT,
         ),
@@ -378,6 +369,109 @@ async def test_regular_chat_emits_chat_reply_without_creating_task():
 
     assert "task_created" not in [event.event_type for event in received]
     assert any(event.event_type == "chat_reply" for event in received)
+
+
+@pytest.mark.anyio
+async def test_social_followup_stays_conversation_only_without_creating_task():
+    services = build_services(build_test_services())
+    session = services.runtime_state_store.create_session()
+    queue = services.runtime_state_store.subscribe(session.session_id)
+
+    message = UserMessage(
+        message_id=new_id("message"),
+        session_id=session.session_id,
+        text="btw how are you doing recently",
+    )
+    snapshot = services.runtime_state_store.snapshot(session.session_id)
+    decision, bundle = await services.action_router.route(message, snapshot)
+
+    assert decision.conversation_mode == ConversationMode.CONVERSATION_ONLY
+    initial = services.interaction_policy.build_initial_action(
+        decision,
+        bundle,
+        user_message_text=message.text,
+    )
+    assert initial.action_type == ConversationActionType.CHAT_REPLY
+
+    await services.execution_orchestrator.emit_conversation_action(
+        session.session_id,
+        initial,
+        related_message_id=message.message_id,
+    )
+    if bundle.actions:
+        await services.execution_orchestrator.process_bundle(session.session_id, bundle)
+
+    received = []
+    for _ in range(3):
+        event = await asyncio.wait_for(queue.get(), timeout=1)
+        received.append(event)
+        if event.event_type == "context_patch_applied":
+            break
+
+    assert "task_created" not in [event.event_type for event in received]
+    assert any(event.event_type == "chat_reply" for event in received)
+
+
+@pytest.mark.anyio
+async def test_malformed_create_task_output_fails_before_task_creation():
+    settings = Settings(openai_api_key="test-key")
+
+    class InvalidCreateTaskClient:
+        def __init__(self):
+            self.responses = self
+
+        def parse(self, **kwargs):
+            payload = json.loads(kwargs["input"])
+            message_id = payload["message_id"]
+            return SimpleNamespace(
+                output_parsed=InterpretationEnvelope.model_construct(
+                    routing_decision=InterpreterRoutingDecision.model_construct(
+                        decision_id="decision_invalid",
+                        message_id=message_id,
+                        conversation_mode=ConversationMode.TASK,
+                        needs_clarification=False,
+                        clarification_reason=None,
+                        priority_hint=Priority.NORMAL,
+                        resolver_strategy=ResolverStrategy.IMPLICIT,
+                    ),
+                    action_bundle=InterpreterActionBundle.model_construct(
+                        bundle_id="bundle_invalid",
+                        message_id=message_id,
+                        actions=[
+                            InterpreterAction.model_construct(
+                                action_id="action_invalid",
+                                action_type=RuntimeActionType.CREATE_TASK,
+                                target_scope=TargetScope.NEW_TASK,
+                                priority=Priority.NORMAL,
+                                execution_trigger=ExecutionTrigger.HARD,
+                                scope_of_effect=ScopeOfEffect.TASK,
+                                title=None,
+                                goal=None,
+                                latest_instruction=None,
+                            )
+                        ],
+                    ),
+                )
+            )
+
+        def create(self, **kwargs):
+            return SimpleNamespace(output_text="unused")
+
+    provider = OpenAIProvider(settings, client=InvalidCreateTaskClient())
+    services = build_services(LLMServices(settings, provider=provider))
+    session = services.runtime_state_store.create_session()
+    queue = services.runtime_state_store.subscribe(session.session_id)
+
+    with pytest.raises(HTTPException, match="invalid runtime action payload") as exc_info:
+        await submit_message(
+            session.session_id,
+            MessageRequest(text="what is today's weather"),
+            services=services,
+        )
+
+    assert exc_info.value.status_code == 502
+    assert queue.empty()
+    assert services.runtime_state_store.snapshot(session.session_id).task_registry == []
 
 
 @pytest.mark.anyio

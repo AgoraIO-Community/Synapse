@@ -58,6 +58,47 @@ def get_message_history(
     return [_serialize_message_history_entry(item) for item in history[-limit:]]
 
 
+def associate_message_history_task(
+    session: BlackboardSessionState,
+    *,
+    message_id: str,
+    task_id: str,
+) -> None:
+    history = session.conversation_state.get(MESSAGE_HISTORY_KEY, [])
+    for item in history:
+        if item.get("message_id") == message_id:
+            item["task_id"] = task_id
+
+
+def find_message_history_entry(
+    session: BlackboardSessionState,
+    *,
+    message_id: str | None,
+) -> dict | None:
+    if message_id is None:
+        return None
+    history = session.conversation_state.get(MESSAGE_HISTORY_KEY, [])
+    for item in history:
+        if item.get("message_id") == message_id:
+            return _serialize_message_history_entry(item)
+    return None
+
+
+def get_task_message_history(
+    session: BlackboardSessionState,
+    *,
+    task_id: str,
+    limit: int = MAX_MESSAGE_HISTORY,
+) -> list[dict]:
+    history = session.conversation_state.get(MESSAGE_HISTORY_KEY, [])
+    task_history = [
+        _serialize_message_history_entry(item)
+        for item in history
+        if item.get("task_id") == task_id
+    ]
+    return task_history[-limit:]
+
+
 def apply_context_patch(session: BlackboardSessionState, patch: ContextPatch) -> None:
     target: dict
     if patch.scope == PatchScope.CONVERSATION:

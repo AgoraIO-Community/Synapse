@@ -5,11 +5,14 @@ from runtime.protocols.runtime import ContextPatch, PatchScope
 from runtime.protocols.tasks import ControlCommandType, Task, TaskStatus
 from runtime.shared_blackboard.blackboard_state import BlackboardSessionState
 from runtime.shared_blackboard.mutations import (
+    associate_message_history_task,
     append_message_history,
     apply_context_patch,
     apply_control,
     apply_task_update,
+    find_message_history_entry,
     get_message_history,
+    get_task_message_history,
 )
 
 
@@ -85,3 +88,35 @@ def test_get_message_history_serializes_existing_datetime_timestamps():
             "timestamp": "2026-04-04T12:00:00+00:00",
         }
     ]
+
+
+def test_task_message_history_can_be_associated_and_filtered():
+    session = BlackboardSessionState(session_id="session_test")
+    append_message_history(
+        session,
+        role="user",
+        text="check cpu",
+        message_id="message_1",
+    )
+    append_message_history(
+        session,
+        role="assistant",
+        text="working on it",
+        message_id="message_2",
+        task_id="task_1",
+    )
+    append_message_history(
+        session,
+        role="user",
+        text="random follow-up",
+        message_id="message_3",
+    )
+
+    associate_message_history_task(session, message_id="message_1", task_id="task_1")
+
+    task_history = get_task_message_history(session, task_id="task_1")
+    origin_entry = find_message_history_entry(session, message_id="message_1")
+
+    assert [item["message_id"] for item in task_history] == ["message_1", "message_2"]
+    assert origin_entry is not None
+    assert origin_entry["task_id"] == "task_1"

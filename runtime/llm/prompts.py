@@ -1,43 +1,74 @@
 from __future__ import annotations
 
 import json
+from typing import Any
 
 from runtime.protocols.conversation import ConversationAction
 from runtime.protocols.stream import SessionSnapshot
 
 
+INTERPRETER_MESSAGE_HISTORY_LIMIT = 10
+INTERPRETER_PROMPT_CACHE_KEY = "synopse:message-interpreter:v2"
+
+
 def build_interpreter_instructions() -> str:
     return (
-        "You are the Message Interpreter for a communication-brain/execution-brain runtime. "
-        "Interpret the latest user message into a strictly structured routing_decision and "
-        "action_bundle. Do not produce prose. Preserve the supplied message_id in both objects. "
-        "Generate id strings with prefixes like decision_, bundle_, and action_. "
-        "Use only the flat action fields defined by the schema. "
-        "The communication brain does not have external lookup or system-state capabilities. "
-        "Use conversation_only only for social chat, small talk, thanks, and meta questions about Synopse itself. "
-        "If the user is asking for information that would require checking the world, the system, files, tools, or any executor capability, route it as task. "
-        "Set conversation_mode to 'task' for actionable requests and capability-gated questions. "
-        "Set conversation_mode to 'clarification' only when you truly cannot act safely on a task or control request. "
-        "When the message updates or controls an existing task, target an existing task reference "
-        "instead of creating a new task. When the message is ambiguous, set needs_clarification "
-        "and provide a short clarification_reason. "
-        "Examples: 'hi' -> conversation_only, 'how are you' -> conversation_only, "
-        "'what does this system do?' -> conversation_only, "
-        "'what time is it?' -> task with create_task, "
-        "'search flights to Tokyo tomorrow' -> task with create_task, "
-        "'continue with the recipient info' -> update_task, "
+        "You are the Message Interpreter for Synopse. "
+        "Return only schema-valid structured output. Preserve message_id and generate ids with "
+        "decision_, bundle_, and action_ prefixes. "
+        "Use only fields relevant to the chosen action type. "
+        "conversation_only is for social chat, thanks, persona or subjective questions, and "
+        "meta questions about Synopse itself. "
+        "task is for actionable requests or anything requiring executor, world, system, file, "
+        "or tool access. "
+        "clarification is only for task or control intent that cannot be acted on safely. "
+        "Use message_history, pending_clarifications, and executor_capabilities as context. "
+        "For create_task, always provide a concrete non-empty goal; title may be omitted if redundant. "
+        "Prefer update_task or control_task over create_task when the message refers to an "
+        "existing task. "
+        "Examples: 'hi' -> conversation_only; 'how do you feel?' -> conversation_only; "
+        "'what time is it?' -> create_task; 'what is today's weather?' -> create_task; "
+        "'check the logs' -> create_task; 'continue with the recipient info' -> update_task; "
         "'pause it' with no active task -> clarification. "
-        "For fields that do not apply to a given action type, leave strings empty and booleans false. "
         "Do not add any keys that are not in the schema."
     )
+
+
+def _message_history_context(snapshot: SessionSnapshot) -> list[dict[str, Any]]:
+    history = snapshot.conversation_state.get("message_history", [])
+    return history[-INTERPRETER_MESSAGE_HISTORY_LIMIT:]
+
+
+def _pending_clarification_context(snapshot: SessionSnapshot) -> list[dict[str, Any]]:
+    return [
+        {
+            "action_type": action.action_type.value,
+            "target_task_id": action.target_task_id,
+            "reason": action.reason,
+        }
+        for action in snapshot.pending_clarifications
+    ]
+
+
+def _executor_capability_context(snapshot: SessionSnapshot) -> list[dict[str, Any]]:
+    return [
+        {
+            "executor_id": capability.executor_id,
+            "capability_tags": capability.capability_tags,
+            "supports_cancel": capability.supports_cancel,
+            "supports_streaming": capability.supports_streaming,
+        }
+        for capability in snapshot.executor_capabilities
+    ]
 
 
 def build_interpreter_input(*, message_id: str, text: str, snapshot: SessionSnapshot) -> str:
     payload = {
         "message_id": message_id,
         "latest_user_message": text,
-        "message_history": snapshot.conversation_state.get("message_history", []),
-        "session_snapshot": snapshot.model_dump(mode="json"),
+        "message_history": _message_history_context(snapshot),
+        "pending_clarifications": _pending_clarification_context(snapshot),
+        "executor_capabilities": _executor_capability_context(snapshot),
     }
     return json.dumps(payload, indent=2, sort_keys=True)
 

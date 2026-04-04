@@ -24,10 +24,13 @@ from runtime.protocols.stream import StreamCategory
 from runtime.protocols.trace import TraceStage
 from runtime.protocols.tasks import ControlCommand, ControlCommandType, TaskStatus
 from runtime.shared_blackboard.mutations import (
+    associate_message_history_task,
     append_message_history,
     apply_context_patch,
     apply_control,
+    find_message_history_entry,
     get_message_history,
+    get_task_message_history,
     apply_task_update,
     upsert_task,
 )
@@ -122,6 +125,11 @@ class ExecutionOrchestrator:
                     related_task_id=task.task_id,
                 )
                 upsert_task(session, task)
+                associate_message_history_task(
+                    session,
+                    message_id=bundle.message_id,
+                    task_id=task.task_id,
+                )
                 await self._runtime_state_store.publish(
                     session_id,
                     StreamCategory.TASK,
@@ -141,6 +149,11 @@ class ExecutionOrchestrator:
                         message_id=bundle.message_id,
                     )
                     continue
+                associate_message_history_task(
+                    session,
+                    message_id=bundle.message_id,
+                    task_id=task.task_id,
+                )
                 apply_task_update(task, action.payload)
                 await self._trace_state_store.publish(
                     session_id,
@@ -174,6 +187,11 @@ class ExecutionOrchestrator:
                         message_id=bundle.message_id,
                     )
                     continue
+                associate_message_history_task(
+                    session,
+                    message_id=bundle.message_id,
+                    task_id=task.task_id,
+                )
                 command_type = ControlCommandType(action.payload["command_type"])
                 command = ControlCommand(
                     command_id=new_id("cmd"),
@@ -316,6 +334,13 @@ class ExecutionOrchestrator:
             related_message_id=related_message_id,
         )
         session = self._runtime_state_store.get_session(session_id)
+        conversation_task_id = related_task_id or action.target_task_id
+        if conversation_task_id is not None:
+            self._enrich_task_action_metadata(
+                session,
+                action,
+                task_id=conversation_task_id,
+            )
         action.metadata.setdefault("message_history", get_message_history(session))
         response_render_payload = {"action_type": action.action_type.value}
         try:
@@ -438,7 +463,7 @@ class ExecutionOrchestrator:
             event.model_dump(mode="json"),
             related_task_id=related_task_id or action.target_task_id,
             related_message_id=related_message_id,
-        )
+            )
 
     async def _emit_clarification(
         self, session_id: str, *, reason: str, message_id: str | None
@@ -477,6 +502,33 @@ class ExecutionOrchestrator:
             return False
         executor_id = self._executor_adapter_router.select_executor_id(task)
         return executor_id == MOCK_EXECUTOR_ID
+
+    def _enrich_task_action_metadata(
+        self,
+        session,
+        action: ConversationAction,
+        *,
+        task_id: str,
+    ) -> None:
+        task = session.task_registry.get(task_id)
+        if task is None:
+            return
+
+        task_history = get_task_message_history(session, task_id=task_id)
+        if task_history:
+            action.metadata["message_history"] = task_history
+
+        origin_message = find_message_history_entry(
+            session,
+            message_id=task.created_from_message_id,
+        )
+        if origin_message is not None:
+            action.metadata.setdefault("user_message", origin_message.get("text"))
+            action.metadata["origin_message_id"] = origin_message.get("message_id")
+
+        action.metadata["origin_task_id"] = task.task_id
+        action.metadata.setdefault("task_goal", task.goal)
+        action.metadata.setdefault("latest_instruction", task.latest_instruction)
 
     async def _start_task(self, session_id: str, task, *, span_id: str | None = None) -> None:
         executor_id = self._executor_adapter_router.select_executor_id(task)

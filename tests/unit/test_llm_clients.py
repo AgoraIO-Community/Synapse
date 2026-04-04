@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
 from runtime.infrastructure import config as config_module
 from runtime.infrastructure.config import Settings
@@ -21,12 +22,15 @@ from runtime.llm.message_interpreter import MessageInterpreterClient
 from runtime.llm.openai_client import OpenAIProvider
 from runtime.llm.prompts import (
     build_interpreter_input,
+    build_interpreter_instructions,
     build_response_input,
     build_response_instructions,
+    INTERPRETER_PROMPT_CACHE_KEY,
 )
 from runtime.llm.responder import ResponseClient
 from runtime.main import build_services
 from runtime.protocols.conversation import ConversationAction, ConversationActionType
+from runtime.protocols.execution import ExecutorCapability
 from runtime.protocols.runtime import (
     ConversationMode,
     ExecutionTrigger,
@@ -41,8 +45,10 @@ from runtime.shared_blackboard.trace_state import TraceStateStore
 from runtime.protocols.tasks import (
     ControlCommandType,
     Priority,
+    Task,
     TaskReferenceRelation,
     TaskReferenceType,
+    TaskStatus,
 )
 
 
@@ -51,11 +57,15 @@ class FakeResponses:
         self._parsed = parsed
         self._text = text
         self._stream_events = stream_events or []
+        self.last_parse_kwargs: dict | None = None
+        self.last_create_kwargs: dict | None = None
 
     def parse(self, **kwargs):
+        self.last_parse_kwargs = kwargs
         return SimpleNamespace(output_parsed=self._parsed)
 
     def create(self, **kwargs):
+        self.last_create_kwargs = kwargs
         return SimpleNamespace(output_text=self._text)
 
     def stream(self, **kwargs):
@@ -137,9 +147,6 @@ def make_interpretation(message_id: str) -> InterpretationEnvelope:
                 priority=Priority.NORMAL,
                 execution_trigger=ExecutionTrigger.NONE,
                 scope_of_effect=ScopeOfEffect.SESSION,
-                command_type=ControlCommandType.CANCEL_TASK,
-                target_task_reference_type=TaskReferenceType.LATEST_ACTIVE,
-                target_task_reference_relation=TaskReferenceRelation.CURRENT,
                 latest_user_goal="Search flights",
             ),
         ],
@@ -175,9 +182,6 @@ def make_clarifying_chat_interpretation(message_id: str) -> InterpretationEnvelo
                     priority=Priority.NORMAL,
                     execution_trigger=ExecutionTrigger.NONE,
                     scope_of_effect=ScopeOfEffect.SESSION,
-                    command_type=ControlCommandType.CANCEL_TASK,
-                    target_task_reference_type=TaskReferenceType.LATEST_ACTIVE,
-                    target_task_reference_relation=TaskReferenceRelation.CURRENT,
                     latest_user_goal="hi",
                 )
             ],
@@ -211,9 +215,6 @@ def make_conversation_only_interpretation(
                     priority=Priority.NORMAL,
                     execution_trigger=ExecutionTrigger.NONE,
                     scope_of_effect=ScopeOfEffect.SESSION,
-                    command_type=ControlCommandType.CANCEL_TASK,
-                    target_task_reference_type=TaskReferenceType.LATEST_ACTIVE,
-                    target_task_reference_relation=TaskReferenceRelation.CURRENT,
                     latest_user_goal=latest_user_goal,
                 )
             ],
@@ -250,42 +251,82 @@ def test_message_interpreter_uses_mocked_openai_provider():
     assert bundle.actions[0].payload["input_context"]["requires_executor_capability"] is True
 
 
-def test_message_interpreter_normalizes_regular_chat_out_of_clarify():
+def test_message_interpreter_preserves_model_conversation_only_output():
     message_id = "message_chat"
-    interpreter = MessageInterpreterClient()
-
-    normalized = interpreter._normalize_interpretation(
-        make_clarifying_chat_interpretation(message_id),
-        message_id=message_id,
-        text="hi",
-    )
-
-    decision = normalized.routing_decision
-    bundle = normalized.action_bundle
-    assert decision.conversation_mode == ConversationMode.CONVERSATION_ONLY
-    assert decision.needs_clarification is False
-    assert all(action.action_type != RuntimeActionType.CREATE_TASK for action in bundle.actions)
-
-
-def test_message_interpreter_routes_capability_gated_question_to_task():
-    message_id = "message_question"
-    interpreter = MessageInterpreterClient()
-
-    normalized = interpreter._normalize_interpretation(
-        make_conversation_only_interpretation(
-            message_id,
-            latest_user_goal="tell me what time is it",
+    settings = Settings(openai_api_key="test-key")
+    provider = OpenAIProvider(
+        settings,
+        client=FakeOpenAIClient(
+            parsed=make_conversation_only_interpretation(
+                message_id,
+                latest_user_goal="hi",
+            )
         ),
-        message_id=message_id,
-        text="tell me what time is it",
+    )
+    interpreter = MessageInterpreterClient(provider)
+
+    decision, bundle = asyncio.run(
+        interpreter.interpret(
+            session_id="session_test",
+            message_id=message_id,
+            text="hi",
+            snapshot=make_snapshot(),
+        )
     )
 
-    decision = normalized.routing_decision
-    bundle = normalized.action_bundle
+    assert decision.conversation_mode == ConversationMode.CONVERSATION_ONLY
+    assert len(bundle.actions) == 1
+    assert bundle.actions[0].action_type == RuntimeActionType.APPLY_CONTEXT_PATCH
+
+
+def test_message_interpreter_preserves_model_task_output():
+    message_id = "message_question"
+    settings = Settings(openai_api_key="test-key")
+    provider = OpenAIProvider(
+        settings,
+        client=FakeOpenAIClient(parsed=make_interpretation(message_id)),
+    )
+    interpreter = MessageInterpreterClient(provider)
+
+    decision, bundle = asyncio.run(
+        interpreter.interpret(
+            session_id="session_test",
+            message_id=message_id,
+            text="tell me what time is it",
+            snapshot=make_snapshot(),
+        )
+    )
+
     assert decision.conversation_mode == ConversationMode.TASK
     assert bundle.actions[0].action_type == RuntimeActionType.CREATE_TASK
-    assert bundle.actions[0].goal == "tell me what time is it"
-    assert bundle.actions[0].requires_executor_capability is True
+    assert bundle.actions[0].payload["goal"] == "Search flights to Tokyo"
+
+
+def test_message_interpreter_does_not_synthesize_task_from_model_conversation_only():
+    message_id = "message_social_followup"
+    settings = Settings(openai_api_key="test-key")
+    provider = OpenAIProvider(
+        settings,
+        client=FakeOpenAIClient(
+            parsed=make_conversation_only_interpretation(
+                message_id,
+                latest_user_goal="btw how are you doing recently",
+            )
+        ),
+    )
+    interpreter = MessageInterpreterClient(provider)
+
+    decision, bundle = asyncio.run(
+        interpreter.interpret(
+            session_id="session_test",
+            message_id=message_id,
+            text="btw how are you doing recently",
+            snapshot=make_snapshot(),
+        )
+    )
+
+    assert decision.conversation_mode == ConversationMode.CONVERSATION_ONLY
+    assert all(action.action_type != RuntimeActionType.CREATE_TASK for action in bundle.actions)
 
 
 def test_interpreter_schema_converts_to_runtime_bundle():
@@ -297,6 +338,64 @@ def test_interpreter_schema_converts_to_runtime_bundle():
     assert runtime_bundle.actions[0].payload["goal"] == "Search flights to Tokyo"
     assert runtime_bundle.actions[0].payload["input_context"]["requires_executor_capability"] is True
     assert runtime_bundle.actions[1].action_type == RuntimeActionType.APPLY_CONTEXT_PATCH
+
+
+def test_interpreter_schema_derives_create_task_title_from_goal():
+    bundle = InterpreterActionBundle(
+        bundle_id="bundle_derive_title",
+        message_id="message_derive_title",
+        actions=[
+            InterpreterAction(
+                action_id="action_1",
+                action_type=RuntimeActionType.CREATE_TASK,
+                target_scope=TargetScope.NEW_TASK,
+                priority=Priority.NORMAL,
+                execution_trigger=ExecutionTrigger.HARD,
+                scope_of_effect=ScopeOfEffect.TASK,
+                goal="Check today's weather",
+            )
+        ],
+    )
+
+    runtime_bundle = to_runtime_action_bundle(bundle)
+
+    assert runtime_bundle.actions[0].payload["goal"] == "Check today's weather"
+    assert runtime_bundle.actions[0].payload["title"] == "Check today's weather"
+
+
+def test_interpreter_schema_rejects_create_task_without_goal():
+    with pytest.raises(ValidationError, match="create_task requires a non-empty goal"):
+        InterpreterAction(
+            action_id="action_missing_goal",
+            action_type=RuntimeActionType.CREATE_TASK,
+            target_scope=TargetScope.NEW_TASK,
+            priority=Priority.NORMAL,
+            execution_trigger=ExecutionTrigger.HARD,
+            scope_of_effect=ScopeOfEffect.TASK,
+            goal="   ",
+        )
+
+
+def test_interpreter_schema_rejects_whitespace_only_create_task_title():
+    with pytest.raises(
+        ValidationError, match="create_task title must be non-empty when provided"
+    ):
+        InterpreterAction(
+            action_id="action_bad_title",
+            action_type=RuntimeActionType.CREATE_TASK,
+            target_scope=TargetScope.NEW_TASK,
+            priority=Priority.NORMAL,
+            execution_trigger=ExecutionTrigger.HARD,
+            scope_of_effect=ScopeOfEffect.TASK,
+            title="   ",
+            goal="Check today's weather",
+        )
+
+
+def test_interpretation_envelope_schema_avoids_one_of():
+    schema_json = InterpretationEnvelope.model_json_schema()
+
+    assert "oneOf" not in str(schema_json)
 
 
 def test_message_interpreter_rejects_wrong_message_id():
@@ -313,6 +412,56 @@ def test_message_interpreter_rejects_wrong_message_id():
                 session_id="session_test",
                 message_id="message_1",
                 text="search flights to tokyo",
+                snapshot=make_snapshot(),
+            )
+        )
+
+
+def test_message_interpreter_rejects_invalid_create_task_payload_from_model():
+    invalid_envelope = InterpretationEnvelope.model_construct(
+        routing_decision=InterpreterRoutingDecision.model_construct(
+            decision_id="decision_invalid",
+            message_id="message_invalid",
+            conversation_mode=ConversationMode.TASK,
+            needs_clarification=False,
+            clarification_reason=None,
+            priority_hint=Priority.NORMAL,
+            resolver_strategy=ResolverStrategy.IMPLICIT,
+        ),
+        action_bundle=InterpreterActionBundle.model_construct(
+            bundle_id="bundle_invalid",
+            message_id="message_invalid",
+            actions=[
+                InterpreterAction.model_construct(
+                    action_id="action_invalid",
+                    action_type=RuntimeActionType.CREATE_TASK,
+                    target_scope=TargetScope.NEW_TASK,
+                    priority=Priority.NORMAL,
+                    execution_trigger=ExecutionTrigger.HARD,
+                    scope_of_effect=ScopeOfEffect.TASK,
+                    title=None,
+                    goal=None,
+                    latest_instruction=None,
+                )
+            ],
+        ),
+    )
+    settings = Settings(openai_api_key="test-key")
+    provider = OpenAIProvider(
+        settings,
+        client=FakeOpenAIClient(parsed=invalid_envelope),
+    )
+    interpreter = MessageInterpreterClient(provider)
+
+    with pytest.raises(
+        LLMInvocationError,
+        match="Interpreter returned invalid runtime action payload: create_task requires a non-empty goal",
+    ):
+        asyncio.run(
+            interpreter.interpret(
+                session_id="session_test",
+                message_id="message_invalid",
+                text="what is today's weather",
                 snapshot=make_snapshot(),
             )
         )
@@ -380,8 +529,8 @@ def test_build_interpreter_input_includes_message_history():
         session_id="session_test",
         conversation_state={
             "message_history": [
-                {"role": "user", "text": "hello", "message_id": "m1"},
-                {"role": "assistant", "text": "hi", "message_id": "m2"},
+                {"role": "user", "text": f"message-{index}", "message_id": f"m{index}"}
+                for index in range(12)
             ]
         },
     )
@@ -393,7 +542,50 @@ def test_build_interpreter_input_includes_message_history():
     )
 
     assert '"message_history"' in rendered_input
-    assert '"text": "hello"' in rendered_input
+    assert '"text": "message-11"' in rendered_input
+    assert '"text": "message-2"' in rendered_input
+    assert '"text": "message-1"' not in rendered_input
+
+
+def test_build_interpreter_input_uses_compact_runtime_context():
+    snapshot = SessionSnapshot(
+        session_id="session_test",
+        conversation_state={
+            "message_history": [
+                {"role": "user", "text": "hello", "message_id": "m1"},
+            ]
+        },
+        pending_clarifications=[
+            ConversationAction(
+                action_id="conv_1",
+                action_type=ConversationActionType.CLARIFY,
+                target_task_id="task_active",
+                reason="Need recipient info",
+            )
+        ],
+        executor_capabilities=[
+            ExecutorCapability(
+                executor_id="codex_executor",
+                label="Codex Executor",
+                capability_tags=["coding"],
+                supports_cancel=True,
+                supports_streaming=True,
+            )
+        ],
+    )
+
+    rendered_input = build_interpreter_input(
+        message_id="message_1",
+        text="continue with the recipient info",
+        snapshot=snapshot,
+    )
+
+    assert '"pending_clarifications"' in rendered_input
+    assert '"Need recipient info"' in rendered_input
+    assert '"executor_capabilities"' in rendered_input
+    assert '"executor_id": "codex_executor"' in rendered_input
+    assert '"active_tasks"' not in rendered_input
+    assert '"session_snapshot"' not in rendered_input
 
 
 def test_build_response_instructions_emphasize_concise_spoken_replies():
@@ -402,6 +594,15 @@ def test_build_response_instructions_emphasize_concise_spoken_replies():
     assert "spoken aloud" in instructions
     assert "one or two short sentences" in instructions
     assert "Summarize the full task result" in instructions
+
+
+def test_build_interpreter_instructions_keep_core_routing_policy_compact():
+    instructions = build_interpreter_instructions()
+
+    assert "conversation_only is for social chat" in instructions
+    assert "create_task, always provide a concrete non-empty goal" in instructions
+    assert "Prefer update_task or control_task over create_task" in instructions
+    assert len(instructions) < 1400
 
 
 def test_build_response_input_includes_message_history():
@@ -498,6 +699,9 @@ def test_openai_provider_emits_interpreter_trace_payloads():
     assert request_payload["instructions"] == "interpret this"
     assert request_payload["input"] == '{"message_id":"message_1"}'
     assert request_payload["schema_name"] == "InterpretationEnvelope"
+    assert request_payload["prompt_cache_key"] == INTERPRETER_PROMPT_CACHE_KEY
+    assert provider._client.responses.last_parse_kwargs is not None
+    assert provider._client.responses.last_parse_kwargs["prompt_cache_key"] == INTERPRETER_PROMPT_CACHE_KEY
     assert "parsed_output" in response_payload
     assert_duration_ms(response_payload)
     assert snapshot.recent_traces[0].stage == TraceStage.MESSAGE_INTERPRETER

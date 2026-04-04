@@ -9,6 +9,7 @@ from pydantic import BaseModel
 
 from runtime.infrastructure.config import Settings
 from runtime.llm.errors import LLMConfigurationError, LLMInvocationError
+from runtime.llm.prompts import INTERPRETER_PROMPT_CACHE_KEY
 from runtime.llm.render_result import LLMResponseDetails, LLMResponseStreamEvent
 from runtime.protocols.trace import TraceStage
 from runtime.shared_blackboard.trace_state import TraceStateStore
@@ -99,6 +100,7 @@ class OpenAIProvider:
                 "instructions": instructions,
                 "input": input_text,
                 "schema_name": schema.__name__,
+                "prompt_cache_key": INTERPRETER_PROMPT_CACHE_KEY,
             },
             span_id=span_id,
             related_message_id=related_message_id,
@@ -111,6 +113,7 @@ class OpenAIProvider:
                     model=self._settings.openai_model,
                     instructions=instructions,
                     input=input_text,
+                    prompt_cache_key=INTERPRETER_PROMPT_CACHE_KEY,
                     text_format=schema,
                 )
             )
