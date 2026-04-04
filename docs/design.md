@@ -207,6 +207,8 @@ Defines what the communication brain receives and emits.
 - `CommunicationEvent`
   - emitted communication event
 
+The runtime may also emit transient partial communication updates over the live websocket while a response is being generated. Those partial chunks are not persisted in session history; only the final communication event is durable.
+
 The communication layer is typed first. Rendered text is derived from typed actions, not used as the source of truth.
 
 ### Runtime Protocol
@@ -390,6 +392,7 @@ Included:
 - FastAPI backend runtime
 - separate React + Vite frontend demo
 - chat-first UI for communication events
+- streamed assistant text over the live websocket
 - task cards with pause, resume, and cancel controls
 - live activity feed with expandable event payloads
 

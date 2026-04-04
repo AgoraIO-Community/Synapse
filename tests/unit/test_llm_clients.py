@@ -43,9 +43,10 @@ from runtime.protocols.tasks import (
 
 
 class FakeResponses:
-    def __init__(self, parsed=None, text: str | None = None):
+    def __init__(self, parsed=None, text: str | None = None, stream_events=None):
         self._parsed = parsed
         self._text = text
+        self._stream_events = stream_events or []
 
     def parse(self, **kwargs):
         return SimpleNamespace(output_parsed=self._parsed)
@@ -53,10 +54,27 @@ class FakeResponses:
     def create(self, **kwargs):
         return SimpleNamespace(output_text=self._text)
 
+    def stream(self, **kwargs):
+        return FakeResponseStream(self._stream_events)
+
+
+class FakeResponseStream:
+    def __init__(self, events):
+        self._events = events
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+    def __iter__(self):
+        return iter(self._events)
+
 
 class FakeOpenAIClient:
-    def __init__(self, parsed=None, text: str | None = None):
-        self.responses = FakeResponses(parsed=parsed, text=text)
+    def __init__(self, parsed=None, text: str | None = None, stream_events=None):
+        self.responses = FakeResponses(parsed=parsed, text=text, stream_events=stream_events)
 
 
 def make_snapshot() -> SessionSnapshot:
@@ -433,3 +451,41 @@ def test_openai_provider_emits_response_trace_payloads():
     assert request_payload["input"] == '{"action_type":"acknowledge"}'
     assert response_payload["output_text"] == "Rendered response"
     assert snapshot.recent_traces[0].stage == TraceStage.RESPONSE_GENERATOR
+
+
+def test_openai_provider_stream_text_emits_stream_trace_payloads():
+    settings = Settings(openai_api_key="test-key")
+    trace_store = TraceStateStore()
+    provider = OpenAIProvider(
+        settings,
+        client=FakeOpenAIClient(
+            stream_events=[
+                SimpleNamespace(type="response.output_text.delta", delta="Hello "),
+                SimpleNamespace(type="response.output_text.delta", delta="world"),
+                SimpleNamespace(type="response.output_text.done", text="Hello world"),
+            ]
+        ),
+    )
+
+    async def collect():
+        chunks = []
+        async for chunk in provider.stream_text(
+            instructions="reply naturally",
+            input_text='{"action_type":"chat_reply"}',
+            trace_state_store=trace_store,
+            session_id="session_test",
+            span_id="span_3",
+            related_message_id="message_1",
+        ):
+            chunks.append(chunk)
+        return chunks
+
+    output = asyncio.run(collect())
+
+    snapshot = trace_store.snapshot("session_test")
+    assert output == ["Hello ", "world"]
+    assert [event.event_type for event in snapshot.recent_traces] == [
+        "llm_response_stream_request",
+        "llm_response_stream_response",
+    ]
+    assert snapshot.recent_traces[1].payload["output_text"] == "Hello world"

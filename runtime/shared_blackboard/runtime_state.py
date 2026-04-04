@@ -55,6 +55,51 @@ class RuntimeStateStore:
         related_task_id: str | None = None,
         related_message_id: str | None = None,
     ) -> StreamEvent:
+        return await self._publish(
+            session_id,
+            category,
+            event_type,
+            source,
+            payload,
+            persist=True,
+            related_task_id=related_task_id,
+            related_message_id=related_message_id,
+        )
+
+    async def publish_transient(
+        self,
+        session_id: str,
+        category: StreamCategory,
+        event_type: str,
+        source: str,
+        payload: dict,
+        *,
+        related_task_id: str | None = None,
+        related_message_id: str | None = None,
+    ) -> StreamEvent:
+        return await self._publish(
+            session_id,
+            category,
+            event_type,
+            source,
+            payload,
+            persist=False,
+            related_task_id=related_task_id,
+            related_message_id=related_message_id,
+        )
+
+    async def _publish(
+        self,
+        session_id: str,
+        category: StreamCategory,
+        event_type: str,
+        source: str,
+        payload: dict,
+        *,
+        persist: bool,
+        related_task_id: str | None = None,
+        related_message_id: str | None = None,
+    ) -> StreamEvent:
         session = self.get_session(session_id)
         session.last_sequence += 1
         event = StreamEvent(
@@ -69,7 +114,8 @@ class RuntimeStateStore:
             timestamp=utc_now(),
             payload=payload,
         )
-        session.event_log.append(event)
+        if persist:
+            session.event_log.append(event)
         for queue in list(session.subscribers):
             await queue.put(event)
         return event

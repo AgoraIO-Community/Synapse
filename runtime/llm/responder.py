@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+
 from runtime.llm.errors import LLMInvocationError
 from runtime.llm.openai_client import OpenAIProvider
 from runtime.llm.prompts import build_response_input, build_response_instructions
@@ -43,3 +45,36 @@ class ResponseClient:
             related_message_id=related_message_id,
             related_task_id=related_task_id,
         )
+
+    async def stream_render(
+        self,
+        action: ConversationAction,
+        *,
+        trace_state_store: TraceStateStore | None = None,
+        session_id: str | None = None,
+        span_id: str | None = None,
+        related_message_id: str | None = None,
+        related_task_id: str | None = None,
+    ) -> AsyncIterator[str]:
+        if action.render_text:
+            yield action.render_text
+            return
+
+        if action.action_type == ConversationActionType.CHAT_REPLY and not action.metadata.get(
+            "user_message"
+        ):
+            raise LLMInvocationError("chat_reply requires metadata.user_message for response generation.")
+
+        if self._provider is None:
+            raise LLMInvocationError("Response generator is missing its OpenAI provider.")
+
+        async for delta in self._provider.stream_text(
+            instructions=build_response_instructions(),
+            input_text=build_response_input(action),
+            trace_state_store=trace_state_store,
+            session_id=session_id,
+            span_id=span_id,
+            related_message_id=related_message_id,
+            related_task_id=related_task_id,
+        ):
+            yield delta

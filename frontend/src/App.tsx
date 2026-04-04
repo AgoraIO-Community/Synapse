@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 
 import { createSession, openSessionStream, openTraceStream, sendCommand, sendMessage } from "./client";
 import type {
   CommandType,
+  CommunicationChunkPayload,
   CommunicationEventPayload,
   ConnectionStatus,
   ExecutorCapability,
@@ -179,6 +180,35 @@ export default function App() {
     };
   }, [sessionId]);
 
+  function upsertAssistantTimelineMessage(
+    messageId: string,
+    text: string,
+    timestamp: string,
+    taskId: string | null,
+    streaming: boolean,
+  ) {
+    setTimeline((current) => {
+      const nextMessage: TimelineMessage = {
+        id: messageId,
+        kind: "assistant",
+        text,
+        timestamp,
+        taskId,
+        streaming,
+      };
+      const existingIndex = current.findIndex((item) => item.id === messageId);
+      if (existingIndex === -1) {
+        return [...current, nextMessage];
+      }
+      const next = current.slice();
+      next[existingIndex] = {
+        ...next[existingIndex],
+        ...nextMessage,
+      };
+      return next;
+    });
+  }
+
   function applyEvent(event: StreamEvent) {
     if (event.event_type === "session_snapshot") {
       setConnectionStatus("connected");
@@ -200,17 +230,26 @@ export default function App() {
     }
 
     if (event.category === "communication") {
+      if (event.event_type === "response_chunk") {
+        const payload = event.payload as unknown as CommunicationChunkPayload;
+        upsertAssistantTimelineMessage(
+          payload.action_id,
+          payload.render_text,
+          payload.timestamp,
+          payload.target_task_id,
+          true,
+        );
+        return;
+      }
+
       const payload = event.payload as unknown as CommunicationEventPayload;
-      setTimeline((current) => [
-        ...current,
-        {
-          id: payload.event_id,
-          kind: "assistant",
-          text: payload.action.render_text ?? payload.action.reason ?? payload.action.action_type,
-          timestamp: payload.timestamp,
-          taskId: payload.action.target_task_id,
-        },
-      ]);
+      upsertAssistantTimelineMessage(
+        payload.action.action_id,
+        payload.action.render_text ?? payload.action.reason ?? payload.action.action_type,
+        payload.timestamp,
+        payload.action.target_task_id,
+        false,
+      );
       return;
     }
 

@@ -23,3 +23,4 @@ Short log of important design decisions and changes for Synopse.
 - Switched task defaulting so Codex becomes the effective default executor when enabled, while completion replies prefer real executor result text over generic success status when available.
 - Added a runtime guard so capability-gated questions are blocked with a clear explanation when only the mock executor is active, instead of producing misleading fake-success task flows.
 - Simplified task creation so every `create_task` now requires a real executor, closing the hole where some LLM-produced tasks could still bypass the mock-executor guard.
+- Added streamed response generation on the existing session websocket, with transient partial communication chunks updating one live assistant bubble while only the final communication event is persisted.

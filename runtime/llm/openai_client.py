@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-import asyncio
+from collections.abc import AsyncIterator
+import inspect
 from typing import Any
 
 from pydantic import BaseModel
@@ -22,7 +23,7 @@ class OpenAIProvider:
                 "OpenAI configuration is required. Set OPENAI_API_KEY before starting Synopse."
             )
 
-        from openai import OpenAI
+        from openai import AsyncOpenAI
 
         kwargs: dict[str, Any] = {
             "api_key": self._settings.openai_api_key,
@@ -30,12 +31,17 @@ class OpenAIProvider:
         }
         if self._settings.openai_base_url:
             kwargs["base_url"] = self._settings.openai_base_url
-        return OpenAI(**kwargs)
+        return AsyncOpenAI(**kwargs)
 
     def _require_client(self) -> Any:
         if self._client is None:
             raise LLMConfigurationError("OpenAI provider is not available.")
         return self._client
+
+    async def _await_if_needed(self, value: Any) -> Any:
+        if inspect.isawaitable(value):
+            return await value
+        return value
 
     async def _emit_trace(
         self,
@@ -93,12 +99,13 @@ class OpenAIProvider:
             related_task_id=related_task_id,
         )
         try:
-            response = await asyncio.to_thread(
-                client.responses.parse,
+            response = await self._await_if_needed(
+                client.responses.parse(
                 model=self._settings.openai_model,
                 instructions=instructions,
                 input=input_text,
                 text_format=schema,
+                )
             )
         except Exception as exc:  # pragma: no cover
             await self._emit_trace(
@@ -168,11 +175,12 @@ class OpenAIProvider:
             related_task_id=related_task_id,
         )
         try:
-            response = await asyncio.to_thread(
-                client.responses.create,
+            response = await self._await_if_needed(
+                client.responses.create(
                 model=self._settings.openai_model,
                 instructions=instructions,
                 input=input_text,
+                )
             )
         except Exception as exc:  # pragma: no cover
             await self._emit_trace(
@@ -209,3 +217,124 @@ class OpenAIProvider:
             related_task_id=related_task_id,
         )
         return str(output_text).strip()
+
+    async def stream_text(
+        self,
+        *,
+        instructions: str,
+        input_text: str,
+        trace_state_store: TraceStateStore | None = None,
+        session_id: str | None = None,
+        span_id: str | None = None,
+        related_message_id: str | None = None,
+        related_task_id: str | None = None,
+    ) -> AsyncIterator[str]:
+        client = self._require_client()
+        await self._emit_trace(
+            trace_state_store,
+            session_id=session_id,
+            stage=TraceStage.RESPONSE_GENERATOR,
+            event_type="llm_response_stream_request",
+            source_module="openai_provider",
+            payload={
+                "model": self._settings.openai_model,
+                "instructions": instructions,
+                "input": input_text,
+            },
+            span_id=span_id,
+            related_message_id=related_message_id,
+            related_task_id=related_task_id,
+        )
+
+        if not hasattr(client.responses, "stream"):
+            text = await self.render_text(
+                instructions=instructions,
+                input_text=input_text,
+                trace_state_store=None,
+                session_id=None,
+                span_id=span_id,
+                related_message_id=related_message_id,
+                related_task_id=related_task_id,
+            )
+            await self._emit_trace(
+                trace_state_store,
+                session_id=session_id,
+                stage=TraceStage.RESPONSE_GENERATOR,
+                event_type="llm_response_stream_response",
+                source_module="openai_provider",
+                payload={
+                    "model": self._settings.openai_model,
+                    "output_text": text,
+                    "streamed": False,
+                },
+                span_id=span_id,
+                related_message_id=related_message_id,
+                related_task_id=related_task_id,
+            )
+            yield text
+            return
+
+        chunks: list[str] = []
+        try:
+            stream_manager = client.responses.stream(
+                model=self._settings.openai_model,
+                instructions=instructions,
+                input=input_text,
+            )
+            final_text = ""
+            if hasattr(stream_manager, "__aenter__"):
+                async with stream_manager as stream:
+                    async for event in stream:
+                        if event.type == "response.output_text.delta":
+                            delta = str(event.delta)
+                            if delta:
+                                chunks.append(delta)
+                                yield delta
+                        elif event.type == "response.output_text.done":
+                            final_text = event.text
+            else:
+                with stream_manager as stream:
+                    for event in stream:
+                        if event.type == "response.output_text.delta":
+                            delta = str(event.delta)
+                            if delta:
+                                chunks.append(delta)
+                                yield delta
+                        elif event.type == "response.output_text.done":
+                            final_text = event.text
+            final_text = final_text or "".join(chunks)
+            if not final_text:
+                raise LLMInvocationError("OpenAI did not return any streamed output text.")
+            await self._emit_trace(
+                trace_state_store,
+                session_id=session_id,
+                stage=TraceStage.RESPONSE_GENERATOR,
+                event_type="llm_response_stream_response",
+                source_module="openai_provider",
+                payload={
+                    "model": self._settings.openai_model,
+                    "output_text": final_text,
+                    "streamed": True,
+                },
+                span_id=span_id,
+                related_message_id=related_message_id,
+                related_task_id=related_task_id,
+            )
+        except Exception as exc:  # pragma: no cover
+            await self._emit_trace(
+                trace_state_store,
+                session_id=session_id,
+                stage=TraceStage.RESPONSE_GENERATOR,
+                event_type="llm_response_stream_error",
+                source_module="openai_provider",
+                payload={
+                    "model": self._settings.openai_model,
+                    "error": str(exc),
+                },
+                span_id=span_id,
+                related_message_id=related_message_id,
+                related_task_id=related_task_id,
+            )
+            if isinstance(exc, LLMInvocationError):
+                raise
+            raise LLMInvocationError(f"OpenAI streamed text generation failed: {exc}") from exc

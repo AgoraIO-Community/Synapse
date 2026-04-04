@@ -59,3 +59,16 @@ class CommunicationEvent(BaseModel):
     source: str = "communication_brain"
     action: ConversationAction
     timestamp: Any = Field(default_factory=utc_now)
+
+
+class CommunicationChunkEvent(BaseModel):
+    event_id: str
+    session_id: str
+    source: str = "communication_brain"
+    action_id: str
+    action_type: ConversationActionType
+    target_task_id: str | None = None
+    render_text_delta: str
+    render_text: str
+    is_final: bool = False
+    timestamp: Any = Field(default_factory=utc_now)

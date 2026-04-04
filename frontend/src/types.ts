@@ -91,6 +91,19 @@ export interface CommunicationEventPayload {
   timestamp: string;
 }
 
+export interface CommunicationChunkPayload {
+  event_id: string;
+  session_id: string;
+  source: string;
+  action_id: string;
+  action_type: string;
+  target_task_id: string | null;
+  render_text_delta: string;
+  render_text: string;
+  is_final: boolean;
+  timestamp: string;
+}
+
 export interface ExecutionEventPayload {
   event_id: string;
   task_id: string;
@@ -144,4 +157,5 @@ export interface TimelineMessage {
   text: string;
   timestamp: string;
   taskId?: string | null;
+  streaming?: boolean;
 }

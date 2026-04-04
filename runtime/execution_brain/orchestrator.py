@@ -13,7 +13,11 @@ from runtime.infrastructure.time import utc_now
 from runtime.llm.errors import LLMConfigurationError, LLMInvocationError
 from runtime.action_router.priorities import sort_actions
 from runtime.action_router.resolver import resolve_task_reference
-from runtime.protocols.conversation import ConversationAction, ConversationActionType
+from runtime.protocols.conversation import (
+    CommunicationChunkEvent,
+    ConversationAction,
+    ConversationActionType,
+)
 from runtime.protocols.execution import ExecutionEvent, ExecutionEventType
 from runtime.protocols.runtime import ActionBundle, ContextPatch, RuntimeActionType
 from runtime.protocols.stream import StreamCategory
@@ -300,14 +304,35 @@ class ExecutionOrchestrator:
             related_message_id=related_message_id,
         )
         try:
-            action = await self._response_generator.finalize(
-                action,
-                trace_state_store=self._trace_state_store,
-                session_id=session_id,
-                span_id=span_id,
-                related_message_id=related_message_id,
-                related_task_id=related_task_id or action.target_task_id,
-            )
+            if action.render_text:
+                action = await self._response_generator.finalize(
+                    action,
+                    trace_state_store=self._trace_state_store,
+                    session_id=session_id,
+                    span_id=span_id,
+                    related_message_id=related_message_id,
+                    related_task_id=related_task_id or action.target_task_id,
+                )
+            else:
+                async for chunk in self._response_generator.stream_finalize(
+                    action,
+                    trace_state_store=self._trace_state_store,
+                    session_id=session_id,
+                    span_id=span_id,
+                    related_message_id=related_message_id,
+                    related_task_id=related_task_id or action.target_task_id,
+                ):
+                    if chunk.is_final:
+                        action.render_text = chunk.text
+                    elif chunk.delta:
+                        await self._publish_response_chunk(
+                            session_id,
+                            action,
+                            render_text_delta=chunk.delta,
+                            render_text=chunk.text,
+                            related_task_id=related_task_id or action.target_task_id,
+                            related_message_id=related_message_id,
+                        )
         except (LLMConfigurationError, LLMInvocationError) as exc:
             await self._trace_state_store.publish(
                 session_id,
@@ -351,6 +376,35 @@ class ExecutionOrchestrator:
             session_id,
             StreamCategory.COMMUNICATION,
             action.action_type.value,
+            event.source,
+            event.model_dump(mode="json"),
+            related_task_id=related_task_id or action.target_task_id,
+            related_message_id=related_message_id,
+        )
+
+    async def _publish_response_chunk(
+        self,
+        session_id: str,
+        action: ConversationAction,
+        *,
+        render_text_delta: str,
+        render_text: str,
+        related_task_id: str | None = None,
+        related_message_id: str | None = None,
+    ) -> None:
+        event = CommunicationChunkEvent(
+            event_id=new_id("comm_chunk"),
+            session_id=session_id,
+            action_id=action.action_id,
+            action_type=action.action_type,
+            target_task_id=related_task_id or action.target_task_id,
+            render_text_delta=render_text_delta,
+            render_text=render_text,
+        )
+        await self._runtime_state_store.publish_transient(
+            session_id,
+            StreamCategory.COMMUNICATION,
+            "response_chunk",
             event.source,
             event.model_dump(mode="json"),
             related_task_id=related_task_id or action.target_task_id,
