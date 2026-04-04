@@ -312,6 +312,8 @@ Defines the separate causality-oriented trace stream.
 - `TraceSnapshot`
 
 The trace stream is intentionally separate from the outcome stream so module-level diagnostics do not pollute the main product-facing event feed.
+LLM-oriented trace payloads may include latency diagnostics such as `duration_ms`, and true streaming responses may also include `ttfb_ms`.
+`response_render_completed` may include a nested `llm_response` summary so the orchestrator-level trace shows the final rendered text and latency in one event.
 
 ## Shared Blackboard
 
@@ -356,14 +358,12 @@ The communication brain and execution brain do not share state directly. They sy
 
 The runtime supports:
 
-- `pause_task`
-- `resume_task`
 - `cancel_task`
 - `retry_task`
 
 Priority rules are deterministic:
 
-1. cancel or pause
+1. cancel
 2. update existing task
 3. clarification
 4. create new task
@@ -379,7 +379,6 @@ The mock executor simulates:
 - `started`
 - `progress`
 - `blocked`
-- `resumed`
 - `completed`
 - `canceled`
 
@@ -403,7 +402,7 @@ Included:
 - chat-first UI for communication events
 - streamed assistant text over the live websocket
 - task cards with pause, resume, and cancel controls
-- live activity feed with expandable event payloads
+- live activity feed with expandable event payloads, excluding transient `response_chunk` noise from the operator-facing feed/export
 
 Included:
 

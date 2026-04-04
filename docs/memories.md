@@ -25,5 +25,7 @@ Short log of important design decisions and changes for Synopse.
 - Simplified task creation so every `create_task` now requires a real executor, closing the hole where some LLM-produced tasks could still bypass the mock-executor guard.
 - Added streamed response generation on the existing session websocket, with transient partial communication chunks updating one live assistant bubble while only the final communication event is persisted.
 - Separated concise spoken-style communication from fuller task output, keeping task-board results sourced from artifacts while response generation summarizes them for TTS-friendly delivery.
-- Made unsupported pause/resume requests from conversational messages degrade into assistant replies instead of 500s, and tightened fallback/interpreter handling so generic “continue” prefers task update over executor resume.
+- Removed `pause_task` and `resume_task` from the current runtime surface, leaving `cancel_task` and `retry_task` as the supported explicit task controls.
 - Added blackboard-backed message history for both message interpretation and response generation, capped at 30 persisted user/assistant messages and excluding transient stream chunks.
+- Added LLM latency diagnostics to trace payloads, recording total request duration for normal calls and `ttfb_ms` for true streamed responses, while hiding transient `response_chunk` entries from the operator activity feed/export.
+- Enriched `response_render_completed` so it now carries a nested `llm_response` summary with final rendered text plus duration and optional `ttfb_ms` when the response came from the LLM.

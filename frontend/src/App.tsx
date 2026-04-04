@@ -17,6 +17,7 @@ import type {
 } from "./types";
 
 const MAX_EVENTS = 40;
+const HIDDEN_RUNTIME_EVENT_TYPES = new Set(["response_chunk"]);
 const HIDDEN_TRACE_EVENT_TYPES = new Set([
   "llm_response_stream_request",
   "llm_response_stream_response",
@@ -56,18 +57,9 @@ function canRunCommand(
   const capability = task.assigned_executor
     ? capabilitiesByExecutor[task.assigned_executor]
     : undefined;
-  if (command === "pause_task") {
-    return task.status === "running" && (capability?.supports_pause ?? true);
-  }
-  if (command === "resume_task") {
-    return (
-      (task.status === "paused" || task.status === "blocked") &&
-      (capability?.supports_pause ?? true)
-    );
-  }
   if (command === "cancel_task") {
     return (
-      ["queued", "running", "blocked", "paused"].includes(task.status) &&
+      ["queued", "running", "blocked"].includes(task.status) &&
       (capability?.supports_cancel ?? true)
     );
   }
@@ -96,6 +88,9 @@ export default function App() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [pendingTaskCommand, setPendingTaskCommand] = useState<string | null>(null);
   const [copyStatus, setCopyStatus] = useState<string | null>(null);
+  const visibleOutcomeEvents = events.filter(
+    (event) => !HIDDEN_RUNTIME_EVENT_TYPES.has(event.event_type),
+  );
 
   useEffect(() => {
     if (didBootRef.current) {
@@ -353,7 +348,7 @@ export default function App() {
       `trace_connection: ${traceConnectionStatus}`,
       "",
       "== Runtime Events ==",
-      JSON.stringify(events, null, 2),
+      JSON.stringify(visibleOutcomeEvents, null, 2),
       "",
       "== Trace Events ==",
       JSON.stringify(traceEvents, null, 2),
@@ -431,10 +426,10 @@ export default function App() {
     right.updated_at.localeCompare(left.updated_at),
   );
   const activeTasks = orderedTasks.filter((task) =>
-    ["queued", "running", "blocked", "paused"].includes(task.status),
+    ["queued", "running", "blocked"].includes(task.status),
   );
   const archivedTasks = orderedTasks.filter(
-    (task) => !["queued", "running", "blocked", "paused"].includes(task.status),
+    (task) => !["queued", "running", "blocked"].includes(task.status),
   );
 
   return (
@@ -550,7 +545,7 @@ export default function App() {
                       ) : null}
                     </dl>
                     <div className="task-actions">
-                      {(["pause_task", "resume_task", "cancel_task"] as CommandType[]).map(
+                      {(["cancel_task"] as CommandType[]).map(
                         (commandType) => {
                           const busy = pendingTaskCommand === `${task.task_id}:${commandType}`;
                           return (
@@ -612,10 +607,10 @@ export default function App() {
                 <h3>Outcome Events</h3>
                 <span className={`trace-status trace-${connectionStatus}`}>{connectionStatus}</span>
               </div>
-              {events.length === 0 ? (
+              {visibleOutcomeEvents.length === 0 ? (
                 <div className="empty-state">Waiting for stream events.</div>
               ) : (
-                events.map((event) => {
+                visibleOutcomeEvents.map((event) => {
                   const expanded = expandedEventId === event.stream_event_id;
                   return (
                     <article key={event.stream_event_id} className="event-row">

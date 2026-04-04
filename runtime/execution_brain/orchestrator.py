@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from runtime.communication_brain.event_to_response import EventToResponseMapper
 from runtime.executors.bootstrap import MOCK_EXECUTOR_ID
-from runtime.executors.errors import UnsupportedExecutorCommandError
 from runtime.communication_brain.response_generator import ResponseGenerator
 from runtime.executors.registry import ExecutorRegistry
 from runtime.execution_brain.executor_adapter_router import ExecutorAdapterRouter
@@ -163,12 +162,8 @@ class ExecutionOrchestrator:
                     related_task_id=task.task_id,
                     related_message_id=bundle.message_id,
                 )
-                if task.status in {
-                    TaskStatus.RUNNING,
-                    TaskStatus.BLOCKED,
-                    TaskStatus.PAUSED,
-                } and self._supports_command(task, ControlCommandType.RESUME_TASK):
-                    await self._resume_task(session_id, task, span_id=span_id)
+                if task.status == TaskStatus.BLOCKED:
+                    await self._start_task(session_id, task, span_id=span_id)
             elif action.action_type == RuntimeActionType.CONTROL_TASK:
                 task = resolve_task_reference(session, action.target_task_ref)
                 if task is None:
@@ -186,15 +181,7 @@ class ExecutionOrchestrator:
                     command_type=command_type,
                     reason=action.payload.get("reason"),
                 )
-                try:
-                    await self.apply_control_command(session_id, command)
-                except UnsupportedExecutorCommandError as exc:
-                    await self._emit_unsupported_command(
-                        session_id,
-                        executor_id=exc.executor_id,
-                        command_type=exc.command_type,
-                        message_id=bundle.message_id,
-                    )
+                await self.apply_control_command(session_id, command)
         await self._trace_state_store.publish(
             session_id,
             TraceStage.EXECUTION_ORCHESTRATOR,
@@ -221,19 +208,9 @@ class ExecutionOrchestrator:
             return
 
         executor_id = self._executor_adapter_router.select_executor_id(task)
-        self._ensure_command_supported(executor_id, command.command_type)
         apply_control(task, command.command_type)
         executor = self._registry.get(executor_id)
-        if command.command_type == ControlCommandType.PAUSE_TASK:
-            await executor.pause_task(task.task_id)
-        elif command.command_type == ControlCommandType.RESUME_TASK:
-            task.input_context["clarification_received"] = True
-            await executor.resume_task(
-                task,
-                lambda event: self.handle_execution_event(session_id, event),
-                session_id=session_id,
-            )
-        elif command.command_type == ControlCommandType.CANCEL_TASK:
+        if command.command_type == ControlCommandType.CANCEL_TASK:
             await executor.cancel_task(task.task_id)
             await self.handle_execution_event(
                 session_id,
@@ -315,9 +292,10 @@ class ExecutionOrchestrator:
         )
         session = self._runtime_state_store.get_session(session_id)
         action.metadata.setdefault("message_history", get_message_history(session))
+        response_render_payload = {"action_type": action.action_type.value}
         try:
             if action.render_text:
-                action = await self._response_generator.finalize(
+                action, response_metadata = await self._response_generator.finalize(
                     action,
                     trace_state_store=self._trace_state_store,
                     session_id=session_id,
@@ -325,6 +303,8 @@ class ExecutionOrchestrator:
                     related_message_id=related_message_id,
                     related_task_id=related_task_id or action.target_task_id,
                 )
+                if response_metadata is not None:
+                    response_render_payload["llm_response"] = response_metadata.to_trace_payload()
             else:
                 async for chunk in self._response_generator.stream_finalize(
                     action,
@@ -336,6 +316,8 @@ class ExecutionOrchestrator:
                 ):
                     if chunk.is_final:
                         action.render_text = chunk.text
+                        if chunk.metadata is not None:
+                            response_render_payload["llm_response"] = chunk.metadata.to_trace_payload()
                     elif chunk.delta:
                         await self._publish_response_chunk(
                             session_id,
@@ -376,7 +358,7 @@ class ExecutionOrchestrator:
             TraceStage.RESPONSE_GENERATOR,
             "response_render_completed",
             "response_generator",
-            {"action_type": action.action_type.value},
+            response_render_payload,
             span_id=span_id,
             related_task_id=related_task_id or action.target_task_id,
             related_message_id=related_message_id,
@@ -465,69 +447,11 @@ class ExecutionOrchestrator:
             related_message_id=message_id,
         )
 
-    async def _emit_unsupported_command(
-        self,
-        session_id: str,
-        *,
-        executor_id: str,
-        command_type: str,
-        message_id: str | None,
-    ) -> None:
-        capability = self._registry.get_capability(executor_id)
-        verb = command_type.replace("_task", "").replace("_", " ")
-        action = ConversationAction(
-            action_id=new_id("conv"),
-            action_type=ConversationActionType.CHAT_REPLY,
-            metadata={
-                "executor_id": executor_id,
-                "executor_label": capability.label,
-                "unsupported_command": command_type,
-            },
-            render_text=(
-                f"I can't {verb} that task because it is running on {capability.label}, "
-                "and that executor does not support it."
-            ),
-        )
-        await self.emit_conversation_action(
-            session_id,
-            action,
-            related_message_id=message_id,
-        )
-
     def _requires_real_executor(self, task) -> bool:
         if not task.input_context.get("requires_executor_capability"):
             return False
         executor_id = self._executor_adapter_router.select_executor_id(task)
         return executor_id == MOCK_EXECUTOR_ID
-
-    def _supports_command(self, task, command_type: ControlCommandType) -> bool:
-        executor_id = self._executor_adapter_router.select_executor_id(task)
-        capability = self._registry.get_capability(executor_id)
-        if command_type == ControlCommandType.CANCEL_TASK:
-            return capability.supports_cancel
-        if command_type in {
-            ControlCommandType.PAUSE_TASK,
-            ControlCommandType.RESUME_TASK,
-        }:
-            return capability.supports_pause
-        return True
-
-    def _ensure_command_supported(
-        self, executor_id: str, command_type: ControlCommandType
-    ) -> None:
-        capability = self._registry.get_capability(executor_id)
-        if command_type == ControlCommandType.CANCEL_TASK and capability.supports_cancel:
-            return
-        if (
-            command_type in {ControlCommandType.PAUSE_TASK, ControlCommandType.RESUME_TASK}
-            and capability.supports_pause
-        ):
-            return
-        if command_type == ControlCommandType.RETRY_TASK:
-            return
-        raise UnsupportedExecutorCommandError(
-            executor_id=executor_id, command_type=command_type.value
-        )
 
     async def _start_task(self, session_id: str, task, *, span_id: str | None = None) -> None:
         executor_id = self._executor_adapter_router.select_executor_id(task)
@@ -551,33 +475,6 @@ class ExecutionOrchestrator:
             session_id,
             TraceStage.EXECUTOR_ADAPTER,
             "executor_dispatch_completed",
-            "executor_adapter_router",
-            {"executor_id": executor_id},
-            span_id=span_id,
-            related_task_id=task.task_id,
-        )
-
-    async def _resume_task(self, session_id: str, task, *, span_id: str | None = None) -> None:
-        executor_id = self._executor_adapter_router.select_executor_id(task)
-        await self._trace_state_store.publish(
-            session_id,
-            TraceStage.EXECUTOR_ADAPTER,
-            "executor_resume_started",
-            "executor_adapter_router",
-            {"executor_id": executor_id},
-            span_id=span_id,
-            related_task_id=task.task_id,
-        )
-        executor = self._registry.get(executor_id)
-        await executor.resume_task(
-            task,
-            lambda event: self.handle_execution_event(session_id, event),
-            session_id=session_id,
-        )
-        await self._trace_state_store.publish(
-            session_id,
-            TraceStage.EXECUTOR_ADAPTER,
-            "executor_resume_completed",
             "executor_adapter_router",
             {"executor_id": executor_id},
             span_id=span_id,

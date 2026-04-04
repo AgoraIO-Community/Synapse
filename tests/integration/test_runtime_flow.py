@@ -67,7 +67,7 @@ def make_interpretation(message_id: str, text: str) -> InterpretationEnvelope:
                 priority=Priority.NORMAL,
                 execution_trigger=ExecutionTrigger.NONE,
                 scope_of_effect=ScopeOfEffect.SESSION,
-                command_type=ControlCommandType.PAUSE_TASK,
+                command_type=ControlCommandType.CANCEL_TASK,
                 target_task_reference_type=TaskReferenceType.LATEST_ACTIVE,
                 target_task_reference_relation=TaskReferenceRelation.CURRENT,
                 latest_user_goal=text,
@@ -97,7 +97,7 @@ def make_interpretation(message_id: str, text: str) -> InterpretationEnvelope:
                 priority=Priority.NORMAL,
                 execution_trigger=ExecutionTrigger.NONE,
                 scope_of_effect=ScopeOfEffect.SESSION,
-                command_type=ControlCommandType.PAUSE_TASK,
+                command_type=ControlCommandType.CANCEL_TASK,
                 target_task_reference_type=TaskReferenceType.LATEST_ACTIVE,
                 target_task_reference_relation=TaskReferenceRelation.CURRENT,
                 latest_user_goal=text,
@@ -127,7 +127,7 @@ def make_interpretation(message_id: str, text: str) -> InterpretationEnvelope:
                 priority=Priority.NORMAL,
                 execution_trigger=ExecutionTrigger.NONE,
                 scope_of_effect=ScopeOfEffect.SESSION,
-                command_type=ControlCommandType.PAUSE_TASK,
+                command_type=ControlCommandType.CANCEL_TASK,
                 target_task_reference_type=TaskReferenceType.LATEST_ACTIVE,
                 target_task_reference_relation=TaskReferenceRelation.CURRENT,
                 latest_user_goal=text,
@@ -221,7 +221,7 @@ async def test_runtime_message_pipeline_stream_events():
 
 
 @pytest.mark.anyio
-async def test_blocked_task_can_be_resumed_via_update_message():
+async def test_blocked_task_can_continue_via_update_message():
     services = build_services(build_test_services())
     session = services.runtime_state_store.create_session()
     queue = services.runtime_state_store.subscribe(session.session_id)
@@ -426,6 +426,7 @@ async def test_trace_flow_emits_module_level_causality_events():
     stages: list[TraceStage] = []
     event_types: list[str] = []
     payloads_by_type: dict[str, dict] = {}
+    completed_payloads: list[dict] = []
     for _ in range(20):
         try:
             trace = await asyncio.wait_for(trace_queue.get(), timeout=0.2)
@@ -434,6 +435,8 @@ async def test_trace_flow_emits_module_level_causality_events():
         stages.append(trace.stage)
         event_types.append(trace.event_type)
         payloads_by_type[trace.event_type] = trace.payload
+        if trace.event_type == "response_render_completed":
+            completed_payloads.append(trace.payload)
 
     assert TraceStage.ACTION_ROUTER in stages
     assert TraceStage.MESSAGE_INTERPRETER in stages
@@ -445,8 +448,25 @@ async def test_trace_flow_emits_module_level_causality_events():
     assert "llm_interpreter_response" in event_types
     assert "llm_response_stream_request" in event_types
     assert "llm_response_stream_response" in event_types
+    assert "response_render_completed" in event_types
     assert "instructions" in payloads_by_type["llm_interpreter_request"]
     assert "input" in payloads_by_type["llm_interpreter_request"]
     assert "parsed_output" in payloads_by_type["llm_interpreter_response"]
+    assert isinstance(payloads_by_type["llm_interpreter_response"]["duration_ms"], int | float)
     assert "instructions" in payloads_by_type["llm_response_stream_request"]
     assert "output_text" in payloads_by_type["llm_response_stream_response"]
+    response_stream_payload = payloads_by_type["llm_response_stream_response"]
+    assert isinstance(response_stream_payload["duration_ms"], int | float)
+    if response_stream_payload["streamed"]:
+        assert isinstance(response_stream_payload["ttfb_ms"], int | float)
+    else:
+        assert "ttfb_ms" not in response_stream_payload
+    assert any(
+        payload["action_type"] in {"acknowledge", "chat_reply", "inform_done"}
+        and "llm_response" in payload
+        and payload["llm_response"]["output_text"]
+        and isinstance(payload["llm_response"]["duration_ms"], int | float)
+        and payload["llm_response"]["streamed"] is False
+        and "ttfb_ms" not in payload["llm_response"]
+        for payload in completed_payloads
+    )

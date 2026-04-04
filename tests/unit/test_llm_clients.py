@@ -81,6 +81,36 @@ class FakeOpenAIClient:
         self.responses = FakeResponses(parsed=parsed, text=text, stream_events=stream_events)
 
 
+class FakeOpenAIClientWithoutStream:
+    def __init__(self, text: str | None = None):
+        self.responses = SimpleNamespace(create=lambda **kwargs: SimpleNamespace(output_text=text))
+
+
+class FailingResponses:
+    def __init__(self, *, parse_error: Exception | None = None, create_error: Exception | None = None):
+        self._parse_error = parse_error
+        self._create_error = create_error
+
+    def parse(self, **kwargs):
+        assert self._parse_error is not None
+        raise self._parse_error
+
+    def create(self, **kwargs):
+        assert self._create_error is not None
+        raise self._create_error
+
+
+class FailingOpenAIClient:
+    def __init__(self, *, parse_error: Exception | None = None, create_error: Exception | None = None):
+        self.responses = FailingResponses(parse_error=parse_error, create_error=create_error)
+
+
+def assert_duration_ms(payload: dict) -> None:
+    assert "duration_ms" in payload
+    assert isinstance(payload["duration_ms"], int | float)
+    assert payload["duration_ms"] >= 0
+
+
 def make_snapshot() -> SessionSnapshot:
     return SessionSnapshot(session_id="session_test")
 
@@ -107,7 +137,7 @@ def make_interpretation(message_id: str) -> InterpretationEnvelope:
                 priority=Priority.NORMAL,
                 execution_trigger=ExecutionTrigger.NONE,
                 scope_of_effect=ScopeOfEffect.SESSION,
-                command_type=ControlCommandType.PAUSE_TASK,
+                command_type=ControlCommandType.CANCEL_TASK,
                 target_task_reference_type=TaskReferenceType.LATEST_ACTIVE,
                 target_task_reference_relation=TaskReferenceRelation.CURRENT,
                 latest_user_goal="Search flights",
@@ -145,7 +175,7 @@ def make_clarifying_chat_interpretation(message_id: str) -> InterpretationEnvelo
                     priority=Priority.NORMAL,
                     execution_trigger=ExecutionTrigger.NONE,
                     scope_of_effect=ScopeOfEffect.SESSION,
-                    command_type=ControlCommandType.PAUSE_TASK,
+                    command_type=ControlCommandType.CANCEL_TASK,
                     target_task_reference_type=TaskReferenceType.LATEST_ACTIVE,
                     target_task_reference_relation=TaskReferenceRelation.CURRENT,
                     latest_user_goal="hi",
@@ -181,7 +211,7 @@ def make_conversation_only_interpretation(
                     priority=Priority.NORMAL,
                     execution_trigger=ExecutionTrigger.NONE,
                     scope_of_effect=ScopeOfEffect.SESSION,
-                    command_type=ControlCommandType.PAUSE_TASK,
+                    command_type=ControlCommandType.CANCEL_TASK,
                     target_task_reference_type=TaskReferenceType.LATEST_ACTIVE,
                     target_task_reference_relation=TaskReferenceRelation.CURRENT,
                     latest_user_goal=latest_user_goal,
@@ -469,6 +499,7 @@ def test_openai_provider_emits_interpreter_trace_payloads():
     assert request_payload["input"] == '{"message_id":"message_1"}'
     assert request_payload["schema_name"] == "InterpretationEnvelope"
     assert "parsed_output" in response_payload
+    assert_duration_ms(response_payload)
     assert snapshot.recent_traces[0].stage == TraceStage.MESSAGE_INTERPRETER
 
 
@@ -502,6 +533,7 @@ def test_openai_provider_emits_response_trace_payloads():
     assert request_payload["instructions"] == "reply naturally"
     assert request_payload["input"] == '{"action_type":"acknowledge"}'
     assert response_payload["output_text"] == "Rendered response"
+    assert_duration_ms(response_payload)
     assert snapshot.recent_traces[0].stage == TraceStage.RESPONSE_GENERATOR
 
 
@@ -540,4 +572,107 @@ def test_openai_provider_stream_text_emits_stream_trace_payloads():
         "llm_response_stream_request",
         "llm_response_stream_response",
     ]
-    assert snapshot.recent_traces[1].payload["output_text"] == "Hello world"
+    response_payload = snapshot.recent_traces[1].payload
+    assert response_payload["output_text"] == "Hello world"
+    assert response_payload["streamed"] is True
+    assert_duration_ms(response_payload)
+    assert "ttfb_ms" in response_payload
+    assert isinstance(response_payload["ttfb_ms"], int | float)
+    assert response_payload["ttfb_ms"] >= 0
+
+
+def test_openai_provider_emits_interpreter_error_trace_payloads():
+    settings = Settings(openai_api_key="test-key")
+    trace_store = TraceStateStore()
+    provider = OpenAIProvider(
+        settings,
+        client=FailingOpenAIClient(parse_error=RuntimeError("parse unavailable")),
+    )
+
+    with pytest.raises(LLMInvocationError, match="OpenAI structured call failed: parse unavailable"):
+        asyncio.run(
+            provider.parse_structured(
+                instructions="interpret this",
+                input_text='{"message_id":"message_1"}',
+                schema=InterpretationEnvelope,
+                trace_state_store=trace_store,
+                session_id="session_test",
+                span_id="span_4",
+                related_message_id="message_1",
+            )
+        )
+
+    snapshot = trace_store.snapshot("session_test")
+    assert [event.event_type for event in snapshot.recent_traces] == [
+        "llm_interpreter_request",
+        "llm_interpreter_error",
+    ]
+    error_payload = snapshot.recent_traces[1].payload
+    assert error_payload["error"] == "parse unavailable"
+    assert_duration_ms(error_payload)
+
+
+def test_openai_provider_emits_response_error_trace_payloads():
+    settings = Settings(openai_api_key="test-key")
+    trace_store = TraceStateStore()
+    provider = OpenAIProvider(
+        settings,
+        client=FailingOpenAIClient(create_error=RuntimeError("generation unavailable")),
+    )
+
+    with pytest.raises(LLMInvocationError, match="OpenAI text generation failed: generation unavailable"):
+        asyncio.run(
+            provider.render_text(
+                instructions="reply naturally",
+                input_text='{"action_type":"acknowledge"}',
+                trace_state_store=trace_store,
+                session_id="session_test",
+                span_id="span_5",
+                related_message_id="message_1",
+            )
+        )
+
+    snapshot = trace_store.snapshot("session_test")
+    assert [event.event_type for event in snapshot.recent_traces] == [
+        "llm_response_request",
+        "llm_response_error",
+    ]
+    error_payload = snapshot.recent_traces[1].payload
+    assert error_payload["error"] == "generation unavailable"
+    assert_duration_ms(error_payload)
+
+
+def test_openai_provider_stream_text_fallback_emits_duration_without_ttfb():
+    settings = Settings(openai_api_key="test-key")
+    trace_store = TraceStateStore()
+    provider = OpenAIProvider(
+        settings,
+        client=FakeOpenAIClientWithoutStream(text="Fallback response"),
+    )
+
+    async def collect():
+        chunks = []
+        async for chunk in provider.stream_text(
+            instructions="reply naturally",
+            input_text='{"action_type":"chat_reply"}',
+            trace_state_store=trace_store,
+            session_id="session_test",
+            span_id="span_6",
+            related_message_id="message_1",
+        ):
+            chunks.append(chunk)
+        return chunks
+
+    output = asyncio.run(collect())
+
+    snapshot = trace_store.snapshot("session_test")
+    assert output == ["Fallback response"]
+    assert [event.event_type for event in snapshot.recent_traces] == [
+        "llm_response_stream_request",
+        "llm_response_stream_response",
+    ]
+    response_payload = snapshot.recent_traces[1].payload
+    assert response_payload["output_text"] == "Fallback response"
+    assert response_payload["streamed"] is False
+    assert "ttfb_ms" not in response_payload
+    assert_duration_ms(response_payload)

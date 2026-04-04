@@ -57,6 +57,7 @@ async def test_emit_conversation_action_streams_transient_chunks_and_persists_fi
     services = build_services(build_test_services())
     session = services.runtime_state_store.create_session()
     queue = services.runtime_state_store.subscribe(session.session_id)
+    trace_queue = services.trace_state_store.subscribe(session.session_id)
     action = ConversationAction(
         action_id="conv_1",
         action_type=ConversationActionType.CHAT_REPLY,
@@ -87,3 +88,17 @@ async def test_emit_conversation_action_streams_transient_chunks_and_persists_fi
     assert len(message_history) == 1
     assert message_history[0]["role"] == "assistant"
     assert message_history[0]["text"] == "Hello"
+
+    trace_payloads: dict[str, dict] = {}
+    for _ in range(8):
+        trace = await asyncio.wait_for(trace_queue.get(), timeout=1)
+        trace_payloads[trace.event_type] = trace.payload
+        if trace.event_type == "response_render_completed":
+            break
+
+    assert "response_render_completed" in trace_payloads
+    llm_response = trace_payloads["response_render_completed"]["llm_response"]
+    assert llm_response["output_text"] == "Hello"
+    assert llm_response["streamed"] is True
+    assert isinstance(llm_response["duration_ms"], int | float)
+    assert isinstance(llm_response["ttfb_ms"], int | float)
