@@ -93,14 +93,7 @@ def apply_task_update(task: Task, patch: dict) -> Task:
 
 
 def apply_control(task: Task, command_type: ControlCommandType) -> Task:
-    if command_type == ControlCommandType.PAUSE_TASK and task.status == TaskStatus.RUNNING:
-        task.status = TaskStatus.PAUSED
-    elif command_type == ControlCommandType.RESUME_TASK and task.status in {
-        TaskStatus.PAUSED,
-        TaskStatus.BLOCKED,
-    }:
-        task.status = TaskStatus.RUNNING
-    elif command_type == ControlCommandType.CANCEL_TASK:
+    if command_type == ControlCommandType.CANCEL_TASK:
         task.status = TaskStatus.CANCELED
     elif command_type == ControlCommandType.RETRY_TASK and task.status in {
         TaskStatus.FAILED,

@@ -26,7 +26,6 @@ def build_interpreter_instructions() -> str:
         "'what time is it?' -> task with create_task, "
         "'search flights to Tokyo tomorrow' -> task with create_task, "
         "'continue with the recipient info' -> update_task, "
-        "'resume the paused task' -> control_task resume_task, "
         "'pause it' with no active task -> clarification. "
         "For fields that do not apply to a given action type, leave strings empty and booleans false. "
         "Do not add any keys that are not in the schema."

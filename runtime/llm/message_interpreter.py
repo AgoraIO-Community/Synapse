@@ -184,7 +184,7 @@ class MessageInterpreterClient:
                 priority=Priority.NORMAL,
                 execution_trigger=ExecutionTrigger.NONE,
                 scope_of_effect=ScopeOfEffect.SESSION,
-                command_type=ControlCommandType.PAUSE_TASK,
+                command_type=ControlCommandType.CANCEL_TASK,
                 target_task_reference_type=TaskReferenceType.LATEST_ACTIVE,
                 target_task_reference_relation=TaskReferenceRelation.CURRENT,
                 latest_user_goal=text,

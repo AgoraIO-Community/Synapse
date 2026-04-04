@@ -88,14 +88,6 @@ class ExternalAsyncExecutor:
         if run is not None:
             await run.cancel()
 
-    async def pause_task(self, task_id: str) -> None:
-        raise NotImplementedError("Pause is not supported by this executor.")
-
-    async def resume_task(
-        self, task: Task, callback: ExecutionCallback, *, session_id: str
-    ) -> None:
-        raise NotImplementedError("Resume is not supported by this executor.")
-
     async def _watch(self, task: Task, run, callback: ExecutionCallback) -> None:
         try:
             result = await run.wait()

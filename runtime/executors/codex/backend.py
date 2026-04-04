@@ -106,7 +106,6 @@ class CodexCliBackend:
             label="Codex Executor",
             capability_tags=["generic", "coding", "external", "agent"],
             supports_cancel=True,
-            supports_pause=False,
             supports_streaming=False,
         )
 

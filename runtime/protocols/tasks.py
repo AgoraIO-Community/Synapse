@@ -12,7 +12,6 @@ class TaskStatus(StrEnum):
     QUEUED = "queued"
     RUNNING = "running"
     BLOCKED = "blocked"
-    PAUSED = "paused"
     CANCELED = "canceled"
     FAILED = "failed"
     DONE = "done"
@@ -111,8 +110,6 @@ class TaskMutation(BaseModel):
 
 
 class ControlCommandType(StrEnum):
-    PAUSE_TASK = "pause_task"
-    RESUME_TASK = "resume_task"
     CANCEL_TASK = "cancel_task"
     RETRY_TASK = "retry_task"
 

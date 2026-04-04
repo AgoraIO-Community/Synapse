@@ -21,12 +21,11 @@ export type TaskStatus =
   | "queued"
   | "running"
   | "blocked"
-  | "paused"
   | "canceled"
   | "failed"
   | "done";
 
-export type CommandType = "pause_task" | "resume_task" | "cancel_task";
+export type CommandType = "cancel_task";
 
 export interface Artifact {
   artifact_id: string;
@@ -44,7 +43,6 @@ export interface ExecutorCapability {
   label: string;
   capability_tags: string[];
   supports_cancel: boolean;
-  supports_pause: boolean;
   supports_streaming: boolean;
 }
 

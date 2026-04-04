@@ -8,7 +8,6 @@ ACTIVE_STATUSES = {
     TaskStatus.QUEUED,
     TaskStatus.RUNNING,
     TaskStatus.BLOCKED,
-    TaskStatus.PAUSED,
 }
 
 

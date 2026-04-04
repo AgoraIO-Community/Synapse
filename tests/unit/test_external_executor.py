@@ -57,7 +57,6 @@ class FakeBackend:
             executor_id="external_executor",
             label="External Executor",
             supports_cancel=True,
-            supports_pause=False,
             supports_streaming=False,
         )
 

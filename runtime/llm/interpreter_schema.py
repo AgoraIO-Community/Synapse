@@ -61,7 +61,7 @@ class InterpreterAction(StrictSchemaModel):
     simulate_blocked: bool = False
     requires_executor_capability: bool = True
     latest_instruction: str = ""
-    command_type: ControlCommandType = ControlCommandType.PAUSE_TASK
+    command_type: ControlCommandType = ControlCommandType.CANCEL_TASK
     reason: str = ""
     latest_user_goal: str = ""
 

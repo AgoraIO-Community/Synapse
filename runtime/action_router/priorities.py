@@ -22,10 +22,7 @@ _ACTION_WEIGHT = {
 
 def _control_bonus(action: RuntimeAction) -> int:
     command_type = action.payload.get("command_type")
-    if command_type in {
-        ControlCommandType.CANCEL_TASK.value,
-        ControlCommandType.PAUSE_TASK.value,
-    }:
+    if command_type == ControlCommandType.CANCEL_TASK.value:
         return 2
     return 0
 

@@ -20,7 +20,6 @@ class ExecutionEventType(StrEnum):
     STARTED = "started"
     PROGRESS = "progress"
     BLOCKED = "blocked"
-    RESUMED = "resumed"
     COMPLETED = "completed"
     FAILED = "failed"
     CANCELED = "canceled"
@@ -31,7 +30,6 @@ class ExecutorCapability(BaseModel):
     label: str
     capability_tags: list[str] = Field(default_factory=list)
     supports_cancel: bool = True
-    supports_pause: bool = True
     supports_streaming: bool = True
 
 
