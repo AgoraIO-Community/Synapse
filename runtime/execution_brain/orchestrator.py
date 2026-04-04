@@ -24,8 +24,10 @@ from runtime.protocols.stream import StreamCategory
 from runtime.protocols.trace import TraceStage
 from runtime.protocols.tasks import ControlCommand, ControlCommandType, TaskStatus
 from runtime.shared_blackboard.mutations import (
+    append_message_history,
     apply_context_patch,
     apply_control,
+    get_message_history,
     apply_task_update,
     upsert_task,
 )
@@ -311,6 +313,8 @@ class ExecutionOrchestrator:
             related_task_id=related_task_id or action.target_task_id,
             related_message_id=related_message_id,
         )
+        session = self._runtime_state_store.get_session(session_id)
+        action.metadata.setdefault("message_history", get_message_history(session))
         try:
             if action.render_text:
                 action = await self._response_generator.finalize(
@@ -389,6 +393,16 @@ class ExecutionOrchestrator:
             related_task_id=related_task_id or action.target_task_id,
             related_message_id=related_message_id,
         )
+        visible_text = action.render_text or action.reason
+        if visible_text:
+            append_message_history(
+                session,
+                role="assistant",
+                text=visible_text,
+                message_id=event.event_id,
+                task_id=related_task_id or action.target_task_id,
+                timestamp=event.timestamp,
+            )
 
     async def _publish_response_chunk(
         self,

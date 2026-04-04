@@ -9,6 +9,7 @@ from runtime.protocols.conversation import ConversationAction
 from runtime.protocols.execution import ExecutorCapability
 from runtime.protocols.stream import SessionSnapshot, StreamCategory, StreamEvent
 from runtime.shared_blackboard.blackboard_state import BlackboardSessionState
+from runtime.shared_blackboard.mutations import MESSAGE_HISTORY_KEY, get_message_history
 
 
 class RuntimeStateStore:
@@ -33,9 +34,12 @@ class RuntimeStateStore:
 
     def snapshot(self, session_id: str) -> SessionSnapshot:
         session = self.get_session(session_id)
+        conversation_state = dict(session.conversation_state)
+        if MESSAGE_HISTORY_KEY in conversation_state:
+            conversation_state[MESSAGE_HISTORY_KEY] = get_message_history(session)
         return SessionSnapshot(
             session_id=session.session_id,
-            conversation_state=dict(session.conversation_state),
+            conversation_state=conversation_state,
             task_registry=list(session.task_registry.values()),
             executor_capabilities=self._executor_capabilities_provider(),
             strategy_state=dict(session.strategy_state),

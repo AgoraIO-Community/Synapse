@@ -336,6 +336,8 @@ It currently stores:
 - `event_log`
 - `last_sequence`
 
+`conversation_state` now also carries a bounded `message_history` for LLM context. It stores the latest 30 persisted user/assistant messages. Transient streamed response chunks are excluded; only final assistant messages are durable history.
+
 The communication brain and execution brain do not share state directly. They synchronize through the blackboard and protocol events.
 
 ## Runtime Flow

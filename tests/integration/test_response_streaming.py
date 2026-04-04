@@ -75,9 +75,15 @@ async def test_emit_conversation_action_streams_transient_chunks_and_persists_fi
         event.event_type
         for event in services.runtime_state_store.get_session(session.session_id).event_log
     ]
+    message_history = services.runtime_state_store.get_session(session.session_id).conversation_state[
+        "message_history"
+    ]
 
     assert event_types == ["response_chunk", "response_chunk", "chat_reply"]
     assert received[0].payload["render_text"] == "Hel"
     assert received[1].payload["render_text"] == "Hello"
     assert received[2].payload["action"]["render_text"] == "Hello"
     assert persisted_event_types == ["chat_reply"]
+    assert len(message_history) == 1
+    assert message_history[0]["role"] == "assistant"
+    assert message_history[0]["text"] == "Hello"

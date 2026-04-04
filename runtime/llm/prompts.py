@@ -37,6 +37,7 @@ def build_interpreter_input(*, message_id: str, text: str, snapshot: SessionSnap
     payload = {
         "message_id": message_id,
         "latest_user_message": text,
+        "message_history": snapshot.conversation_state.get("message_history", []),
         "session_snapshot": snapshot.model_dump(mode="json"),
     }
     return json.dumps(payload, indent=2, sort_keys=True)
@@ -67,6 +68,7 @@ def build_response_input(action: ConversationAction) -> str:
         "reason": action.reason,
         "render_text": action.render_text,
         "user_message": action.metadata.get("user_message"),
+        "message_history": action.metadata.get("message_history", []),
         "response_context": action.metadata,
     }
     return json.dumps(payload, indent=2, sort_keys=True)

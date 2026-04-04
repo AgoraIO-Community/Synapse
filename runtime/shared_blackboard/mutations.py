@@ -1,9 +1,61 @@
 from __future__ import annotations
 
+from datetime import datetime
+
 from runtime.infrastructure.time import utc_now
 from runtime.protocols.runtime import ContextPatch, PatchScope
 from runtime.protocols.tasks import ControlCommandType, Task, TaskStatus
 from runtime.shared_blackboard.blackboard_state import BlackboardSessionState
+
+MESSAGE_HISTORY_KEY = "message_history"
+MAX_MESSAGE_HISTORY = 30
+
+
+def _serialize_message_timestamp(timestamp) -> str:
+    if isinstance(timestamp, datetime):
+        return timestamp.isoformat()
+    if timestamp is None:
+        return utc_now().isoformat()
+    return str(timestamp)
+
+
+def _serialize_message_history_entry(item: dict) -> dict:
+    serialized = dict(item)
+    serialized["timestamp"] = _serialize_message_timestamp(item.get("timestamp"))
+    return serialized
+
+
+def append_message_history(
+    session: BlackboardSessionState,
+    *,
+    role: str,
+    text: str,
+    message_id: str,
+    task_id: str | None = None,
+    timestamp=None,
+) -> None:
+    history = session.conversation_state.setdefault(MESSAGE_HISTORY_KEY, [])
+    history.append(
+        _serialize_message_history_entry(
+            {
+            "role": role,
+            "text": text,
+            "message_id": message_id,
+            "task_id": task_id,
+            "timestamp": timestamp or utc_now(),
+            }
+        )
+    )
+    session.conversation_state[MESSAGE_HISTORY_KEY] = history[-MAX_MESSAGE_HISTORY:]
+
+
+def get_message_history(
+    session: BlackboardSessionState,
+    *,
+    limit: int = MAX_MESSAGE_HISTORY,
+) -> list[dict]:
+    history = session.conversation_state.get(MESSAGE_HISTORY_KEY, [])
+    return [_serialize_message_history_entry(item) for item in history[-limit:]]
 
 
 def apply_context_patch(session: BlackboardSessionState, patch: ContextPatch) -> None:

@@ -19,8 +19,11 @@ from runtime.llm.interpreter_schema import (
 )
 from runtime.llm.message_interpreter import MessageInterpreterClient
 from runtime.llm.openai_client import OpenAIProvider
-from runtime.llm.prompts import build_response_input
-from runtime.llm.prompts import build_response_instructions
+from runtime.llm.prompts import (
+    build_interpreter_input,
+    build_response_input,
+    build_response_instructions,
+)
 from runtime.llm.responder import ResponseClient
 from runtime.main import build_services
 from runtime.protocols.conversation import ConversationAction, ConversationActionType
@@ -342,12 +345,52 @@ def test_build_response_input_includes_agent_context():
     assert '"planned_actions"' in rendered_input
 
 
+def test_build_interpreter_input_includes_message_history():
+    snapshot = SessionSnapshot(
+        session_id="session_test",
+        conversation_state={
+            "message_history": [
+                {"role": "user", "text": "hello", "message_id": "m1"},
+                {"role": "assistant", "text": "hi", "message_id": "m2"},
+            ]
+        },
+    )
+
+    rendered_input = build_interpreter_input(
+        message_id="message_1",
+        text="what now?",
+        snapshot=snapshot,
+    )
+
+    assert '"message_history"' in rendered_input
+    assert '"text": "hello"' in rendered_input
+
+
 def test_build_response_instructions_emphasize_concise_spoken_replies():
     instructions = build_response_instructions()
 
     assert "spoken aloud" in instructions
     assert "one or two short sentences" in instructions
     assert "Summarize the full task result" in instructions
+
+
+def test_build_response_input_includes_message_history():
+    action = ConversationAction(
+        action_id="conv_1",
+        action_type=ConversationActionType.CHAT_REPLY,
+        metadata={
+            "user_message": "what now?",
+            "message_history": [
+                {"role": "user", "text": "hello", "message_id": "m1"},
+                {"role": "assistant", "text": "hi", "message_id": "m2"},
+            ],
+        },
+    )
+
+    rendered_input = build_response_input(action)
+
+    assert '"message_history"' in rendered_input
+    assert '"text": "hi"' in rendered_input
 
 
 def test_llm_services_exposes_real_clients_when_configured():

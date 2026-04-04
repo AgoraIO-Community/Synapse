@@ -7,6 +7,7 @@ from runtime.llm.errors import LLMConfigurationError, LLMInvocationError
 from runtime.protocols.conversation import UserMessage
 from runtime.protocols.runtime import ActionBundle, ConversationMode, RuntimeActionType
 from runtime.protocols.trace import TraceStage
+from runtime.shared_blackboard.mutations import append_message_history
 
 router = APIRouter()
 
@@ -16,7 +17,7 @@ async def submit_message(
     session_id: str, request: MessageRequest, services=Depends(get_services)
 ) -> MessageResponse:
     try:
-        snapshot = services.runtime_state_store.snapshot(session_id)
+        session = services.runtime_state_store.get_session(session_id)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
@@ -28,6 +29,14 @@ async def submit_message(
         interrupts_current_output=request.interrupts_current_output,
         metadata=request.metadata,
     )
+    append_message_history(
+        session,
+        role="user",
+        text=message.text,
+        message_id=message.message_id,
+        timestamp=message.timestamp,
+    )
+    snapshot = services.runtime_state_store.snapshot(session_id)
     span_id = new_id("span")
     try:
         await services.trace_state_store.publish(

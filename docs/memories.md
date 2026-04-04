@@ -26,3 +26,4 @@ Short log of important design decisions and changes for Synopse.
 - Added streamed response generation on the existing session websocket, with transient partial communication chunks updating one live assistant bubble while only the final communication event is persisted.
 - Separated concise spoken-style communication from fuller task output, keeping task-board results sourced from artifacts while response generation summarizes them for TTS-friendly delivery.
 - Made unsupported pause/resume requests from conversational messages degrade into assistant replies instead of 500s, and tightened fallback/interpreter handling so generic “continue” prefers task update over executor resume.
+- Added blackboard-backed message history for both message interpretation and response generation, capped at 30 persisted user/assistant messages and excluding transient stream chunks.
