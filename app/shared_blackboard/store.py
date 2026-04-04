@@ -1,0 +1,97 @@
+from __future__ import annotations
+
+import asyncio
+
+from app.infrastructure.ids import new_id
+from app.infrastructure.time import utc_now
+from app.protocols.conversation import ConversationAction
+from app.protocols.stream import SessionSnapshot, StreamCategory, StreamEvent
+from app.shared_blackboard.models import SessionState
+
+
+class SharedBlackboardStore:
+    def __init__(self) -> None:
+        self._sessions: dict[str, SessionState] = {}
+
+    def create_session(self) -> SessionState:
+        session = SessionState(session_id=new_id("session"))
+        self._sessions[session.session_id] = session
+        return session
+
+    def get_session(self, session_id: str) -> SessionState:
+        if session_id not in self._sessions:
+            raise KeyError(f"Unknown session: {session_id}")
+        return self._sessions[session_id]
+
+    def snapshot(self, session_id: str) -> SessionSnapshot:
+        session = self.get_session(session_id)
+        return SessionSnapshot(
+            session_id=session.session_id,
+            conversation_state=dict(session.conversation_state),
+            task_registry=list(session.task_registry.values()),
+            strategy_state=dict(session.strategy_state),
+            pending_clarifications=list(session.pending_clarifications),
+            last_sequence=session.last_sequence,
+            timestamp=utc_now(),
+        )
+
+    async def publish(
+        self,
+        session_id: str,
+        category: StreamCategory,
+        event_type: str,
+        source: str,
+        payload: dict,
+        *,
+        related_task_id: str | None = None,
+        related_message_id: str | None = None,
+    ) -> StreamEvent:
+        session = self.get_session(session_id)
+        session.last_sequence += 1
+        event = StreamEvent(
+            sequence=session.last_sequence,
+            stream_event_id=new_id("stream"),
+            session_id=session_id,
+            category=category,
+            event_type=event_type,
+            source=source,
+            related_task_id=related_task_id,
+            related_message_id=related_message_id,
+            timestamp=utc_now(),
+            payload=payload,
+        )
+        session.event_log.append(event)
+        for queue in list(session.subscribers):
+            await queue.put(event)
+        return event
+
+    async def publish_snapshot(self, session_id: str) -> StreamEvent:
+        snapshot = self.snapshot(session_id)
+        return await self.publish(
+            session_id,
+            StreamCategory.SYSTEM,
+            "session_snapshot",
+            "system",
+            snapshot.model_dump(mode="json"),
+        )
+
+    def add_pending_clarification(
+        self, session_id: str, action: ConversationAction
+    ) -> None:
+        session = self.get_session(session_id)
+        session.pending_clarifications.append(action)
+
+    def clear_pending_clarifications(self, session_id: str) -> None:
+        session = self.get_session(session_id)
+        session.pending_clarifications.clear()
+
+    def subscribe(self, session_id: str) -> asyncio.Queue:
+        session = self.get_session(session_id)
+        queue: asyncio.Queue = asyncio.Queue()
+        session.subscribers.append(queue)
+        return queue
+
+    def unsubscribe(self, session_id: str, queue: asyncio.Queue) -> None:
+        session = self.get_session(session_id)
+        if queue in session.subscribers:
+            session.subscribers.remove(queue)
