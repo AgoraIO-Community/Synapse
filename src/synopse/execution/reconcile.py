@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from synopse.blackboard import BlackboardStore, BlackboardQueryService
+from synopse.blackboard import BlackboardQueryService, BlackboardStore
+from synopse.executor_adapters.codex import CodexExecutor, CodexExecutorSession
 from synopse.executor_core import ExecutorRegistry, UnknownExecutorError
-from synopse.protocol import BindingStatus, Task, TaskStatus, TaskSummary
+from synopse.protocol import BindingStatus, RunStatus, Task, TaskStatus, TaskSummary
 
 from .assignment import AssignmentManager
 from .run_manager import RunManager
@@ -21,6 +22,8 @@ class ReconcileLoop:
         sessions: SessionManager,
         runs: RunManager,
         summaries: SummaryManager,
+        *,
+        default_executor_type: str,
     ) -> None:
         self._store = store
         self._queries = queries
@@ -30,6 +33,7 @@ class ReconcileLoop:
         self._runs = runs
         self._summaries = summaries
         self._scheduler = Scheduler(queries)
+        self._default_executor_type = default_executor_type
 
     async def tick(self) -> list[str]:
         completed_run_ids: list[str] = []
@@ -38,7 +42,7 @@ class ReconcileLoop:
             claimed = await self._assignment.claim_task(self._store, task)
             if claimed is None:
                 continue
-            executor_type = task.preferred_executor or "mock"
+            executor_type = task.preferred_executor or self._default_executor_type
             try:
                 executor = self._registry.get(executor_type)
             except UnknownExecutorError:
@@ -59,10 +63,24 @@ class ReconcileLoop:
             )
             async for event in executor.run_task(run, task, executor_session):
                 await self._runs.apply_event(self._store, task, run, event)
+            await self._sync_executor_session(executor, session, executor_session)
             summary = self._summaries.build_summary(task, run)
             await self._store.put_summary(summary)
-            completed_run_ids.append(run.run_id)
+            if run.status == RunStatus.COMPLETED:
+                completed_run_ids.append(run.run_id)
         return completed_run_ids
+
+    async def _sync_executor_session(
+        self,
+        executor,
+        session,
+        executor_session,
+    ) -> None:
+        if isinstance(executor, CodexExecutor) and isinstance(executor_session, CodexExecutorSession):
+            session.latest_resume_handle = executor.build_resume_handle(executor_session)
+            await self._store.put_session(session)
+            if not executor_session.is_alive():
+                self._sessions.drop_live_session(session.execution_session_id)
 
     async def _fail_unknown_executor(
         self,

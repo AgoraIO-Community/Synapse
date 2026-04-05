@@ -1,5 +1,6 @@
 import json
 from types import SimpleNamespace
+import asyncio
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -70,6 +71,17 @@ class FakeChatCompletionsAPI:
 class FakeClient:
     def __init__(self, queued_responses: list[SimpleNamespace]) -> None:
         self.chat = SimpleNamespace(completions=FakeChatCompletionsAPI(queued_responses))
+
+
+async def _wait_for_snapshot(client: AsyncClient, session_id: str, predicate, timeout: float = 1.0):
+    deadline = asyncio.get_running_loop().time() + timeout
+    while True:
+        snapshot = (await client.get(f"/sessions/{session_id}")).json()
+        if predicate(snapshot):
+            return snapshot
+        if asyncio.get_running_loop().time() >= deadline:
+            raise AssertionError("Timed out waiting for expected snapshot state.")
+        await asyncio.sleep(0.01)
 
 
 @pytest.mark.anyio
@@ -259,6 +271,10 @@ async def test_messages_v2_preseeded_bad_executor_task_fails_instead_of_500():
         )
 
         assert response.status_code == 200
-        snapshot = (await client.get(f"/sessions/{session_id}")).json()
+        snapshot = await _wait_for_snapshot(
+            client,
+            session_id,
+            lambda snap: snap["tasks"][0]["status"] == "failed",
+        )
         assert snapshot["tasks"][0]["status"] == "failed"
         assert snapshot["summaries"][0]["latest_user_visible_status"] == "failed"

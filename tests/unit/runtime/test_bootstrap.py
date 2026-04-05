@@ -1,5 +1,6 @@
 from synopse.communication.models import OpenAICommunicationModel, ScriptedCommunicationModel
 from synopse.runtime import Settings, build_runtime_container
+from synopse.runtime import bootstrap as bootstrap_module
 
 
 class FakeProvider:
@@ -20,3 +21,16 @@ def test_bootstrap_uses_openai_model_when_key_present():
         provider=FakeProvider(),
     )
     assert isinstance(container.communication_model, OpenAICommunicationModel)
+
+
+def test_bootstrap_fails_when_codex_is_enabled_but_missing(monkeypatch):
+    monkeypatch.setattr(bootstrap_module, "_codex_command_available", lambda command: False)
+
+    try:
+        build_runtime_container(
+            settings=Settings(codex_executor_enabled=True, codex_command="missing-codex"),
+        )
+    except RuntimeError as exc:
+        assert "missing-codex" in str(exc)
+    else:
+        raise AssertionError("Expected bootstrap to fail for missing codex command.")

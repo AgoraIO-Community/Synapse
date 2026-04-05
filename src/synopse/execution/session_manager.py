@@ -3,11 +3,15 @@ from __future__ import annotations
 from uuid import uuid4
 
 from synopse.blackboard import BlackboardStore
+from synopse.executor_adapters.codex import CodexExecutorSession
 from synopse.executor_core import Executor, ExecutorSession
-from synopse.protocol import BindingStatus, ExecutionSession, SessionBinding, Task
+from synopse.protocol import AgentResumeHandle, BindingStatus, ExecutionSession, SessionBinding, Task
 
 
 class SessionManager:
+    def __init__(self) -> None:
+        self._live_sessions: dict[str, ExecutorSession] = {}
+
     async def ensure_session(
         self,
         store: BlackboardStore,
@@ -18,14 +22,24 @@ class SessionManager:
         if binding.execution_session_id:
             existing = await store.get_session(binding.execution_session_id)
             if existing is not None:
+                cached = self._live_sessions.get(existing.execution_session_id)
+                if cached is not None and _session_is_alive(cached):
+                    active_binding = binding.model_copy(
+                        update={"binding_status": BindingStatus.ACTIVE}
+                    )
+                    await store.put_binding(active_binding)
+                    return existing, active_binding, cached
+
+                executor_session = await executor.create_session(task.session_affinity)
+                _hydrate_resume_handle(executor_session, existing.latest_resume_handle)
+                self._live_sessions[existing.execution_session_id] = executor_session
                 active_binding = binding.model_copy(
-                    update={"binding_status": BindingStatus.ACTIVE}
+                    update={
+                        "session_id": executor_session.session_id,
+                        "binding_status": BindingStatus.ACTIVE,
+                    }
                 )
                 await store.put_binding(active_binding)
-                executor_session = ExecutorSession(
-                    session_id=active_binding.session_id or f"missing-{uuid4().hex[:8]}",
-                    executor_type=executor.get_capabilities().executor_type,
-                )
                 return existing, active_binding, executor_session
 
         executor_session = await executor.create_session(task.session_affinity)
@@ -34,6 +48,7 @@ class SessionManager:
             task_id=task.task_id,
             base_executor_id=executor.get_capabilities().executor_type,
         )
+        self._live_sessions[execution_session.execution_session_id] = executor_session
         updated_binding = binding.model_copy(
             update={
                 "execution_session_id": execution_session.execution_session_id,
@@ -44,3 +59,24 @@ class SessionManager:
         await store.put_session(execution_session)
         await store.put_binding(updated_binding)
         return execution_session, updated_binding, executor_session
+
+    def drop_live_session(self, execution_session_id: str) -> None:
+        self._live_sessions.pop(execution_session_id, None)
+
+
+def _session_is_alive(session: ExecutorSession) -> bool:
+    if isinstance(session, CodexExecutorSession):
+        return session.is_alive()
+    return True
+
+
+def _hydrate_resume_handle(
+    session: ExecutorSession,
+    resume_handle: AgentResumeHandle | None,
+) -> None:
+    if (
+        isinstance(session, CodexExecutorSession)
+        and resume_handle is not None
+        and resume_handle.executor_id == "codex"
+    ):
+        session.thread_id = resume_handle.session_handle

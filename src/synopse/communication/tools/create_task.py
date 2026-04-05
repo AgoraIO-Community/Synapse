@@ -11,9 +11,16 @@ from .base import ToolInputError
 class CreateTaskTool:
     name = "create_task"
 
-    def __init__(self, store: BlackboardStore, *, valid_executor_types: list[str]) -> None:
+    def __init__(
+        self,
+        store: BlackboardStore,
+        *,
+        valid_executor_types: list[str],
+        default_executor_type: str,
+    ) -> None:
         self._store = store
         self._valid_executor_types = list(valid_executor_types)
+        self._default_executor_type = default_executor_type
 
     @property
     def valid_executor_types(self) -> list[str]:
@@ -27,13 +34,11 @@ class CreateTaskTool:
         preferred_executor: str | None = None,
         requires_confirmation: bool = False,
     ) -> Task:
-        if (
-            preferred_executor is not None
-            and preferred_executor not in self._valid_executor_types
-        ):
+        resolved_executor = preferred_executor or self._default_executor_type
+        if resolved_executor not in self._valid_executor_types:
             allowed = ", ".join(self._valid_executor_types)
             raise ToolInputError(
-                f"Invalid create_task preferred_executor '{preferred_executor}'. Use one of: {allowed}.",
+                f"Invalid create_task preferred_executor '{resolved_executor}'. Use one of: {allowed}.",
                 code="invalid_executor_type",
             )
 
@@ -43,7 +48,7 @@ class CreateTaskTool:
             root_task_id=task_id,
             title=title,
             goal=goal,
-            preferred_executor=preferred_executor,
+            preferred_executor=resolved_executor,
             requires_confirmation=requires_confirmation,
         )
         await self._store.put_task(task)
@@ -52,7 +57,11 @@ class CreateTaskTool:
                 mutation_id=f"mut-{uuid4().hex[:8]}",
                 task_id=task_id,
                 mutation_type=MutationType.CREATE,
-                patch={"title": title, "goal": goal},
+                patch={
+                    "title": title,
+                    "goal": goal,
+                    "preferred_executor": resolved_executor,
+                },
                 created_by="communication_brain",
             )
         )

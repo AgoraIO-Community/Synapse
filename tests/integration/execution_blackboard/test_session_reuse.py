@@ -12,7 +12,7 @@ async def test_session_is_reused_for_same_task_across_runs():
     store = InMemoryBlackboard()
     registry = ExecutorRegistry()
     registry.register(MockExecutor())
-    brain = ExecutionBrain(store, registry, worker_id="worker-1")
+    brain = ExecutionBrain(store, registry, worker_id="worker-1", default_executor_type="mock")
     task = Task(
         task_id="task_1",
         root_task_id="task_1",

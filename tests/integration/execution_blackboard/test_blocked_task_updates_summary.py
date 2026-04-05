@@ -12,7 +12,7 @@ async def test_blocked_task_updates_summary_and_user_input_flag():
     store = InMemoryBlackboard()
     registry = ExecutorRegistry()
     registry.register(MockExecutor())
-    brain = ExecutionBrain(store, registry, worker_id="worker-1")
+    brain = ExecutionBrain(store, registry, worker_id="worker-1", default_executor_type="mock")
     task = Task(
         task_id="task_1",
         root_task_id="task_1",

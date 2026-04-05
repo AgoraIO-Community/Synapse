@@ -35,5 +35,6 @@ async def submit_command(
         reason=request.reason,
     )
     await session.apply_command(command)
+    session.schedule_execution()
     await session.publish_snapshot()
     return CommandResponse(command_id=command.command_id, affected_task_ids=[task.task_id])

@@ -21,9 +21,9 @@ Important capability directions:
 
 Codex note:
 
-- the current Synopse Codex integration is closer to a one-shot non-interactive run
-- it should be treated as a disposable `ExecutionRun`
-- true executor-native continuity must remain optional
+- when enabled, Synopse can register a real Codex app-server executor beside the mock adapter
+- Codex follow-ups should reuse durable runtime session lineage plus executor-native thread handles when available
+- executor-native continuity still remains optional across executor families
 
 This is why:
 

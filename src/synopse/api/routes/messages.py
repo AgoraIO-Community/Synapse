@@ -18,7 +18,7 @@ async def submit_message(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
     result = await session.communication_brain.handle_user_message(session_id, request.text)
-    await session.execution_brain.tick()
+    session.schedule_execution()
     await session.publish_snapshot()
     return MessageResponse(
         message_id=result.message_id,

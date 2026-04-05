@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent, type KeyboardEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { createSession, openSessionStream, sendCommand, sendMessage } from "./client";
 import type {
   BlackboardWriteEvent,
@@ -19,6 +19,19 @@ import type {
   TaskSummary,
   ToolInvocationSummary,
 } from "./types";
+
+type TaskResultDetail = {
+  shortText: string;
+  fullText: string;
+  source:
+    | "summary_conversational"
+    | "summary_operational"
+    | "run_output"
+    | "run_failure"
+    | "run_block"
+    | "run_progress"
+    | "none";
+};
 
 function formatTime(value: string | null | undefined) {
   if (!value) {
@@ -163,6 +176,119 @@ function canRunCommand(task: Task, command: TaskCommandType) {
   return false;
 }
 
+function buildTaskSummaryMap(snapshot: SessionSnapshot | null) {
+  return new Map(snapshot?.summaries.map((summary) => [summary.task_id, summary]) ?? []);
+}
+
+function buildLatestRunMap(snapshot: SessionSnapshot | null) {
+  const runMap = new Map<string, ExecutionRun>();
+  const sessionsByTask = new Map(
+    snapshot?.execution_sessions.map((session) => [session.task_id, session]) ?? [],
+  );
+  const runsById = new Map(snapshot?.execution_runs.map((run) => [run.run_id, run]) ?? []);
+
+  for (const task of snapshot?.tasks ?? []) {
+    const session = sessionsByTask.get(task.task_id);
+    const latestRun =
+      (session?.latest_run_id ? runsById.get(session.latest_run_id) : null) ??
+      [...(snapshot?.execution_runs ?? [])]
+        .reverse()
+        .find((run) => run.task_id === task.task_id) ??
+      null;
+    if (latestRun) {
+      runMap.set(task.task_id, latestRun);
+    }
+  }
+
+  return runMap;
+}
+
+function getTaskResultDetail(
+  taskId: string,
+  summaryMap: Map<string, TaskSummary>,
+  latestRunMap: Map<string, ExecutionRun>,
+): TaskResultDetail | null {
+  const summary = summaryMap.get(taskId);
+  if (summary?.conversational_summary?.trim()) {
+    return {
+      shortText: summary.conversational_summary.trim(),
+      fullText: summary.conversational_summary.trim(),
+      source: "summary_conversational",
+    };
+  }
+  if (summary?.operational_summary?.trim()) {
+    return {
+      shortText: summary.operational_summary.trim(),
+      fullText: summary.operational_summary.trim(),
+      source: "summary_operational",
+    };
+  }
+
+  const run = latestRunMap.get(taskId);
+  if (!run) {
+    return null;
+  }
+  if (run.output_summary?.trim()) {
+    return {
+      shortText: run.output_summary.trim(),
+      fullText: run.output_summary.trim(),
+      source: "run_output",
+    };
+  }
+  if (run.failure_reason?.trim()) {
+    return {
+      shortText: run.failure_reason.trim(),
+      fullText: run.failure_reason.trim(),
+      source: "run_failure",
+    };
+  }
+  if (run.block_reason?.trim()) {
+    return {
+      shortText: run.block_reason.trim(),
+      fullText: run.block_reason.trim(),
+      source: "run_block",
+    };
+  }
+  if (run.latest_progress_message?.trim()) {
+    return {
+      shortText: run.latest_progress_message.trim(),
+      fullText: run.latest_progress_message.trim(),
+      source: "run_progress",
+    };
+  }
+  return null;
+}
+
+function summarizeTaskResultForCard(detail: TaskResultDetail | null) {
+  if (!detail) {
+    return "No result yet.";
+  }
+  return detail.shortText.length > 120 ? `${detail.shortText.slice(0, 117)}...` : detail.shortText;
+}
+
+function pickAutoSelectedTask(
+  nextSnapshot: SessionSnapshot,
+  previous: SessionSnapshot | null,
+  currentSelectedTaskId: string | null,
+) {
+  const previousTasks = new Map(previous?.tasks.map((task) => [task.task_id, task]) ?? []);
+  const promotedStatuses = new Set(["completed", "failed", "waiting_user_input"]);
+  const transitioned = nextSnapshot.tasks.find((task) => {
+    const prev = previousTasks.get(task.task_id);
+    return prev && prev.status !== task.status && promotedStatuses.has(task.status);
+  });
+  if (transitioned) {
+    return transitioned.task_id;
+  }
+  if (
+    currentSelectedTaskId &&
+    nextSnapshot.tasks.some((task) => task.task_id === currentSelectedTaskId)
+  ) {
+    return currentSelectedTaskId;
+  }
+  return nextSnapshot.tasks[0]?.task_id ?? null;
+}
+
 export default function App() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>("booting");
@@ -174,9 +300,12 @@ export default function App() {
   const [lastMessageResponse, setLastMessageResponse] = useState<MessageResponse | null>(null);
   const [lastCommandResponse, setLastCommandResponse] = useState<CommandResponse | null>(null);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [taskSelectionPinned, setTaskSelectionPinned] = useState(false);
   const [selectedExecutionSessionId, setSelectedExecutionSessionId] = useState<string | null>(null);
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [pendingCommand, setPendingCommand] = useState<string | null>(null);
+  const latestSnapshotRef = useRef<SessionSnapshot | null>(null);
+  const taskSelectionPinnedRef = useRef(false);
 
   useEffect(() => {
     let active = true;
@@ -203,6 +332,14 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    latestSnapshotRef.current = snapshot;
+  }, [snapshot]);
+
+  useEffect(() => {
+    taskSelectionPinnedRef.current = taskSelectionPinned;
+  }, [taskSelectionPinned]);
+
+  useEffect(() => {
     if (!sessionId) {
       return;
     }
@@ -217,12 +354,16 @@ export default function App() {
         setActionError("Failed to connect to the session snapshot stream.");
       },
       onMessage: (nextSnapshot) => {
+        const previous = latestSnapshotRef.current;
         setConnectionStatus("connected");
-        setPreviousSnapshot((current) => current ?? snapshot);
-        setSnapshot((current) => {
-          setPreviousSnapshot(current);
-          return nextSnapshot;
-        });
+        setPreviousSnapshot(previous);
+        setSnapshot(nextSnapshot);
+        latestSnapshotRef.current = nextSnapshot;
+        setSelectedTaskId((current) =>
+          taskSelectionPinnedRef.current
+            ? current
+            : pickAutoSelectedTask(nextSnapshot, previous, current),
+        );
       },
     });
     return () => socket.close();
@@ -231,18 +372,22 @@ export default function App() {
   useEffect(() => {
     if (!snapshot?.tasks.length) {
       setSelectedTaskId(null);
+      setTaskSelectionPinned(false);
       return;
     }
     if (!selectedTaskId || !snapshot.tasks.some((task) => task.task_id === selectedTaskId)) {
-      setSelectedTaskId(snapshot.tasks[0].task_id);
+      setSelectedTaskId((current) =>
+        pickAutoSelectedTask(snapshot, previousSnapshot, current),
+      );
     }
-  }, [snapshot, selectedTaskId]);
+  }, [snapshot, previousSnapshot, selectedTaskId]);
 
   const diffItems = useMemo(() => buildDiffItems(snapshot, previousSnapshot), [snapshot, previousSnapshot]);
+  const summaryByTaskId = useMemo(() => buildTaskSummaryMap(snapshot), [snapshot]);
+  const latestRunByTaskId = useMemo(() => buildLatestRunMap(snapshot), [snapshot]);
 
   const selectedTask = snapshot?.tasks.find((task) => task.task_id === selectedTaskId) ?? null;
-  const selectedSummary =
-    snapshot?.summaries.find((summary) => summary.task_id === selectedTaskId) ?? null;
+  const selectedSummary = selectedTaskId ? summaryByTaskId.get(selectedTaskId) ?? null : null;
   const selectedMutations =
     snapshot?.mutations.filter((mutation) => mutation.task_id === selectedTaskId) ?? [];
   const selectedCommands =
@@ -283,6 +428,9 @@ export default function App() {
   }, [selectedRunId, sessionRuns]);
 
   const selectedRun = sessionRuns.find((run) => run.run_id === selectedRunId) ?? null;
+  const selectedTaskResult = selectedTaskId
+    ? getTaskResultDetail(selectedTaskId, summaryByTaskId, latestRunByTaskId)
+    : null;
 
   async function handleSendMessage(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -438,13 +586,17 @@ export default function App() {
                       key={task.task_id}
                       type="button"
                       className={`entity-card ${selectedTaskId === task.task_id ? "selected" : ""}`}
-                      onClick={() => setSelectedTaskId(task.task_id)}
+                      onClick={() => {
+                        setTaskSelectionPinned(true);
+                        setSelectedTaskId(task.task_id);
+                      }}
                     >
                       <div className="entity-head">
                         <strong>{task.title}</strong>
                         <span className={`status-chip status-${task.status}`}>{task.status}</span>
                       </div>
                       <p>{task.goal}</p>
+                      <p className="muted-copy">{summarizeTaskResultForCard(getTaskResultDetail(task.task_id, summaryByTaskId, latestRunByTaskId))}</p>
                       <dl className="kv compact">
                         <div>
                           <dt>ID</dt>
@@ -481,6 +633,10 @@ export default function App() {
                     <div><dt>Requires Confirmation</dt><dd>{selectedTask.requires_confirmation ? "yes" : "no"}</dd></div>
                     <div><dt>Interruptible</dt><dd>{selectedTask.interruptible ? "yes" : "no"}</dd></div>
                   </dl>
+                  <div className="summary-block">
+                    <h4>Latest Result</h4>
+                    <p>{selectedTaskResult?.fullText ?? "No result yet."}</p>
+                  </div>
                   <div className="command-bar">
                     {(["pause_task", "resume_task", "retry_task", "cancel_task"] as TaskCommandType[]).map(
                       (command) => (

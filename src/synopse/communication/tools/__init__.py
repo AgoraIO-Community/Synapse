@@ -57,9 +57,14 @@ def build_default_tool_registry(
     store: BlackboardStore,
     *,
     executor_types: list[str] | None = None,
+    default_executor_type: str = "mock",
 ) -> ToolRegistry:
     resolved_executor_types = sorted(set(executor_types or ["mock"]))
-    create_task = CreateTaskTool(store, valid_executor_types=resolved_executor_types)
+    create_task = CreateTaskTool(
+        store,
+        valid_executor_types=resolved_executor_types,
+        default_executor_type=default_executor_type,
+    )
     control_task = ControlTaskTool(store)
     list_tasks = ListTasksTool(store)
     query_task_detail = QueryTaskDetailTool(store)

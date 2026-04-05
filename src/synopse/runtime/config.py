@@ -15,6 +15,13 @@ def load_local_env() -> None:
     load_dotenv(LOCAL_ENV_FILE, override=False)
 
 
+def _get_bool(name: str, default: bool) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
 @dataclass(slots=True)
 class Settings:
     app_name: str = "Synopse v2"
@@ -23,6 +30,8 @@ class Settings:
     openai_model: str = "gpt-4o-mini"
     openai_timeout_seconds: float = 30.0
     openai_base_url: str | None = None
+    codex_executor_enabled: bool = False
+    codex_command: str = "codex"
 
 
 def load_settings() -> Settings:
@@ -36,4 +45,6 @@ def load_settings() -> Settings:
         openai_base_url=os.getenv("SYNOPSE_OPENAI_BASE_URL")
         or os.getenv("OPENAI_BASE_URL")
         or None,
+        codex_executor_enabled=_get_bool("SYNOPSE_CODEX_EXECUTOR_ENABLED", False),
+        codex_command=os.getenv("SYNOPSE_CODEX_COMMAND", "codex"),
     )

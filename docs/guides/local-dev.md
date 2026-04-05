@@ -12,6 +12,10 @@ Current test command:
 pytest
 ```
 
+To use the Codex executor locally, make sure the `codex` CLI is installed and keep
+`SYNOPSE_CODEX_EXECUTOR_ENABLED=true` in `.env.local`. Set `SYNOPSE_CODEX_COMMAND`
+only if Synopse should launch a non-default Codex binary path.
+
 Current frontend flow:
 
 ```bash

@@ -1,3 +1,5 @@
+import asyncio
+
 import pytest
 from httpx import ASGITransport, AsyncClient
 
@@ -6,6 +8,7 @@ from synopse.communication.model import ToolCall
 from synopse.communication.models import ScriptedCommunicationModel
 from synopse.communication.models.scripted import ScriptedPlan
 from synopse.runtime.container import RuntimeContainer
+from synopse.runtime import Settings
 
 
 @pytest.mark.anyio
@@ -24,7 +27,8 @@ async def test_commands_v2_pause_task():
                     ],
                 )
             }
-        )
+        ),
+        settings=Settings(),
     )
     async with AsyncClient(
         transport=ASGITransport(app=app),
@@ -40,5 +44,12 @@ async def test_commands_v2_pause_task():
         )
 
         assert response.status_code == 200
-        snapshot = (await client.get(f"/sessions/{session_id}")).json()
+        deadline = asyncio.get_running_loop().time() + 1.0
+        while True:
+            snapshot = (await client.get(f"/sessions/{session_id}")).json()
+            if snapshot["tasks"][0]["status"] == "paused":
+                break
+            if asyncio.get_running_loop().time() >= deadline:
+                raise AssertionError("Timed out waiting for paused task state.")
+            await asyncio.sleep(0.01)
         assert snapshot["tasks"][0]["status"] == "paused"

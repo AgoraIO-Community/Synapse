@@ -15,6 +15,10 @@ It should be driven by:
 - blackboard notifications
 - periodic reconciliation
 
+Request handlers should schedule execution work and return promptly.
+Long-running executor activity should continue in the background while websocket
+subscribers receive updated session snapshots as blackboard state changes.
+
 It should not depend on Communication Brain internals.
 
 Default execution model:

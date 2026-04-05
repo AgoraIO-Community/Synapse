@@ -2,18 +2,18 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass, field
-from uuid import uuid4
 
 from synopse.blackboard import InMemoryBlackboard
 from synopse.communication import CommunicationBrain, InMemoryConversationHistory
 from synopse.communication.model import CommunicationModel
 from synopse.communication.tools import build_default_tool_registry
-from synopse.communication.resolver import TaskResolver
 from synopse.execution import ExecutionBrain
+from synopse.executor_adapters.codex import CodexExecutor
 from synopse.executor_adapters.mock import MockExecutor
 from synopse.executor_core import ExecutorRegistry
 from synopse.protocol import TaskCommand, TaskCommandType, TaskStatus
 
+from .config import Settings
 from .models import ConversationHistoryEntryModel, SessionSnapshot
 
 
@@ -26,6 +26,9 @@ class SessionRuntime:
     communication_brain: CommunicationBrain
     execution_brain: ExecutionBrain
     subscribers: list[asyncio.Queue[SessionSnapshot]] = field(default_factory=list)
+    _execution_task: asyncio.Task[None] | None = field(default=None, init=False, repr=False)
+    _snapshot_task: asyncio.Task[None] | None = field(default=None, init=False, repr=False)
+    _blackboard_queue: asyncio.Queue | None = field(default=None, init=False, repr=False)
 
     async def snapshot(self) -> SessionSnapshot:
         tasks = await self.blackboard.list_tasks()
@@ -64,17 +67,25 @@ class SessionRuntime:
     def subscribe(self) -> asyncio.Queue[SessionSnapshot]:
         queue: asyncio.Queue[SessionSnapshot] = asyncio.Queue()
         self.subscribers.append(queue)
+        self._ensure_snapshot_pump()
         return queue
 
     def unsubscribe(self, queue: asyncio.Queue[SessionSnapshot]) -> None:
         if queue in self.subscribers:
             self.subscribers.remove(queue)
+        if not self.subscribers and self._snapshot_task is not None:
+            self._snapshot_task.cancel()
 
     async def publish_snapshot(self) -> SessionSnapshot:
         snapshot = await self.snapshot()
         for queue in list(self.subscribers):
             await queue.put(snapshot)
         return snapshot
+
+    def schedule_execution(self) -> None:
+        if self._execution_task is not None and not self._execution_task.done():
+            return
+        self._execution_task = asyncio.create_task(self._run_execution_loop())
 
     async def apply_command(self, command: TaskCommand) -> list[str]:
         await self.blackboard.append_command(command)
@@ -90,18 +101,61 @@ class SessionRuntime:
             task.status = TaskStatus.QUEUED
 
         await self.blackboard.put_task(task)
-        return await self.execution_brain.tick()
+        return [task.task_id]
+
+    async def _run_execution_loop(self) -> None:
+        try:
+            while await self._has_runnable_tasks():
+                await self.execution_brain.tick()
+        finally:
+            self._execution_task = None
+
+    async def _has_runnable_tasks(self) -> bool:
+        tasks = await self.blackboard.list_tasks()
+        return any(task.status in {TaskStatus.CREATED, TaskStatus.QUEUED} for task in tasks)
+
+    def _ensure_snapshot_pump(self) -> None:
+        if self._snapshot_task is not None and not self._snapshot_task.done():
+            return
+        self._blackboard_queue = self.blackboard.subscribe()
+        self._snapshot_task = asyncio.create_task(self._snapshot_loop())
+
+    async def _snapshot_loop(self) -> None:
+        queue = self._blackboard_queue
+        if queue is None:
+            return
+        try:
+            while True:
+                await queue.get()
+                while True:
+                    try:
+                        queue.get_nowait()
+                    except asyncio.QueueEmpty:
+                        break
+                await self.publish_snapshot()
+        except asyncio.CancelledError:
+            raise
+        finally:
+            self.blackboard.unsubscribe(queue)
+            if self._blackboard_queue is queue:
+                self._blackboard_queue = None
+            if asyncio.current_task() is self._snapshot_task:
+                self._snapshot_task = None
 
 
 def create_session_runtime(
     session_id: str,
     *,
     model: CommunicationModel,
+    settings: Settings,
 ) -> SessionRuntime:
     blackboard = InMemoryBlackboard()
     history = InMemoryConversationHistory()
     registry = ExecutorRegistry()
     registry.register(MockExecutor())
+    if settings.codex_executor_enabled:
+        registry.register(CodexExecutor(command=settings.codex_command))
+    default_executor_type = "codex" if settings.codex_executor_enabled else "mock"
     communication_brain = CommunicationBrain(
         blackboard,
         model,
@@ -109,9 +163,15 @@ def create_session_runtime(
         tool_registry=build_default_tool_registry(
             blackboard,
             executor_types=registry.list_executor_types(),
+            default_executor_type=default_executor_type,
         ),
     )
-    execution_brain = ExecutionBrain(blackboard, registry, worker_id=f"worker-{session_id}")
+    execution_brain = ExecutionBrain(
+        blackboard,
+        registry,
+        worker_id=f"worker-{session_id}",
+        default_executor_type=default_executor_type,
+    )
     return SessionRuntime(
         session_id=session_id,
         blackboard=blackboard,

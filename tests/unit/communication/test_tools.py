@@ -16,6 +16,7 @@ async def test_create_update_control_and_query_tools():
         goal="Draft an email reply",
     )
     assert created.task_id.startswith("task-")
+    assert created.preferred_executor == "mock"
 
     updated = await registry.get("update_task")(
         task_id=created.task_id,
@@ -52,6 +53,7 @@ def test_create_task_schema_uses_registered_executor_values():
     registry = build_default_tool_registry(
         InMemoryBlackboard(),
         executor_types=["mock", "codex"],
+        default_executor_type="codex",
     )
 
     preferred_executor_schema = registry.get("create_task").input_schema["properties"][
@@ -88,7 +90,11 @@ async def test_control_task_rejects_non_canonical_command_aliases():
 @pytest.mark.anyio
 async def test_create_task_rejects_unknown_executor_ids():
     store = InMemoryBlackboard()
-    registry = build_default_tool_registry(store, executor_types=["mock"])
+    registry = build_default_tool_registry(
+        store,
+        executor_types=["mock"],
+        default_executor_type="mock",
+    )
 
     with pytest.raises(ToolInputError, match="Invalid create_task preferred_executor 'User'"):
         await registry.get("create_task")(
@@ -98,3 +104,20 @@ async def test_create_task_rejects_unknown_executor_ids():
         )
 
     assert await store.list_tasks() == []
+
+
+@pytest.mark.anyio
+async def test_create_task_uses_default_executor_when_omitted():
+    store = InMemoryBlackboard()
+    registry = build_default_tool_registry(
+        store,
+        executor_types=["mock", "codex"],
+        default_executor_type="codex",
+    )
+
+    created = await registry.get("create_task")(
+        title="Draft email",
+        goal="Draft an email reply",
+    )
+
+    assert created.preferred_executor == "codex"

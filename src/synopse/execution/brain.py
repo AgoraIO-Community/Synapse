@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from synopse.blackboard import BlackboardStore, BlackboardQueryService
+from synopse.blackboard import BlackboardQueryService, BlackboardStore
 from synopse.executor_core import ExecutorRegistry
 
 from .assignment import AssignmentManager
@@ -11,7 +11,14 @@ from .summary_manager import SummaryManager
 
 
 class ExecutionBrain:
-    def __init__(self, store: BlackboardStore, registry: ExecutorRegistry, *, worker_id: str) -> None:
+    def __init__(
+        self,
+        store: BlackboardStore,
+        registry: ExecutorRegistry,
+        *,
+        worker_id: str,
+        default_executor_type: str,
+    ) -> None:
         self._loop = ReconcileLoop(
             store=store,
             queries=BlackboardQueryService(store),
@@ -20,6 +27,7 @@ class ExecutionBrain:
             sessions=SessionManager(),
             runs=RunManager(),
             summaries=SummaryManager(),
+            default_executor_type=default_executor_type,
         )
 
     async def tick(self) -> list[str]:
