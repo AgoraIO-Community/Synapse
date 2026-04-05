@@ -4,14 +4,14 @@ import sys
 
 import pytest
 
-from synopse.runtime import config as config_module
-
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
+
+from synopse.runtime import config as config_module
 
 
 @pytest.fixture(autouse=True)

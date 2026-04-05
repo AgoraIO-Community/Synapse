@@ -1,1 +1,0 @@
-"""Synopse runtime prototype package."""
