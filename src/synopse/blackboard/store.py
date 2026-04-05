@@ -1,0 +1,23 @@
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from enum import StrEnum
+from typing import Any
+
+
+class BlackboardWriteKind(StrEnum):
+    TASK = "task"
+    MUTATION = "mutation"
+    COMMAND = "command"
+    RUN = "run"
+    SESSION = "session"
+    BINDING = "binding"
+    SUMMARY = "summary"
+
+
+@dataclass(slots=True)
+class BlackboardWriteEvent:
+    kind: BlackboardWriteKind
+    entity_id: str | None = None
+    task_id: str | None = None
+    payload: dict[str, Any] = field(default_factory=dict)

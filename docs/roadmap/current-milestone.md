@@ -4,24 +4,24 @@ This page should stay short and current.
 
 ## Active Phase
 
-- `Phase 0: Docs + Scaffold`
+- `Cutover: Remove Legacy Runtime Path`
+- status: `in progress`
 
 ## Immediate Next Milestone
 
-- stabilize package layout and contributor-facing docs
-- prepare protocol and blackboard core for implementation
-- prepare `tests/`, `evals/`, `fixtures/`, and `replays/` layout as part of the scaffold
+- remove the legacy `runtime/` implementation
+- remove legacy tests that depend on `runtime.*`
+- leave `src/synopse` as the only active backend path
 
 ## Explicitly Out of Scope Right Now
 
-- full runtime migration to `src/synopse/`
 - production-grade executor adapters
 - finalized proactive notification behavior
 
 ## Transition Condition
 
-Move into `Phase 1` when:
+Move into the next phase when:
 
-- docs structure is stable
-- roadmap docs are in place
-- package and module boundaries are no longer ambiguous
+- no active code imports `runtime.*`
+- no active tests depend on `runtime.*`
+- docs and run guidance point only to `synopse.api.app`

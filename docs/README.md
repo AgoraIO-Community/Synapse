@@ -1,8 +1,8 @@
 # Docs
 
-## Current
+## Legacy
 
-- [Current Implementation Overview](./design.md)
+- [Legacy V1 Overview](./design.md)
 - [Project Memories](./memories.md)
 
 ## Architecture

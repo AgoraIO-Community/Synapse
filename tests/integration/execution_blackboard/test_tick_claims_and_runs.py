@@ -1,0 +1,34 @@
+import pytest
+
+from synopse.blackboard import InMemoryBlackboard
+from synopse.execution import ExecutionBrain
+from synopse.executor_adapters.mock import MockExecutor
+from synopse.executor_core import ExecutorRegistry
+from synopse.protocol import Task, TaskStatus
+
+
+@pytest.mark.anyio
+async def test_execution_brain_tick_claims_runs_and_completes():
+    store = InMemoryBlackboard()
+    registry = ExecutorRegistry()
+    registry.register(MockExecutor())
+    brain = ExecutionBrain(store, registry, worker_id="worker-1")
+    task = Task(
+        task_id="task_1",
+        root_task_id="task_1",
+        title="Complete task",
+        goal="Complete task",
+        status=TaskStatus.QUEUED,
+        preferred_executor="mock",
+    )
+    await store.put_task(task)
+
+    run_ids = await brain.tick()
+
+    assert len(run_ids) == 1
+    saved_task = await store.get_task("task_1")
+    assert saved_task is not None
+    assert saved_task.status == TaskStatus.COMPLETED
+    summary = await store.get_summary("task_1")
+    assert summary is not None
+    assert summary.latest_user_visible_status == "completed"

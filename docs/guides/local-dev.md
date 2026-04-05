@@ -1,9 +1,9 @@
 # Local Development
 
-Current backend run command:
+Preferred backend run command:
 
 ```bash
-uvicorn runtime.main:app --reload
+uvicorn synopse.api.app:app --reload
 ```
 
 Current test command:
@@ -20,4 +20,9 @@ bun install
 bun run dev
 ```
 
-This guide should be updated when the codebase moves to the future `src/synopse/` layout and new API entrypoint.
+For the new app path, make sure the package is installed in editable mode first:
+
+```bash
+source .venv/bin/activate
+pip install -e '.[dev]'
+```

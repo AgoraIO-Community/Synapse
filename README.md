@@ -12,7 +12,7 @@ Backend-first prototype for a communication-brain / execution-brain runtime.
 ## Run
 
 ```bash
-uvicorn runtime.main:app --reload
+uvicorn synopse.api.app:app --reload
 ```
 
 If the frontend shows `error` and messages do not progress, make sure backend WebSocket support and Python dependencies are installed:

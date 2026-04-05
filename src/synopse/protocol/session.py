@@ -1,0 +1,41 @@
+from __future__ import annotations
+
+from pydantic import BaseModel, Field
+
+from .enums import BindingStatus
+
+
+class AgentResumeHandle(BaseModel):
+    executor_id: str
+    session_handle: str | None = None
+    turn_handle: str | None = None
+    opaque: dict[str, object] = Field(default_factory=dict)
+
+
+class QueuedRunRequest(BaseModel):
+    queued_request_id: str
+    task_id: str
+    executor_config: dict[str, object] = Field(default_factory=dict)
+    latest_instruction: str
+    requested_by_message_id: str | None = None
+
+
+class ExecutionSession(BaseModel):
+    execution_session_id: str
+    task_id: str
+    base_executor_id: str
+    run_ids: list[str] = Field(default_factory=list)
+    active_run_id: str | None = None
+    latest_run_id: str | None = None
+    latest_resume_handle: AgentResumeHandle | None = None
+    queued_run_request: QueuedRunRequest | None = None
+
+
+class SessionBinding(BaseModel):
+    task_id: str
+    execution_session_id: str | None = None
+    session_id: str | None = None
+    claimed_by: str | None = None
+    claim_expires_at: str | None = None
+    execution_revision: int = 0
+    binding_status: BindingStatus = BindingStatus.CREATED

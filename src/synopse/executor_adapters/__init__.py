@@ -1,0 +1,1 @@
+"""Executor adapter package scaffold."""

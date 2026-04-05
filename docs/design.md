@@ -1,5 +1,8 @@
 # Synopse Design
 
+> Legacy v1 architecture reference.  
+> Current stable design work should follow `docs/architecture/`, `docs/protocol/`, and `docs/roadmap/`.
+
 ## Overview
 
 Synopse is a backend-first prototype for a `communication brain + execution brain` runtime.

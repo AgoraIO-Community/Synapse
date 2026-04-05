@@ -20,7 +20,7 @@ Core concepts:
 
 ## Run
 ```bash
-uvicorn runtime.main:app --reload
+uvicorn synopse.api.app:app --reload
 ```
 
 ## Test
@@ -38,14 +38,14 @@ pytest
 Treat `docs/` as the project documentation and memory root.
 
 - `docs/README.md` is the docs index.
-- `docs/design.md` is the current stable architecture overview.
+- `docs/design.md` is the legacy v1 architecture overview.
 - `docs/architecture/`, `docs/protocol/`, `docs/guides/`, and `docs/decisions/` contain the stable topic docs.
 - `docs/roadmap/` contains the maintained implementation roadmap and verification strategy.
 - `docs/rfcs/` contains proposal / RFC-style design docs and must not be treated as the current implementation contract unless their content is merged into the stable docs.
 - `docs/memories.md` records short factual notes for adopted, meaningful design and architecture changes.
 
 When architecture, protocols, or runtime behavior changes in an adopted and implementation-relevant way:
-- update `docs/design.md`
+- update the stable docs under `docs/architecture/`, `docs/protocol/`, and related topic docs
 - update any other stable docs that become the source of truth for that topic
 - append a short note to `docs/memories.md`
 

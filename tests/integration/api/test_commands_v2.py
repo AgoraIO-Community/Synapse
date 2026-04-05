@@ -1,0 +1,43 @@
+import pytest
+from httpx import ASGITransport, AsyncClient
+
+from synopse.api.app import create_app
+from synopse.communication.model import CommunicationDecision, ToolCall
+from synopse.communication.models import ScriptedCommunicationModel
+from synopse.runtime.container import RuntimeContainer
+
+
+@pytest.mark.anyio
+async def test_commands_v2_pause_task():
+    app = create_app()
+    app.state.runtime_container = RuntimeContainer(
+        communication_model=ScriptedCommunicationModel(
+            {
+                "__default__": CommunicationDecision(
+                    conversational_act="acknowledge_and_start",
+                    tool_calls=[
+                        ToolCall(
+                            name="create_task",
+                            args={"title": "Draft email", "goal": "Draft email"},
+                        )
+                    ],
+                )
+            }
+        )
+    )
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        session_id = (await client.post("/sessions")).json()["session_id"]
+        await client.post(f"/sessions/{session_id}/messages", json={"text": "Draft email"})
+        task_id = (await client.get(f"/sessions/{session_id}")).json()["tasks"][0]["task_id"]
+
+        response = await client.post(
+            f"/sessions/{session_id}/commands",
+            json={"command_type": "pause_task", "task_id": task_id},
+        )
+
+        assert response.status_code == 200
+        snapshot = (await client.get(f"/sessions/{session_id}")).json()
+        assert snapshot["tasks"][0]["status"] == "paused"
