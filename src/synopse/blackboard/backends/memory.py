@@ -24,10 +24,13 @@ class InMemoryBlackboard(BlackboardStore):
         self._tasks: dict[str, Task] = {}
         self._mutations_by_task: dict[str, list[TaskMutation]] = defaultdict(list)
         self._commands_by_task: dict[str, list[TaskCommand]] = defaultdict(list)
+        self._mutations: list[TaskMutation] = []
+        self._commands: list[TaskCommand] = []
         self._sessions: dict[str, ExecutionSession] = {}
         self._runs: dict[str, ExecutionRun] = {}
         self._bindings_by_task: dict[str, SessionBinding] = {}
         self._summaries_by_task: dict[str, TaskSummary] = {}
+        self._recent_writes: list[BlackboardWriteEvent] = []
         self._subscriptions = SubscriptionManager()
         self._lock = asyncio.Lock()
 
@@ -57,30 +60,40 @@ class InMemoryBlackboard(BlackboardStore):
                     bump_task_revision(task)
             else:
                 self._mutations_by_task[""].append(mutation)
+            self._mutations.append(mutation)
         await self._publish(
             BlackboardWriteEvent(
                 kind=BlackboardWriteKind.MUTATION,
                 entity_id=mutation.mutation_id,
                 task_id=mutation.task_id,
+                payload={"mutation_type": mutation.mutation_type.value},
             )
         )
 
     async def list_mutations(self, task_id: str) -> list[TaskMutation]:
         return list(self._mutations_by_task.get(task_id, []))
 
+    async def list_all_mutations(self) -> list[TaskMutation]:
+        return list(self._mutations)
+
     async def append_command(self, command: TaskCommand) -> None:
         async with self._lock:
             self._commands_by_task[command.task_id].append(command)
+            self._commands.append(command)
         await self._publish(
             BlackboardWriteEvent(
                 kind=BlackboardWriteKind.COMMAND,
                 entity_id=command.command_id,
                 task_id=command.task_id,
+                payload={"command_type": command.command_type.value},
             )
         )
 
     async def list_commands(self, task_id: str) -> list[TaskCommand]:
         return list(self._commands_by_task.get(task_id, []))
+
+    async def list_all_commands(self) -> list[TaskCommand]:
+        return list(self._commands)
 
     async def put_run(self, run: ExecutionRun) -> None:
         async with self._lock:
@@ -147,6 +160,9 @@ class InMemoryBlackboard(BlackboardStore):
     async def get_summary(self, task_id: str) -> TaskSummary | None:
         return self._summaries_by_task.get(task_id)
 
+    async def list_recent_writes(self, limit: int = 50) -> list[BlackboardWriteEvent]:
+        return list(self._recent_writes[-limit:])
+
     def subscribe(self) -> asyncio.Queue[BlackboardWriteEvent]:
         return self._subscriptions.subscribe()
 
@@ -154,4 +170,5 @@ class InMemoryBlackboard(BlackboardStore):
         self._subscriptions.unsubscribe(queue)
 
     async def _publish(self, event: BlackboardWriteEvent) -> None:
+        self._recent_writes.append(event)
         await self._subscriptions.publish(event)

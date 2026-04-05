@@ -20,3 +20,6 @@ async def test_sessions_v2_create_and_get_snapshot():
         body = snapshot.json()
         assert body["session_id"] == session_id
         assert body["tasks"] == []
+        assert body["mutations"] == []
+        assert body["commands"] == []
+        assert body["recent_blackboard_writes"] == []

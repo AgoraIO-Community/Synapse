@@ -1,127 +1,189 @@
-import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
-import { createSession, openSessionStream, openTraceStream, sendCommand, sendMessage } from "./client";
+import { useEffect, useMemo, useState, type FormEvent, type KeyboardEvent } from "react";
+import { createSession, openSessionStream, sendCommand, sendMessage } from "./client";
 import type {
-  Artifact,
-  CommandType,
-  CommunicationChunkPayload,
-  CommunicationEventPayload,
+  BlackboardWriteEvent,
+  CommandResponse,
   ConnectionStatus,
-  ExecutorCapability,
-  ExecutionEventPayload,
+  ConversationHistoryEntry,
+  ExecutionRun,
+  ExecutionSession,
+  MessageResponse,
+  SessionBinding,
+  SessionResponse,
   SessionSnapshot,
-  StreamEvent,
+  SnapshotDiffItem,
   Task,
-  TraceEvent,
-  TraceSnapshot,
-  TimelineMessage,
+  TaskCommand,
+  TaskCommandType,
+  TaskMutation,
+  TaskSummary,
+  ToolInvocationSummary,
 } from "./types";
 
-const MAX_EVENTS = 40;
-const HIDDEN_RUNTIME_EVENT_TYPES = new Set(["response_chunk"]);
-const HIDDEN_TRACE_EVENT_TYPES = new Set([
-  "llm_response_stream_request",
-  "llm_response_stream_response",
-  "llm_response_stream_error",
-]);
-const TIMELINE_FOLLOW_THRESHOLD_PX = 32;
-
-function formatTime(timestamp: string) {
-  return new Date(timestamp).toLocaleTimeString([], {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+function formatTime(value: string | null | undefined) {
+  if (!value) {
+    return "n/a";
+  }
+  const date = new Date(value);
+  return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(
+    2,
+    "0",
+  )}:${String(date.getSeconds()).padStart(2, "0")}`;
 }
 
-function formatMessageTime(timestamp: string) {
-  const date = new Date(timestamp);
-  const hours = String(date.getHours()).padStart(2, "0");
-  const minutes = String(date.getMinutes()).padStart(2, "0");
-  const seconds = String(date.getSeconds()).padStart(2, "0");
-  const milliseconds = String(date.getMilliseconds()).padStart(3, "0");
-  return `${hours}:${minutes}:${seconds}.${milliseconds}`;
+function formatJson(value: unknown) {
+  return JSON.stringify(value, null, 2);
 }
 
-function extractFullTaskResult(task: Task) {
-  for (const artifact of task.artifacts) {
-    if (typeof artifact.inline_value === "string" && artifact.inline_value.trim()) {
-      return artifact.inline_value.trim();
+function summarizeWriteEvent(event: BlackboardWriteEvent) {
+  const payloadKeys = Object.keys(event.payload ?? {});
+  return payloadKeys.length > 0 ? `${event.kind} updated (${payloadKeys.join(", ")})` : `${event.kind} updated`;
+}
+
+function buildDiffItems(
+  current: SessionSnapshot | null,
+  previous: SessionSnapshot | null,
+): SnapshotDiffItem[] {
+  if (!current) {
+    return [];
+  }
+
+  const items: SnapshotDiffItem[] = [];
+
+  const previousTasks = new Map(previous?.tasks.map((task) => [task.task_id, task]) ?? []);
+  for (const task of current.tasks) {
+    const prev = previousTasks.get(task.task_id);
+    if (!prev) {
+      items.push({
+        id: `task-created-${task.task_id}`,
+        entityKind: "task",
+        entityId: task.task_id,
+        changeType: "created",
+        taskId: task.task_id,
+        details: `Task created: ${task.title}`,
+      });
+      continue;
+    }
+    if (prev.status !== task.status) {
+      items.push({
+        id: `task-status-${task.task_id}-${task.status}`,
+        entityKind: "task",
+        entityId: task.task_id,
+        changeType: "status_changed",
+        taskId: task.task_id,
+        details: `Task status ${prev.status} -> ${task.status}`,
+      });
+    }
+    if (prev.task_revision !== task.task_revision) {
+      items.push({
+        id: `task-revision-${task.task_id}-${task.task_revision}`,
+        entityKind: "task",
+        entityId: task.task_id,
+        changeType: "revision_bumped",
+        taskId: task.task_id,
+        details: `Task revision ${prev.task_revision} -> ${task.task_revision}`,
+      });
     }
   }
-  return task.output_summary ?? task.goal;
+
+  const previousRuns = new Map(previous?.execution_runs.map((run) => [run.run_id, run]) ?? []);
+  for (const run of current.execution_runs) {
+    const prev = previousRuns.get(run.run_id);
+    if (!prev) {
+      items.push({
+        id: `run-created-${run.run_id}`,
+        entityKind: "run",
+        entityId: run.run_id,
+        changeType: "created",
+        taskId: run.task_id,
+        details: `Run created: ${run.run_id}`,
+      });
+      continue;
+    }
+    if (prev.status !== run.status) {
+      items.push({
+        id: `run-status-${run.run_id}-${run.status}`,
+        entityKind: "run",
+        entityId: run.run_id,
+        changeType: "status_changed",
+        taskId: run.task_id,
+        details: `Run status ${prev.status} -> ${run.status}`,
+      });
+    }
+  }
+
+  const previousCommands = new Set(previous?.commands.map((command) => command.command_id) ?? []);
+  for (const command of current.commands) {
+    if (!previousCommands.has(command.command_id)) {
+      items.push({
+        id: `command-${command.command_id}`,
+        entityKind: "command",
+        entityId: command.command_id,
+        changeType: "appended",
+        taskId: command.task_id,
+        details: `Command appended: ${command.command_type}`,
+      });
+    }
+  }
+
+  const previousMutations = new Set(previous?.mutations.map((mutation) => mutation.mutation_id) ?? []);
+  for (const mutation of current.mutations) {
+    if (!previousMutations.has(mutation.mutation_id)) {
+      items.push({
+        id: `mutation-${mutation.mutation_id}`,
+        entityKind: "mutation",
+        entityId: mutation.mutation_id,
+        changeType: "appended",
+        taskId: mutation.task_id,
+        details: `Mutation appended: ${mutation.mutation_type}`,
+      });
+    }
+  }
+
+  return items.reverse();
 }
 
-function canRunCommand(
-  task: Task,
-  command: CommandType,
-  capabilitiesByExecutor: Record<string, ExecutorCapability>,
-) {
-  const capability = task.assigned_executor
-    ? capabilitiesByExecutor[task.assigned_executor]
-    : undefined;
+function commandLabel(command: TaskCommandType) {
+  return command.replace("_task", "").replace("_", " ");
+}
+
+function canRunCommand(task: Task, command: TaskCommandType) {
+  if (command === "pause_task") {
+    return ["created", "queued", "running", "waiting_user_input"].includes(task.status);
+  }
   if (command === "cancel_task") {
-    return (
-      ["queued", "running", "blocked"].includes(task.status) &&
-      (capability?.supports_cancel ?? true)
-    );
+    return !["completed", "cancelled", "failed"].includes(task.status);
+  }
+  if (command === "retry_task") {
+    return ["completed", "failed", "cancelled", "paused"].includes(task.status);
+  }
+  if (command === "resume_task") {
+    return task.status === "paused";
   }
   return false;
 }
 
-function isNearTimelineBottom(element: HTMLDivElement) {
-  return (
-    element.scrollHeight - element.scrollTop - element.clientHeight <=
-    TIMELINE_FOLLOW_THRESHOLD_PX
-  );
-}
-
 export default function App() {
-  const socketRef = useRef<WebSocket | null>(null);
-  const traceSocketRef = useRef<WebSocket | null>(null);
-  const timelineRef = useRef<HTMLDivElement | null>(null);
-  const shouldFollowTimelineRef = useRef(true);
-  const didBootRef = useRef(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>("booting");
-  const [traceConnectionStatus, setTraceConnectionStatus] = useState<ConnectionStatus>("booting");
   const [composer, setComposer] = useState("");
-  const [isSending, setIsSending] = useState(false);
-  const [isStreamReady, setIsStreamReady] = useState(false);
-  const [events, setEvents] = useState<StreamEvent[]>([]);
-  const [traceEvents, setTraceEvents] = useState<TraceEvent[]>([]);
-  const [timeline, setTimeline] = useState<TimelineMessage[]>([]);
-  const [tasks, setTasks] = useState<Record<string, Task>>({});
-  const [executorCapabilities, setExecutorCapabilities] = useState<
-    Record<string, ExecutorCapability>
-  >({});
-  const [expandedEventId, setExpandedEventId] = useState<string | null>(null);
-  const [expandedTraceEventId, setExpandedTraceEventId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [pendingTaskCommand, setPendingTaskCommand] = useState<string | null>(null);
-  const [copyStatus, setCopyStatus] = useState<string | null>(null);
-  const visibleOutcomeEvents = events.filter(
-    (event) => !HIDDEN_RUNTIME_EVENT_TYPES.has(event.event_type),
-  );
+  const [isSending, setIsSending] = useState(false);
+  const [snapshot, setSnapshot] = useState<SessionSnapshot | null>(null);
+  const [previousSnapshot, setPreviousSnapshot] = useState<SessionSnapshot | null>(null);
+  const [lastMessageResponse, setLastMessageResponse] = useState<MessageResponse | null>(null);
+  const [lastCommandResponse, setLastCommandResponse] = useState<CommandResponse | null>(null);
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [selectedExecutionSessionId, setSelectedExecutionSessionId] = useState<string | null>(null);
+  const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
+  const [pendingCommand, setPendingCommand] = useState<string | null>(null);
 
   useEffect(() => {
-    const timelineElement = timelineRef.current;
-    if (!timelineElement || !shouldFollowTimelineRef.current || timeline.length === 0) {
-      return;
-    }
-    timelineElement.scrollTop = timelineElement.scrollHeight;
-  }, [timeline]);
-
-  useEffect(() => {
-    if (didBootRef.current) {
-      return;
-    }
-    didBootRef.current = true;
     let active = true;
-
     async function boot() {
       setConnectionStatus("booting");
-      setActionError(null);
       try {
-        const session = await createSession();
+        const session: SessionResponse = await createSession();
         if (!active) {
           return;
         }
@@ -134,12 +196,9 @@ export default function App() {
         setActionError(error instanceof Error ? error.message : "Failed to create session.");
       }
     }
-
     void boot();
     return () => {
       active = false;
-      socketRef.current?.close();
-      traceSocketRef.current?.close();
     };
   }, []);
 
@@ -147,271 +206,95 @@ export default function App() {
     if (!sessionId) {
       return;
     }
-
     setConnectionStatus("connecting");
-    setIsStreamReady(false);
     setActionError(null);
-    socketRef.current?.close();
     const socket = openSessionStream(sessionId, {
-      onOpen: () => {
-        setConnectionStatus("connecting");
-      },
-      onClose: () => {
-        setIsStreamReady(false);
-        setConnectionStatus((current) => (current === "error" ? current : "disconnected"));
-      },
+      onOpen: () => setConnectionStatus("connecting"),
+      onClose: () =>
+        setConnectionStatus((current) => (current === "error" ? current : "disconnected")),
       onError: () => {
-        setIsStreamReady(false);
         setConnectionStatus("error");
-        setActionError(
-          "Live runtime stream could not connect. Check that the backend has WebSocket support and is running.",
-        );
+        setActionError("Failed to connect to the session snapshot stream.");
       },
-      onMessage: (event) => {
-        setEvents((current) => [event, ...current].slice(0, MAX_EVENTS));
-        applyEvent(event);
+      onMessage: (nextSnapshot) => {
+        setConnectionStatus("connected");
+        setPreviousSnapshot((current) => current ?? snapshot);
+        setSnapshot((current) => {
+          setPreviousSnapshot(current);
+          return nextSnapshot;
+        });
       },
     });
-    socketRef.current = socket;
-
-    return () => {
-      socket.close();
-    };
+    return () => socket.close();
   }, [sessionId]);
 
   useEffect(() => {
-    if (!sessionId) {
+    if (!snapshot?.tasks.length) {
+      setSelectedTaskId(null);
       return;
     }
+    if (!selectedTaskId || !snapshot.tasks.some((task) => task.task_id === selectedTaskId)) {
+      setSelectedTaskId(snapshot.tasks[0].task_id);
+    }
+  }, [snapshot, selectedTaskId]);
 
-    setTraceConnectionStatus("connecting");
-    traceSocketRef.current?.close();
-    const traceSocket = openTraceStream(sessionId, {
-      onOpen: () => {
-        setTraceConnectionStatus("connecting");
-      },
-      onClose: () => {
-        setTraceConnectionStatus((current) =>
-          current === "error" ? current : "disconnected",
-        );
-      },
-      onError: () => {
-        setTraceConnectionStatus("error");
-      },
-      onMessage: (event) => {
-        applyTraceEvent(event);
-      },
-    });
-    traceSocketRef.current = traceSocket;
+  const diffItems = useMemo(() => buildDiffItems(snapshot, previousSnapshot), [snapshot, previousSnapshot]);
 
-    return () => {
-      traceSocket.close();
-    };
-  }, [sessionId]);
+  const selectedTask = snapshot?.tasks.find((task) => task.task_id === selectedTaskId) ?? null;
+  const selectedSummary =
+    snapshot?.summaries.find((summary) => summary.task_id === selectedTaskId) ?? null;
+  const selectedMutations =
+    snapshot?.mutations.filter((mutation) => mutation.task_id === selectedTaskId) ?? [];
+  const selectedCommands =
+    snapshot?.commands.filter((command) => command.task_id === selectedTaskId) ?? [];
+  const selectedBindings =
+    snapshot?.bindings.filter((binding) => binding.task_id === selectedTaskId) ?? [];
+  const selectedSessions =
+    snapshot?.execution_sessions.filter((session) => session.task_id === selectedTaskId) ?? [];
+  const selectedRuns =
+    snapshot?.execution_runs.filter((run) => run.task_id === selectedTaskId) ?? [];
 
-  function upsertAssistantTimelineMessage(
-    messageId: string,
-    text: string,
-    timestamp: string,
-    taskId: string | null,
-    streaming: boolean,
-  ) {
-    setTimeline((current) => {
-      const nextMessage: TimelineMessage = {
-        id: messageId,
-        kind: "assistant",
-        text,
-        timestamp,
-        taskId,
-        streaming,
-      };
-      const existingIndex = current.findIndex((item) => item.id === messageId);
-      if (existingIndex === -1) {
-        return [...current, nextMessage];
-      }
-      const next = current.slice();
-      next[existingIndex] = {
-        ...next[existingIndex],
-        ...nextMessage,
-      };
-      return next;
-    });
-  }
-
-  function applyEvent(event: StreamEvent) {
-    if (event.event_type === "session_snapshot") {
-      setConnectionStatus("connected");
-      setIsStreamReady(true);
-      setActionError(null);
-      const snapshot = event.payload as unknown as SessionSnapshot;
-      const nextTasks = Object.fromEntries(
-        snapshot.task_registry.map((task) => [task.task_id, task]),
-      );
-      const nextCapabilities = Object.fromEntries(
-        snapshot.executor_capabilities.map((capability) => [
-          capability.executor_id,
-          capability,
-        ]),
-      );
-      setTasks(nextTasks);
-      setExecutorCapabilities(nextCapabilities);
+  useEffect(() => {
+    if (!selectedSessions.length) {
+      setSelectedExecutionSessionId(null);
       return;
     }
+    if (
+      !selectedExecutionSessionId ||
+      !selectedSessions.some((session) => session.execution_session_id === selectedExecutionSessionId)
+    ) {
+      setSelectedExecutionSessionId(selectedSessions[0].execution_session_id);
+    }
+  }, [selectedExecutionSessionId, selectedSessions]);
 
-    if (event.category === "communication") {
-      if (event.event_type === "response_chunk") {
-        const payload = event.payload as unknown as CommunicationChunkPayload;
-        upsertAssistantTimelineMessage(
-          payload.action_id,
-          payload.render_text,
-          payload.timestamp,
-          payload.target_task_id,
-          true,
-        );
-        return;
-      }
+  const sessionRuns =
+    snapshot?.execution_runs.filter(
+      (run) => run.execution_session_id === selectedExecutionSessionId,
+    ) ?? [];
 
-      const payload = event.payload as unknown as CommunicationEventPayload;
-      upsertAssistantTimelineMessage(
-        payload.action.action_id,
-        payload.action.render_text ?? payload.action.reason ?? payload.action.action_type,
-        payload.timestamp,
-        payload.action.target_task_id,
-        false,
-      );
+  useEffect(() => {
+    if (!sessionRuns.length) {
+      setSelectedRunId(null);
       return;
     }
+    if (!selectedRunId || !sessionRuns.some((run) => run.run_id === selectedRunId)) {
+      setSelectedRunId(sessionRuns[0].run_id);
+    }
+  }, [selectedRunId, sessionRuns]);
 
-    if (event.category === "task") {
-      const payload = event.payload as unknown as Task;
-      setTasks((current) => ({
-        ...current,
-        [payload.task_id]: payload,
-      }));
+  const selectedRun = sessionRuns.find((run) => run.run_id === selectedRunId) ?? null;
+
+  async function handleSendMessage(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!sessionId || !composer.trim()) {
       return;
     }
-
-    if (event.category === "execution") {
-      const payload = event.payload as unknown as ExecutionEventPayload;
-      setTasks((current) => {
-        const existing = current[payload.task_id];
-        if (!existing) {
-          return current;
-        }
-        return {
-          ...current,
-          [payload.task_id]: {
-            ...existing,
-            status: payload.status,
-            updated_at: payload.timestamp,
-            artifacts:
-              payload.event_type === "completed"
-                ? [...existing.artifacts, ...payload.artifacts_delta]
-                : existing.artifacts,
-            output_summary:
-              payload.event_type === "completed"
-                ? (() => {
-                    const fullResultArtifact = payload.artifacts_delta.find(
-                      (artifact: Artifact) =>
-                        typeof artifact.inline_value === "string" &&
-                        artifact.inline_value.trim().length > 0,
-                    );
-                    if (
-                      fullResultArtifact &&
-                      typeof fullResultArtifact.inline_value === "string"
-                    ) {
-                      return fullResultArtifact.inline_value.trim();
-                    }
-                    return payload.progress_message ?? existing.output_summary;
-                  })()
-                : existing.output_summary,
-            block_reason:
-              payload.event_type === "blocked"
-                ? payload.progress_message
-                : existing.block_reason,
-          },
-        };
-      });
-    }
-  }
-
-  function applyTraceEvent(event: TraceEvent) {
-    if (event.event_type === "trace_snapshot") {
-      setTraceConnectionStatus("connected");
-      const snapshot = event.payload as unknown as TraceSnapshot;
-      setTraceEvents(
-        snapshot.recent_traces
-          .filter((trace) => !HIDDEN_TRACE_EVENT_TYPES.has(trace.event_type))
-          .slice()
-          .reverse(),
-      );
-      return;
-    }
-
-    setTraceConnectionStatus("connected");
-    if (HIDDEN_TRACE_EVENT_TYPES.has(event.event_type)) {
-      return;
-    }
-    setTraceEvents((current) => [event, ...current].slice(0, MAX_EVENTS));
-  }
-
-  function handleTimelineScroll() {
-    const timelineElement = timelineRef.current;
-    if (!timelineElement) {
-      return;
-    }
-    shouldFollowTimelineRef.current = isNearTimelineBottom(timelineElement);
-  }
-
-  async function handleCopyEvents() {
-    if (!sessionId) {
-      return;
-    }
-
-    const diagnosticPayload = [
-      `session_id: ${sessionId}`,
-      `runtime_connection: ${connectionStatus}`,
-      `trace_connection: ${traceConnectionStatus}`,
-      "",
-      "== Runtime Events ==",
-      JSON.stringify(visibleOutcomeEvents, null, 2),
-      "",
-      "== Trace Events ==",
-      JSON.stringify(traceEvents, null, 2),
-    ].join("\n");
-
-    try {
-      await navigator.clipboard.writeText(diagnosticPayload);
-      setCopyStatus("Copied");
-      setActionError(null);
-      window.setTimeout(() => setCopyStatus((current) => (current === "Copied" ? null : current)), 2000);
-    } catch (error) {
-      setCopyStatus(null);
-      setActionError(error instanceof Error ? error.message : "Failed to copy events.");
-    }
-  }
-
-  async function submitComposerMessage() {
-    if (!sessionId || !composer.trim() || !isStreamReady) {
-      return;
-    }
-
-    const text = composer.trim();
     setActionError(null);
-    setComposer("");
     setIsSending(true);
-    setTimeline((current) => [
-      ...current,
-      {
-        id: `user-${Date.now()}`,
-        kind: "user",
-        text,
-        timestamp: new Date().toISOString(),
-      },
-    ]);
-
     try {
-      await sendMessage(sessionId, text);
+      const response = await sendMessage(sessionId, composer.trim());
+      setLastMessageResponse(response);
+      setComposer("");
     } catch (error) {
       setActionError(error instanceof Error ? error.message : "Failed to send message.");
     } finally {
@@ -419,55 +302,35 @@ export default function App() {
     }
   }
 
-  async function handleSendMessage(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    await submitComposerMessage();
-  }
-
-  async function handleComposerKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
-    if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) {
-      return;
-    }
-
-    event.preventDefault();
-    await submitComposerMessage();
-  }
-
-  async function handleCommand(taskId: string, commandType: CommandType) {
+  async function handleCommand(taskId: string, commandType: TaskCommandType) {
     if (!sessionId) {
       return;
     }
     setActionError(null);
-    setPendingTaskCommand(`${taskId}:${commandType}`);
+    setPendingCommand(`${taskId}:${commandType}`);
     try {
-      await sendCommand(sessionId, commandType, taskId);
+      const response = await sendCommand(sessionId, commandType, taskId);
+      setLastCommandResponse(response);
     } catch (error) {
       setActionError(error instanceof Error ? error.message : "Failed to send command.");
     } finally {
-      setPendingTaskCommand(null);
+      setPendingCommand(null);
     }
   }
 
-  const orderedTasks = Object.values(tasks).sort((left, right) =>
-    right.updated_at.localeCompare(left.updated_at),
-  );
-  const activeTasks = orderedTasks.filter((task) =>
-    ["queued", "running", "blocked"].includes(task.status),
-  );
-  const archivedTasks = orderedTasks.filter(
-    (task) => !["queued", "running", "blocked"].includes(task.status),
-  );
+  const tasks = snapshot?.tasks ?? [];
+  const conversation = snapshot?.conversation_history ?? [];
+  const recentWrites = snapshot?.recent_blackboard_writes ?? [];
 
   return (
-    <main className="shell">
-      <section className="hero">
+    <main className="shell debug-shell">
+      <header className="hero debug-hero">
         <div>
-          <p className="eyebrow">Synopse Runtime Experience</p>
-          <h1>Synopse</h1>
+          <p className="eyebrow">Synopse Runtime Debugger</p>
+          <h1>Blackboard Inspector</h1>
           <p className="intro">
-            This UI lets you experience the communication brain and execution brain as one
-            coordinated runtime: speak through the chat lane, watch tasks unfold beside it,
-            and inspect the live event stream underneath.
+            Inspect how the communication brain writes to the blackboard, how the execution brain
+            claims and runs work, and how the runtime snapshot changes over time.
           </p>
         </div>
         <div className={`status-pill status-${connectionStatus}`}>
@@ -475,233 +338,399 @@ export default function App() {
           <span>{connectionStatus}</span>
           {sessionId ? <code>{sessionId}</code> : null}
         </div>
-      </section>
+      </header>
 
       {actionError ? <div className="error-banner">{actionError}</div> : null}
 
-      <section className="workspace">
-        <section className="panel panel-chat">
-          <div className="panel-header">
+      <section className="debug-grid">
+        <section className="panel debug-panel">
+          <div className="panel-header sticky-header">
             <div>
-              <p className="panel-kicker">Communication Brain</p>
+              <p className="panel-kicker">Communication</p>
               <h2>Conversation</h2>
             </div>
           </div>
-
-          <div ref={timelineRef} className="timeline" onScroll={handleTimelineScroll}>
-            {timeline.length === 0 ? (
-              <div className="empty-state">
-                {isStreamReady
-                  ? "Start with a task request like “search flights to Tokyo tomorrow” or ask for a draft that needs clarification."
-                  : "Waiting for the runtime stream to connect before accepting messages."}
-              </div>
+          <div className="inspector-scroll conversation-panel">
+            {conversation.length === 0 ? (
+              <div className="empty-state">Waiting for the first conversation turn.</div>
             ) : (
-              timeline.map((item) => (
-                <article key={item.id} className={`bubble bubble-${item.kind}`}>
+              conversation.map((entry: ConversationHistoryEntry) => (
+                <article key={entry.message_id} className={`bubble bubble-${entry.role}`}>
                   <div className="bubble-meta">
-                    <span>{item.kind === "user" ? "You" : "Synopse"}</span>
-                    <span>{formatMessageTime(item.timestamp)}</span>
+                    <span>{entry.role === "user" ? "User" : "Assistant"}</span>
+                    <span>{entry.message_id}</span>
                   </div>
-                  <p>{item.text}</p>
-                  {item.taskId ? <small>task: {item.taskId}</small> : null}
+                  <p>{entry.text}</p>
                 </article>
               ))
             )}
           </div>
-
           <form className="composer" onSubmit={handleSendMessage}>
             <textarea
               value={composer}
               onChange={(event) => setComposer(event.target.value)}
-              onKeyDown={(event) => void handleComposerKeyDown(event)}
-              placeholder={
-                isStreamReady
-                  ? "Ask Synopse to do something while you keep talking..."
-                  : "Waiting for runtime stream..."
-              }
-              disabled={!isStreamReady}
+              onKeyDown={(event: KeyboardEvent<HTMLTextAreaElement>) => {
+                if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+                  event.preventDefault();
+                  void handleSendMessage(event as unknown as FormEvent<HTMLFormElement>);
+                }
+              }}
+              placeholder="Send an instruction to inspect how the blackboard changes..."
               rows={4}
             />
-            <button
-              type="submit"
-              disabled={!composer.trim() || isSending || !sessionId || !isStreamReady}
-            >
+            <button type="submit" disabled={!sessionId || !composer.trim() || isSending}>
               {isSending ? "Sending..." : "Send"}
             </button>
           </form>
+          <div className="inspector-footer">
+            <section className="meta-card">
+              <h3>Last Reply</h3>
+              {lastMessageResponse ? (
+                <>
+                  <p>{lastMessageResponse.reply_text}</p>
+                  <dl className="kv">
+                    <div>
+                      <dt>Act</dt>
+                      <dd>{lastMessageResponse.conversational_act}</dd>
+                    </div>
+                    <div>
+                      <dt>Tasks</dt>
+                      <dd>{lastMessageResponse.affected_task_ids.join(", ") || "none"}</dd>
+                    </div>
+                  </dl>
+                </>
+              ) : (
+                <p className="muted-copy">No message response yet.</p>
+              )}
+            </section>
+            <section className="meta-card">
+              <h3>Tool Invocations</h3>
+              {lastMessageResponse?.tool_invocations.length ? (
+                lastMessageResponse.tool_invocations.map((tool: ToolInvocationSummary) => (
+                  <div key={`${tool.tool_name}-${JSON.stringify(tool.args)}`} className="tool-row">
+                    <strong>{tool.tool_name}</strong>
+                    <pre>{formatJson(tool.args)}</pre>
+                  </div>
+                ))
+              ) : (
+                <p className="muted-copy">No tool activity recorded for the latest turn.</p>
+              )}
+            </section>
+          </div>
         </section>
 
-        <section className="panel panel-tasks">
-          <div className="panel-header">
+        <section className="panel debug-panel">
+          <div className="panel-header sticky-header">
             <div>
-              <p className="panel-kicker">Execution Brain</p>
-              <h2>Tasks</h2>
+              <p className="panel-kicker">Blackboard</p>
+              <h2>State</h2>
             </div>
           </div>
-
-          <div className="task-sections">
-            <div className="task-section">
-              <h3>Active</h3>
-              {activeTasks.length === 0 ? (
-                <div className="empty-state">No active tasks yet.</div>
+          <div className="inspector-scroll">
+            <section className="inspector-section">
+              <h3>Tasks</h3>
+              {tasks.length === 0 ? (
+                <div className="empty-state">No tasks yet.</div>
               ) : (
-                activeTasks.map((task) => (
-                  <article key={task.task_id} className={`task-card status-${task.status}`}>
-                    <div className="task-head">
-                      <div>
+                <div className="stack">
+                  {tasks.map((task) => (
+                    <button
+                      key={task.task_id}
+                      type="button"
+                      className={`entity-card ${selectedTaskId === task.task_id ? "selected" : ""}`}
+                      onClick={() => setSelectedTaskId(task.task_id)}
+                    >
+                      <div className="entity-head">
                         <strong>{task.title}</strong>
-                        <p>{task.goal}</p>
+                        <span className={`status-chip status-${task.status}`}>{task.status}</span>
                       </div>
-                      <span className="task-status">{task.status}</span>
-                    </div>
-                    <dl className="task-meta">
-                      <div>
-                        <dt>Executor</dt>
-                        <dd>{task.assigned_executor ?? "unassigned"}</dd>
-                      </div>
-                      <div>
-                        <dt>Updated</dt>
-                        <dd>{formatTime(task.updated_at)}</dd>
-                      </div>
-                      {task.block_reason ? (
+                      <p>{task.goal}</p>
+                      <dl className="kv compact">
                         <div>
-                          <dt>Blocked</dt>
-                          <dd>{task.block_reason}</dd>
+                          <dt>ID</dt>
+                          <dd><code>{task.task_id}</code></dd>
                         </div>
-                      ) : null}
-                    </dl>
-                    <div className="task-actions">
-                      {(["cancel_task"] as CommandType[]).map(
-                        (commandType) => {
-                          const busy = pendingTaskCommand === `${task.task_id}:${commandType}`;
-                          return (
-                            <button
-                              key={commandType}
-                              type="button"
-                              className="ghost-button"
-                              disabled={
-                                !canRunCommand(task, commandType, executorCapabilities) || busy
-                              }
-                              onClick={() => handleCommand(task.task_id, commandType)}
-                            >
-                              {busy ? "..." : commandType.replace("_task", "").replace("_", " ")}
-                            </button>
-                          );
-                        },
-                      )}
-                    </div>
-                  </article>
-                ))
+                        <div>
+                          <dt>Revision</dt>
+                          <dd>{task.task_revision}</dd>
+                        </div>
+                        <div>
+                          <dt>Priority</dt>
+                          <dd>{task.priority}</dd>
+                        </div>
+                        <div>
+                          <dt>Executor</dt>
+                          <dd>{task.preferred_executor ?? "n/a"}</dd>
+                        </div>
+                      </dl>
+                    </button>
+                  ))}
+                </div>
               )}
-            </div>
+            </section>
 
-            <div className="task-section">
-              <h3>Completed</h3>
-              {archivedTasks.length === 0 ? (
-                <div className="empty-state">Finished tasks will appear here.</div>
+            <section className="inspector-section">
+              <h3>Selected Task Detail</h3>
+              {selectedTask ? (
+                <div className="detail-card">
+                  <dl className="kv">
+                    <div><dt>ID</dt><dd><code>{selectedTask.task_id}</code></dd></div>
+                    <div><dt>Status</dt><dd>{selectedTask.status}</dd></div>
+                    <div><dt>Revision</dt><dd>{selectedTask.task_revision}</dd></div>
+                    <div><dt>Latest Instruction</dt><dd>{selectedTask.latest_instruction ?? "n/a"}</dd></div>
+                    <div><dt>Requires Confirmation</dt><dd>{selectedTask.requires_confirmation ? "yes" : "no"}</dd></div>
+                    <div><dt>Interruptible</dt><dd>{selectedTask.interruptible ? "yes" : "no"}</dd></div>
+                  </dl>
+                  <div className="command-bar">
+                    {(["pause_task", "resume_task", "retry_task", "cancel_task"] as TaskCommandType[]).map(
+                      (command) => (
+                        <button
+                          key={command}
+                          type="button"
+                          className="ghost-button"
+                          disabled={!canRunCommand(selectedTask, command) || pendingCommand === `${selectedTask.task_id}:${command}`}
+                          onClick={() => void handleCommand(selectedTask.task_id, command)}
+                        >
+                          {pendingCommand === `${selectedTask.task_id}:${command}` ? "..." : commandLabel(command)}
+                        </button>
+                      ),
+                    )}
+                  </div>
+                </div>
               ) : (
-                archivedTasks.map((task) => (
-                  <article key={task.task_id} className={`task-card status-${task.status}`}>
-                    <div className="task-head">
-                      <div>
-                        <strong>{task.title}</strong>
-                        <p>{extractFullTaskResult(task)}</p>
+                <div className="empty-state">Select a task to inspect mutations, commands, and summaries.</div>
+              )}
+            </section>
+
+            <section className="inspector-section">
+              <h3>Mutations</h3>
+              {selectedMutations.length === 0 ? (
+                <div className="empty-state">No mutations for the selected task.</div>
+              ) : (
+                <div className="stack compact-stack">
+                  {selectedMutations.map((mutation: TaskMutation) => (
+                    <article key={mutation.mutation_id} className="log-card">
+                      <div className="entity-head">
+                        <strong>{mutation.mutation_type}</strong>
+                        <code>{mutation.mutation_id}</code>
                       </div>
-                      <span className="task-status">{task.status}</span>
-                    </div>
+                      <dl className="kv compact">
+                        <div><dt>By</dt><dd>{mutation.created_by}</dd></div>
+                        <div><dt>Scope</dt><dd>{mutation.effective_scope}</dd></div>
+                        <div><dt>Replan</dt><dd>{mutation.requires_replan ? "yes" : "no"}</dd></div>
+                      </dl>
+                      <pre>{formatJson(mutation.patch)}</pre>
+                    </article>
+                  ))}
+                </div>
+              )}
+            </section>
+
+            <section className="inspector-section">
+              <h3>Commands</h3>
+              {selectedCommands.length === 0 ? (
+                <div className="empty-state">No commands for the selected task.</div>
+              ) : (
+                <div className="stack compact-stack">
+                  {selectedCommands.map((command: TaskCommand) => (
+                    <article key={command.command_id} className="log-card">
+                      <div className="entity-head">
+                        <strong>{command.command_type}</strong>
+                        <code>{command.command_id}</code>
+                      </div>
+                      <dl className="kv compact">
+                        <div><dt>By</dt><dd>{command.created_by}</dd></div>
+                        <div><dt>Reason</dt><dd>{command.reason ?? "n/a"}</dd></div>
+                      </dl>
+                      <pre>{formatJson(command.payload)}</pre>
+                    </article>
+                  ))}
+                </div>
+              )}
+            </section>
+
+            <section className="inspector-section">
+              <h3>Summaries</h3>
+              {selectedSummary ? (
+                <article className="detail-card">
+                  <dl className="kv">
+                    <div><dt>User Status</dt><dd>{selectedSummary.latest_user_visible_status ?? "n/a"}</dd></div>
+                    <div><dt>Needs Input</dt><dd>{selectedSummary.needs_user_input ? "yes" : "no"}</dd></div>
+                  </dl>
+                  <div className="summary-block">
+                    <h4>Conversational</h4>
+                    <p>{selectedSummary.conversational_summary ?? "n/a"}</p>
+                  </div>
+                  <div className="summary-block">
+                    <h4>Operational</h4>
+                    <p>{selectedSummary.operational_summary ?? "n/a"}</p>
+                  </div>
+                </article>
+              ) : (
+                <div className="empty-state">No summary for the selected task.</div>
+              )}
+            </section>
+          </div>
+        </section>
+
+        <section className="panel debug-panel">
+          <div className="panel-header sticky-header">
+            <div>
+              <p className="panel-kicker">Execution</p>
+              <h2>Sessions & Runs</h2>
+            </div>
+          </div>
+          <div className="inspector-scroll">
+            <section className="inspector-section">
+              <h3>Bindings</h3>
+              {selectedBindings.length === 0 ? (
+                <div className="empty-state">No binding for the selected task.</div>
+              ) : (
+                selectedBindings.map((binding: SessionBinding) => (
+                  <article key={`${binding.task_id}-${binding.session_id ?? "none"}`} className="detail-card">
+                    <dl className="kv">
+                      <div><dt>Session</dt><dd><code>{binding.session_id ?? "n/a"}</code></dd></div>
+                      <div><dt>Owner</dt><dd>{binding.claimed_by ?? "n/a"}</dd></div>
+                      <div><dt>Lease</dt><dd>{formatTime(binding.claim_expires_at)}</dd></div>
+                      <div><dt>Exec Revision</dt><dd>{binding.execution_revision}</dd></div>
+                      <div><dt>Status</dt><dd>{binding.binding_status}</dd></div>
+                    </dl>
                   </article>
                 ))
               )}
-            </div>
+            </section>
+
+            <section className="inspector-section">
+              <h3>Execution Sessions</h3>
+              {selectedSessions.length === 0 ? (
+                <div className="empty-state">No execution sessions for the selected task.</div>
+              ) : (
+                <div className="stack">
+                  {selectedSessions.map((session: ExecutionSession) => (
+                    <button
+                      key={session.execution_session_id}
+                      type="button"
+                      className={`entity-card ${selectedExecutionSessionId === session.execution_session_id ? "selected" : ""}`}
+                      onClick={() => setSelectedExecutionSessionId(session.execution_session_id)}
+                    >
+                      <div className="entity-head">
+                        <strong>{session.base_executor_id}</strong>
+                        <code>{session.execution_session_id}</code>
+                      </div>
+                      <dl className="kv compact">
+                        <div><dt>Active Run</dt><dd>{session.active_run_id ?? "n/a"}</dd></div>
+                        <div><dt>Latest Run</dt><dd>{session.latest_run_id ?? "n/a"}</dd></div>
+                        <div><dt>Run Count</dt><dd>{session.run_ids.length}</dd></div>
+                      </dl>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </section>
+
+            <section className="inspector-section">
+              <h3>Execution Runs</h3>
+              {sessionRuns.length === 0 ? (
+                <div className="empty-state">No runs for the selected execution session.</div>
+              ) : (
+                <div className="stack">
+                  {sessionRuns.map((run: ExecutionRun) => (
+                    <button
+                      key={run.run_id}
+                      type="button"
+                      className={`entity-card ${selectedRunId === run.run_id ? "selected" : ""}`}
+                      onClick={() => setSelectedRunId(run.run_id)}
+                    >
+                      <div className="entity-head">
+                        <strong>{run.executor_type}</strong>
+                        <span className={`status-chip status-${run.status}`}>{run.status}</span>
+                      </div>
+                      <dl className="kv compact">
+                        <div><dt>ID</dt><dd><code>{run.run_id}</code></dd></div>
+                        <div><dt>Revision</dt><dd>{run.run_revision}</dd></div>
+                        <div><dt>Owner</dt><dd>{run.claimed_by ?? "n/a"}</dd></div>
+                      </dl>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </section>
+
+            <section className="inspector-section">
+              <h3>Selected Run Detail</h3>
+              {selectedRun ? (
+                <article className="detail-card">
+                  <dl className="kv">
+                    <div><dt>ID</dt><dd><code>{selectedRun.run_id}</code></dd></div>
+                    <div><dt>Status</dt><dd>{selectedRun.status}</dd></div>
+                    <div><dt>Progress</dt><dd>{selectedRun.latest_progress_message ?? "n/a"}</dd></div>
+                    <div><dt>Output</dt><dd>{selectedRun.output_summary ?? "n/a"}</dd></div>
+                    <div><dt>Blocked</dt><dd>{selectedRun.block_reason ?? "n/a"}</dd></div>
+                    <div><dt>Failure</dt><dd>{selectedRun.failure_reason ?? "n/a"}</dd></div>
+                  </dl>
+                  <pre>{formatJson(selectedRun.metadata)}</pre>
+                </article>
+              ) : (
+                <div className="empty-state">Select a run to inspect execution detail.</div>
+              )}
+            </section>
           </div>
         </section>
+      </section>
 
-        <section className="panel panel-events">
-          <div className="panel-header">
-            <div>
-              <p className="panel-kicker">Runtime Bus</p>
-              <h2>Live Activity</h2>
-            </div>
-            <button type="button" className="ghost-button" onClick={() => void handleCopyEvents()}>
-              {copyStatus ?? "Copy Events"}
-            </button>
+      <section className="panel change-feed-panel">
+        <div className="panel-header sticky-header">
+          <div>
+            <p className="panel-kicker">Diff & Writes</p>
+            <h2>Change Feed</h2>
           </div>
-
-          <div className="events">
-            <div className="trace-section">
-              <div className="trace-section-header">
-                <h3>Outcome Events</h3>
-                <span className={`trace-status trace-${connectionStatus}`}>{connectionStatus}</span>
-              </div>
-              {visibleOutcomeEvents.length === 0 ? (
-                <div className="empty-state">Waiting for stream events.</div>
-              ) : (
-                visibleOutcomeEvents.map((event) => {
-                  const expanded = expandedEventId === event.stream_event_id;
-                  return (
-                    <article key={event.stream_event_id} className="event-row">
-                      <button
-                        type="button"
-                        className="event-summary"
-                        onClick={() =>
-                          setExpandedEventId((current) =>
-                            current === event.stream_event_id ? null : event.stream_event_id,
-                          )
-                        }
-                      >
-                        <span className="event-seq">#{event.sequence}</span>
-                        <span className="event-type">{event.event_type}</span>
-                        <span className="event-category">{event.category}</span>
-                        <span className="event-time">{formatTime(event.timestamp)}</span>
-                      </button>
-                      {expanded ? (
-                        <pre>{JSON.stringify(event.payload, null, 2)}</pre>
-                      ) : null}
-                    </article>
-                  );
-                })
-              )}
-            </div>
-
-            <div className="trace-section">
-              <div className="trace-section-header">
-                <h3>Trace Flow</h3>
-                <span className={`trace-status trace-${traceConnectionStatus}`}>
-                  {traceConnectionStatus}
-                </span>
-              </div>
-              {traceEvents.length === 0 ? (
-                <div className="empty-state">Waiting for trace events.</div>
-              ) : (
-                traceEvents.map((event) => {
-                  const expanded = expandedTraceEventId === event.trace_event_id;
-                  return (
-                    <article key={event.trace_event_id} className="event-row">
-                      <button
-                        type="button"
-                        className="trace-summary"
-                        onClick={() =>
-                          setExpandedTraceEventId((current) =>
-                            current === event.trace_event_id ? null : event.trace_event_id,
-                          )
-                        }
-                      >
-                        <span className="event-seq">#{event.trace_sequence}</span>
-                        <span className="trace-stage">{event.stage}</span>
-                        <span className="event-type">{event.event_type}</span>
-                        <span className="trace-source">{event.source_module}</span>
-                        <span className="event-time">{formatTime(event.timestamp)}</span>
-                      </button>
-                      {expanded ? (
-                        <pre>{JSON.stringify(event.payload, null, 2)}</pre>
-                      ) : null}
-                    </article>
-                  );
-                })
-              )}
-            </div>
+          <div className="feed-meta">
+            <span>{diffItems.length} diffs</span>
+            <span>{recentWrites.length} writes</span>
+            {lastCommandResponse ? <span>last command: {lastCommandResponse.status}</span> : null}
           </div>
-        </section>
+        </div>
+        <div className="change-feed-grid">
+          <section className="inspector-section">
+            <h3>Snapshot Diff</h3>
+            {diffItems.length === 0 ? (
+              <div className="empty-state">Waiting for snapshot changes.</div>
+            ) : (
+              <div className="stack compact-stack">
+                {diffItems.map((item) => (
+                  <article key={item.id} className="diff-row">
+                    <div className="diff-head">
+                      <span className="entity-badge">{item.entityKind}</span>
+                      <strong>{item.changeType}</strong>
+                      <code>{item.entityId}</code>
+                    </div>
+                    <p>{item.details}</p>
+                  </article>
+                ))}
+              </div>
+            )}
+          </section>
+
+          <section className="inspector-section">
+            <h3>Recent Blackboard Writes</h3>
+            {recentWrites.length === 0 ? (
+              <div className="empty-state">No writes published yet.</div>
+            ) : (
+              <div className="stack compact-stack">
+                {[...recentWrites].reverse().map((event, index) => (
+                  <article key={`${event.kind}-${event.entity_id}-${index}`} className="diff-row">
+                    <div className="diff-head">
+                      <span className="entity-badge">{event.kind}</span>
+                      <code>{event.entity_id ?? "n/a"}</code>
+                    </div>
+                    <p>{summarizeWriteEvent(event)}</p>
+                    {Object.keys(event.payload ?? {}).length ? <pre>{formatJson(event.payload)}</pre> : null}
+                  </article>
+                ))}
+              </div>
+            )}
+          </section>
+        </div>
       </section>
     </main>
   );

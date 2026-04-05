@@ -87,6 +87,7 @@ async def test_memory_blackboard_appends_mutations_and_bumps_task_revision():
     assert saved_task is not None
     assert saved_task.task_revision == 1
     assert await store.list_mutations("task_1") == [mutation]
+    assert await store.list_all_mutations() == [mutation]
 
 
 @pytest.mark.anyio
@@ -109,6 +110,7 @@ async def test_memory_blackboard_appends_commands_in_order():
     await store.append_command(command_two)
 
     assert await store.list_commands("task_1") == [command_one, command_two]
+    assert await store.list_all_commands() == [command_one, command_two]
 
 
 @pytest.mark.anyio
@@ -128,5 +130,7 @@ async def test_memory_blackboard_notifies_subscribers_on_writes():
 
     assert event.kind.value == "task"
     assert event.task_id == "task_1"
+    recent_writes = await store.list_recent_writes()
+    assert recent_writes[-1].task_id == "task_1"
 
     store.unsubscribe(queue)

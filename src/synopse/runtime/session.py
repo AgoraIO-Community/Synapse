@@ -28,6 +28,8 @@ class SessionRuntime:
 
     async def snapshot(self) -> SessionSnapshot:
         tasks = await self.blackboard.list_tasks()
+        mutations = await self.blackboard.list_all_mutations()
+        commands = await self.blackboard.list_all_commands()
         sessions = await self.blackboard.list_sessions()
         runs = await self.blackboard.list_runs()
         bindings = await self.blackboard.list_bindings()
@@ -36,6 +38,7 @@ class SessionRuntime:
             for summary in [await self.blackboard.get_summary(task.task_id) for task in tasks]
             if summary is not None
         ]
+        recent_writes = await self.blackboard.list_recent_writes()
         history = [
             ConversationHistoryEntryModel(
                 role=entry.role,
@@ -47,10 +50,13 @@ class SessionRuntime:
         return SessionSnapshot(
             session_id=self.session_id,
             tasks=tasks,
+            mutations=mutations,
+            commands=commands,
             execution_sessions=sessions,
             execution_runs=runs,
             bindings=bindings,
             summaries=summaries,
+            recent_blackboard_writes=recent_writes,
             conversation_history=history,
         )
 

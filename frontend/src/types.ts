@@ -5,56 +5,41 @@ export type ConnectionStatus =
   | "disconnected"
   | "error";
 
-export type StreamCategory = "communication" | "task" | "execution" | "context" | "system";
-export type TraceStage =
-  | "api"
-  | "message_interpreter"
-  | "action_router"
-  | "interaction_policy"
-  | "runtime_state"
-  | "task_graph"
-  | "execution_orchestrator"
-  | "executor_adapter"
-  | "response_generator";
-
 export type TaskStatus =
+  | "created"
   | "queued"
   | "running"
-  | "blocked"
-  | "canceled"
+  | "waiting_user_input"
+  | "paused"
+  | "completed"
   | "failed"
-  | "done";
+  | "cancelled";
 
-export type CommandType = "cancel_task";
+export type RunStatus =
+  | "created"
+  | "assigned"
+  | "running"
+  | "blocked"
+  | "paused"
+  | "completed"
+  | "failed"
+  | "cancelled";
 
-export interface Artifact {
-  artifact_id: string;
-  task_id: string;
-  artifact_type: string;
-  name: string;
-  mime_type: string | null;
-  uri: string | null;
-  inline_value: string | Record<string, unknown> | null;
-  metadata: Record<string, unknown>;
-}
+export type TaskCommandType =
+  | "pause_task"
+  | "cancel_task"
+  | "preempt_task"
+  | "resume_task"
+  | "retry_task";
 
-export interface ExecutorCapability {
-  executor_id: string;
-  label: string;
-  capability_tags: string[];
-  supports_cancel: boolean;
-  supports_streaming: boolean;
-}
-
-export interface SessionResponse {
-  session_id: string;
-}
-
-export interface MessageResponse {
-  message_id: string;
-  routing_decision: Record<string, unknown>;
-  action_bundle: Record<string, unknown>;
-}
+export type BlackboardWriteKind =
+  | "task"
+  | "mutation"
+  | "command"
+  | "run"
+  | "session"
+  | "binding"
+  | "summary";
 
 export interface Task {
   task_id: string;
@@ -63,110 +48,149 @@ export interface Task {
   title: string;
   goal: string;
   status: TaskStatus;
-  priority: string;
-  assigned_executor: string | null;
-  candidate_executors: string[];
+  priority: number;
+  interruptible: boolean;
+  requires_confirmation: boolean;
+  preferred_executor: string | null;
+  session_affinity: string | null;
+  task_revision: number;
+  latest_instruction: string | null;
+  metadata: Record<string, unknown>;
+}
+
+export interface TaskMutation {
+  mutation_id: string;
+  task_id: string | null;
+  mutation_type: string;
+  patch: Record<string, unknown>;
+  created_by: string;
+  urgency: string;
+  effective_scope: string;
+  requires_replan: boolean;
+}
+
+export interface TaskCommand {
+  command_id: string;
+  task_id: string;
+  command_type: TaskCommandType;
+  payload: Record<string, unknown>;
+  created_by: string;
+  reason: string | null;
+}
+
+export interface AgentResumeHandle {
+  executor_id: string;
+  session_handle: string | null;
+  turn_handle: string | null;
+  opaque: Record<string, unknown>;
+}
+
+export interface QueuedRunRequest {
+  queued_request_id: string;
+  task_id: string;
+  executor_config: Record<string, unknown>;
+  latest_instruction: string;
+  requested_by_message_id: string | null;
+}
+
+export interface ExecutionSession {
+  execution_session_id: string;
+  task_id: string;
+  base_executor_id: string;
+  run_ids: string[];
+  active_run_id: string | null;
+  latest_run_id: string | null;
+  latest_resume_handle: AgentResumeHandle | null;
+  queued_run_request: QueuedRunRequest | null;
+}
+
+export interface ExecutionRun {
+  run_id: string;
+  task_id: string;
+  execution_session_id: string;
+  executor_type: string;
+  status: RunStatus;
+  claimed_by: string | null;
+  run_revision: number;
+  latest_progress_message: string | null;
   output_summary: string | null;
   block_reason: string | null;
   failure_reason: string | null;
-  latest_instruction: string | null;
-  artifacts: Artifact[];
-  updated_at: string;
+  metadata: Record<string, unknown>;
+}
+
+export interface SessionBinding {
+  task_id: string;
+  execution_session_id: string | null;
+  session_id: string | null;
+  claimed_by: string | null;
+  claim_expires_at: string | null;
+  execution_revision: number;
+  binding_status: string;
+}
+
+export interface TaskSummary {
+  task_id: string;
+  operational_summary: string | null;
+  conversational_summary: string | null;
+  latest_user_visible_status: string | null;
+  needs_user_input: boolean;
+}
+
+export interface BlackboardWriteEvent {
+  kind: BlackboardWriteKind;
+  entity_id: string | null;
+  task_id: string | null;
+  payload: Record<string, unknown>;
+}
+
+export interface ConversationHistoryEntry {
+  role: string;
+  text: string;
+  message_id: string;
 }
 
 export interface SessionSnapshot {
   session_id: string;
-  conversation_state: Record<string, unknown>;
-  task_registry: Task[];
-  executor_capabilities: ExecutorCapability[];
-  strategy_state: Record<string, unknown>;
-  pending_clarifications: Array<Record<string, unknown>>;
-  last_sequence: number;
-  timestamp: string;
+  tasks: Task[];
+  mutations: TaskMutation[];
+  commands: TaskCommand[];
+  execution_sessions: ExecutionSession[];
+  execution_runs: ExecutionRun[];
+  bindings: SessionBinding[];
+  summaries: TaskSummary[];
+  recent_blackboard_writes: BlackboardWriteEvent[];
+  conversation_history: ConversationHistoryEntry[];
 }
 
-export interface CommunicationAction {
-  action_id: string;
-  action_type: string;
-  target_task_id: string | null;
-  reason: string | null;
-  render_text: string | null;
-}
-
-export interface CommunicationEventPayload {
-  event_id: string;
+export interface SessionResponse {
   session_id: string;
-  source: string;
-  action: CommunicationAction;
-  timestamp: string;
 }
 
-export interface CommunicationChunkPayload {
-  event_id: string;
-  session_id: string;
-  source: string;
-  action_id: string;
-  action_type: string;
-  target_task_id: string | null;
-  render_text_delta: string;
-  render_text: string;
-  is_final: boolean;
-  timestamp: string;
+export interface ToolInvocationSummary {
+  tool_name: string;
+  args: Record<string, unknown>;
 }
 
-export interface ExecutionEventPayload {
-  event_id: string;
-  task_id: string;
-  executor_id: string;
-  event_type: string;
-  status: TaskStatus;
-  progress_message: string | null;
-  progress_percent: number | null;
-  source: string;
-  artifacts_delta: Artifact[];
-  timestamp: string;
+export interface MessageResponse {
+  message_id: string;
+  reply_text: string;
+  conversational_act: string;
+  affected_task_ids: string[];
+  tool_invocations: ToolInvocationSummary[];
 }
 
-export interface StreamEvent {
-  sequence: number;
-  stream_event_id: string;
-  session_id: string;
-  category: StreamCategory;
-  event_type: string;
-  source: string;
-  related_task_id: string | null;
-  related_message_id: string | null;
-  timestamp: string;
-  payload: Record<string, unknown>;
+export interface CommandResponse {
+  command_id: string;
+  status: string;
+  affected_task_ids: string[];
 }
 
-export interface TraceEvent {
-  trace_sequence: number;
-  trace_event_id: string;
-  session_id: string;
-  stage: TraceStage;
-  event_type: string;
-  source_module: string;
-  span_id: string | null;
-  parent_span_id: string | null;
-  related_message_id: string | null;
-  related_task_id: string | null;
-  timestamp: string;
-  payload: Record<string, unknown>;
-}
-
-export interface TraceSnapshot {
-  session_id: string;
-  recent_traces: TraceEvent[];
-  last_trace_sequence: number;
-  timestamp: string;
-}
-
-export interface TimelineMessage {
+export interface SnapshotDiffItem {
   id: string;
-  kind: "user" | "assistant";
-  text: string;
-  timestamp: string;
+  entityKind: string;
+  entityId: string;
+  changeType: string;
   taskId?: string | null;
-  streaming?: boolean;
+  details: string;
 }

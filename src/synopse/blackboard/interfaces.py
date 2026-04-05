@@ -34,11 +34,17 @@ class BlackboardStore(Protocol):
     async def list_mutations(self, task_id: str) -> list[TaskMutation]:
         """List task mutations for one task."""
 
+    async def list_all_mutations(self) -> list[TaskMutation]:
+        """List task mutations across the session in append order."""
+
     async def append_command(self, command: TaskCommand) -> None:
         """Append a task command generated primarily by Communication Brain."""
 
     async def list_commands(self, task_id: str) -> list[TaskCommand]:
         """List task commands for one task."""
+
+    async def list_all_commands(self) -> list[TaskCommand]:
+        """List task commands across the session in append order."""
 
     async def put_run(self, run: ExecutionRun) -> None:
         """Store or replace a run projection written primarily by Execution Brain."""
@@ -72,6 +78,9 @@ class BlackboardStore(Protocol):
 
     async def get_summary(self, task_id: str) -> TaskSummary | None:
         """Fetch the current summary for one task."""
+
+    async def list_recent_writes(self, limit: int = 50) -> list[BlackboardWriteEvent]:
+        """List recent blackboard write events for debugging."""
 
     def subscribe(self) -> asyncio.Queue[BlackboardWriteEvent]:
         """Subscribe to blackboard write events."""

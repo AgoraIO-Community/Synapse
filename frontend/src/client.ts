@@ -1,9 +1,9 @@
 import type {
-  CommandType,
+  CommandResponse,
+  SessionSnapshot,
+  TaskCommandType,
   MessageResponse,
   SessionResponse,
-  StreamEvent,
-  TraceEvent,
 } from "./types";
 
 const JSON_HEADERS = {
@@ -39,18 +39,18 @@ export async function sendMessage(
 
 export async function sendCommand(
   sessionId: string,
-  commandType: CommandType,
+  commandType: TaskCommandType,
   targetTaskId: string,
-): Promise<void> {
+): Promise<CommandResponse> {
   const response = await fetch(`/sessions/${sessionId}/commands`, {
     method: "POST",
     headers: JSON_HEADERS,
     body: JSON.stringify({
       command_type: commandType,
-      target_task_id: targetTaskId,
+      task_id: targetTaskId,
     }),
   });
-  await ensureOk(response);
+  return (await ensureOk(response)).json();
 }
 
 function openSocket<TEvent>(
@@ -80,22 +80,10 @@ export function openSessionStream(
   sessionId: string,
   handlers: {
     onOpen: () => void;
-    onMessage: (event: StreamEvent) => void;
+    onMessage: (event: SessionSnapshot) => void;
     onClose: () => void;
     onError: () => void;
   },
 ): WebSocket {
-  return openSocket<StreamEvent>(`/sessions/${sessionId}/stream`, handlers);
-}
-
-export function openTraceStream(
-  sessionId: string,
-  handlers: {
-    onOpen: () => void;
-    onMessage: (event: TraceEvent) => void;
-    onClose: () => void;
-    onError: () => void;
-  },
-): WebSocket {
-  return openSocket<TraceEvent>(`/sessions/${sessionId}/trace`, handlers);
+  return openSocket<SessionSnapshot>(`/sessions/${sessionId}/stream`, handlers);
 }
