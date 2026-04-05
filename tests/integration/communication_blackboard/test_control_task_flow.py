@@ -2,8 +2,9 @@ import pytest
 
 from synopse.blackboard import InMemoryBlackboard
 from synopse.communication import CommunicationBrain
-from synopse.communication.model import CommunicationDecision, ToolCall
+from synopse.communication.model import ToolCall
 from synopse.communication.models import ScriptedCommunicationModel
+from synopse.communication.models.scripted import ScriptedPlan
 from synopse.protocol import Task, TaskCommandType
 
 
@@ -13,7 +14,7 @@ async def test_control_task_flow():
     await store.put_task(Task(task_id="task_1", root_task_id="task_1", title="Draft email", goal="Draft email"))
     model = ScriptedCommunicationModel(
         {
-            "Hold that email": CommunicationDecision(
+            "Hold that email": ScriptedPlan(
                 conversational_act="acknowledge_and_hold",
                 tool_calls=[
                     ToolCall(

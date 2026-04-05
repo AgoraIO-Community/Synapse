@@ -7,6 +7,8 @@ from synopse.protocol import Task, TaskSummary
 
 from .history import ConversationEntry, InMemoryConversationHistory
 
+DEFAULT_HISTORY_LIMIT = 30
+
 
 @dataclass(slots=True)
 class CommunicationContext:
@@ -32,7 +34,7 @@ class CommunicationContextBuilder:
         conversation_id: str,
         *,
         available_tools: list[str],
-        history_limit: int = 10,
+        history_limit: int = DEFAULT_HISTORY_LIMIT,
     ) -> CommunicationContext:
         tasks = await self._store.list_tasks()
         summaries = {

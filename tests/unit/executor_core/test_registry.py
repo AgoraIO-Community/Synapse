@@ -1,5 +1,7 @@
+import pytest
+
 from synopse.executor_adapters.mock import MockExecutor
-from synopse.executor_core import ExecutorRegistry
+from synopse.executor_core import ExecutorRegistry, UnknownExecutorError
 
 
 def test_registry_register_and_get():
@@ -9,3 +11,10 @@ def test_registry_register_and_get():
 
     assert registry.list_executor_types() == ["mock"]
     assert registry.get("mock") is executor
+
+
+def test_registry_raises_unknown_executor_error_for_missing_executor():
+    registry = ExecutorRegistry()
+
+    with pytest.raises(UnknownExecutorError, match="Unknown executor: User"):
+        registry.get("User")

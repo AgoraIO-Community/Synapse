@@ -2,8 +2,9 @@ import pytest
 
 from synopse.blackboard import InMemoryBlackboard
 from synopse.communication import CommunicationBrain
-from synopse.communication.model import CommunicationDecision, ToolCall
+from synopse.communication.model import ToolCall
 from synopse.communication.models import ScriptedCommunicationModel
+from synopse.communication.models.scripted import ScriptedPlan
 from synopse.protocol import Task, TaskSummary
 
 
@@ -20,7 +21,7 @@ async def test_query_summary_flow():
     )
     model = ScriptedCommunicationModel(
         {
-            "How is the email going?": CommunicationDecision(
+            "How is the email going?": ScriptedPlan(
                 conversational_act="inform_progress",
                 tool_calls=[ToolCall(name="query_task_summary", args={"reference": "email"})],
             )

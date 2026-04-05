@@ -3,7 +3,7 @@ from synopse.runtime import Settings, build_runtime_container
 
 
 class FakeProvider:
-    async def parse_structured(self, **kwargs):
+    async def run_tool_calling(self, **kwargs):
         raise AssertionError("Should not be called in bootstrap test")
 
 

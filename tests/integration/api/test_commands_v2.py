@@ -2,8 +2,9 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 from synopse.api.app import create_app
-from synopse.communication.model import CommunicationDecision, ToolCall
+from synopse.communication.model import ToolCall
 from synopse.communication.models import ScriptedCommunicationModel
+from synopse.communication.models.scripted import ScriptedPlan
 from synopse.runtime.container import RuntimeContainer
 
 
@@ -13,7 +14,7 @@ async def test_commands_v2_pause_task():
     app.state.runtime_container = RuntimeContainer(
         communication_model=ScriptedCommunicationModel(
             {
-                "__default__": CommunicationDecision(
+                "__default__": ScriptedPlan(
                     conversational_act="acknowledge_and_start",
                     tool_calls=[
                         ToolCall(

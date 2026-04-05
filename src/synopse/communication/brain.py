@@ -5,9 +5,9 @@ from synopse.blackboard import BlackboardStore
 from .context import CommunicationContextBuilder
 from .history import InMemoryConversationHistory
 from .model import CommunicationModel
-from .policies import ToolUsagePolicy, render_reply
+from .policies import ToolUsagePolicy
 from .tools import ToolRegistry, build_default_tool_registry
-from .types import CommunicationTurnResult, ToolInvocationRecord
+from .types import CommunicationTurnResult
 
 
 class CommunicationBrain:
@@ -36,44 +36,16 @@ class CommunicationBrain:
             conversation_id,
             available_tools=self._tool_usage_policy.available_tools,
         )
-        decision = await self._model.decide(user_text=user_text, context=context)
-
-        tool_invocations: list[ToolInvocationRecord] = []
-        affected_task_ids: list[str] = []
-        tool_results: dict[str, object] = {}
-        for call in decision.tool_calls:
-            tool = self._tools.get(call.name)
-            result = await tool(**call.args)
-            tool_results[call.name] = result
-            tool_invocations.append(
-                ToolInvocationRecord(tool_name=call.name, args=call.args, result=result)
-            )
-            task_id = _extract_task_id(result)
-            if task_id and task_id not in affected_task_ids:
-                affected_task_ids.append(task_id)
-
-        reply_text = render_reply(
-            decision.conversational_act,
-            tool_results=tool_results,
-            reply_override=decision.reply_override,
+        result = await self._model.respond(
+            user_text=user_text,
+            context=context,
+            tool_registry=self._tools,
         )
-        assistant_entry = self._history.append_assistant(conversation_id, reply_text)
+        assistant_entry = self._history.append_assistant(conversation_id, result.reply_text)
         return CommunicationTurnResult(
             message_id=assistant_entry.message_id,
-            reply_text=reply_text,
-            conversational_act=decision.conversational_act,
-            tool_invocations=tool_invocations,
-            affected_task_ids=affected_task_ids,
+            reply_text=result.reply_text,
+            conversational_act=result.conversational_act or "model_reply",
+            tool_invocations=result.tool_invocations,
+            affected_task_ids=result.affected_task_ids,
         )
-
-
-def _extract_task_id(result: object) -> str | None:
-    task_id = getattr(result, "task_id", None)
-    if isinstance(task_id, str):
-        return task_id
-    if isinstance(result, dict):
-        task = result.get("task")
-        task_id = getattr(task, "task_id", None)
-        if isinstance(task_id, str):
-            return task_id
-    return None

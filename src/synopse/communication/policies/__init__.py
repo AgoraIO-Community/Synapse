@@ -1,4 +1,4 @@
-from .reply_style import render_reply
+from .reply_style import infer_conversational_act, render_reply
 from .tool_usage_policy import ToolUsagePolicy
 
-__all__ = ["ToolUsagePolicy", "render_reply"]
+__all__ = ["ToolUsagePolicy", "infer_conversational_act", "render_reply"]

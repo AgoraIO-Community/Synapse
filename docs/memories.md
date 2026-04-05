@@ -25,7 +25,6 @@ Short log of important design decisions and changes for Synopse.
 - Simplified task creation so every `create_task` now requires a real executor, closing the hole where some LLM-produced tasks could still bypass the mock-executor guard.
 - Added streamed response generation on the existing session websocket, with transient partial communication chunks updating one live assistant bubble while only the final communication event is persisted.
 - Separated concise spoken-style communication from fuller task output, keeping task-board results sourced from artifacts while response generation summarizes them for TTS-friendly delivery.
-- Removed `pause_task` and `resume_task` from the current runtime surface, leaving `cancel_task` and `retry_task` as the supported explicit task controls.
 - Added blackboard-backed message history for both message interpretation and response generation, capped at 30 persisted user/assistant messages and excluding transient stream chunks.
 - Added LLM latency diagnostics to trace payloads, recording total request duration for normal calls and `ttfb_ms` for true streamed responses, while hiding transient `response_chunk` entries from the operator activity feed/export.
 - Enriched `response_render_completed` so it now carries a nested `llm_response` summary with final rendered text plus duration and optional `ttfb_ms` when the response came from the LLM.
@@ -41,3 +40,9 @@ Short log of important design decisions and changes for Synopse.
 - Added fail-fast validation for interpreter-produced `create_task` actions so non-empty task goals are required, titles are derived only from valid goals, and malformed task payloads are rejected before blank tasks can enter the execution brain.
 - Added a compact `active_tasks` summary to interpreter input, exposing only active task ids and goals so follow-up messages can better resolve to existing work without reintroducing the full session snapshot.
 - Tightened `update_task` so it now requires a non-empty goal, and changed follow-ups against already-`done` tasks to fall back to creating a new task instead of restarting the completed one in place.
+
+## 2026-04-06
+
+- Tightened `control_task` so the communication tool surface accepts only canonical protocol command tokens such as `resume_task`, and invalid LLM-emitted aliases now round-trip through the OpenAI tool loop instead of crashing the message route.
+- Switched the communication LLM path to a traditional OpenAI-compatible `chat.completions` loop that replays the local 30-message conversation history each turn instead of using Responses API conversation-state handles.
+- Tightened executor selection so `create_task` rejects unknown `preferred_executor` ids and queued tasks with already-invalid executor ids now fail with a summary instead of crashing execution.

@@ -7,6 +7,7 @@ from uuid import uuid4
 from synopse.blackboard import InMemoryBlackboard
 from synopse.communication import CommunicationBrain, InMemoryConversationHistory
 from synopse.communication.model import CommunicationModel
+from synopse.communication.tools import build_default_tool_registry
 from synopse.communication.resolver import TaskResolver
 from synopse.execution import ExecutionBrain
 from synopse.executor_adapters.mock import MockExecutor
@@ -105,6 +106,10 @@ def create_session_runtime(
         blackboard,
         model,
         history=history,
+        tool_registry=build_default_tool_registry(
+            blackboard,
+            executor_types=registry.list_executor_types(),
+        ),
     )
     execution_brain = ExecutionBrain(blackboard, registry, worker_id=f"worker-{session_id}")
     return SessionRuntime(

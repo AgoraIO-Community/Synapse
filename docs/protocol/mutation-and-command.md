@@ -29,6 +29,11 @@ Key fields:
 - `cancel_task`
 - `preempt_task`
 - `resume_task`
+- `retry_task`
+
+Communication-model tool calls must use these exact canonical `command_type` tokens.
+Short aliases such as `resume` are invalid tool input and should be handled in-band,
+not as transport failures.
 
 Key fields:
 

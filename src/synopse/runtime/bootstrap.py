@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from synopse.communication.model import CommunicationDecision
 from synopse.communication.models import OpenAICommunicationModel, ScriptedCommunicationModel
+from synopse.communication.models.scripted import ScriptedPlan
 from synopse.infrastructure.llm import OpenAIProvider
 
 from .container import RuntimeContainer
@@ -20,7 +20,7 @@ def build_runtime_container(
 
     default_model = ScriptedCommunicationModel(
         {
-            "__default__": CommunicationDecision(
+            "__default__": ScriptedPlan(
                 conversational_act="request_clarification",
                 reply_override="I need a more specific instruction for that.",
             )

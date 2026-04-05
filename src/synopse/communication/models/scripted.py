@@ -1,10 +1,21 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass, field
 from typing import Any
 
 from ..context import CommunicationContext
-from ..model import CommunicationDecision
+from ..model import CommunicationModelResult, ToolCall
+from ..policies import infer_conversational_act, render_reply
+from ..tools import ToolRegistry
+from ..types import ToolInvocationRecord
+
+
+@dataclass(slots=True)
+class ScriptedPlan:
+    tool_calls: list[ToolCall] = field(default_factory=list)
+    conversational_act: str | None = None
+    reply_override: str | None = None
 
 
 class ScriptedCommunicationModel:
@@ -12,21 +23,62 @@ class ScriptedCommunicationModel:
         self,
         scripted: dict[
             str,
-            CommunicationDecision | Callable[[CommunicationContext], CommunicationDecision],
+            ScriptedPlan | Callable[[CommunicationContext], ScriptedPlan],
         ],
     ) -> None:
         self._scripted = scripted
 
-    async def decide(
+    async def respond(
         self,
         *,
         user_text: str,
         context: CommunicationContext,
-    ) -> CommunicationDecision:
+        tool_registry: ToolRegistry,
+    ) -> CommunicationModelResult:
         if user_text in self._scripted:
             selected = self._scripted[user_text]
         else:
             selected = self._scripted["__default__"]
         if callable(selected):
-            return selected(context)
-        return selected
+            plan = selected(context)
+        else:
+            plan = selected
+
+        tool_invocations: list[ToolInvocationRecord] = []
+        affected_task_ids: list[str] = []
+        tool_results: dict[str, object] = {}
+        for call in plan.tool_calls:
+            tool = tool_registry.get(call.name)
+            result = await tool.invoke(**call.args)
+            tool_results[call.name] = result
+            tool_invocations.append(
+                ToolInvocationRecord(tool_name=call.name, args=call.args, result=result)
+            )
+            task_id = _extract_task_id(result)
+            if task_id and task_id not in affected_task_ids:
+                affected_task_ids.append(task_id)
+
+        reply_text = render_reply(
+            plan.conversational_act or infer_conversational_act(tool_invocations, ""),
+            tool_results=tool_results,
+            reply_override=plan.reply_override,
+        )
+        return CommunicationModelResult(
+            reply_text=reply_text,
+            tool_invocations=tool_invocations,
+            affected_task_ids=affected_task_ids,
+            conversational_act=plan.conversational_act
+            or infer_conversational_act(tool_invocations, reply_text),
+        )
+
+
+def _extract_task_id(result: object) -> str | None:
+    task_id = getattr(result, "task_id", None)
+    if isinstance(task_id, str):
+        return task_id
+    if isinstance(result, dict):
+        task = result.get("task")
+        task_id = getattr(task, "task_id", None)
+        if isinstance(task_id, str):
+            return task_id
+    return None

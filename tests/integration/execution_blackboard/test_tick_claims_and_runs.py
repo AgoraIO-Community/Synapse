@@ -32,3 +32,31 @@ async def test_execution_brain_tick_claims_runs_and_completes():
     summary = await store.get_summary("task_1")
     assert summary is not None
     assert summary.latest_user_visible_status == "completed"
+
+
+@pytest.mark.anyio
+async def test_execution_brain_marks_unknown_executor_tasks_failed():
+    store = InMemoryBlackboard()
+    registry = ExecutorRegistry()
+    registry.register(MockExecutor())
+    brain = ExecutionBrain(store, registry, worker_id="worker-1")
+    task = Task(
+        task_id="task_bad",
+        root_task_id="task_bad",
+        title="Bad executor task",
+        goal="Bad executor task",
+        status=TaskStatus.QUEUED,
+        preferred_executor="User",
+    )
+    await store.put_task(task)
+
+    run_ids = await brain.tick()
+
+    assert run_ids == []
+    saved_task = await store.get_task("task_bad")
+    assert saved_task is not None
+    assert saved_task.status == TaskStatus.FAILED
+    summary = await store.get_summary("task_bad")
+    assert summary is not None
+    assert summary.latest_user_visible_status == "failed"
+    assert "Unknown executor 'User'" in str(summary.operational_summary)

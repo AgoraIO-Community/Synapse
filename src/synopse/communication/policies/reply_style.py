@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from synopse.protocol import TaskSummary
+from synopse.communication.types import ToolInvocationRecord
 
 
 def render_reply(
@@ -39,3 +40,18 @@ def _extract_summary(tool_results: dict[str, Any]) -> str | None:
             if isinstance(summary, TaskSummary):
                 return summary.conversational_summary or summary.operational_summary
     return None
+
+
+def infer_conversational_act(tool_invocations: list[ToolInvocationRecord], reply_text: str) -> str:
+    tool_names = {item.tool_name for item in tool_invocations}
+    if "create_task" in tool_names:
+        return "acknowledge_and_start"
+    if "update_task" in tool_names:
+        return "acknowledge_and_modify"
+    if "control_task" in tool_names:
+        return "acknowledge_and_hold"
+    if "query_task_summary" in tool_names or "query_task_detail" in tool_names:
+        return "inform_progress"
+    if "?" in reply_text:
+        return "request_clarification"
+    return "model_reply"

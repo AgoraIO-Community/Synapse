@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 from .context import CommunicationContext
+from .types import ToolInvocationRecord
+
+if TYPE_CHECKING:
+    from .tools import ToolRegistry
 
 
 @dataclass(slots=True)
@@ -13,17 +17,19 @@ class ToolCall:
 
 
 @dataclass(slots=True)
-class CommunicationDecision:
-    conversational_act: str
-    tool_calls: list[ToolCall] = field(default_factory=list)
-    reply_override: str | None = None
+class CommunicationModelResult:
+    reply_text: str
+    tool_invocations: list[ToolInvocationRecord] = field(default_factory=list)
+    affected_task_ids: list[str] = field(default_factory=list)
+    conversational_act: str | None = None
 
 
 class CommunicationModel(Protocol):
-    async def decide(
+    async def respond(
         self,
         *,
         user_text: str,
         context: CommunicationContext,
-    ) -> CommunicationDecision:
+        tool_registry: "ToolRegistry",
+    ) -> CommunicationModelResult:
         ...

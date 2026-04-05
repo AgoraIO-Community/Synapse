@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from synopse.blackboard import BlackboardStore, BlackboardQueryService
-from synopse.executor_core import ExecutorRegistry
-from synopse.protocol import Task
+from synopse.executor_core import ExecutorRegistry, UnknownExecutorError
+from synopse.protocol import BindingStatus, Task, TaskStatus, TaskSummary
 
 from .assignment import AssignmentManager
 from .run_manager import RunManager
@@ -39,7 +39,11 @@ class ReconcileLoop:
             if claimed is None:
                 continue
             executor_type = task.preferred_executor or "mock"
-            executor = self._registry.get(executor_type)
+            try:
+                executor = self._registry.get(executor_type)
+            except UnknownExecutorError:
+                await self._fail_unknown_executor(task, claimed, executor_type)
+                continue
             session, claimed, executor_session = await self._sessions.ensure_session(
                 self._store,
                 executor,
@@ -59,3 +63,30 @@ class ReconcileLoop:
             await self._store.put_summary(summary)
             completed_run_ids.append(run.run_id)
         return completed_run_ids
+
+    async def _fail_unknown_executor(
+        self,
+        task: Task,
+        claimed_binding,
+        executor_type: str,
+    ) -> None:
+        task.status = TaskStatus.FAILED
+        await self._store.put_task(task)
+        await self._store.put_summary(
+            TaskSummary(
+                task_id=task.task_id,
+                operational_summary=f"Unknown executor '{executor_type}'.",
+                conversational_summary=f"I couldn't start this task because executor '{executor_type}' is not available.",
+                latest_user_visible_status="failed",
+                needs_user_input=False,
+            )
+        )
+        await self._store.put_binding(
+            claimed_binding.model_copy(
+                update={
+                    "claimed_by": None,
+                    "claim_expires_at": None,
+                    "binding_status": BindingStatus.RELEASED,
+                }
+            )
+        )

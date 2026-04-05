@@ -6,6 +6,8 @@ from synopse.blackboard import BlackboardStore
 from synopse.communication.resolver import TaskResolver
 from synopse.protocol import MutationType, Task, TaskMutation
 
+from .base import ToolInputError
+
 
 class UpdateTaskTool:
     name = "update_task"
@@ -24,7 +26,7 @@ class UpdateTaskTool:
         tasks = await self._store.list_tasks()
         task = self._resolver.resolve(tasks, task_id=task_id, reference=reference)
         if task is None:
-            raise KeyError("Task not found for update.")
+            raise ToolInputError("Task not found for update.", code="task_not_found")
         for key, value in patch.items():
             if hasattr(task, key):
                 setattr(task, key, value)

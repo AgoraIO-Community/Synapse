@@ -2,8 +2,9 @@ import pytest
 
 from synopse.blackboard import InMemoryBlackboard
 from synopse.communication import CommunicationBrain
-from synopse.communication.model import CommunicationDecision, ToolCall
+from synopse.communication.model import ToolCall
 from synopse.communication.models import ScriptedCommunicationModel
+from synopse.communication.models.scripted import ScriptedPlan
 
 
 @pytest.mark.anyio
@@ -11,7 +12,7 @@ async def test_create_task_flow():
     store = InMemoryBlackboard()
     model = ScriptedCommunicationModel(
         {
-            "Check Tokyo flights": CommunicationDecision(
+            "Check Tokyo flights": ScriptedPlan(
                 conversational_act="acknowledge_and_start",
                 tool_calls=[
                     ToolCall(

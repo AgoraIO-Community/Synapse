@@ -1,7 +1,7 @@
 import pytest
 
-from synopse.communication.model import CommunicationDecision
 from synopse.communication.models import ScriptedCommunicationModel
+from synopse.communication.models.scripted import ScriptedPlan
 from synopse.runtime.session import create_session_runtime
 
 
@@ -10,7 +10,7 @@ async def test_session_runtime_publish_snapshot_notifies_subscribers():
     session = create_session_runtime(
         "session-1",
         model=ScriptedCommunicationModel(
-            {"__default__": CommunicationDecision(conversational_act="request_clarification")}
+            {"__default__": ScriptedPlan(conversational_act="request_clarification")}
         ),
     )
     queue = session.subscribe()
