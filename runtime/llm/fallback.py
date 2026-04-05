@@ -84,7 +84,11 @@ def heuristic_interpretation(
                 action_type=RuntimeActionType.UPDATE_TASK,
                 target_scope=TargetScope.EXISTING_TASK,
                 target_task_ref=task_ref,
-                payload={"latest_instruction": text},
+                payload={
+                    "goal": text,
+                    "title": text[:80],
+                    "latest_instruction": text,
+                },
                 priority=Priority.HIGH,
                 execution_trigger=ExecutionTrigger.SOFT,
                 scope_of_effect=ScopeOfEffect.TASK,

@@ -392,6 +392,53 @@ def test_interpreter_schema_rejects_whitespace_only_create_task_title():
         )
 
 
+def test_interpreter_schema_rejects_update_task_without_goal():
+    with pytest.raises(ValidationError, match="update_task requires a non-empty goal"):
+        InterpreterAction(
+            action_id="action_missing_update_goal",
+            action_type=RuntimeActionType.UPDATE_TASK,
+            target_scope=TargetScope.EXISTING_TASK,
+            priority=Priority.NORMAL,
+            execution_trigger=ExecutionTrigger.SOFT,
+            scope_of_effect=ScopeOfEffect.TASK,
+            target_task_reference_type=TaskReferenceType.LATEST_ACTIVE,
+            latest_instruction="continue with recipient info",
+            goal="   ",
+        )
+
+
+def test_interpreter_schema_derives_update_task_title_from_goal():
+    bundle = InterpreterActionBundle(
+        bundle_id="bundle_update_title",
+        message_id="message_update_title",
+        actions=[
+            InterpreterAction(
+                action_id="action_update_1",
+                action_type=RuntimeActionType.UPDATE_TASK,
+                target_scope=TargetScope.EXISTING_TASK,
+                priority=Priority.NORMAL,
+                execution_trigger=ExecutionTrigger.SOFT,
+                scope_of_effect=ScopeOfEffect.TASK,
+                target_task_reference_type=TaskReferenceType.LATEST_ACTIVE,
+                goal="Continue with the recipient info",
+                latest_instruction="Continue with the recipient info",
+            )
+        ],
+    )
+
+    runtime_bundle = to_runtime_action_bundle(bundle)
+
+    assert runtime_bundle.actions[0].payload["goal"] == "Continue with the recipient info"
+    assert (
+        runtime_bundle.actions[0].payload["title"]
+        == "Continue with the recipient info"
+    )
+    assert (
+        runtime_bundle.actions[0].payload["latest_instruction"]
+        == "Continue with the recipient info"
+    )
+
+
 def test_interpretation_envelope_schema_avoids_one_of():
     schema_json = InterpretationEnvelope.model_json_schema()
 
@@ -462,6 +509,57 @@ def test_message_interpreter_rejects_invalid_create_task_payload_from_model():
                 session_id="session_test",
                 message_id="message_invalid",
                 text="what is today's weather",
+                snapshot=make_snapshot(),
+            )
+        )
+
+
+def test_message_interpreter_rejects_invalid_update_task_payload_from_model():
+    invalid_envelope = InterpretationEnvelope.model_construct(
+        routing_decision=InterpreterRoutingDecision.model_construct(
+            decision_id="decision_invalid_update",
+            message_id="message_invalid_update",
+            conversation_mode=ConversationMode.TASK,
+            needs_clarification=False,
+            clarification_reason=None,
+            priority_hint=Priority.NORMAL,
+            resolver_strategy=ResolverStrategy.IMPLICIT,
+        ),
+        action_bundle=InterpreterActionBundle.model_construct(
+            bundle_id="bundle_invalid_update",
+            message_id="message_invalid_update",
+            actions=[
+                InterpreterAction.model_construct(
+                    action_id="action_invalid_update",
+                    action_type=RuntimeActionType.UPDATE_TASK,
+                    target_scope=TargetScope.EXISTING_TASK,
+                    priority=Priority.NORMAL,
+                    execution_trigger=ExecutionTrigger.SOFT,
+                    scope_of_effect=ScopeOfEffect.TASK,
+                    target_task_reference_type=TaskReferenceType.LATEST_ACTIVE,
+                    title=None,
+                    goal=None,
+                    latest_instruction="i'm in shanghai",
+                )
+            ],
+        ),
+    )
+    settings = Settings(openai_api_key="test-key")
+    provider = OpenAIProvider(
+        settings,
+        client=FakeOpenAIClient(parsed=invalid_envelope),
+    )
+    interpreter = MessageInterpreterClient(provider)
+
+    with pytest.raises(
+        LLMInvocationError,
+        match="Interpreter returned invalid runtime action payload: update_task requires a non-empty goal",
+    ):
+        asyncio.run(
+            interpreter.interpret(
+                session_id="session_test",
+                message_id="message_invalid_update",
+                text="i'm in shanghai",
                 snapshot=make_snapshot(),
             )
         )
@@ -572,6 +670,22 @@ def test_build_interpreter_input_uses_compact_runtime_context():
                 supports_streaming=True,
             )
         ],
+        task_registry=[
+            Task(
+                task_id="task_active_1",
+                root_task_id="task_active_1",
+                title="Weather",
+                goal="Get today's weather in Shanghai",
+                status=TaskStatus.RUNNING,
+            ),
+            Task(
+                task_id="task_done_1",
+                root_task_id="task_done_1",
+                title="CPU",
+                goal="Check CPU usage",
+                status=TaskStatus.DONE,
+            ),
+        ],
     )
 
     rendered_input = build_interpreter_input(
@@ -582,10 +696,74 @@ def test_build_interpreter_input_uses_compact_runtime_context():
 
     assert '"pending_clarifications"' in rendered_input
     assert '"Need recipient info"' in rendered_input
+    assert '"active_tasks"' in rendered_input
+    assert '"task_id": "task_active_1"' in rendered_input
+    assert '"goal": "Get today\'s weather in Shanghai"' in rendered_input
+    assert '"task_id": "task_done_1"' not in rendered_input
+    assert '"title": "Weather"' not in rendered_input
+    assert '"status": "running"' not in rendered_input
     assert '"executor_capabilities"' in rendered_input
     assert '"executor_id": "codex_executor"' in rendered_input
-    assert '"active_tasks"' not in rendered_input
     assert '"session_snapshot"' not in rendered_input
+
+
+def test_build_interpreter_input_only_includes_active_tasks_with_id_and_goal():
+    snapshot = SessionSnapshot(
+        session_id="session_test",
+        task_registry=[
+            Task(
+                task_id="task_queued",
+                root_task_id="task_queued",
+                title="Queued weather",
+                goal="Get weather in Shanghai",
+                status=TaskStatus.QUEUED,
+            ),
+            Task(
+                task_id="task_running",
+                root_task_id="task_running",
+                title="Running weather",
+                goal="Get weather in Beijing",
+                status=TaskStatus.RUNNING,
+            ),
+            Task(
+                task_id="task_blocked",
+                root_task_id="task_blocked",
+                title="Blocked weather",
+                goal="Get weather in Shenzhen",
+                status=TaskStatus.BLOCKED,
+            ),
+            Task(
+                task_id="task_done",
+                root_task_id="task_done",
+                title="Done weather",
+                goal="Get weather in Guangzhou",
+                status=TaskStatus.DONE,
+            ),
+            Task(
+                task_id="task_failed",
+                root_task_id="task_failed",
+                title="Failed weather",
+                goal="Get weather in Hangzhou",
+                status=TaskStatus.FAILED,
+            ),
+        ],
+    )
+
+    rendered_input = build_interpreter_input(
+        message_id="message_1",
+        text="i'm in shanghai",
+        snapshot=snapshot,
+    )
+
+    assert '"task_id": "task_queued"' in rendered_input
+    assert '"task_id": "task_running"' in rendered_input
+    assert '"task_id": "task_blocked"' in rendered_input
+    assert '"task_id": "task_done"' not in rendered_input
+    assert '"task_id": "task_failed"' not in rendered_input
+    assert '"goal": "Get weather in Shanghai"' in rendered_input
+    assert '"goal": "Get weather in Beijing"' in rendered_input
+    assert '"title": "Queued weather"' not in rendered_input
+    assert '"status": "queued"' not in rendered_input
 
 
 def test_build_response_instructions_emphasize_concise_spoken_replies():
@@ -600,7 +778,11 @@ def test_build_interpreter_instructions_keep_core_routing_policy_compact():
     instructions = build_interpreter_instructions()
 
     assert "conversation_only is for social chat" in instructions
-    assert "create_task, always provide a concrete non-empty goal" in instructions
+    assert "active_tasks" in instructions
+    assert (
+        "create_task and update_task, always provide a concrete non-empty goal"
+        in instructions
+    )
     assert "Prefer update_task or control_task over create_task" in instructions
     assert len(instructions) < 1400
 

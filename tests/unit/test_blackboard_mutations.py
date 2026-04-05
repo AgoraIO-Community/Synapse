@@ -48,6 +48,27 @@ def test_apply_control_can_retry_blocked_task():
     assert task.block_reason is None
 
 
+def test_apply_control_does_not_retry_done_task():
+    task = Task(
+        task_id="task_1",
+        root_task_id="task_1",
+        title="T",
+        goal="G",
+        status=TaskStatus.DONE,
+        output_summary="old result",
+        block_reason="old block",
+        failure_reason="old failure",
+        artifacts=[],
+    )
+
+    apply_control(task, ControlCommandType.RETRY_TASK)
+
+    assert task.status == TaskStatus.DONE
+    assert task.output_summary == "old result"
+    assert task.block_reason == "old block"
+    assert task.failure_reason == "old failure"
+
+
 def test_append_message_history_keeps_last_thirty_messages():
     session = BlackboardSessionState(session_id="session_test")
 

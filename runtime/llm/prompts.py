@@ -5,10 +5,11 @@ from typing import Any
 
 from runtime.protocols.conversation import ConversationAction
 from runtime.protocols.stream import SessionSnapshot
+from runtime.protocols.tasks import TaskStatus
 
 
 INTERPRETER_MESSAGE_HISTORY_LIMIT = 10
-INTERPRETER_PROMPT_CACHE_KEY = "synopse:message-interpreter:v2"
+INTERPRETER_PROMPT_CACHE_KEY = "synopse:message-interpreter:v4"
 
 
 def build_interpreter_instructions() -> str:
@@ -22,8 +23,9 @@ def build_interpreter_instructions() -> str:
         "task is for actionable requests or anything requiring executor, world, system, file, "
         "or tool access. "
         "clarification is only for task or control intent that cannot be acted on safely. "
-        "Use message_history, pending_clarifications, and executor_capabilities as context. "
-        "For create_task, always provide a concrete non-empty goal; title may be omitted if redundant. "
+        "Use message_history, pending_clarifications, active_tasks, and executor_capabilities as context. "
+        "When a follow-up likely refers to an active task, prefer update_task or control_task over creating a new task. "
+        "For create_task and update_task, always provide a concrete non-empty goal; title may be omitted if redundant. "
         "Prefer update_task or control_task over create_task when the message refers to an "
         "existing task. "
         "Examples: 'hi' -> conversation_only; 'how do you feel?' -> conversation_only; "
@@ -62,12 +64,28 @@ def _executor_capability_context(snapshot: SessionSnapshot) -> list[dict[str, An
     ]
 
 
+def _active_task_context(snapshot: SessionSnapshot) -> list[dict[str, str]]:
+    return [
+        {
+            "task_id": task.task_id,
+            "goal": task.goal,
+        }
+        for task in snapshot.task_registry
+        if task.status in {
+            TaskStatus.QUEUED,
+            TaskStatus.RUNNING,
+            TaskStatus.BLOCKED,
+        }
+    ]
+
+
 def build_interpreter_input(*, message_id: str, text: str, snapshot: SessionSnapshot) -> str:
     payload = {
         "message_id": message_id,
         "latest_user_message": text,
         "message_history": _message_history_context(snapshot),
         "pending_clarifications": _pending_clarification_context(snapshot),
+        "active_tasks": _active_task_context(snapshot),
         "executor_capabilities": _executor_capability_context(snapshot),
     }
     return json.dumps(payload, indent=2, sort_keys=True)

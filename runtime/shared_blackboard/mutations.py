@@ -144,5 +144,7 @@ def apply_control(task: Task, command_type: ControlCommandType) -> Task:
         task.status = TaskStatus.QUEUED
         task.failure_reason = None
         task.block_reason = None
-    task.updated_at = utc_now()
+        task.updated_at = utc_now()
+    else:
+        task.updated_at = utc_now()
     return task

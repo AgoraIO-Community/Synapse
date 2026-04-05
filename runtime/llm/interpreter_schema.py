@@ -78,16 +78,37 @@ class InterpreterAction(StrictSchemaModel):
                 stripped = value.strip()
                 normalized[key] = stripped or None
 
-        if normalized.get("action_type") in {
+        action_type = normalized.get("action_type")
+        if action_type in {
             RuntimeActionType.CREATE_TASK,
             RuntimeActionType.CREATE_TASK.value,
+            RuntimeActionType.UPDATE_TASK,
+            RuntimeActionType.UPDATE_TASK.value,
         }:
             goal = normalized.get("goal")
             if goal is None:
-                raise ValueError("create_task requires a non-empty goal.")
+                action_label = (
+                    "create_task"
+                    if action_type in {
+                        RuntimeActionType.CREATE_TASK,
+                        RuntimeActionType.CREATE_TASK.value,
+                    }
+                    else "update_task"
+                )
+                raise ValueError(f"{action_label} requires a non-empty goal.")
 
             if "title" in normalized and data.get("title") is not None and normalized.get("title") is None:
-                raise ValueError("create_task title must be non-empty when provided.")
+                action_label = (
+                    "create_task"
+                    if action_type in {
+                        RuntimeActionType.CREATE_TASK,
+                        RuntimeActionType.CREATE_TASK.value,
+                    }
+                    else "update_task"
+                )
+                raise ValueError(
+                    f"{action_label} title must be non-empty when provided."
+                )
 
         return normalized
 
@@ -164,12 +185,22 @@ def to_runtime_action(action: InterpreterAction) -> RuntimeAction:
         )
 
     if action.action_type == RuntimeActionType.UPDATE_TASK:
+        goal = (action.goal or "").strip()
+        if not goal:
+            raise ValueError("update_task requires a non-empty goal.")
+        title = action.title.strip() if action.title else goal[:80]
+        if not title:
+            raise ValueError("update_task requires a non-empty title.")
         return RuntimeAction(
             action_id=action.action_id,
             action_type=RuntimeActionType.UPDATE_TASK,
             target_scope=TargetScope.EXISTING_TASK,
             target_task_ref=_to_runtime_task_reference(action),
-            payload={"latest_instruction": action.latest_instruction or ""},
+            payload={
+                "goal": goal,
+                "title": title,
+                "latest_instruction": action.latest_instruction or goal,
+            },
             priority=action.priority,
             execution_trigger=action.execution_trigger,
             scope_of_effect=action.scope_of_effect,

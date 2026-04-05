@@ -341,11 +341,13 @@ It currently stores:
 - `event_log`
 - `last_sequence`
 
-`conversation_state` now also carries a bounded `message_history` for LLM context. It stores the latest 30 persisted user/assistant messages. Transient streamed response chunks are excluded; only final assistant messages are durable history. The message interpreter should consume only a compact slice of recent history plus clarification and executor-capability context, rather than serializing the full session snapshot into every interpreter request. Its Structured Outputs schema should stay lean, with a compact action object that avoids unnecessary padding fields, and its static prompt prefix should remain stable so prompt caching can reduce repeated interpreter latency.
+`conversation_state` now also carries a bounded `message_history` for LLM context. It stores the latest 30 persisted user/assistant messages. Transient streamed response chunks are excluded; only final assistant messages are durable history. The message interpreter should consume only a compact slice of recent history plus clarification, active-task, and executor-capability context, rather than serializing the full session snapshot into every interpreter request. Active-task context should stay minimal, exposing only active `task_id` and `goal` pairs for tasks in `queued`, `running`, or `blocked` states. Its Structured Outputs schema should stay lean, with a compact action object that avoids unnecessary padding fields, and its static prompt prefix should remain stable so prompt caching can reduce repeated interpreter latency.
 
 The message interpreter should treat the LLM's structured routing result as authoritative once it passes schema validation. Local code should enforce structural integrity, not reclassify social chat into tasks or vice versa after the model responds.
 
 Task completion replies should be rendered from the originating task thread, not from the latest unrelated session chat. Task-related user messages should be associated back to their resolved `task_id`, and terminal task replies should use task-scoped history plus the task's originating user message as response context.
+
+`update_task` actions should carry a concrete non-empty `goal`. If an update resolves to a `blocked` task, the runtime may continue that task in place. If the targeted task has already become `done`, the runtime should preserve the completed task and create a new task from the update payload instead of restarting the old one. Explicit `retry_task` remains limited to retryable non-completed terminal states.
 
 The communication brain and execution brain do not share state directly. They synchronize through the blackboard and protocol events.
 

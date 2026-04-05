@@ -5,6 +5,8 @@ from types import SimpleNamespace
 import pytest
 from fastapi import HTTPException
 
+from runtime.api.commands import submit_command
+from runtime.api.models import CommandRequest
 from runtime.api.messages import submit_message
 from runtime.api.models import MessageRequest
 from runtime.execution_brain import orchestrator as orchestrator_module
@@ -25,6 +27,7 @@ from runtime.protocols.runtime import (
     ActionBundle,
     ConversationMode,
     ExecutionTrigger,
+    RuntimeAction,
     ResolverStrategy,
     RuntimeActionType,
     ScopeOfEffect,
@@ -37,6 +40,7 @@ from runtime.protocols.tasks import (
     TaskReference,
     TaskReferenceRelation,
     TaskReferenceType,
+    TaskStatus,
 )
 
 
@@ -88,6 +92,8 @@ def make_interpretation(message_id: str, text: str) -> InterpretationEnvelope:
                 scope_of_effect=ScopeOfEffect.TASK,
                 target_task_reference_type=TaskReferenceType.LATEST_ACTIVE,
                 target_task_reference_relation=TaskReferenceRelation.CURRENT,
+                title=text[:80],
+                goal=text,
                 latest_instruction=text,
             )
         ]
@@ -316,6 +322,190 @@ async def test_blocked_task_can_continue_via_update_message(monkeypatch):
             completed = True
             break
     assert completed is True
+
+
+@pytest.mark.anyio
+async def test_done_task_update_falls_back_to_new_task(monkeypatch):
+    allow_mock_executor_task_graph(monkeypatch)
+    services = build_services(build_test_services())
+    session = services.runtime_state_store.create_session()
+    queue = services.runtime_state_store.subscribe(session.session_id)
+
+    create_message = UserMessage(
+        message_id=new_id("message"),
+        session_id=session.session_id,
+        text="search flights to Tokyo tomorrow",
+    )
+    decision, bundle = await services.action_router.route(
+        create_message, services.runtime_state_store.snapshot(session.session_id)
+    )
+    bundle = allow_mock_executor_tasks(bundle)
+    initial = services.interaction_policy.build_initial_action(
+        decision,
+        bundle,
+        user_message_text=create_message.text,
+    )
+    await services.execution_orchestrator.emit_conversation_action(
+        session.session_id,
+        initial,
+        related_message_id=create_message.message_id,
+    )
+    await services.execution_orchestrator.process_bundle(session.session_id, bundle)
+
+    created_task_id = None
+    for _ in range(12):
+        event = await asyncio.wait_for(queue.get(), timeout=1)
+        if event.event_type == "task_created":
+            created_task_id = event.related_task_id
+        if event.event_type == "completed":
+            break
+
+    assert created_task_id is not None
+    stored_task = services.runtime_state_store.get_session(session.session_id).task_registry[
+        created_task_id
+    ]
+    assert stored_task.status == TaskStatus.DONE
+    assert stored_task.output_summary is not None
+
+    update_message = UserMessage(
+        message_id=new_id("message"),
+        session_id=session.session_id,
+        text="update that for next Friday and continue",
+    )
+    routing_decision = (
+        await services.action_router.route(
+            update_message, services.runtime_state_store.snapshot(session.session_id)
+        )
+    )[0]
+    bundle = ActionBundle(
+        bundle_id="bundle_done_fallback_create",
+        message_id=update_message.message_id,
+        actions=[
+            RuntimeAction(
+                action_id="action_done_fallback_create",
+                action_type=RuntimeActionType.UPDATE_TASK,
+                target_scope=TargetScope.EXISTING_TASK,
+                target_task_ref=TaskReference(
+                    reference_type=TaskReferenceType.TASK_ID,
+                    value=created_task_id,
+                ),
+                payload={
+                    "goal": update_message.text,
+                    "title": update_message.text[:80],
+                    "latest_instruction": update_message.text,
+                },
+                priority=Priority.HIGH,
+                execution_trigger=ExecutionTrigger.SOFT,
+                scope_of_effect=ScopeOfEffect.TASK,
+            )
+        ],
+    )
+    initial = services.interaction_policy.build_initial_action(
+        routing_decision,
+        bundle,
+        user_message_text=update_message.text,
+    )
+    await services.execution_orchestrator.emit_conversation_action(
+        session.session_id,
+        initial,
+        related_message_id=update_message.message_id,
+    )
+    await services.execution_orchestrator.process_bundle(session.session_id, bundle)
+
+    seen_events: list[str] = []
+    new_task_id = None
+    for _ in range(12):
+        event = await asyncio.wait_for(queue.get(), timeout=1)
+        seen_events.append(event.event_type)
+        if event.event_type == "task_created":
+            new_task_id = event.related_task_id
+        if event.event_type == "completed":
+            break
+
+    assert "task_updated" not in seen_events
+    assert "task_created" in seen_events
+    assert "accepted" in seen_events
+    assert "started" in seen_events
+    assert "completed" in seen_events
+    assert new_task_id is not None
+    assert new_task_id != created_task_id
+    original_task = services.runtime_state_store.get_session(session.session_id).task_registry[
+        created_task_id
+    ]
+    assert original_task.status == TaskStatus.DONE
+    assert original_task.output_summary is not None
+    replacement_task = services.runtime_state_store.get_session(session.session_id).task_registry[
+        new_task_id
+    ]
+    assert replacement_task.goal == update_message.text
+    assert replacement_task.created_from_message_id == update_message.message_id
+
+
+@pytest.mark.anyio
+async def test_done_task_retry_does_not_restart(monkeypatch):
+    allow_mock_executor_task_graph(monkeypatch)
+    services = build_services(build_test_services())
+    session = services.runtime_state_store.create_session()
+    queue = services.runtime_state_store.subscribe(session.session_id)
+
+    create_message = UserMessage(
+        message_id=new_id("message"),
+        session_id=session.session_id,
+        text="search flights to Tokyo tomorrow",
+    )
+    decision, bundle = await services.action_router.route(
+        create_message, services.runtime_state_store.snapshot(session.session_id)
+    )
+    bundle = allow_mock_executor_tasks(bundle)
+    initial = services.interaction_policy.build_initial_action(
+        decision,
+        bundle,
+        user_message_text=create_message.text,
+    )
+    await services.execution_orchestrator.emit_conversation_action(
+        session.session_id,
+        initial,
+        related_message_id=create_message.message_id,
+    )
+    await services.execution_orchestrator.process_bundle(session.session_id, bundle)
+
+    created_task_id = None
+    for _ in range(12):
+        event = await asyncio.wait_for(queue.get(), timeout=1)
+        if event.event_type == "task_created":
+            created_task_id = event.related_task_id
+        if event.event_type == "completed":
+            break
+
+    assert created_task_id is not None
+
+    await submit_command(
+        session.session_id,
+        CommandRequest(
+            command_type=ControlCommandType.RETRY_TASK,
+            target_task_id=created_task_id,
+        ),
+        services=services,
+    )
+
+    seen_events: list[str] = []
+    retry_payload = None
+    for _ in range(3):
+        try:
+            event = await asyncio.wait_for(queue.get(), timeout=0.2)
+        except TimeoutError:
+            break
+        seen_events.append(event.event_type)
+        if event.event_type == "retry_task":
+            retry_payload = event.payload
+
+    assert "retry_task" in seen_events
+    assert "accepted" not in seen_events
+    assert "started" not in seen_events
+    assert "completed" not in seen_events
+    assert retry_payload is not None
+    assert retry_payload["task_id"] == created_task_id
+    assert retry_payload["status"] == "done"
 
 
 def test_publish_snapshot_emits_system_snapshot_event():

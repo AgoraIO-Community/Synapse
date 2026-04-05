@@ -19,7 +19,13 @@ from runtime.protocols.conversation import (
     ConversationActionType,
 )
 from runtime.protocols.execution import ExecutionEvent, ExecutionEventType
-from runtime.protocols.runtime import ActionBundle, ContextPatch, RuntimeActionType
+from runtime.protocols.runtime import (
+    ActionBundle,
+    ContextPatch,
+    RuntimeAction,
+    RuntimeActionType,
+    TargetScope,
+)
 from runtime.protocols.stream import StreamCategory
 from runtime.protocols.trace import TraceStage
 from runtime.protocols.tasks import ControlCommand, ControlCommandType, TaskStatus
@@ -94,52 +100,13 @@ class ExecutionOrchestrator:
                     related_message_id=bundle.message_id,
                 )
             elif action.action_type == RuntimeActionType.CREATE_TASK:
-                task = build_task(
-                    action,
-                    message_id=bundle.message_id,
-                    executor_id=self._executor_adapter_router.default_executor_id,
-                )
-                if self._requires_real_executor(task):
-                    await self._emit_executor_unavailable(
-                        session_id,
-                        message_id=bundle.message_id,
-                    )
-                    await self._trace_state_store.publish(
-                        session_id,
-                        TraceStage.EXECUTION_ORCHESTRATOR,
-                        "task_skipped_real_executor_unavailable",
-                        "execution_orchestrator",
-                        {"goal": task.goal},
-                        span_id=span_id,
-                        related_message_id=bundle.message_id,
-                    )
-                    continue
-                await self._trace_state_store.publish(
+                await self._create_and_start_task(
                     session_id,
-                    TraceStage.TASK_GRAPH,
-                    "task_built",
-                    "task_graph",
-                    {"title": task.title, "goal": task.goal},
-                    span_id=span_id,
-                    related_message_id=bundle.message_id,
-                    related_task_id=task.task_id,
-                )
-                upsert_task(session, task)
-                associate_message_history_task(
                     session,
+                    action=action,
                     message_id=bundle.message_id,
-                    task_id=task.task_id,
+                    span_id=span_id,
                 )
-                await self._runtime_state_store.publish(
-                    session_id,
-                    StreamCategory.TASK,
-                    "task_created",
-                    "execution_brain",
-                    task.model_dump(mode="json"),
-                    related_task_id=task.task_id,
-                    related_message_id=bundle.message_id,
-                )
-                await self._start_task(session_id, task, span_id=span_id)
             elif action.action_type == RuntimeActionType.UPDATE_TASK:
                 task = resolve_task_reference(session, action.target_task_ref)
                 if task is None:
@@ -147,6 +114,16 @@ class ExecutionOrchestrator:
                         session_id,
                         reason="I could not identify which task to update.",
                         message_id=bundle.message_id,
+                    )
+                    continue
+                if task.status == TaskStatus.DONE:
+                    create_action = self._create_task_from_update_action(action)
+                    await self._create_and_start_task(
+                        session_id,
+                        session,
+                        action=create_action,
+                        message_id=bundle.message_id,
+                        span_id=span_id,
                     )
                     continue
                 associate_message_history_task(
@@ -243,7 +220,7 @@ class ExecutionOrchestrator:
                 ),
             )
             return
-        elif command.command_type == ControlCommandType.RETRY_TASK:
+        elif command.command_type == ControlCommandType.RETRY_TASK and task.status == TaskStatus.QUEUED:
             await self._start_task(session_id, task)
 
         await self._runtime_state_store.publish(
@@ -529,6 +506,79 @@ class ExecutionOrchestrator:
         action.metadata["origin_task_id"] = task.task_id
         action.metadata.setdefault("task_goal", task.goal)
         action.metadata.setdefault("latest_instruction", task.latest_instruction)
+
+    def _create_task_from_update_action(self, action: RuntimeAction) -> RuntimeAction:
+        return RuntimeAction(
+            action_id=action.action_id,
+            action_type=RuntimeActionType.CREATE_TASK,
+            target_scope=TargetScope.NEW_TASK,
+            payload={
+                "title": action.payload["title"],
+                "goal": action.payload["goal"],
+            },
+            priority=action.priority,
+            execution_trigger=action.execution_trigger,
+            scope_of_effect=action.scope_of_effect,
+        )
+
+    async def _create_and_start_task(
+        self,
+        session_id: str,
+        session,
+        *,
+        action: RuntimeAction,
+        message_id: str,
+        span_id: str | None = None,
+    ) -> None:
+        task = build_task(
+            action,
+            message_id=message_id,
+            executor_id=self._executor_adapter_router.default_executor_id,
+        )
+        latest_instruction = action.payload.get("latest_instruction")
+        if isinstance(latest_instruction, str) and latest_instruction.strip():
+            task.latest_instruction = latest_instruction.strip()
+        if self._requires_real_executor(task):
+            await self._emit_executor_unavailable(
+                session_id,
+                message_id=message_id,
+            )
+            await self._trace_state_store.publish(
+                session_id,
+                TraceStage.EXECUTION_ORCHESTRATOR,
+                "task_skipped_real_executor_unavailable",
+                "execution_orchestrator",
+                {"goal": task.goal},
+                span_id=span_id,
+                related_message_id=message_id,
+            )
+            return
+        await self._trace_state_store.publish(
+            session_id,
+            TraceStage.TASK_GRAPH,
+            "task_built",
+            "task_graph",
+            {"title": task.title, "goal": task.goal},
+            span_id=span_id,
+            related_message_id=message_id,
+            related_task_id=task.task_id,
+        )
+        upsert_task(session, task)
+        associate_message_history_task(
+            session,
+            message_id=message_id,
+            task_id=task.task_id,
+        )
+        await self._runtime_state_store.publish(
+            session_id,
+            StreamCategory.TASK,
+            "task_created",
+            "execution_brain",
+            task.model_dump(mode="json"),
+            related_task_id=task.task_id,
+            related_message_id=message_id,
+        )
+        await self._start_task(session_id, task, span_id=span_id)
 
     async def _start_task(self, session_id: str, task, *, span_id: str | None = None) -> None:
         executor_id = self._executor_adapter_router.select_executor_id(task)
