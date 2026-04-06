@@ -22,4 +22,5 @@ class BlackboardWriteEvent:
     kind: BlackboardWriteKind
     entity_id: str | None = None
     task_id: str | None = None
+    request_id: str | None = None
     payload: dict[str, Any] = field(default_factory=dict)

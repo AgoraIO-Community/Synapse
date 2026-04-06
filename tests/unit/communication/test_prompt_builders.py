@@ -186,6 +186,7 @@ def test_build_notification_messages_contains_candidates_payload_and_history():
     assert "spoken-language friendly" in messages[1]["content"]
     assert "Do not expose internal tool names" in messages[2]["content"]
     assert "You are generating one proactive assistant update" in messages[3]["content"]
+    assert "Do not use markdown" in messages[3]["content"]
     assert "Use notification_candidates, key_task, and relevant_tasks" in messages[3]["content"]
     assert "Do not use tools." in messages[3]["content"]
     assert "Examples:" in messages[4]["content"]

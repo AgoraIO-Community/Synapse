@@ -69,3 +69,4 @@ Short log of important design decisions and changes for Synopse.
 
 - Tightened Communication Brain prompt policy so fact-checking, current-world information, and other live external-fact requests now default toward executor-backed `create_task` handling, with short clarifications for missing required details and no generic website/app fallback advice in mock-only mode.
 - Focused notification LLM rendering on selected candidate-linked task context by adding structured recent-chat continuity, key-task, and relevant-task payloads, and added explicit diagnostics for adopted notification plans plus key-task/relevant-task selection on proactive updates.
+- Tightened proactive notification wording so notification messages stay plain-text and spoken-style, explicitly avoiding markdown and list formatting in user-visible updates.

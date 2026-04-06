@@ -137,6 +137,115 @@ async def test_diagnostics_timeline_filters_execution_events_by_task_id():
 
 
 @pytest.mark.anyio
+async def test_diagnostics_timeline_request_filter_keeps_blackboard_events_for_message_request():
+    app = create_app()
+    app.state.runtime_container = RuntimeContainer(
+        communication_model=ScriptedCommunicationModel(
+            {
+                "__default__": ScriptedPlan(
+                    conversational_act="acknowledge_and_start",
+                    tool_calls=[
+                        ToolCall(
+                            name="create_task",
+                            args={
+                                "title": "Check flights",
+                                "goal": "Check flights",
+                                "mock_safe": True,
+                            },
+                        )
+                    ],
+                    reply_override="I'll handle that.",
+                )
+            }
+        ),
+        settings=Settings(),
+    )
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        session_id = (await client.post("/sessions")).json()["session_id"]
+        response = await client.post(
+            f"/sessions/{session_id}/messages",
+            json={"text": "Check flights"},
+        )
+
+        assert response.status_code == 200
+
+        events = await _wait_for_timeline_event(
+            client,
+            session_id,
+            lambda items: any(item["event_name"] == "bb.task.created" for item in items),
+        )
+        request_id = next(
+            item["request_id"] for item in events if item["event_name"] == "api.message.accepted"
+        )
+
+        request_events = (
+            await client.get(
+                f"/sessions/{session_id}/diagnostics/timeline",
+                params={"request_id": request_id},
+            )
+        ).json()["events"]
+
+    event_names = [item["event_name"] for item in request_events]
+    assert "api.message.accepted" in event_names
+    assert "comm.tool.called" in event_names
+    assert "bb.task.created" in event_names
+    assert "bb.mutation.appended" in event_names
+    assert all(item["request_id"] == request_id for item in request_events)
+
+
+@pytest.mark.anyio
+async def test_diagnostics_timeline_records_tool_calls_for_scripted_backend():
+    app = create_app()
+    app.state.runtime_container = RuntimeContainer(
+        communication_model=ScriptedCommunicationModel(
+            {
+                "__default__": ScriptedPlan(
+                    conversational_act="acknowledge_and_start",
+                    tool_calls=[
+                        ToolCall(
+                            name="create_task",
+                            args={
+                                "title": "Check flights",
+                                "goal": "Check flights",
+                                "mock_safe": True,
+                            },
+                        )
+                    ],
+                    reply_override="I'll handle that.",
+                )
+            }
+        ),
+        settings=Settings(),
+    )
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        session_id = (await client.post("/sessions")).json()["session_id"]
+        response = await client.post(
+            f"/sessions/{session_id}/messages",
+            json={"text": "Check flights"},
+        )
+
+        assert response.status_code == 200
+
+        tool_events = await _wait_for_timeline_event(
+            client,
+            session_id,
+            lambda items: any(item["event_name"] == "comm.tool.called" for item in items),
+        )
+
+    event = next(item for item in tool_events if item["event_name"] == "comm.tool.called")
+    assert event["details"]["tool_name"] == "create_task"
+    assert event["outcome"] == "succeeded"
+
+
+@pytest.mark.anyio
 async def test_diagnostics_timeline_supports_after_sequence_incremental_polling():
     app = create_app()
     app.state.runtime_container = RuntimeContainer(

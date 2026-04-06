@@ -25,6 +25,7 @@ class BlackboardDiagnosticEmitter:
             event_name=event_name,
             component="blackboard.store",
             summary="Blackboard projection updated",
+            request_id=event.request_id,
             task_id=event.task_id,
             run_id=event.entity_id if event.kind == BlackboardWriteKind.RUN else None,
             execution_session_id=(

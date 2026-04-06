@@ -17,6 +17,7 @@ Important rules:
 - selected notification facts may be rendered into final natural wording later, but delivery policy itself should stay rule-driven
 - notification rendering should use candidate-linked structured context with a key task and relevant task list, not broad replayed session history as the factual source
 - recent chat history in notification rendering is continuity context only and must not override the selected task facts
+- emitted notification wording should stay plain-text and spoken-style, without markdown or list formatting
 - first-version delivery focuses on `completed`, `blocked`, and `needs_input`
 - first-version turn-taking is basic: defer while assistant output is active and prefer a short merge window for ordinary completion updates
 

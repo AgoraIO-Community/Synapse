@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException, Request
 
 from synopse.api.models import CommandRequest, CommandResponse
 from synopse.communication.resolver import TaskResolver, describe_candidates
+from synopse.observability.context import bind_diagnostic_context
 from synopse.protocol import TaskCommand
 
 router = APIRouter()
@@ -43,14 +44,20 @@ async def submit_command(
         created_by="api",
         reason=request.reason,
     )
+    request_id = f"http-cmd-{uuid4().hex[:8]}"
     session.observability.api.command_accepted(
         conversation_id=session.session_id,
-        request_id=None,
+        request_id=request_id,
         task_id=task.task_id,
         command_type=request.command_type.value,
         transport="http",
     )
-    await session.apply_command(command)
+    with bind_diagnostic_context(
+        conversation_id=session.session_id,
+        request_id=request_id,
+        task_id=task.task_id,
+    ):
+        await session.apply_command(command)
     session.schedule_execution()
     await session.publish_snapshot()
     return CommandResponse(command_id=command.command_id, affected_task_ids=[task.task_id])

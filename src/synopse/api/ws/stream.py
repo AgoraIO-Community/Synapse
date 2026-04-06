@@ -6,6 +6,7 @@ from pydantic import ValidationError
 
 from synopse.api.models import SendCommandSocketAction, SendMessageSocketAction
 from synopse.communication.resolver import TaskResolver, describe_candidates
+from synopse.observability.context import bind_diagnostic_context
 from synopse.protocol import TaskCommand
 
 router = APIRouter()
@@ -244,7 +245,12 @@ async def _handle_send_command(session, queue: asyncio.Queue, payload: dict[str,
         command_type=action.command_type.value,
         transport="websocket",
     )
-    await session.apply_command(command)
+    with bind_diagnostic_context(
+        conversation_id=session.session_id,
+        request_id=action.request_id,
+        task_id=task.task_id,
+    ):
+        await session.apply_command(command)
     session.schedule_execution()
     await session.publish_snapshot()
 
