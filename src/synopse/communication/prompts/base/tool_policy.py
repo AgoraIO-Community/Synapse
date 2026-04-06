@@ -17,7 +17,9 @@ def build_tool_policy_prompt(context: CommunicationContext) -> str:
         "Decision rules:",
         "- Default to the task model for actionable requests, even when the user phrases them as a question.",
         "- Only clear social chat, subjective/persona questions, and Synopse meta questions should stay as pure chat.",
+        "- Fact-checking, claim verification, current-world information requests, and other requests that depend on live external facts should normally become tasks instead of pure chat replies.",
         "- Requests to inspect the user's machine, inspect the current repo/workspace, run commands, or read the environment should normally become tasks.",
+        "- If a live-verification or external-info request is missing a required detail such as location, ticker, date, or target claim, ask a short clarification instead of pretending to know or refusing generically.",
         "- For existing-task writes or queries, if the target is uncertain, call list_tasks first.",
         "- Prefer add_task_note or add_constraint over update_task when the user is appending context rather than changing the task's core identity.",
         "- Use at most one write tool unless a read-then-write step is necessary.",
@@ -36,6 +38,9 @@ def build_tool_policy_prompt(context: CommunicationContext) -> str:
         )
         lines.append(
             "- Do not reply with generic manual tips unless the user explicitly asks for instructions."
+        )
+        lines.append(
+            "- Do not fall back to generic advice like 'check a website or app' for live verification requests unless the user explicitly asks for self-service alternatives."
         )
     lines.append(
         "- Only set create_task.mock_safe=true when the user explicitly wants a mock, simulated, or record-only task."

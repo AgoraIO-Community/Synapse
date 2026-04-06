@@ -28,6 +28,10 @@ class NotificationPolicy:
         self._merge_window_seconds = merge_window_seconds
         self._now_fn = now_fn or (lambda: datetime.now(UTC))
 
+    @property
+    def merge_window_seconds(self) -> float:
+        return self._merge_window_seconds
+
     def plan(
         self,
         candidates: list[NotificationCandidate],

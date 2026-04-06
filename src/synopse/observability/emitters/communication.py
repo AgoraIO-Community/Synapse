@@ -138,6 +138,10 @@ def _llm_trace_details(trace: LlmTraceRecord, *, include_details: bool) -> dict[
         "message_count": len(trace.messages),
         "notification_candidate_count": len(trace.notification_candidates),
     }
+    if trace.source == "notification":
+        details["notification_key_task_id"] = trace.notification_key_task_id
+        details["notification_relevant_task_ids"] = trace.notification_relevant_task_ids
+        details["notification_recent_chat_turn_count"] = trace.notification_recent_chat_turn_count
     if trace.user_text:
         details["user_text_preview"] = trace.user_text[:120]
     if trace.reply_text:

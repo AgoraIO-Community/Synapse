@@ -12,7 +12,11 @@ from .base.reply_style import REPLY_STYLE_PROMPT
 from .base.tool_policy import build_tool_policy_prompt
 from .examples.notification_style import NOTIFICATION_STYLE_EXAMPLES_PROMPT
 from .examples.tool_usage import build_tool_usage_examples_prompt
-from .runtime_context import build_notification_candidates_payload, build_runtime_context
+from .runtime_context import (
+    build_notification_candidates_payload,
+    build_notification_rendering_context,
+    build_runtime_context,
+)
 from .tasks.normal_reply import build_normal_reply_task_prompt
 from .tasks.proactive_notification import PROACTIVE_NOTIFICATION_PROMPT
 
@@ -21,6 +25,9 @@ from .tasks.proactive_notification import PROACTIVE_NOTIFICATION_PROMPT
 class PromptBuildResult:
     messages: list[dict[str, object]] = field(default_factory=list)
     prompt_sections: list[str] = field(default_factory=list)
+    notification_key_task_id: str | None = None
+    notification_relevant_task_ids: list[str] = field(default_factory=list)
+    notification_recent_chat_turn_count: int = 0
 
 
 REPLY_PROMPT_SECTIONS = [
@@ -39,7 +46,7 @@ NOTIFICATION_PROMPT_SECTIONS = [
     "guardrails",
     "proactive_notification",
     "notification_style_examples",
-    "runtime_context",
+    "notification_rendering_context",
     "notification_candidates",
 ]
 
@@ -91,6 +98,10 @@ def build_notification_prompt_request(
     context: CommunicationContext,
     candidates: list[NotificationCandidate],
 ) -> PromptBuildResult:
+    rendering_context = build_notification_rendering_context(context, candidates)
+    key_task = rendering_context.get("key_task")
+    relevant_tasks = rendering_context.get("relevant_tasks", [])
+    recent_chat_history = rendering_context.get("recent_chat_history", [])
     return PromptBuildResult(
         messages=[
         _message("system", IDENTITY_PROMPT),
@@ -98,11 +109,19 @@ def build_notification_prompt_request(
         _message("system", GUARDRAILS_PROMPT),
         _message("system", PROACTIVE_NOTIFICATION_PROMPT),
         _message("system", NOTIFICATION_STYLE_EXAMPLES_PROMPT),
-        _message("system", json.dumps(build_runtime_context(context))),
+        _message("system", json.dumps(rendering_context)),
         _message("system", json.dumps(build_notification_candidates_payload(candidates))),
-        *[_message(entry.role, entry.text) for entry in context.recent_history],
         ],
         prompt_sections=list(NOTIFICATION_PROMPT_SECTIONS),
+        notification_key_task_id=(
+            str(key_task.get("task_id")) if isinstance(key_task, dict) and key_task.get("task_id") else None
+        ),
+        notification_relevant_task_ids=[
+            str(task.get("task_id"))
+            for task in relevant_tasks
+            if isinstance(task, dict) and task.get("task_id")
+        ],
+        notification_recent_chat_turn_count=len(recent_chat_history) if isinstance(recent_chat_history, list) else 0,
     )
 
 

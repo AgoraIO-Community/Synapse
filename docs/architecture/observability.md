@@ -118,6 +118,7 @@ Phase 1 prioritizes boundary and decision events:
   - `exec.executor.unavailable`
 - notification:
   - `notify.candidate.created`
+  - `notify.plan.adopted`
   - `notify.delivery.deferred`
   - `notify.batch.emitted`
   - `notify.llm.request_built`
@@ -134,6 +135,7 @@ Instrumentation is added at the runtime edges:
 - blackboard write subscriptions
 - execution claim, session, run, and classification decisions
 - notification candidate creation, defer, and emission
+- notification plan adoption and task-anchoring decisions for rendered proactive updates
 
 The in-memory diagnostic store is session-scoped and non-durable.
 It exists to support fast incident drill-downs during development and testing.

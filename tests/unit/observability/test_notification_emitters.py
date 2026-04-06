@@ -1,0 +1,128 @@
+from datetime import UTC, datetime
+
+from synopse.communication.model import LlmTraceRecord
+from synopse.notification.policy import NotificationDeliveryGroup, NotificationDeliveryPlan
+from synopse.observability.emitters.communication import CommunicationDiagnosticEmitter
+from synopse.observability.emitters.notification import NotificationDiagnosticEmitter
+from synopse.observability.logger import DiagnosticLogger
+from synopse.observability.store import InMemoryDiagnosticStore
+from synopse.protocol import (
+    NotificationCandidate,
+    NotificationCandidateType,
+    NotificationDeliveryStatus,
+    NotificationPriority,
+)
+
+
+def _candidate(
+    *,
+    candidate_id: str,
+    task_id: str,
+    created_at: str,
+    merge_key: str = "completed_digest",
+) -> NotificationCandidate:
+    return NotificationCandidate(
+        candidate_id=candidate_id,
+        task_id=task_id,
+        candidate_type=NotificationCandidateType.COMPLETED,
+        priority=NotificationPriority.P2,
+        summary_short="Done.",
+        created_at=created_at,
+        delivery_status=NotificationDeliveryStatus.PENDING,
+        merge_key=merge_key,
+        requires_immediate_delivery=False,
+    )
+
+
+def test_notification_emitter_logs_adopted_plan_details():
+    logger = DiagnosticLogger(store=InMemoryDiagnosticStore())
+    emitter = NotificationDiagnosticEmitter(logger)
+    candidates = [
+        _candidate(
+            candidate_id="notif-1",
+            task_id="task-1",
+            created_at="2026-04-06T12:00:00+00:00",
+        ),
+        _candidate(
+            candidate_id="notif-2",
+            task_id="task-2",
+            created_at="2026-04-06T12:00:01+00:00",
+        ),
+    ]
+    plan = NotificationDeliveryPlan(
+        groups=[NotificationDeliveryGroup(candidates=candidates)],
+        next_due_seconds=None,
+    )
+
+    emitter.plan_adopted(
+        policy_name="NotificationPolicy",
+        merge_window_seconds=2.0,
+        pending_candidates=candidates,
+        plan=plan,
+        assistant_busy=False,
+        has_pending_user_messages=False,
+    )
+
+    event = list(logger.store.all())[-1]
+    assert event.event_name == "notify.plan.adopted"
+    assert event.details["policy_name"] == "NotificationPolicy"
+    assert event.details["merge_window_seconds"] == 2.0
+    assert event.details["pending_candidate_ids"] == ["notif-1", "notif-2"]
+    assert event.details["groups"][0]["candidate_ids"] == ["notif-1", "notif-2"]
+    assert event.details["groups"][0]["task_ids"] == ["task-1", "task-2"]
+
+
+def test_notification_emitter_logs_key_task_for_batch_emitted():
+    logger = DiagnosticLogger(store=InMemoryDiagnosticStore())
+    emitter = NotificationDiagnosticEmitter(logger)
+    candidates = [
+        _candidate(
+            candidate_id="notif-1",
+            task_id="task-1",
+            created_at=datetime(2026, 4, 6, 12, 0, 0, tzinfo=UTC).isoformat(),
+        )
+    ]
+
+    emitter.batch_emitted(
+        candidates=candidates,
+        key_task_id="task-1",
+        relevant_task_ids=["task-1"],
+    )
+
+    event = list(logger.store.all())[-1]
+    assert event.event_name == "notify.batch.emitted"
+    assert event.details["key_task_id"] == "task-1"
+    assert event.details["relevant_task_ids"] == ["task-1"]
+
+
+def test_communication_emitter_logs_notification_trace_summary_fields():
+    logger = DiagnosticLogger(store=InMemoryDiagnosticStore())
+    emitter = CommunicationDiagnosticEmitter(logger)
+
+    emitter.llm_trace(
+        LlmTraceRecord(
+            trace_id="trace-1",
+            source="notification",
+            phase="request_built",
+            prompt_sections=["notification_rendering_context", "notification_candidates"],
+            messages=[{"role": "system", "content": "payload"}],
+            notification_candidates=[
+                {
+                    "candidate_type": "completed",
+                    "task_id": "task-trip",
+                    "summary_short": "Trip options ready.",
+                    "priority": "p2",
+                }
+            ],
+            notification_key_task_id="task-trip",
+            notification_relevant_task_ids=["task-trip", "task-hotel"],
+            notification_recent_chat_turn_count=4,
+            affected_task_ids=["task-trip"],
+        )
+    )
+
+    event = list(logger.store.all())[-1]
+    assert event.event_name == "notify.llm.request_built"
+    assert event.details["notification_key_task_id"] == "task-trip"
+    assert event.details["notification_relevant_task_ids"] == ["task-trip", "task-hotel"]
+    assert event.details["notification_recent_chat_turn_count"] == 4

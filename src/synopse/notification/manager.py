@@ -99,19 +99,27 @@ class NotificationManager:
         has_pending_user_messages: bool,
     ) -> NotificationProcessingResult:
         candidates = await self._store.list_notification_candidates()
+        pending_candidates = [
+            candidate
+            for candidate in candidates
+            if candidate.delivery_status == NotificationDeliveryStatus.PENDING
+        ]
         plan = self._policy.plan(
             candidates,
             assistant_busy=assistant_busy,
             has_pending_user_messages=has_pending_user_messages,
         )
-        if not plan.groups:
-            pending_count = len(
-                [
-                    candidate
-                    for candidate in candidates
-                    if candidate.delivery_status == NotificationDeliveryStatus.PENDING
-                ]
+        if self._observability is not None and pending_candidates:
+            self._observability.plan_adopted(
+                policy_name=self._policy.__class__.__name__,
+                merge_window_seconds=self._policy.merge_window_seconds,
+                pending_candidates=pending_candidates,
+                plan=plan,
+                assistant_busy=assistant_busy,
+                has_pending_user_messages=has_pending_user_messages,
             )
+        if not plan.groups:
+            pending_count = len(pending_candidates)
             if self._observability is not None and pending_count > 0:
                 if assistant_busy:
                     self._observability.delivery_deferred(
@@ -155,7 +163,11 @@ class NotificationManager:
                 )
             )
         if self._observability is not None:
-            self._observability.batch_emitted(candidates=candidates)
+            self._observability.batch_emitted(
+                candidates=candidates,
+                key_task_id=result.notification_key_task_id,
+                relevant_task_ids=result.notification_relevant_task_ids,
+            )
         if self._conversation_event_callback is not None:
             maybe_awaitable = self._conversation_event_callback(
                 message_id=result.message_id,

@@ -64,3 +64,8 @@ Short log of important design decisions and changes for Synopse.
 - Quieted local access logs by filtering diagnostics timeline polling requests from `uvicorn.access` by default, and made the frontend diagnostics polling visibility-aware instead of polling continuously in hidden tabs.
 - Removed the dedicated LLM trace UI and dropped backend prompt-trace diagnostic events, keeping tool-call and lifecycle logs as the main communication-side debugging surface.
 - Restored backend-only LLM diagnostic events as summary logs by default, with verbose prompt/message payloads gated behind `SYNOPSE_LOG_LLM_DETAILS`, while leaving the dedicated LLM trace UI removed.
+
+## 2026-04-07
+
+- Tightened Communication Brain prompt policy so fact-checking, current-world information, and other live external-fact requests now default toward executor-backed `create_task` handling, with short clarifications for missing required details and no generic website/app fallback advice in mock-only mode.
+- Focused notification LLM rendering on selected candidate-linked task context by adding structured recent-chat continuity, key-task, and relevant-task payloads, and added explicit diagnostics for adopted notification plans plus key-task/relevant-task selection on proactive updates.

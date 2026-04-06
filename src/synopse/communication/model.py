@@ -73,6 +73,9 @@ class LlmTraceRecord:
     reply_text: str | None = None
     available_tools: list[str] = field(default_factory=list)
     notification_candidates: list[dict[str, object]] = field(default_factory=list)
+    notification_key_task_id: str | None = None
+    notification_relevant_task_ids: list[str] = field(default_factory=list)
+    notification_recent_chat_turn_count: int = 0
     tool_invocations: list[LlmToolInvocationTrace] = field(default_factory=list)
     affected_task_ids: list[str] = field(default_factory=list)
 

@@ -125,6 +125,9 @@ class OpenAICommunicationModel:
                     prompt_sections=prompt_request.prompt_sections,
                     messages=prompt_request.messages,
                     notification_candidates=candidate_payload,
+                    notification_key_task_id=prompt_request.notification_key_task_id,
+                    notification_relevant_task_ids=prompt_request.notification_relevant_task_ids,
+                    notification_recent_chat_turn_count=prompt_request.notification_recent_chat_turn_count,
                     affected_task_ids=sorted({candidate.task_id for candidate in candidates}),
                 ),
             )
@@ -144,6 +147,9 @@ class OpenAICommunicationModel:
                     messages=prompt_request.messages,
                     reply_text=reply_text,
                     notification_candidates=candidate_payload,
+                    notification_key_task_id=prompt_request.notification_key_task_id,
+                    notification_relevant_task_ids=prompt_request.notification_relevant_task_ids,
+                    notification_recent_chat_turn_count=prompt_request.notification_recent_chat_turn_count,
                     affected_task_ids=sorted({candidate.task_id for candidate in candidates}),
                 ),
             )

@@ -10,6 +10,7 @@ from .context import CommunicationContextBuilder
 from .history import InMemoryConversationHistory
 from .model import CommunicationModel, LlmTraceCallback, TextDeltaCallback, ToolCallCallback
 from .policies import ToolUsagePolicy
+from .prompts.runtime_context import build_notification_rendering_context
 from .tools import ToolRegistry, build_default_tool_registry
 from .types import CommunicationTurnResult
 
@@ -121,6 +122,9 @@ class CommunicationBrain:
             conversation_id,
             available_tools=self._tool_usage_policy.available_tools,
         )
+        rendering_context = build_notification_rendering_context(context, candidates)
+        key_task = rendering_context.get("key_task")
+        relevant_tasks = rendering_context.get("relevant_tasks", [])
         try:
             reply_text = await self._model.render_notification(
                 context=context,
@@ -147,4 +151,12 @@ class CommunicationBrain:
             reply_text=reply_text,
             conversational_act="inform_progress",
             affected_task_ids=sorted({candidate.task_id for candidate in candidates}),
+            notification_key_task_id=(
+                str(key_task.get("task_id")) if isinstance(key_task, dict) and key_task.get("task_id") else None
+            ),
+            notification_relevant_task_ids=[
+                str(task.get("task_id"))
+                for task in relevant_tasks
+                if isinstance(task, dict) and task.get("task_id")
+            ],
         )
