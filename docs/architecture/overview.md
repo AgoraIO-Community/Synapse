@@ -34,5 +34,6 @@ Use the topic docs in this directory for detail:
 - [Blackboard](./blackboard.md)
 - [Sessions and Runs](./sessions-and-runs.md)
 - [Notifications and Interruptions](./notifications-and-interruptions.md)
+- [Observability](./observability.md)
 - [Executors](./executors.md)
 - [Repository Structure](./repository-structure.md)

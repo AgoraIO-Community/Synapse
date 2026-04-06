@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 
+from synopse.api.logging import install_access_log_filters
 from synopse.api.routes.commands import router as commands_router
 from synopse.api.routes.health import router as health_router
 from synopse.api.routes.messages import router as messages_router
@@ -13,6 +14,7 @@ from synopse.runtime.bootstrap import build_runtime_container
 def create_app() -> FastAPI:
     app = FastAPI(title="Synopse v2")
     app.state.runtime_container = build_runtime_container()
+    install_access_log_filters(app.state.runtime_container.settings)
     app.include_router(health_router)
     app.include_router(sessions_router)
     app.include_router(messages_router)

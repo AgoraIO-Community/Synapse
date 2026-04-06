@@ -8,6 +8,8 @@ from typing import Any
 from synopse.communication.tools.base import ToolInputError
 from synopse.runtime.config import Settings
 
+ToolCallEventCallback = Callable[[dict[str, object]], Awaitable[None] | None]
+
 
 class OpenAIProvider:
     def __init__(self, settings: Settings, client: Any | None = None) -> None:
@@ -46,6 +48,7 @@ class OpenAIProvider:
         tool_runner: Callable[[str, dict[str, object]], Awaitable[object]],
         max_rounds: int = 6,
         on_text_delta: Callable[[str], Awaitable[None] | None] | None = None,
+        on_tool_call: ToolCallEventCallback | None = None,
     ) -> tuple[str, list[dict[str, object]]]:
         if on_text_delta is not None:
             return await self._run_tool_calling_streamed(
@@ -54,6 +57,7 @@ class OpenAIProvider:
                 tool_runner=tool_runner,
                 max_rounds=max_rounds,
                 on_text_delta=on_text_delta,
+                on_tool_call=on_tool_call,
             )
 
         chat_messages = list(messages)
@@ -69,6 +73,15 @@ class OpenAIProvider:
                     try:
                         result = await tool_runner(str(tool_call["name"]), args)
                     except ToolInputError as exc:
+                        await _emit_tool_call(
+                            on_tool_call,
+                            {
+                                "name": str(tool_call["name"]),
+                                "args": args,
+                                "status": "failed",
+                                "error": exc.as_payload(),
+                            },
+                        )
                         chat_messages.append(
                             _tool_message(
                                 str(tool_call["id"]),
@@ -78,6 +91,15 @@ class OpenAIProvider:
                         continue
                     invocations.append(
                         {"name": tool_call["name"], "args": args, "result": result}
+                    )
+                    await _emit_tool_call(
+                        on_tool_call,
+                        {
+                            "name": str(tool_call["name"]),
+                            "args": args,
+                            "status": "succeeded",
+                            "result": result,
+                        },
                     )
                     chat_messages.append(
                         _tool_message(
@@ -101,6 +123,7 @@ class OpenAIProvider:
         tool_runner: Callable[[str, dict[str, object]], Awaitable[object]],
         max_rounds: int,
         on_text_delta: Callable[[str], Awaitable[None] | None],
+        on_tool_call: ToolCallEventCallback | None,
     ) -> tuple[str, list[dict[str, object]]]:
         chat_messages = list(messages)
         invocations: list[dict[str, object]] = []
@@ -128,6 +151,15 @@ class OpenAIProvider:
                     try:
                         result = await tool_runner(str(tool_call["name"]), args)
                     except ToolInputError as exc:
+                        await _emit_tool_call(
+                            on_tool_call,
+                            {
+                                "name": str(tool_call["name"]),
+                                "args": args,
+                                "status": "failed",
+                                "error": exc.as_payload(),
+                            },
+                        )
                         chat_messages.append(
                             _tool_message(
                                 str(tool_call["id"]),
@@ -137,6 +169,15 @@ class OpenAIProvider:
                         continue
                     invocations.append(
                         {"name": tool_call["name"], "args": args, "result": result}
+                    )
+                    await _emit_tool_call(
+                        on_tool_call,
+                        {
+                            "name": str(tool_call["name"]),
+                            "args": args,
+                            "status": "succeeded",
+                            "result": result,
+                        },
                     )
                     chat_messages.append(
                         _tool_message(
@@ -400,3 +441,14 @@ def _get_value(value: Any, key: str, default: Any = None) -> Any:
     if isinstance(value, dict):
         return value.get(key, default)
     return getattr(value, key, default)
+
+
+async def _emit_tool_call(
+    callback: ToolCallEventCallback | None,
+    payload: dict[str, object],
+) -> None:
+    if callback is None:
+        return
+    maybe_awaitable = callback(payload)
+    if inspect.isawaitable(maybe_awaitable):
+        await maybe_awaitable

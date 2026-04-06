@@ -26,6 +26,7 @@ Verify deterministic logic in isolation.
 - scheduler scoring
 - assignment policy
 - session reuse policy
+- observability schema and timeline filtering
 - interruption resolution
 - notification aggregation rules
 
@@ -46,6 +47,7 @@ Verify subsystem interaction under controlled conditions.
 - communication + blackboard
 - execution + blackboard
 - notification pipeline
+- diagnostics timeline queries
 - interruption flow
 
 ### CI Expectation

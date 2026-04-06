@@ -6,6 +6,7 @@ from pydantic import ValidationError
 
 from synopse.api.models import SendCommandSocketAction, SendMessageSocketAction
 from synopse.communication.resolver import TaskResolver, describe_candidates
+from synopse.observability.context import bind_diagnostic_context
 from synopse.protocol import TaskCommand
 
 router = APIRouter()
@@ -47,6 +48,12 @@ async def _send_events(websocket: WebSocket, queue: asyncio.Queue) -> None:
 
 async def _handle_client_action(session, queue: asyncio.Queue, payload: object) -> None:
     if not isinstance(payload, dict):
+        session.observability.api.ws_action_rejected(
+            conversation_id=session.session_id,
+            request_id="",
+            action_type="unknown",
+            error_code="invalid_payload",
+        )
         await session.publish_private_event(
             queue,
             session.action_rejected_event(
@@ -79,12 +86,24 @@ async def _handle_client_action(session, queue: asyncio.Queue, payload: object) 
             message="Unknown websocket action type.",
         ),
     )
+    session.observability.api.ws_action_rejected(
+        conversation_id=session.session_id,
+        request_id=request_id_value,
+        action_type=action_type_value,
+        error_code="unknown_action_type",
+    )
 
 
 async def _handle_send_message(session, queue: asyncio.Queue, payload: dict[str, object]) -> None:
     try:
         action = SendMessageSocketAction.model_validate(payload)
     except ValidationError as exc:
+        session.observability.api.ws_action_rejected(
+            conversation_id=session.session_id,
+            request_id=_request_id_from_payload(payload),
+            action_type="send_message",
+            error_code="invalid_payload",
+        )
         await session.publish_private_event(
             queue,
             session.action_rejected_event(
@@ -98,6 +117,12 @@ async def _handle_send_message(session, queue: asyncio.Queue, payload: dict[str,
 
     text = action.text.strip()
     if not text:
+        session.observability.api.ws_action_rejected(
+            conversation_id=session.session_id,
+            request_id=action.request_id,
+            action_type=action.type,
+            error_code="invalid_message_text",
+        )
         await session.publish_private_event(
             queue,
             session.action_rejected_event(
@@ -110,12 +135,22 @@ async def _handle_send_message(session, queue: asyncio.Queue, payload: dict[str,
         return
 
     await session.submit_message(action.request_id, text, start_processing=False)
+    session.observability.api.message_accepted(
+        conversation_id=session.session_id,
+        request_id=action.request_id,
+        transport="websocket",
+    )
     await session.publish_private_event(
         queue,
         session.action_accepted_event(
             action.request_id,
             action_type=action.type,
         ),
+    )
+    session.observability.api.ws_action_accepted(
+        conversation_id=session.session_id,
+        request_id=action.request_id,
+        action_type=action.type,
     )
     await session.publish_snapshot()
     session.start_message_processing()
@@ -125,6 +160,12 @@ async def _handle_send_command(session, queue: asyncio.Queue, payload: dict[str,
     try:
         action = SendCommandSocketAction.model_validate(payload)
     except ValidationError as exc:
+        session.observability.api.ws_action_rejected(
+            conversation_id=session.session_id,
+            request_id=_request_id_from_payload(payload),
+            action_type="send_command",
+            error_code="invalid_payload",
+        )
         await session.publish_private_event(
             queue,
             session.action_rejected_event(
@@ -139,6 +180,12 @@ async def _handle_send_command(session, queue: asyncio.Queue, payload: dict[str,
     tasks = await session.blackboard.list_tasks()
     resolution = TaskResolver().resolve(tasks, task_id=action.task_id, reference=action.reference)
     if resolution.status == "ambiguous":
+        session.observability.api.ws_action_rejected(
+            conversation_id=session.session_id,
+            request_id=action.request_id,
+            action_type=action.type,
+            error_code="ambiguous_reference",
+        )
         await session.publish_private_event(
             queue,
             session.action_rejected_event(
@@ -154,6 +201,12 @@ async def _handle_send_command(session, queue: asyncio.Queue, payload: dict[str,
         return
     task = resolution.task
     if task is None:
+        session.observability.api.ws_action_rejected(
+            conversation_id=session.session_id,
+            request_id=action.request_id,
+            action_type=action.type,
+            error_code="task_not_found",
+        )
         await session.publish_private_event(
             queue,
             session.action_rejected_event(
@@ -180,7 +233,24 @@ async def _handle_send_command(session, queue: asyncio.Queue, payload: dict[str,
             action_type=action.type,
         ),
     )
-    await session.apply_command(command)
+    session.observability.api.ws_action_accepted(
+        conversation_id=session.session_id,
+        request_id=action.request_id,
+        action_type=action.type,
+    )
+    session.observability.api.command_accepted(
+        conversation_id=session.session_id,
+        request_id=action.request_id,
+        task_id=task.task_id,
+        command_type=action.command_type.value,
+        transport="websocket",
+    )
+    with bind_diagnostic_context(
+        conversation_id=session.session_id,
+        request_id=action.request_id,
+        task_id=task.task_id,
+    ):
+        await session.apply_command(command)
     session.schedule_execution()
     await session.publish_snapshot()
 

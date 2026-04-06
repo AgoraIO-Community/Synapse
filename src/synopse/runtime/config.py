@@ -32,6 +32,13 @@ class Settings:
     openai_base_url: str | None = None
     codex_executor_enabled: bool = False
     codex_command: str = "codex"
+    log_level: str = "INFO"
+    log_format: str = "auto"
+    log_color: str = "auto"
+    quiet_diagnostics_access_logs: bool = True
+    log_llm_details: bool = False
+    diagnostic_max_events: int = 500
+    git_sha: str | None = None
 
 
 def load_settings() -> Settings:
@@ -47,4 +54,11 @@ def load_settings() -> Settings:
         or None,
         codex_executor_enabled=_get_bool("SYNOPSE_CODEX_EXECUTOR_ENABLED", False),
         codex_command=os.getenv("SYNOPSE_CODEX_COMMAND", "codex"),
+        log_level=os.getenv("SYNOPSE_LOG_LEVEL", "INFO").upper(),
+        log_format=os.getenv("SYNOPSE_LOG_FORMAT", "auto").lower(),
+        log_color=os.getenv("SYNOPSE_LOG_COLOR", "auto").lower(),
+        quiet_diagnostics_access_logs=_get_bool("SYNOPSE_QUIET_DIAGNOSTICS_ACCESS_LOGS", True),
+        log_llm_details=_get_bool("SYNOPSE_LOG_LLM_DETAILS", False),
+        diagnostic_max_events=int(os.getenv("SYNOPSE_DIAGNOSTIC_MAX_EVENTS", "500")),
+        git_sha=os.getenv("SYNOPSE_GIT_SHA") or None,
     )

@@ -31,8 +31,11 @@ Core communication policy:
 - ambiguous task references should not silently fall back to the latest task; the communication brain should resolve them explicitly or ask for clarification
 - task-first routing is the default; only clear social, subjective, or Synopse-meta conversation should remain pure chat
 - actionable requests should usually become tasks even when phrased as questions
+- fact-checking, claim verification, current-world information, and other live external-fact requests should normally route toward `create_task` rather than unsupported pure-chat answers
+- when a live verification request is missing a required operand such as location, ticker, date, or target claim, the communication brain should ask a short clarification before task creation
 - capability-gated requests such as checking machine state, reading the workspace, or running commands are a high-value subset of those task requests
 - if only the mock executor is available, ordinary task requests should be blocked by default unless they are explicitly mock-safe
+- mock-only capability-limit replies should explain the missing real executor naturally and should not fall back to generic self-service advice unless the user explicitly asks for alternatives
 - there is no standalone message interpreter in the primary `v2` design; interpretation is part of Communication Brain tool use
 
 Primary tool surface:

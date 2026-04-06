@@ -34,6 +34,34 @@ class GuardExercisingProvider:
         ]
 
 
+class ToolCallingProvider:
+    async def run_tool_calling(self, **kwargs):
+        result = await kwargs["tool_runner"](
+            "create_task",
+            {"title": "Check CPU", "goal": "Check CPU usage", "mock_safe": True},
+        )
+        on_tool_call = kwargs.get("on_tool_call")
+        if on_tool_call is not None:
+            await on_tool_call(
+                {
+                    "name": "create_task",
+                    "args": {"title": "Check CPU", "goal": "Check CPU usage", "mock_safe": True},
+                    "status": "succeeded",
+                    "result": result,
+                }
+            )
+        return "Done.", [
+            {
+                "name": "create_task",
+                "args": {"title": "Check CPU", "goal": "Check CPU usage", "mock_safe": True},
+                "result": result,
+            }
+        ]
+
+async def _collect_tool_call(record, bucket):
+    bucket.append(record)
+
+
 @pytest.mark.anyio
 async def test_openai_model_maps_payload_to_model_result():
     provider = FakeProvider()
@@ -94,6 +122,41 @@ async def test_openai_model_maps_payload_to_model_result():
         "content": "hi",
     }
 
+
+@pytest.mark.anyio
+async def test_openai_model_emits_tool_call_record_for_successful_invocation():
+    provider = ToolCallingProvider()
+    model = OpenAICommunicationModel(provider)
+    tool_calls = []
+    context = CommunicationContext(
+        conversation_id="conv-1",
+        recent_history=[ConversationEntry(role="user", text="hi")],
+        tasks=[],
+        summaries={},
+        active_tasks=[],
+        recent_tasks=[],
+        executor_runtime=ExecutorRuntimeSummary(
+            has_real_executor=False,
+            available_executor_types=["mock"],
+            default_executor_type="mock",
+            executors=[],
+        ),
+        available_tools=["create_task"],
+    )
+    registry = build_default_tool_registry(InMemoryBlackboard())
+
+    await model.respond(
+        user_text="check my pc cpu usage",
+        context=context,
+        tool_registry=registry,
+        on_tool_call=lambda record: _collect_tool_call(record, tool_calls),
+    )
+
+    assert len(tool_calls) == 1
+    assert tool_calls[0].tool_name == "create_task"
+    assert tool_calls[0].status == "succeeded"
+    assert "Check CPU" in (tool_calls[0].result_summary or "")
+    assert tool_calls[0].affected_task_ids
 
 @pytest.mark.anyio
 async def test_openai_model_blocks_real_executor_request_when_only_mock_is_available():

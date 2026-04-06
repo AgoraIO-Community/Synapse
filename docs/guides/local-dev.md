@@ -6,6 +6,11 @@ Preferred backend run command:
 uvicorn synopse.api.app:app --reload
 ```
 
+By default, diagnostics timeline polling requests from the frontend inspector are
+filtered out of `uvicorn.access` output so local access logs are less noisy. Set
+`SYNOPSE_QUIET_DIAGNOSTICS_ACCESS_LOGS=false` if you want to see those polling
+requests during development.
+
 Current test command:
 
 ```bash

@@ -5,6 +5,7 @@ import time
 from synopse.blackboard import BlackboardQueryService, BlackboardStore
 from synopse.executor_adapters.codex import CodexExecutor, CodexExecutorSession
 from synopse.executor_core import ExecutorRegistry, UnknownExecutorError
+from synopse.observability.emitters import ExecutionDiagnosticEmitter
 from synopse.protocol import BindingStatus, RunStatus, Task, TaskStatus, TaskSummary
 
 from .assignment import AssignmentManager
@@ -28,6 +29,7 @@ class ReconcileLoop:
         summaries: SummaryManager,
         *,
         default_executor_type: str,
+        observability: ExecutionDiagnosticEmitter | None = None,
     ) -> None:
         self._store = store
         self._queries = queries
@@ -39,6 +41,7 @@ class ReconcileLoop:
         self._summaries = summaries
         self._scheduler = Scheduler(queries)
         self._default_executor_type = default_executor_type
+        self._observability = observability
 
     async def tick(self) -> list[str]:
         completed_run_ids: list[str] = []
@@ -102,6 +105,11 @@ class ReconcileLoop:
         claimed_binding,
         executor_type: str,
     ) -> None:
+        if self._observability is not None:
+            self._observability.executor_unavailable(
+                task_id=task.task_id,
+                executor_type=executor_type,
+            )
         task.status = TaskStatus.FAILED
         await self._store.put_task(task)
         await self._store.put_summary(

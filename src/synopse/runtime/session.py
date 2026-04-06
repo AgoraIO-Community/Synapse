@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import replace
 from dataclasses import dataclass, field
 
 from synopse.blackboard import InMemoryBlackboard
 from synopse.communication import CommunicationBrain, InMemoryConversationHistory
-from synopse.communication.model import CommunicationModel
+from synopse.communication.model import CommunicationModel, LlmTraceRecord, ToolCallRecord
 from synopse.communication.tools import build_default_tool_registry
 from synopse.communication.types import CommunicationTurnResult
 from synopse.execution import ExecutionBrain
@@ -13,6 +14,9 @@ from synopse.executor_adapters.codex import CodexExecutor
 from synopse.executor_adapters.mock import MockExecutor
 from synopse.executor_core import ExecutorRegistry
 from synopse.notification import NotificationManager
+from synopse.observability.bootstrap import SessionObservability, build_session_observability
+from synopse.observability.context import bind_diagnostic_context
+from synopse.observability.reason_codes import COMMUNICATION_MODEL_FAILURE
 from synopse.protocol import TaskCommand, TaskCommandType, TaskStatus
 
 from .config import Settings
@@ -23,9 +27,9 @@ from .models import (
     AssistantResponseDeltaStreamEvent,
     AssistantResponseFailedStreamEvent,
     AssistantResponseStartedStreamEvent,
+    ConversationAppendedStreamEvent,
     ConversationHistoryEntryModel,
     ConversationSnapshot,
-    DebugSnapshot,
     SessionSnapshot,
     SessionStreamEventBase,
     SnapshotStreamEvent,
@@ -51,17 +55,21 @@ class SessionRuntime:
     communication_brain: CommunicationBrain
     execution_brain: ExecutionBrain
     notification_manager: NotificationManager
+    observability: SessionObservability
     subscribers: list[asyncio.Queue[SessionStreamEventBase]] = field(default_factory=list)
     _message_queue: asyncio.Queue[PendingMessageRequest] = field(default_factory=asyncio.Queue)
     _execution_task: asyncio.Task[None] | None = field(default=None, init=False, repr=False)
     _communication_task: asyncio.Task[None] | None = field(default=None, init=False, repr=False)
     _notification_task: asyncio.Task[None] | None = field(default=None, init=False, repr=False)
     _snapshot_task: asyncio.Task[None] | None = field(default=None, init=False, repr=False)
+    _diagnostic_task: asyncio.Task[None] | None = field(default=None, init=False, repr=False)
     _blackboard_queue: asyncio.Queue | None = field(default=None, init=False, repr=False)
     _notification_blackboard_queue: asyncio.Queue | None = field(default=None, init=False, repr=False)
+    _diagnostic_blackboard_queue: asyncio.Queue | None = field(default=None, init=False, repr=False)
     _notification_wakeup: asyncio.Event = field(default_factory=asyncio.Event)
     _next_sequence: int = field(default=1, init=False, repr=False)
     _active_assistant_turns: int = field(default=0, init=False, repr=False)
+    _diagnostic_seen_entities: set[tuple[str, str | None]] = field(default_factory=set, init=False, repr=False)
 
     async def snapshot(self) -> SessionSnapshot:
         tasks = await self.blackboard.list_tasks()
@@ -100,12 +108,29 @@ class SessionRuntime:
             conversation_history=history,
         )
 
-    async def debug_snapshot(self) -> DebugSnapshot:
-        return DebugSnapshot(
-            session_id=self.session_id,
-            mutations=await self.blackboard.list_all_mutations(),
-            commands=await self.blackboard.list_all_commands(),
-            recent_blackboard_writes=await self.blackboard.list_recent_writes(),
+    def diagnostic_timeline(
+        self,
+        *,
+        after_sequence: int | None = None,
+        task_id: str | None = None,
+        run_id: str | None = None,
+        execution_session_id: str | None = None,
+        notification_id: str | None = None,
+        request_id: str | None = None,
+        event_prefix: str | None = None,
+        min_level: str | None = None,
+        limit: int = 200,
+    ):
+        return self.observability.store.query(
+            after_sequence=after_sequence,
+            task_id=task_id,
+            run_id=run_id,
+            execution_session_id=execution_session_id,
+            notification_id=notification_id,
+            request_id=request_id,
+            event_prefix=event_prefix,
+            min_level=min_level,
+            limit=limit,
         )
 
     def subscribe(self) -> asyncio.Queue[SessionStreamEventBase]:
@@ -213,8 +238,9 @@ class SessionRuntime:
 
     async def _run_execution_loop(self) -> None:
         try:
-            while await self._has_runnable_tasks():
-                await self.execution_brain.tick()
+            with bind_diagnostic_context(conversation_id=self.session_id):
+                while await self._has_runnable_tasks():
+                    await self.execution_brain.tick()
         finally:
             self._execution_task = None
 
@@ -239,6 +265,12 @@ class SessionRuntime:
         self._notification_blackboard_queue = self.blackboard.subscribe()
         self._notification_task = asyncio.create_task(self._notification_loop())
 
+    def _ensure_diagnostic_pump(self) -> None:
+        if self._diagnostic_task is not None and not self._diagnostic_task.done():
+            return
+        self._diagnostic_blackboard_queue = self.blackboard.subscribe()
+        self._diagnostic_task = asyncio.create_task(self._diagnostic_loop())
+
     def _wake_notification_pump(self) -> None:
         self._ensure_notification_pump()
         self._notification_wakeup.set()
@@ -261,62 +293,88 @@ class SessionRuntime:
         self._active_assistant_turns += 1
         self._wake_notification_pump()
         try:
-            try:
-                await self._broadcast_event(
-                    AssistantResponseStartedStreamEvent(
-                        sequence=self._next_event_sequence(),
-                        request_id=request.request_id,
+            with bind_diagnostic_context(
+                conversation_id=self.session_id,
+                request_id=request.request_id,
+            ):
+                try:
+                    await self._broadcast_event(
+                        AssistantResponseStartedStreamEvent(
+                            sequence=self._next_event_sequence(),
+                            request_id=request.request_id,
+                        )
                     )
-                )
-                if self.subscribers:
-                    result = await self.communication_brain.generate_reply(
+                    if self.subscribers:
+                        result = await self.communication_brain.generate_reply(
+                            self.session_id,
+                            request.user_text,
+                            on_text_delta=lambda delta: self._broadcast_event(
+                                AssistantResponseDeltaStreamEvent(
+                                    sequence=self._next_event_sequence(),
+                                    request_id=request.request_id,
+                                    delta=delta,
+                                )
+                            ),
+                            on_trace=lambda trace: self._record_llm_trace(
+                                replace(trace, request_id=request.request_id)
+                            ),
+                            on_tool_call=lambda record: self._record_tool_call(
+                                record.with_request_id(request.request_id)
+                            ),
+                        )
+                    else:
+                        result = await self.communication_brain.generate_reply(
+                            self.session_id,
+                            request.user_text,
+                            on_trace=self._record_llm_trace,
+                            on_tool_call=self._record_tool_call,
+                        )
+                except Exception:
+                    self.observability.communication.reply_failed(
+                        conversation_id=self.session_id,
+                        request_id=request.request_id,
+                        reason_code=COMMUNICATION_MODEL_FAILURE,
+                    )
+                    assistant_entry = self.history.append_assistant(
                         self.session_id,
-                        request.user_text,
-                        on_text_delta=lambda delta: self._broadcast_event(
-                            AssistantResponseDeltaStreamEvent(
-                                sequence=self._next_event_sequence(),
-                                request_id=request.request_id,
-                                delta=delta,
-                            )
-                        ),
+                        FALLBACK_ASSISTANT_ERROR_MESSAGE,
+                    )
+                    result = CommunicationTurnResult(
+                        message_id=assistant_entry.message_id,
+                        reply_text=FALLBACK_ASSISTANT_ERROR_MESSAGE,
+                        conversational_act="model_reply",
+                    )
+                    await self._broadcast_event(
+                        ConversationAppendedStreamEvent(
+                            sequence=self._next_event_sequence(),
+                            message_id=assistant_entry.message_id,
+                            role="assistant",
+                            text=FALLBACK_ASSISTANT_ERROR_MESSAGE,
+                            source="system_fallback",
+                        )
+                    )
+                    await self._broadcast_event(
+                        AssistantResponseFailedStreamEvent(
+                            sequence=self._next_event_sequence(),
+                            request_id=request.request_id,
+                            message=FALLBACK_ASSISTANT_ERROR_MESSAGE,
+                        )
                     )
                 else:
-                    result = await self.communication_brain.generate_reply(
-                        self.session_id,
-                        request.user_text,
+                    await self._broadcast_event(
+                        AssistantResponseCompletedStreamEvent(
+                            sequence=self._next_event_sequence(),
+                            request_id=request.request_id,
+                            message_id=result.message_id,
+                            reply_text=result.reply_text,
+                            conversational_act=result.conversational_act,
+                            affected_task_ids=result.affected_task_ids,
+                        )
                     )
-            except Exception:
-                assistant_entry = self.history.append_assistant(
-                    self.session_id,
-                    FALLBACK_ASSISTANT_ERROR_MESSAGE,
-                )
-                result = CommunicationTurnResult(
-                    message_id=assistant_entry.message_id,
-                    reply_text=FALLBACK_ASSISTANT_ERROR_MESSAGE,
-                    conversational_act="model_reply",
-                )
-                await self._broadcast_event(
-                    AssistantResponseFailedStreamEvent(
-                        sequence=self._next_event_sequence(),
-                        request_id=request.request_id,
-                        message=FALLBACK_ASSISTANT_ERROR_MESSAGE,
-                    )
-                )
-            else:
-                await self._broadcast_event(
-                    AssistantResponseCompletedStreamEvent(
-                        sequence=self._next_event_sequence(),
-                        request_id=request.request_id,
-                        message_id=result.message_id,
-                        reply_text=result.reply_text,
-                        conversational_act=result.conversational_act,
-                        affected_task_ids=result.affected_task_ids,
-                    )
-                )
-            await self.publish_snapshot()
-            self.schedule_execution()
-            if not request.completion.done():
-                request.completion.set_result(result)
+                await self.publish_snapshot()
+                self.schedule_execution()
+                if not request.completion.done():
+                    request.completion.set_result(result)
         finally:
             self._active_assistant_turns = max(0, self._active_assistant_turns - 1)
             self._wake_notification_pump()
@@ -349,10 +407,11 @@ class SessionRuntime:
             return
         try:
             while True:
-                result = await self.notification_manager.process_pending(
-                    assistant_busy=self._active_assistant_turns > 0,
-                    has_pending_user_messages=not self._message_queue.empty(),
-                )
+                with bind_diagnostic_context(conversation_id=self.session_id):
+                    result = await self.notification_manager.process_pending(
+                        assistant_busy=self._active_assistant_turns > 0,
+                        has_pending_user_messages=not self._message_queue.empty(),
+                    )
                 queue_task = asyncio.create_task(queue.get())
                 wake_task = asyncio.create_task(self._notification_wakeup.wait())
                 task_kinds: dict[asyncio.Task, str] = {
@@ -384,7 +443,8 @@ class SessionRuntime:
                         break
 
                 for event in blackboard_events:
-                    await self.notification_manager.handle_blackboard_write(event)
+                    with bind_diagnostic_context(conversation_id=self.session_id):
+                        await self.notification_manager.handle_blackboard_write(event)
         except asyncio.CancelledError:
             raise
         finally:
@@ -394,9 +454,66 @@ class SessionRuntime:
             if asyncio.current_task() is self._notification_task:
                 self._notification_task = None
 
+    async def _diagnostic_loop(self) -> None:
+        queue = self._diagnostic_blackboard_queue
+        if queue is None:
+            return
+        try:
+            while True:
+                event = await queue.get()
+                with bind_diagnostic_context(conversation_id=self.session_id):
+                    key = (event.kind.value, event.entity_id)
+                    created = key not in self._diagnostic_seen_entities
+                    self._diagnostic_seen_entities.add(key)
+                    self.observability.blackboard.record_write(
+                        event=event,
+                        created=created,
+                    )
+        except asyncio.CancelledError:
+            raise
+        finally:
+            self.blackboard.unsubscribe(queue)
+            if self._diagnostic_blackboard_queue is queue:
+                self._diagnostic_blackboard_queue = None
+            if asyncio.current_task() is self._diagnostic_task:
+                self._diagnostic_task = None
+
     async def _broadcast_event(self, event: SessionStreamEventBase) -> None:
         for queue in list(self.subscribers):
             await queue.put(event)
+
+    async def _record_llm_trace(self, trace: LlmTraceRecord) -> None:
+        self.observability.communication.llm_trace(trace)
+
+    async def _record_tool_call(self, record: ToolCallRecord) -> None:
+        self.observability.communication.tool_called(
+            request_id=record.request_id,
+            tool_name=record.tool_name,
+            status=record.status,
+            args=record.args,
+            result_summary=record.result_summary,
+            result_preview=record.result_preview,
+            affected_task_ids=record.affected_task_ids,
+            error_code=record.error.code if record.error is not None else None,
+            error_message=record.error.message if record.error is not None else None,
+        )
+
+    async def _broadcast_conversation_append(
+        self,
+        *,
+        message_id: str,
+        text: str,
+        source: str,
+    ) -> None:
+        await self._broadcast_event(
+            ConversationAppendedStreamEvent(
+                sequence=self._next_event_sequence(),
+                message_id=message_id,
+                role="assistant",
+                text=text,
+                source="notification" if source == "notification" else "system_fallback",
+            )
+        )
 
     def _snapshot_event(self, snapshot: SessionSnapshot) -> SnapshotStreamEvent:
         return SnapshotStreamEvent(
@@ -419,6 +536,7 @@ def create_session_runtime(
     blackboard = InMemoryBlackboard()
     history = InMemoryConversationHistory()
     registry = ExecutorRegistry()
+    observability = build_session_observability(settings)
     registry.register(MockExecutor())
     if settings.codex_executor_enabled:
         registry.register(CodexExecutor(command=settings.codex_command))
@@ -434,17 +552,20 @@ def create_session_runtime(
         ),
         executor_capabilities=registry.list_capabilities(),
         default_executor_type=default_executor_type,
+        observability=observability.communication,
     )
     execution_brain = ExecutionBrain(
         blackboard,
         registry,
         worker_id=f"worker-{session_id}",
         default_executor_type=default_executor_type,
+        observability=observability.execution,
     )
     notification_manager = NotificationManager(
         blackboard,
         communication_brain,
         conversation_id=session_id,
+        observability=observability.notification,
     )
     runtime = SessionRuntime(
         session_id=session_id,
@@ -454,6 +575,10 @@ def create_session_runtime(
         communication_brain=communication_brain,
         execution_brain=execution_brain,
         notification_manager=notification_manager,
+        observability=observability,
     )
+    communication_brain.set_trace_callback(runtime._record_llm_trace)
+    notification_manager.set_conversation_event_callback(runtime._broadcast_conversation_append)
     runtime.start_notification_processing()
+    runtime._ensure_diagnostic_pump()
     return runtime

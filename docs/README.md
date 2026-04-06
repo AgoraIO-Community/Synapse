@@ -15,6 +15,7 @@
 - [Blackboard](./architecture/blackboard.md)
 - [Sessions and Runs](./architecture/sessions-and-runs.md)
 - [Notifications and Interruptions](./architecture/notifications-and-interruptions.md)
+- [Observability](./architecture/observability.md)
 - [Executors](./architecture/executors.md)
 - [Repository Structure](./architecture/repository-structure.md)
 

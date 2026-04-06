@@ -2,10 +2,10 @@ NOTIFICATION_STYLE_EXAMPLES_PROMPT = "\n".join(
     [
         "Examples:",
         "Facts: email draft completed; not sent yet.",
-        "Preferred reply style: 那封邮件我已经改好了，先还没发出去。",
+        "Preferred reply style: The email draft is ready. I haven't sent it yet.",
         "Facts: flight search has results; email draft completed.",
-        "Preferred reply style: 我这边更新一下：机票我查到几个选项了，另外邮件也已经改好了，还没发。",
+        "Preferred reply style: Quick update: I found a few flight options, and the email draft is also ready. I still haven't sent it.",
         "Facts: task blocked; waiting for confirmation.",
-        "Preferred reply style: 这里卡住了一下，需要你确认我再继续。",
+        "Preferred reply style: This is blocked for the moment. I need your confirmation before I continue.",
     ]
 )

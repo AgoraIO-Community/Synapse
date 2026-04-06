@@ -19,10 +19,16 @@ async def submit_message(
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
+    request_id = f"http-msg-{uuid4().hex[:8]}"
     _, completion = await session.submit_message(
-        f"http-msg-{uuid4().hex[:8]}",
+        request_id,
         request.text,
         start_processing=False,
+    )
+    session.observability.api.message_accepted(
+        conversation_id=session.session_id,
+        request_id=request_id,
+        transport="http",
     )
     await session.publish_snapshot()
     session.start_message_processing()

@@ -18,3 +18,5 @@ class CommunicationTurnResult:
     conversational_act: str
     tool_invocations: list[ToolInvocationRecord] = field(default_factory=list)
     affected_task_ids: list[str] = field(default_factory=list)
+    notification_key_task_id: str | None = None
+    notification_relevant_task_ids: list[str] = field(default_factory=list)

@@ -159,8 +159,13 @@ async def test_messages_v2_invalid_control_task_alias_does_not_500():
         )
 
         snapshot = (await client.get(f"/sessions/{session_id}")).json()
-        debug = (await client.get(f"/sessions/{session_id}/debug")).json()
-        assert debug["commands"] == []
+        diagnostics = (
+            await client.get(
+                f"/sessions/{session_id}/diagnostics/timeline",
+                params={"event_prefix": "bb.command"},
+            )
+        ).json()
+        assert diagnostics["events"] == []
         assert snapshot["tasks"][0]["task_id"] == "task-email"
 
 

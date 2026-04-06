@@ -1,6 +1,6 @@
 import type {
   ConversationSnapshot,
-  DebugSnapshot,
+  DiagnosticTimelineResponse,
   SessionStreamEvent,
   TaskCommandType,
   SessionResponse,
@@ -32,8 +32,46 @@ export async function getConversationSnapshot(sessionId: string): Promise<Conver
   return (await ensureOk(response)).json();
 }
 
-export async function getDebugSnapshot(sessionId: string): Promise<DebugSnapshot> {
-  const response = await fetch(`/sessions/${sessionId}/debug`);
+export async function getDiagnosticTimeline(
+  sessionId: string,
+  params: {
+    afterSequence?: number;
+    taskId?: string;
+    runId?: string;
+    executionSessionId?: string;
+    requestId?: string;
+    eventPrefix?: string;
+    minLevel?: string;
+    limit?: number;
+  } = {},
+): Promise<DiagnosticTimelineResponse> {
+  const query = new URLSearchParams();
+  if (params.afterSequence !== undefined) {
+    query.set("after_sequence", String(params.afterSequence));
+  }
+  if (params.taskId) {
+    query.set("task_id", params.taskId);
+  }
+  if (params.runId) {
+    query.set("run_id", params.runId);
+  }
+  if (params.executionSessionId) {
+    query.set("execution_session_id", params.executionSessionId);
+  }
+  if (params.requestId) {
+    query.set("request_id", params.requestId);
+  }
+  if (params.eventPrefix) {
+    query.set("event_prefix", params.eventPrefix);
+  }
+  if (params.minLevel) {
+    query.set("min_level", params.minLevel);
+  }
+  if (params.limit !== undefined) {
+    query.set("limit", String(params.limit));
+  }
+  const suffix = query.size > 0 ? `?${query.toString()}` : "";
+  const response = await fetch(`/sessions/${sessionId}/diagnostics/timeline${suffix}`);
   return (await ensureOk(response)).json();
 }
 

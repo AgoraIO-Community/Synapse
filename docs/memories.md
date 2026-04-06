@@ -55,3 +55,18 @@ Short log of important design decisions and changes for Synopse.
 - Unified Communication Brain around a task-first mental model with explicit mock-safe task creation, and added stable `TaskExecutionMode` blackboard projection with `undecided / lightweight / managed` classification.
 - Added end-to-end proactive notification delivery with persisted `NotificationCandidate` projections, basic merge/defer policy, and emitted assistant updates written into user-visible conversation history.
 - Narrowed `SessionSnapshot` to durable task/execution state only, and split durable conversation history plus debugger-oriented mutation/command/recent-write data into separate session projections and stream events.
+- Added realtime-only `llm_trace` websocket events so the debugger UI can inspect LLM request/response payloads for normal message turns and proactive notification rendering without polluting durable projections.
+- Enriched live `llm_trace` message payloads with tool invocation result summaries/previews and added a dedicated Tool Call History panel derived from those realtime trace events.
+- Replaced derived Tool Call History with first-class realtime `tool_call` websocket events emitted from actual tool invocation attempts, including success/failure outcomes, so the debugger no longer reconstructs history from `llm_trace`.
+- Added a diagnosis-first observability subsystem with canonical backend diagnostic events, correlation ids, reason codes, stdout JSON logging, and a per-session timeline API without changing the product-facing websocket stream contract.
+- Added readable compact colorized console logs for observability when stdout is a terminal, while keeping JSON-line output when logs are redirected or piped.
+- Removed the dedicated debug route and debugger-only websocket events, moving prompt/tool/blackboard inspection onto log-backed diagnostics timeline events while keeping the session websocket focused on assistant transport and durable snapshots.
+- Quieted local access logs by filtering diagnostics timeline polling requests from `uvicorn.access` by default, and made the frontend diagnostics polling visibility-aware instead of polling continuously in hidden tabs.
+- Removed the dedicated LLM trace UI and dropped backend prompt-trace diagnostic events, keeping tool-call and lifecycle logs as the main communication-side debugging surface.
+- Restored backend-only LLM diagnostic events as summary logs by default, with verbose prompt/message payloads gated behind `SYNOPSE_LOG_LLM_DETAILS`, while leaving the dedicated LLM trace UI removed.
+
+## 2026-04-07
+
+- Tightened Communication Brain prompt policy so fact-checking, current-world information, and other live external-fact requests now default toward executor-backed `create_task` handling, with short clarifications for missing required details and no generic website/app fallback advice in mock-only mode.
+- Focused notification LLM rendering on selected candidate-linked task context by adding structured recent-chat continuity, key-task, and relevant-task payloads, and added explicit diagnostics for adopted notification plans plus key-task/relevant-task selection on proactive updates.
+- Tightened proactive notification wording so notification messages stay plain-text and spoken-style, explicitly avoiding markdown and list formatting in user-visible updates.

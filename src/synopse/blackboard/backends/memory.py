@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from collections import defaultdict
 
+from synopse.observability.context import get_diagnostic_context
 from synopse.protocol import (
     ExecutionRun,
     ExecutionSession,
@@ -71,7 +72,15 @@ class InMemoryBlackboard(BlackboardStore):
                 kind=BlackboardWriteKind.MUTATION,
                 entity_id=mutation.mutation_id,
                 task_id=mutation.task_id,
-                payload={"mutation_type": mutation.mutation_type.value},
+                payload={
+                    "mutation_id": mutation.mutation_id,
+                    "mutation_type": mutation.mutation_type.value,
+                    "created_by": mutation.created_by,
+                    "urgency": mutation.urgency,
+                    "effective_scope": mutation.effective_scope,
+                    "requires_replan": mutation.requires_replan,
+                    "patch": mutation.patch,
+                },
             )
         )
 
@@ -90,7 +99,13 @@ class InMemoryBlackboard(BlackboardStore):
                 kind=BlackboardWriteKind.COMMAND,
                 entity_id=command.command_id,
                 task_id=command.task_id,
-                payload={"command_type": command.command_type.value},
+                payload={
+                    "command_id": command.command_id,
+                    "command_type": command.command_type.value,
+                    "created_by": command.created_by,
+                    "reason": command.reason,
+                    "payload": command.payload,
+                },
             )
         )
 
@@ -220,5 +235,7 @@ class InMemoryBlackboard(BlackboardStore):
         self._subscriptions.unsubscribe(queue)
 
     async def _publish(self, event: BlackboardWriteEvent) -> None:
+        if event.request_id is None:
+            event.request_id = get_diagnostic_context().request_id
         self._recent_writes.append(event)
         await self._subscriptions.publish(event)

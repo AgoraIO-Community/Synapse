@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEven
 import {
   createSession,
   getConversationSnapshot,
-  getDebugSnapshot,
+  getDiagnosticTimeline,
   getSessionSnapshot,
   openSessionStream,
   sendSocketCommand,
@@ -10,11 +10,10 @@ import {
 } from "./client";
 import type {
   AssistantResponseCompletedStreamEvent,
-  BlackboardWriteEvent,
   ConnectionStatus,
   ConversationSnapshot,
   ConversationHistoryEntry,
-  DebugSnapshot,
+  DiagnosticEvent,
   ExecutionRun,
   ExecutionSession,
   SessionBinding,
@@ -23,9 +22,7 @@ import type {
   SessionSnapshot,
   SnapshotDiffItem,
   Task,
-  TaskCommand,
   TaskCommandType,
-  TaskMutation,
   TaskSummary,
 } from "./types";
 
@@ -58,6 +55,11 @@ function makeRequestId() {
   return `req-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
+function makeLocalMessageId(kind: "user", requestId: string) {
+  const compact = requestId.replace(/[^a-zA-Z0-9]/g, "").slice(0, 8) || "local";
+  return `local-${kind}-${compact}`;
+}
+
 function formatTime(value: string | null | undefined) {
   if (!value) {
     return "n/a";
@@ -73,16 +75,9 @@ function formatJson(value: unknown) {
   return JSON.stringify(value, null, 2);
 }
 
-function summarizeWriteEvent(event: BlackboardWriteEvent) {
-  const payloadKeys = Object.keys(event.payload ?? {});
-  return payloadKeys.length > 0 ? `${event.kind} updated (${payloadKeys.join(", ")})` : `${event.kind} updated`;
-}
-
 function buildDiffItems(
   current: SessionSnapshot | null,
   previous: SessionSnapshot | null,
-  currentDebug: DebugSnapshot | null,
-  previousDebug: DebugSnapshot | null,
 ): SnapshotDiffItem[] {
   if (!current) {
     return [];
@@ -148,38 +143,6 @@ function buildDiffItems(
         changeType: "status_changed",
         taskId: run.task_id,
         details: `Run status ${prev.status} -> ${run.status}`,
-      });
-    }
-  }
-
-  const previousCommands = new Set(
-    previousDebug?.commands.map((command) => command.command_id) ?? [],
-  );
-  for (const command of currentDebug?.commands ?? []) {
-    if (!previousCommands.has(command.command_id)) {
-      items.push({
-        id: `command-${command.command_id}`,
-        entityKind: "command",
-        entityId: command.command_id,
-        changeType: "appended",
-        taskId: command.task_id,
-        details: `Command appended: ${command.command_type}`,
-      });
-    }
-  }
-
-  const previousMutations = new Set(
-    previousDebug?.mutations.map((mutation) => mutation.mutation_id) ?? [],
-  );
-  for (const mutation of currentDebug?.mutations ?? []) {
-    if (!previousMutations.has(mutation.mutation_id)) {
-      items.push({
-        id: `mutation-${mutation.mutation_id}`,
-        entityKind: "mutation",
-        entityId: mutation.mutation_id,
-        changeType: "appended",
-        taskId: mutation.task_id,
-        details: `Mutation appended: ${mutation.mutation_type}`,
       });
     }
   }
@@ -297,6 +260,26 @@ function summarizeTaskResultForCard(detail: TaskResultDetail | null) {
   return detail.shortText.length > 120 ? `${detail.shortText.slice(0, 117)}...` : detail.shortText;
 }
 
+function summarizeToolArgs(args: Record<string, unknown>) {
+  const preferredKeys = [
+    "task_id",
+    "reference",
+    "command_type",
+    "title",
+    "goal",
+    "note",
+    "constraint",
+  ];
+  const parts = preferredKeys
+    .filter((key) => args[key] !== undefined && args[key] !== null)
+    .map((key) => `${key}=${String(args[key])}`);
+  if (parts.length > 0) {
+    return parts.join(", ");
+  }
+  const keys = Object.keys(args);
+  return keys.length > 0 ? `keys: ${keys.join(", ")}` : "no args";
+}
+
 function pickAutoSelectedTask(
   nextSnapshot: SessionSnapshot,
   previous: SessionSnapshot | null,
@@ -320,6 +303,27 @@ function pickAutoSelectedTask(
   return nextSnapshot.tasks[0]?.task_id ?? null;
 }
 
+function getDetailRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function getDetailString(value: unknown) {
+  return typeof value === "string" ? value : null;
+}
+
+function getDetailStringArray(value: unknown) {
+  return Array.isArray(value) ? value.map((item) => String(item)) : [];
+}
+
+function summarizeDiagnosticEvent(event: DiagnosticEvent) {
+  const detailKeys = Object.keys(event.details ?? {});
+  return detailKeys.length > 0
+    ? `${event.event_name} (${detailKeys.join(", ")})`
+    : event.event_name;
+}
+
 export default function App() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>("booting");
@@ -328,9 +332,11 @@ export default function App() {
   const [isSending, setIsSending] = useState(false);
   const [snapshot, setSnapshot] = useState<SessionSnapshot | null>(null);
   const [conversationSnapshot, setConversationSnapshot] = useState<ConversationSnapshot | null>(null);
-  const [debugSnapshot, setDebugSnapshot] = useState<DebugSnapshot | null>(null);
+  const [diagnosticEvents, setDiagnosticEvents] = useState<DiagnosticEvent[]>([]);
+  const [isPageVisible, setIsPageVisible] = useState(
+    typeof document === "undefined" ? true : document.visibilityState === "visible",
+  );
   const [previousSnapshot, setPreviousSnapshot] = useState<SessionSnapshot | null>(null);
-  const [previousDebugSnapshot, setPreviousDebugSnapshot] = useState<DebugSnapshot | null>(null);
   const [lastAssistantResponse, setLastAssistantResponse] =
     useState<AssistantResponseCompletedStreamEvent | null>(null);
   const [liveAssistant, setLiveAssistant] = useState<LiveAssistantBubble | null>(null);
@@ -342,7 +348,9 @@ export default function App() {
   const [pendingCommand, setPendingCommand] = useState<string | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
   const latestSnapshotRef = useRef<SessionSnapshot | null>(null);
-  const latestDebugSnapshotRef = useRef<DebugSnapshot | null>(null);
+  const latestDiagnosticSequenceRef = useRef(0);
+  const refreshDiagnosticsRef = useRef<(() => Promise<void>) | null>(null);
+  const isPageVisibleRef = useRef(isPageVisible);
   const taskSelectionPinnedRef = useRef(false);
   const pendingCommandRequestsRef = useRef<Map<string, string>>(new Map());
 
@@ -356,6 +364,8 @@ export default function App() {
           return;
         }
         setSessionId(session.session_id);
+        setDiagnosticEvents([]);
+        latestDiagnosticSequenceRef.current = 0;
       } catch (error) {
         if (!active) {
           return;
@@ -375,21 +385,35 @@ export default function App() {
   }, [snapshot]);
 
   useEffect(() => {
-    latestDebugSnapshotRef.current = debugSnapshot;
-  }, [debugSnapshot]);
+    isPageVisibleRef.current = isPageVisible;
+  }, [isPageVisible]);
 
   useEffect(() => {
     taskSelectionPinnedRef.current = taskSelectionPinned;
   }, [taskSelectionPinned]);
 
   useEffect(() => {
+    if (typeof document === "undefined") {
+      return;
+    }
+    const handleVisibilityChange = () => {
+      setIsPageVisible(document.visibilityState === "visible");
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, []);
+
+  useEffect(() => {
     if (!sessionId) {
       return;
     }
+    const activeSessionId = sessionId;
     let active = true;
     async function loadInitialStateSnapshot() {
       try {
-        const stateSnapshot = await getSessionSnapshot(sessionId);
+        const stateSnapshot = await getSessionSnapshot(activeSessionId);
         if (!active) {
           return;
         }
@@ -411,35 +435,92 @@ export default function App() {
   }, [sessionId]);
 
   useEffect(() => {
-    if (!sessionId || !snapshot) {
+    if (!sessionId) {
       return;
     }
+    const activeSessionId = sessionId;
     let active = true;
-    async function refreshAuxiliaryProjections() {
+    async function loadConversationProjection() {
       try {
-        const [chatSnapshot, inspectorSnapshot] = await Promise.all([
-          getConversationSnapshot(sessionId),
-          getDebugSnapshot(sessionId),
-        ]);
+        const chatSnapshot = await getConversationSnapshot(activeSessionId);
         if (!active) {
           return;
         }
-        setPreviousDebugSnapshot(latestDebugSnapshotRef.current);
         setConversationSnapshot(chatSnapshot);
-        setDebugSnapshot(inspectorSnapshot);
-        latestDebugSnapshotRef.current = inspectorSnapshot;
       } catch (error) {
         if (!active) {
           return;
         }
-        setActionError(error instanceof Error ? error.message : "Failed to refresh session projections.");
+        setActionError(error instanceof Error ? error.message : "Failed to refresh conversation projection.");
       }
     }
-    void refreshAuxiliaryProjections();
+    void loadConversationProjection();
     return () => {
       active = false;
     };
-  }, [sessionId, snapshot]);
+  }, [sessionId]);
+
+  useEffect(() => {
+    if (!sessionId) {
+      refreshDiagnosticsRef.current = null;
+      return;
+    }
+    const activeSessionId = sessionId;
+    let active = true;
+
+    async function refreshDiagnostics() {
+      try {
+        const response = await getDiagnosticTimeline(activeSessionId, {
+          afterSequence:
+            latestDiagnosticSequenceRef.current > 0
+              ? latestDiagnosticSequenceRef.current
+              : undefined,
+          minLevel: "DEBUG",
+          limit: latestDiagnosticSequenceRef.current > 0 ? undefined : 200,
+        });
+        if (!active || response.events.length === 0) {
+          return;
+        }
+        setDiagnosticEvents((current) => {
+          const next = [...current, ...response.events];
+          return next.length > 200 ? next.slice(next.length - 200) : next;
+        });
+        latestDiagnosticSequenceRef.current =
+          response.events[response.events.length - 1].sequence;
+      } catch (error) {
+        if (!active) {
+          return;
+        }
+        setActionError(error instanceof Error ? error.message : "Failed to refresh diagnostics.");
+      }
+    }
+
+    refreshDiagnosticsRef.current = refreshDiagnostics;
+    if (isPageVisible) {
+      void refreshDiagnostics();
+    }
+    const interval = isPageVisible
+      ? window.setInterval(() => {
+          void refreshDiagnostics();
+        }, 1000)
+      : null;
+    return () => {
+      active = false;
+      if (interval !== null) {
+        window.clearInterval(interval);
+      }
+      if (refreshDiagnosticsRef.current === refreshDiagnostics) {
+        refreshDiagnosticsRef.current = null;
+      }
+    };
+  }, [sessionId, isPageVisible]);
+
+  useEffect(() => {
+    if (!isPageVisible || refreshDiagnosticsRef.current === null) {
+      return;
+    }
+    void refreshDiagnosticsRef.current();
+  }, [isPageVisible]);
 
   useEffect(() => {
     if (!liveAssistant || !conversationSnapshot) {
@@ -492,6 +573,9 @@ export default function App() {
               ? current
               : pickAutoSelectedTask(nextSnapshot, previous, current),
           );
+          if (isPageVisibleRef.current && refreshDiagnosticsRef.current) {
+            void refreshDiagnosticsRef.current();
+          }
           return;
         }
 
@@ -556,6 +640,25 @@ export default function App() {
 
         if (event.type === "assistant_response_completed") {
           setLastAssistantResponse(event);
+          setConversationSnapshot((current) => {
+            if (!current) {
+              return current;
+            }
+            if (current.conversation_history.some((entry) => entry.message_id === event.message_id)) {
+              return current;
+            }
+            return {
+              ...current,
+              conversation_history: [
+                ...current.conversation_history,
+                {
+                  role: "assistant",
+                  text: event.reply_text,
+                  message_id: event.message_id,
+                },
+              ],
+            };
+          });
           setLiveAssistant({
             requestId: event.request_id,
             text: event.reply_text,
@@ -564,6 +667,9 @@ export default function App() {
             conversationalAct: event.conversational_act,
             affectedTaskIds: event.affected_task_ids,
           });
+          if (isPageVisibleRef.current && refreshDiagnosticsRef.current) {
+            void refreshDiagnosticsRef.current();
+          }
           return;
         }
 
@@ -575,6 +681,33 @@ export default function App() {
             state: "failed",
             affectedTaskIds: [],
           });
+          if (isPageVisibleRef.current && refreshDiagnosticsRef.current) {
+            void refreshDiagnosticsRef.current();
+          }
+          return;
+        }
+
+        if (event.type === "conversation_appended") {
+          setConversationSnapshot((current) => {
+            if (!current) {
+              return current;
+            }
+            if (current.conversation_history.some((entry) => entry.message_id === event.message_id)) {
+              return current;
+            }
+            return {
+              ...current,
+              conversation_history: [
+                ...current.conversation_history,
+                {
+                  role: event.role,
+                  text: event.text,
+                  message_id: event.message_id,
+                },
+              ],
+            };
+          });
+          return;
         }
       },
     });
@@ -599,18 +732,34 @@ export default function App() {
   }, [snapshot, previousSnapshot, selectedTaskId]);
 
   const diffItems = useMemo(
-    () => buildDiffItems(snapshot, previousSnapshot, debugSnapshot, previousDebugSnapshot),
-    [snapshot, previousSnapshot, debugSnapshot, previousDebugSnapshot],
+    () => buildDiffItems(snapshot, previousSnapshot),
+    [snapshot, previousSnapshot],
   );
   const summaryByTaskId = useMemo(() => buildTaskSummaryMap(snapshot), [snapshot]);
   const latestRunByTaskId = useMemo(() => buildLatestRunMap(snapshot), [snapshot]);
 
   const selectedTask = snapshot?.tasks.find((task) => task.task_id === selectedTaskId) ?? null;
   const selectedSummary = selectedTaskId ? summaryByTaskId.get(selectedTaskId) ?? null : null;
-  const selectedMutations =
-    debugSnapshot?.mutations.filter((mutation) => mutation.task_id === selectedTaskId) ?? [];
-  const selectedCommands =
-    debugSnapshot?.commands.filter((command) => command.task_id === selectedTaskId) ?? [];
+  const toolCallHistory = useMemo(
+    () => diagnosticEvents.filter((event) => event.event_name === "comm.tool.called").slice(-50).reverse(),
+    [diagnosticEvents],
+  );
+  const selectedMutations = useMemo(
+    () =>
+      diagnosticEvents.filter(
+        (event) =>
+          event.event_name === "bb.mutation.appended" && event.task_id === selectedTaskId,
+      ),
+    [diagnosticEvents, selectedTaskId],
+  );
+  const selectedCommands = useMemo(
+    () =>
+      diagnosticEvents.filter(
+        (event) =>
+          event.event_name === "bb.command.appended" && event.task_id === selectedTaskId,
+      ),
+    [diagnosticEvents, selectedTaskId],
+  );
   const selectedBindings =
     snapshot?.bindings.filter((binding) => binding.task_id === selectedTaskId) ?? [];
   const selectedSessions =
@@ -664,7 +813,24 @@ export default function App() {
     setActionError(null);
     setIsSending(true);
     const requestId = makeRequestId();
-    sendSocketMessage(socket, requestId, composer.trim());
+    const text = composer.trim();
+    setConversationSnapshot((current) => {
+      if (!current) {
+        return current;
+      }
+      return {
+        ...current,
+        conversation_history: [
+          ...current.conversation_history,
+          {
+            role: "user",
+            text,
+            message_id: makeLocalMessageId("user", requestId),
+          },
+        ],
+      };
+    });
+    sendSocketMessage(socket, requestId, text);
     setComposer("");
   }
 
@@ -687,7 +853,12 @@ export default function App() {
 
   const tasks = snapshot?.tasks ?? [];
   const conversation = conversationSnapshot?.conversation_history ?? [];
-  const recentWrites = debugSnapshot?.recent_blackboard_writes ?? [];
+  const recentWrites = diagnosticEvents.filter(
+    (event) =>
+      event.event_name.startsWith("bb.") ||
+      event.event_name.startsWith("exec.") ||
+      event.event_name.startsWith("notify."),
+  );
 
   return (
     <main className="shell debug-shell">
@@ -784,9 +955,75 @@ export default function App() {
             <section className="meta-card">
               <h3>Client Stream</h3>
               <p className="muted-copy">
-                Tool activity is kept internal. The frontend stream only receives assistant text and
-                snapshot/debug events.
+                The websocket now carries only assistant text, acks, and durable snapshots.
+                Diagnostic inspection panels are rebuilt from the log timeline instead of a
+                separate debug channel.
               </p>
+            </section>
+          </div>
+          <div className="panel-inline-section">
+            <section className="inspector-section">
+              <h3>Tool Call History</h3>
+              {toolCallHistory.length === 0 ? (
+                <div className="empty-state">No tool call diagnostics in this session yet.</div>
+              ) : (
+                <div className="stack compact-stack">
+                  {toolCallHistory.map((event) => {
+                    const details = getDetailRecord(event.details);
+                    const args = getDetailRecord(details.args);
+                    const resultPreview =
+                      details.result_preview && typeof details.result_preview === "object"
+                        ? getDetailRecord(details.result_preview)
+                        : null;
+                    const error =
+                      details.error && typeof details.error === "object"
+                        ? getDetailRecord(details.error)
+                        : null;
+                    const affectedTaskIds = getDetailStringArray(details.affected_task_ids);
+                    const toolName = getDetailString(details.tool_name) ?? event.summary;
+                    return (
+                    <details key={`${event.sequence}:${toolName}`} className="log-card llm-trace-card">
+                      <summary className="entity-head llm-trace-summary">
+                        <strong>{toolName}</strong>
+                        <span>{event.outcome ?? "n/a"}</span>
+                      </summary>
+                      <div className="llm-trace-body">
+                        <p>{getDetailString(details.result_summary) ?? event.summary}</p>
+                        <dl className="kv compact">
+                          <div>
+                            <dt>Request</dt>
+                            <dd>{event.request_id ?? "n/a"}</dd>
+                          </div>
+                          <div>
+                            <dt>Tasks</dt>
+                            <dd>{affectedTaskIds.join(", ") || "none"}</dd>
+                          </div>
+                          <div>
+                            <dt>Args</dt>
+                            <dd>{summarizeToolArgs(args)}</dd>
+                          </div>
+                        </dl>
+                        {error ? (
+                          <div className="summary-block">
+                            <h4>Error</h4>
+                            <pre>{formatJson(error)}</pre>
+                          </div>
+                        ) : null}
+                        <div className="summary-block">
+                          <h4>Arguments</h4>
+                          <pre>{formatJson(args)}</pre>
+                        </div>
+                        {resultPreview ? (
+                          <div className="summary-block">
+                            <h4>Result Preview</h4>
+                            <pre>{formatJson(resultPreview)}</pre>
+                          </div>
+                        ) : null}
+                      </div>
+                    </details>
+                  )})}
+                </div>
+              )}
             </section>
           </div>
         </section>
@@ -888,20 +1125,22 @@ export default function App() {
                 <div className="empty-state">No mutations for the selected task.</div>
               ) : (
                 <div className="stack compact-stack">
-                  {selectedMutations.map((mutation: TaskMutation) => (
-                    <article key={mutation.mutation_id} className="log-card">
+                  {selectedMutations.map((event) => {
+                    const details = getDetailRecord(event.details);
+                    return (
+                    <article key={String(details.mutation_id ?? event.sequence)} className="log-card">
                       <div className="entity-head">
-                        <strong>{mutation.mutation_type}</strong>
-                        <code>{mutation.mutation_id}</code>
+                        <strong>{String(details.mutation_type ?? event.event_name)}</strong>
+                        <code>{String(details.mutation_id ?? event.sequence)}</code>
                       </div>
                       <dl className="kv compact">
-                        <div><dt>By</dt><dd>{mutation.created_by}</dd></div>
-                        <div><dt>Scope</dt><dd>{mutation.effective_scope}</dd></div>
-                        <div><dt>Replan</dt><dd>{mutation.requires_replan ? "yes" : "no"}</dd></div>
+                        <div><dt>By</dt><dd>{String(details.created_by ?? "n/a")}</dd></div>
+                        <div><dt>Scope</dt><dd>{String(details.effective_scope ?? "n/a")}</dd></div>
+                        <div><dt>Replan</dt><dd>{details.requires_replan ? "yes" : "no"}</dd></div>
                       </dl>
-                      <pre>{formatJson(mutation.patch)}</pre>
+                      <pre>{formatJson(details.patch ?? {})}</pre>
                     </article>
-                  ))}
+                  )})}
                 </div>
               )}
             </section>
@@ -912,19 +1151,21 @@ export default function App() {
                 <div className="empty-state">No commands for the selected task.</div>
               ) : (
                 <div className="stack compact-stack">
-                  {selectedCommands.map((command: TaskCommand) => (
-                    <article key={command.command_id} className="log-card">
+                  {selectedCommands.map((event) => {
+                    const details = getDetailRecord(event.details);
+                    return (
+                    <article key={String(details.command_id ?? event.sequence)} className="log-card">
                       <div className="entity-head">
-                        <strong>{command.command_type}</strong>
-                        <code>{command.command_id}</code>
+                        <strong>{String(details.command_type ?? event.event_name)}</strong>
+                        <code>{String(details.command_id ?? event.sequence)}</code>
                       </div>
                       <dl className="kv compact">
-                        <div><dt>By</dt><dd>{command.created_by}</dd></div>
-                        <div><dt>Reason</dt><dd>{command.reason ?? "n/a"}</dd></div>
+                        <div><dt>By</dt><dd>{String(details.created_by ?? "n/a")}</dd></div>
+                        <div><dt>Reason</dt><dd>{String(details.reason ?? "n/a")}</dd></div>
                       </dl>
-                      <pre>{formatJson(command.payload)}</pre>
+                      <pre>{formatJson(details.payload ?? {})}</pre>
                     </article>
-                  ))}
+                  )})}
                 </div>
               )}
             </section>
@@ -1092,19 +1333,19 @@ export default function App() {
           </section>
 
           <section className="inspector-section">
-            <h3>Recent Blackboard Writes</h3>
+            <h3>Recent Blackboard Diagnostics</h3>
             {recentWrites.length === 0 ? (
               <div className="empty-state">No writes published yet.</div>
             ) : (
               <div className="stack compact-stack">
                 {[...recentWrites].reverse().map((event, index) => (
-                  <article key={`${event.kind}-${event.entity_id}-${index}`} className="diff-row">
+                  <article key={`${event.sequence}-${index}`} className="diff-row">
                     <div className="diff-head">
-                      <span className="entity-badge">{event.kind}</span>
-                      <code>{event.entity_id ?? "n/a"}</code>
+                      <span className="entity-badge">{event.event_name}</span>
+                      <code>{event.task_id ?? event.run_id ?? event.execution_session_id ?? "n/a"}</code>
                     </div>
-                    <p>{summarizeWriteEvent(event)}</p>
-                    {Object.keys(event.payload ?? {}).length ? <pre>{formatJson(event.payload)}</pre> : null}
+                    <p>{summarizeDiagnosticEvent(event)}</p>
+                    {Object.keys(event.details ?? {}).length ? <pre>{formatJson(event.details)}</pre> : null}
                   </article>
                 ))}
               </div>

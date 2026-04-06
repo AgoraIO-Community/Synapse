@@ -9,11 +9,13 @@ Preferred direction:
 - avoid depending on low-level executor events
 - use `GET /sessions/{session_id}` for durable task/session state reads
 - use `GET /sessions/{session_id}/conversation` for durable conversation history reads
-- use `GET /sessions/{session_id}/debug` only for debugger-oriented inspection data
+- use `GET /sessions/{session_id}/diagnostics/timeline` for debugger-oriented
+  inspection data
 - treat `WS /sessions/{session_id}/stream` as the live transport for:
   - `snapshot` for durable task/execution state refresh
   - `assistant_response_*` plus request ack/reject events for chat transport
-- do not depend on communication-model tool-call details on the frontend stream; tool activity is internal
+- do not depend on communication-model tool-call details on the frontend
+  websocket; tool activity is internal and debug inspection is log-backed
 
 User-visible conversation history should contain only:
 
