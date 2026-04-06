@@ -287,6 +287,10 @@ pre {
   gap: 14px;
 }
 
+.panel-inline-section {
+  padding: 0 18px 18px;
+}
+
 .meta-card,
 .detail-card,
 .log-card,
@@ -457,6 +461,35 @@ pre {
   font-size: 0.95rem;
 }
 
+.llm-trace-card {
+  padding: 0;
+  overflow: hidden;
+}
+
+.llm-trace-summary {
+  list-style: none;
+  cursor: pointer;
+  margin: 0;
+  padding: 14px 15px;
+}
+
+.llm-trace-summary::-webkit-details-marker {
+  display: none;
+}
+
+.llm-trace-summary::marker {
+  content: "";
+}
+
+.llm-trace-body {
+  padding: 0 15px 14px;
+}
+
+.llm-trace-card[open] .llm-trace-summary {
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 14px;
+}
+
 .tool-row {
   display: flex;
   flex-direction: column;
@@ -528,6 +561,7 @@ pre {
   .inspector-scroll,
   .composer,
   .inspector-footer,
+  .panel-inline-section,
   .change-feed-grid {
     padding-left: 14px;
     padding-right: 14px;

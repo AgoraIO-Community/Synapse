@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from synopse.blackboard import BlackboardQueryService, BlackboardStore
 from synopse.executor_core import ExecutorRegistry
+from synopse.observability.emitters import ExecutionDiagnosticEmitter
 
 from .assignment import AssignmentManager
 from .mode_manager import ExecutionModeManager
@@ -19,17 +20,19 @@ class ExecutionBrain:
         *,
         worker_id: str,
         default_executor_type: str,
+        observability: ExecutionDiagnosticEmitter | None = None,
     ) -> None:
         self._loop = ReconcileLoop(
             store=store,
             queries=BlackboardQueryService(store),
             registry=registry,
-            assignment=AssignmentManager(worker_id),
-            sessions=SessionManager(),
-            runs=RunManager(),
-            modes=ExecutionModeManager(),
+            assignment=AssignmentManager(worker_id, observability=observability),
+            sessions=SessionManager(observability=observability),
+            runs=RunManager(observability=observability),
+            modes=ExecutionModeManager(observability=observability),
             summaries=SummaryManager(),
             default_executor_type=default_executor_type,
+            observability=observability,
         )
 
     async def tick(self) -> list[str]:

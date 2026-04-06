@@ -43,6 +43,13 @@ async def submit_command(
         created_by="api",
         reason=request.reason,
     )
+    session.observability.api.command_accepted(
+        conversation_id=session.session_id,
+        request_id=None,
+        task_id=task.task_id,
+        command_type=request.command_type.value,
+        transport="http",
+    )
     await session.apply_command(command)
     session.schedule_execution()
     await session.publish_snapshot()

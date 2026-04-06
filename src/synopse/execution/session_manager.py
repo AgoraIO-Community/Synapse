@@ -5,12 +5,18 @@ from uuid import uuid4
 from synopse.blackboard import BlackboardStore
 from synopse.executor_adapters.codex import CodexExecutorSession
 from synopse.executor_core import Executor, ExecutorSession
+from synopse.observability.emitters import ExecutionDiagnosticEmitter
+from synopse.observability.reason_codes import (
+    EXECUTOR_SESSION_RECREATED,
+    EXISTING_LIVE_SESSION_REUSED,
+)
 from synopse.protocol import AgentResumeHandle, BindingStatus, ExecutionSession, SessionBinding, Task
 
 
 class SessionManager:
-    def __init__(self) -> None:
+    def __init__(self, *, observability: ExecutionDiagnosticEmitter | None = None) -> None:
         self._live_sessions: dict[str, ExecutorSession] = {}
+        self._observability = observability
 
     async def ensure_session(
         self,
@@ -28,6 +34,14 @@ class SessionManager:
                         update={"binding_status": BindingStatus.ACTIVE}
                     )
                     await store.put_binding(active_binding)
+                    if self._observability is not None:
+                        self._observability.session_reused(
+                            task_id=task.task_id,
+                            execution_session_id=existing.execution_session_id,
+                            executor_session_id=cached.session_id,
+                            executor_type=cached.executor_type,
+                            reason_code=EXISTING_LIVE_SESSION_REUSED,
+                        )
                     return existing, active_binding, cached
 
                 executor_session = await executor.create_session(task.session_affinity)
@@ -40,6 +54,14 @@ class SessionManager:
                     }
                 )
                 await store.put_binding(active_binding)
+                if self._observability is not None:
+                    self._observability.session_reused(
+                        task_id=task.task_id,
+                        execution_session_id=existing.execution_session_id,
+                        executor_session_id=executor_session.session_id,
+                        executor_type=executor_session.executor_type,
+                        reason_code=EXECUTOR_SESSION_RECREATED,
+                    )
                 return existing, active_binding, executor_session
 
         executor_session = await executor.create_session(task.session_affinity)
@@ -58,6 +80,13 @@ class SessionManager:
         )
         await store.put_session(execution_session)
         await store.put_binding(updated_binding)
+        if self._observability is not None:
+            self._observability.session_created(
+                task_id=task.task_id,
+                execution_session_id=execution_session.execution_session_id,
+                executor_session_id=executor_session.session_id,
+                executor_type=executor_session.executor_type,
+            )
         return execution_session, updated_binding, executor_session
 
     def drop_live_session(self, execution_session_id: str) -> None:

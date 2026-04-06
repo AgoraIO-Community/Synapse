@@ -34,16 +34,6 @@ export type TaskCommandType =
   | "resume_task"
   | "retry_task";
 
-export type BlackboardWriteKind =
-  | "task"
-  | "mutation"
-  | "command"
-  | "run"
-  | "session"
-  | "binding"
-  | "summary"
-  | "notification";
-
 export interface Task {
   task_id: string;
   root_task_id: string;
@@ -165,13 +155,6 @@ export interface NotificationCandidate {
   requires_immediate_delivery: boolean;
 }
 
-export interface BlackboardWriteEvent {
-  kind: BlackboardWriteKind;
-  entity_id: string | null;
-  task_id: string | null;
-  payload: Record<string, unknown>;
-}
-
 export interface ConversationHistoryEntry {
   role: string;
   text: string;
@@ -198,11 +181,37 @@ export interface SessionResponse {
   session_id: string;
 }
 
-export interface DebugSnapshot {
-  session_id: string;
-  mutations: TaskMutation[];
-  commands: TaskCommand[];
-  recent_blackboard_writes: BlackboardWriteEvent[];
+export type DiagnosticLevel = "DEBUG" | "INFO" | "WARNING" | "ERROR" | "CRITICAL";
+
+export interface DiagnosticEvent {
+  sequence: number;
+  ts: string;
+  level: DiagnosticLevel;
+  event_name: string;
+  service: string;
+  component: string;
+  conversation_id: string | null;
+  request_id: string | null;
+  task_id: string | null;
+  run_id: string | null;
+  execution_session_id: string | null;
+  executor_session_id: string | null;
+  notification_id: string | null;
+  trace_id: string | null;
+  worker_id: string | null;
+  executor_type: string | null;
+  outcome: string | null;
+  reason_code: string | null;
+  summary: string;
+  details: Record<string, unknown>;
+  app_version: string | null;
+  git_sha: string | null;
+  model_name: string | null;
+  settings_fingerprint: string | null;
+}
+
+export interface DiagnosticTimelineResponse {
+  events: DiagnosticEvent[];
 }
 
 export interface SnapshotDiffItem {
@@ -264,6 +273,14 @@ export interface AssistantResponseFailedStreamEvent extends StreamEventBase {
   message: string;
 }
 
+export interface ConversationAppendedStreamEvent extends StreamEventBase {
+  type: "conversation_appended";
+  message_id: string;
+  role: "assistant";
+  text: string;
+  source: "notification" | "system_fallback";
+}
+
 export type SessionStreamEvent =
   | SnapshotStreamEvent
   | ActionAcceptedStreamEvent
@@ -271,4 +288,5 @@ export type SessionStreamEvent =
   | AssistantResponseStartedStreamEvent
   | AssistantResponseDeltaStreamEvent
   | AssistantResponseCompletedStreamEvent
-  | AssistantResponseFailedStreamEvent;
+  | AssistantResponseFailedStreamEvent
+  | ConversationAppendedStreamEvent;

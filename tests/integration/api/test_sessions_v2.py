@@ -32,10 +32,8 @@ async def test_sessions_v2_create_and_get_snapshot():
         }
 
         debug = await client.get(f"/sessions/{session_id}/debug")
-        assert debug.status_code == 200
-        assert debug.json() == {
-            "session_id": session_id,
-            "mutations": [],
-            "commands": [],
-            "recent_blackboard_writes": [],
-        }
+        assert debug.status_code == 404
+
+        diagnostics = await client.get(f"/sessions/{session_id}/diagnostics/timeline")
+        assert diagnostics.status_code == 200
+        assert diagnostics.json()["events"][0]["event_name"] == "api.session.created"

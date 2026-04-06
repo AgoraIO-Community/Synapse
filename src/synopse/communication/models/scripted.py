@@ -6,7 +6,13 @@ import inspect
 from typing import Any
 
 from ..context import CommunicationContext
-from ..model import CommunicationModelResult, TextDeltaCallback, ToolCall
+from ..model import (
+    CommunicationModelResult,
+    LlmTraceCallback,
+    TextDeltaCallback,
+    ToolCall,
+    ToolCallCallback,
+)
 from ..policies import infer_conversational_act, render_reply
 from ..tools import ToolRegistry
 from ..types import ToolInvocationRecord
@@ -37,6 +43,8 @@ class ScriptedCommunicationModel:
         context: CommunicationContext,
         tool_registry: ToolRegistry,
         on_text_delta: TextDeltaCallback | None = None,
+        on_trace: LlmTraceCallback | None = None,
+        on_tool_call: ToolCallCallback | None = None,
     ) -> CommunicationModelResult:
         if user_text in self._scripted:
             selected = self._scripted[user_text]
@@ -83,6 +91,8 @@ class ScriptedCommunicationModel:
         *,
         context: CommunicationContext,
         candidates: list[NotificationCandidate],
+        on_trace: LlmTraceCallback | None = None,
+        on_tool_call: ToolCallCallback | None = None,
     ) -> str:
         if not candidates:
             return "I have an update."

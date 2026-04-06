@@ -4,6 +4,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from synopse.observability.schema import DiagnosticEvent
 from synopse.protocol import TaskCommandType
 from synopse.runtime.models import SessionSnapshot
 
@@ -59,9 +60,14 @@ class SendCommandSocketAction(BaseModel):
     reason: str | None = None
 
 
+class DiagnosticTimelineResponse(BaseModel):
+    events: list[DiagnosticEvent] = Field(default_factory=list)
+
+
 __all__ = [
     "CommandRequest",
     "CommandResponse",
+    "DiagnosticTimelineResponse",
     "MessageRequest",
     "MessageResponse",
     "SendCommandSocketAction",

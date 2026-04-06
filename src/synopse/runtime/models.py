@@ -11,11 +11,8 @@ from synopse.protocol import (
     NotificationCandidate,
     SessionBinding,
     Task,
-    TaskCommand,
-    TaskMutation,
     TaskSummary,
 )
-from synopse.blackboard.store import BlackboardWriteEvent
 
 
 class ConversationHistoryEntryModel(BaseModel):
@@ -38,14 +35,6 @@ class SessionSnapshot(BaseModel):
 class ConversationSnapshot(BaseModel):
     session_id: str
     conversation_history: list[ConversationHistoryEntryModel] = Field(default_factory=list)
-
-
-class DebugSnapshot(BaseModel):
-    session_id: str
-    mutations: list[TaskMutation] = Field(default_factory=list)
-    commands: list[TaskCommand] = Field(default_factory=list)
-    recent_blackboard_writes: list[BlackboardWriteEvent] = Field(default_factory=list)
-
 
 class SessionStreamEventBase(BaseModel):
     sequence: int
@@ -95,3 +84,11 @@ class AssistantResponseFailedStreamEvent(SessionStreamEventBase):
     type: Literal["assistant_response_failed"] = "assistant_response_failed"
     request_id: str
     message: str
+
+
+class ConversationAppendedStreamEvent(SessionStreamEventBase):
+    type: Literal["conversation_appended"] = "conversation_appended"
+    message_id: str
+    role: Literal["assistant"]
+    text: str
+    source: Literal["notification", "system_fallback"]

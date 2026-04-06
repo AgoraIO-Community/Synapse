@@ -123,6 +123,10 @@ class FakeStreamingClient:
         self.chat = SimpleNamespace(completions=FakeStreamingChatCompletionsAPI(queued_streams))
 
 
+async def _collect_tool_call(payload, bucket):
+    bucket.append(payload)
+
+
 @pytest.mark.anyio
 async def test_openai_provider_returns_tool_input_errors_as_tool_messages():
     client = FakeClient(
@@ -180,6 +184,49 @@ async def test_openai_provider_returns_tool_input_errors_as_tool_messages():
 
 
 @pytest.mark.anyio
+async def test_openai_provider_emits_tool_call_callback_for_failed_invocation():
+    client = FakeClient(
+        [
+            _tool_completion(
+                name="control_task",
+                arguments={"reference": "email", "command_type": "resume"},
+            ),
+            _text_completion("I couldn't resume that because the control command was invalid."),
+        ]
+    )
+    provider = OpenAIProvider(
+        Settings(communication_backend="openai", openai_api_key="test-key"),
+        client=client,
+    )
+    tool_calls = []
+
+    async def tool_runner(name: str, args: dict[str, object]) -> object:
+        raise ToolInputError(
+            f"Invalid control_task command_type '{args['command_type']}'.",
+            code="invalid_command_type",
+        )
+
+    await provider.run_tool_calling(
+        messages=[{"role": "user", "content": "Resume the email task."}],
+        tools=[],
+        tool_runner=tool_runner,
+        on_tool_call=lambda payload: _collect_tool_call(payload, tool_calls),
+    )
+
+    assert tool_calls == [
+        {
+            "name": "control_task",
+            "args": {"reference": "email", "command_type": "resume"},
+            "status": "failed",
+            "error": {
+                "code": "invalid_command_type",
+                "message": "Invalid control_task command_type 'resume'.",
+            },
+        }
+    ]
+
+
+@pytest.mark.anyio
 async def test_openai_provider_appends_tool_results_before_final_reply():
     client = FakeClient(
         [
@@ -217,6 +264,43 @@ async def test_openai_provider_appends_tool_results_before_final_reply():
         "tool_call_id": "call-1",
         "content": json.dumps({"tasks": [{"task_id": "task-1"}]}),
     }
+
+
+@pytest.mark.anyio
+async def test_openai_provider_emits_tool_call_callback_for_successful_invocation():
+    client = FakeClient(
+        [
+            _tool_completion(
+                name="list_tasks",
+                arguments={"reference": "email"},
+            ),
+            _text_completion("I found the task you asked about."),
+        ]
+    )
+    provider = OpenAIProvider(
+        Settings(communication_backend="openai", openai_api_key="test-key"),
+        client=client,
+    )
+    tool_calls = []
+
+    async def tool_runner(name: str, args: dict[str, object]) -> object:
+        return {"tasks": [{"task_id": "task-1"}]}
+
+    await provider.run_tool_calling(
+        messages=[{"role": "user", "content": "What tasks mention email?"}],
+        tools=[],
+        tool_runner=tool_runner,
+        on_tool_call=lambda payload: _collect_tool_call(payload, tool_calls),
+    )
+
+    assert tool_calls == [
+        {
+            "name": "list_tasks",
+            "args": {"reference": "email"},
+            "status": "succeeded",
+            "result": {"tasks": [{"task_id": "task-1"}]},
+        }
+    ]
 
 
 @pytest.mark.anyio

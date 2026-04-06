@@ -1,11 +1,17 @@
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
 from synopse.blackboard import BlackboardStore
 from synopse.blackboard.store import BlackboardWriteEvent, BlackboardWriteKind
 from synopse.communication import CommunicationBrain
 from synopse.communication.types import CommunicationTurnResult
+from synopse.observability.emitters import NotificationDiagnosticEmitter
+from synopse.observability.reason_codes import (
+    NOTIFICATION_DEFERRED_ASSISTANT_BUSY,
+    NOTIFICATION_DEFERRED_PENDING_USER_MESSAGE,
+)
 from synopse.protocol import NotificationCandidate, NotificationDeliveryStatus
 
 from .candidate_builder import NotificationCandidateBuilder
@@ -27,12 +33,21 @@ class NotificationManager:
         conversation_id: str,
         candidate_builder: NotificationCandidateBuilder | None = None,
         policy: NotificationPolicy | None = None,
+        observability: NotificationDiagnosticEmitter | None = None,
     ) -> None:
         self._store = store
         self._communication_brain = communication_brain
         self._conversation_id = conversation_id
         self._candidate_builder = candidate_builder or NotificationCandidateBuilder()
         self._policy = policy or NotificationPolicy()
+        self._observability = observability
+        self._conversation_event_callback: Callable[..., Awaitable[None] | None] | None = None
+
+    def set_conversation_event_callback(
+        self,
+        callback: Callable[..., Awaitable[None] | None] | None,
+    ) -> None:
+        self._conversation_event_callback = callback
 
     async def handle_blackboard_write(self, event: BlackboardWriteEvent) -> bool:
         candidates = await self._store.list_notification_candidates()
@@ -54,6 +69,8 @@ class NotificationManager:
             if candidate is None:
                 return False
             await self._store.put_notification_candidate(candidate)
+            if self._observability is not None:
+                self._observability.candidate_created(candidate=candidate)
             return True
 
         if event.kind == BlackboardWriteKind.SUMMARY and event.entity_id:
@@ -69,6 +86,8 @@ class NotificationManager:
             if candidate is None:
                 return False
             await self._store.put_notification_candidate(candidate)
+            if self._observability is not None:
+                self._observability.candidate_created(candidate=candidate)
             return True
 
         return False
@@ -86,6 +105,24 @@ class NotificationManager:
             has_pending_user_messages=has_pending_user_messages,
         )
         if not plan.groups:
+            pending_count = len(
+                [
+                    candidate
+                    for candidate in candidates
+                    if candidate.delivery_status == NotificationDeliveryStatus.PENDING
+                ]
+            )
+            if self._observability is not None and pending_count > 0:
+                if assistant_busy:
+                    self._observability.delivery_deferred(
+                        reason_code=NOTIFICATION_DEFERRED_ASSISTANT_BUSY,
+                        pending_count=pending_count,
+                    )
+                elif has_pending_user_messages:
+                    self._observability.delivery_deferred(
+                        reason_code=NOTIFICATION_DEFERRED_PENDING_USER_MESSAGE,
+                        pending_count=pending_count,
+                    )
             return NotificationProcessingResult(
                 emitted_messages=[],
                 next_due_seconds=plan.next_due_seconds,
@@ -117,4 +154,14 @@ class NotificationManager:
                     }
                 )
             )
+        if self._observability is not None:
+            self._observability.batch_emitted(candidates=candidates)
+        if self._conversation_event_callback is not None:
+            maybe_awaitable = self._conversation_event_callback(
+                message_id=result.message_id,
+                text=result.reply_text,
+                source="notification",
+            )
+            if maybe_awaitable is not None:
+                await maybe_awaitable
         return result

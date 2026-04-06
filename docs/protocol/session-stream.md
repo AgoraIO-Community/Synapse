@@ -47,4 +47,4 @@ Projection rules:
 - conversation history should not be packed into `snapshot`; read it through a
   dedicated conversation projection
 - debugger/audit payloads should not be packed into `snapshot`; read them
-  through dedicated debug-oriented projection routes
+  through the diagnostics timeline API

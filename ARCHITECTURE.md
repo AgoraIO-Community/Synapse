@@ -77,6 +77,10 @@ Blackboard is the only shared fact source between the two brains.
 
 Communication Brain and Execution Brain do not coordinate through hidden calls or shared in-memory private state. They coordinate by reading and writing blackboard objects.
 
+Observability is a supporting subsystem layered across those actors.
+It does not replace blackboard state or websocket debugger streams; it adds
+incident-oriented correlation, reason codes, and diagnostic timelines.
+
 ## Communication Brain
 
 Communication Brain should use a small, semantically clear tool surface:
@@ -150,6 +154,20 @@ The first-version classification rule is:
 - mode transitions only upgrade; they do not automatically downgrade
 
 The important boundary is that executors provide execution signals, while Execution Brain owns classification decisions and writes the resulting projection back to blackboard-facing state.
+
+## Observability
+
+Synopse should instrument boundary crossings and runtime decisions with one
+canonical diagnostic event schema.
+
+The first version keeps observability diagnosis-focused:
+
+- emit structured JSON logs to stdout
+- keep a per-session in-memory diagnostic event timeline for drill-downs
+- preserve existing websocket `tool_call` / `llm_trace` events as debugger-only transport surfaces
+
+The observability layer should center correlation ids and reason codes rather
+than unstructured string logging.
 
 ## Blackboard
 

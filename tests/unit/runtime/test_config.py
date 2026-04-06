@@ -23,3 +23,25 @@ def test_load_settings_reads_openai_config(monkeypatch, tmp_path: Path):
     assert settings.openai_api_key == "test-key"
     assert settings.openai_model == "gpt-4.1-mini"
     assert settings.openai_timeout_seconds == 45.0
+
+
+def test_load_settings_reads_log_output_config(monkeypatch, tmp_path: Path):
+    env_file = tmp_path / ".env.local"
+    env_file.write_text(
+        "\n".join(
+            [
+                "SYNOPSE_LOG_FORMAT=pretty",
+                "SYNOPSE_LOG_COLOR=never",
+                "SYNOPSE_QUIET_DIAGNOSTICS_ACCESS_LOGS=false",
+                "SYNOPSE_LOG_LLM_DETAILS=true",
+            ]
+        )
+    )
+    monkeypatch.setattr(config_module, "LOCAL_ENV_FILE", env_file)
+
+    settings = config_module.load_settings()
+
+    assert settings.log_format == "pretty"
+    assert settings.log_color == "never"
+    assert settings.quiet_diagnostics_access_logs is False
+    assert settings.log_llm_details is True
