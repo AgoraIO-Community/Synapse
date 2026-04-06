@@ -57,6 +57,7 @@ Make the protocol and in-memory blackboard the first stable executable core.
   - `TaskCommand`
   - `ExecutionSession`
   - `ExecutionRun`
+  - `TaskExecutionMode`
   - `SessionBinding`
   - `TaskSummary`
   - `NotificationCandidate`
@@ -103,6 +104,7 @@ Run tasks from blackboard state using a fake executor and explicit session/run o
 - session manager
 - fake executor adapter
 - basic summary refresh
+- initial execution-mode classification and projection
 - executor core abstractions
 
 ### What Does Not Get Built Yet
@@ -122,6 +124,7 @@ Run tasks from blackboard state using a fake executor and explicit session/run o
 - execution brain can drive tasks end-to-end with a fake executor
 - runs and sessions are visible in blackboard state
 - blocked and completed states produce expected summaries
+- execution modes are projected deterministically
 - execution state transitions are deterministic under fake execution
 
 ## Phase 3: Communication Brain Minimal Loop
@@ -135,6 +138,7 @@ Make Communication Brain able to manipulate and query blackboard through tools, 
 - communication brain
 - create/update/control/list/query tools
 - task reference resolution
+- task-first routing defaults
 - action-commitment reply policy
 - fake/scripted communication model harness
 
@@ -148,11 +152,13 @@ Make Communication Brain able to manipulate and query blackboard through tools, 
 
 - tool choice correctness
 - task manipulation correctness
+- task trigger rate for actionable requests
 - non-mechanical user-facing replies
 
 ### Exit Criteria
 
 - communication brain can reliably create/update/control/list/query
+- actionable requests do not collapse back into ordinary chat by default
 - replies do not degrade into system acknowledgements
 - task reference resolution is minimally usable
 - deterministic tests can exercise the brain with a fake/scripted model
@@ -200,6 +206,10 @@ Add proactive communication, interruption orchestration, and at least one real e
 - aggregation and digest delivery
 - interruption manager
 - one real executor adapter, likely Codex first
+
+Current implementation note:
+
+- first end-to-end notification delivery may land before the rest of the full Phase 5 scope, but should still align with the same candidate-first and digest-first architecture
 
 ### What Does Not Get Built Yet
 

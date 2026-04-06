@@ -41,7 +41,8 @@ export type BlackboardWriteKind =
   | "run"
   | "session"
   | "binding"
-  | "summary";
+  | "summary"
+  | "notification";
 
 export interface Task {
   task_id: string;
@@ -121,6 +122,15 @@ export interface ExecutionRun {
   metadata: Record<string, unknown>;
 }
 
+export type ExecutionMode = "undecided" | "lightweight" | "managed";
+
+export interface TaskExecutionMode {
+  task_id: string;
+  mode: ExecutionMode;
+  decided_from_run_id: string | null;
+  elapsed_seconds: number;
+}
+
 export interface SessionBinding {
   task_id: string;
   execution_session_id: string | null;
@@ -137,6 +147,22 @@ export interface TaskSummary {
   conversational_summary: string | null;
   latest_user_visible_status: string | null;
   needs_user_input: boolean;
+}
+
+export type NotificationCandidateType = "completed" | "blocked" | "needs_input";
+export type NotificationDeliveryStatus = "pending" | "emitted" | "suppressed";
+
+export interface NotificationCandidate {
+  candidate_id: string;
+  task_id: string;
+  candidate_type: NotificationCandidateType;
+  priority: string;
+  summary_short: string;
+  source_run_id: string | null;
+  created_at: string;
+  delivery_status: NotificationDeliveryStatus;
+  merge_key: string;
+  requires_immediate_delivery: boolean;
 }
 
 export interface BlackboardWriteEvent {
@@ -159,8 +185,10 @@ export interface SessionSnapshot {
   commands: TaskCommand[];
   execution_sessions: ExecutionSession[];
   execution_runs: ExecutionRun[];
+  execution_modes: TaskExecutionMode[];
   bindings: SessionBinding[];
   summaries: TaskSummary[];
+  notification_candidates: NotificationCandidate[];
   recent_blackboard_writes: BlackboardWriteEvent[];
   conversation_history: ConversationHistoryEntry[];
 }

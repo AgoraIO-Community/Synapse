@@ -31,7 +31,11 @@ def test_session_stream_accepts_message_actions_and_keeps_snapshot_events():
                     tool_calls=[
                         ToolCall(
                             name="create_task",
-                            args={"title": "Check flights", "goal": "Check flights"},
+                            args={
+                                "title": "Check flights",
+                                "goal": "Check flights",
+                                "mock_safe": True,
+                            },
                         )
                     ],
                     reply_override="I'll take care of that.",

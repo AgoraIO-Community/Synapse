@@ -17,10 +17,10 @@ Primary object groups:
 - execution sessions
 - execution runs
 - session bindings
+- task execution modes
 - task summaries
 - notification candidates
 - interruption state
-- target-state execution-mode facts when that layer is stabilized
 
 Core responsibilities:
 

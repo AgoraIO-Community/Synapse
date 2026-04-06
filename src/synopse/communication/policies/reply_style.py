@@ -52,7 +52,7 @@ def infer_conversational_act(tool_invocations: list[ToolInvocationRecord], reply
         return "acknowledge_and_hold"
     if "query_task_summary" in tool_names or "query_task_detail" in tool_names:
         return "inform_progress"
-    if "list_relevant_tasks" in tool_names:
+    if "list_tasks" in tool_names:
         return "request_clarification"
     if "?" in reply_text or "？" in reply_text:
         return "request_clarification"

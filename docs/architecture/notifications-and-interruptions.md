@@ -15,6 +15,8 @@ Important rules:
 - digest-first delivery is preferred over one-event-one-message
 - notification policy decides whether to send, merge, or defer before any wording is generated
 - selected notification facts may be rendered into final natural wording later, but delivery policy itself should stay rule-driven
+- first-version delivery focuses on `completed`, `blocked`, and `needs_input`
+- first-version turn-taking is basic: defer while assistant output is active and prefer a short merge window for ordinary completion updates
 
 Interruption rules:
 
@@ -35,6 +37,7 @@ Conversation-history rules:
 - keep internal history separate from user-visible history
 - unfinished assistant output may be truncated
 - completed assistant messages should not be silently rewritten
+- emitted proactive messages are appended as normal assistant turns in the same user-visible persona
 
 Related docs:
 

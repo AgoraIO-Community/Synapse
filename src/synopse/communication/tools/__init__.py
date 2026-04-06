@@ -9,7 +9,7 @@ from .add_constraint import AddConstraintTool
 from .add_task_note import AddTaskNoteTool
 from .control_task import ControlTaskTool
 from .create_task import CreateTaskTool
-from .list_relevant_tasks import ListRelevantTasksTool
+from .list_tasks import ListTasksTool
 from .query_task_detail import QueryTaskDetailTool
 from .query_task_summary import QueryTaskSummaryTool
 from .update_task import UpdateTaskTool
@@ -70,7 +70,7 @@ def build_default_tool_registry(
     add_constraint = AddConstraintTool(store)
     add_task_note = AddTaskNoteTool(store)
     control_task = ControlTaskTool(store)
-    list_relevant_tasks = ListRelevantTasksTool(store)
+    list_tasks = ListTasksTool(store)
     query_task_detail = QueryTaskDetailTool(store)
     query_task_summary = QueryTaskSummaryTool(store)
     update_task = UpdateTaskTool(store, valid_executor_types=resolved_executor_types)
@@ -142,14 +142,15 @@ def build_default_tool_registry(
                             ]
                         },
                         "requires_confirmation": {"type": "boolean"},
+                        "mock_safe": {"type": "boolean"},
                     },
                     "required": ["title", "goal"],
                     "additionalProperties": False,
                 },
                 handler=create_task,
             ),
-            "list_relevant_tasks": ToolSpec(
-                name="list_relevant_tasks",
+            "list_tasks": ToolSpec(
+                name="list_tasks",
                 description="List the most relevant tasks for a user reference such as 'that one' or 'the email task'.",
                 input_schema={
                     "type": "object",
@@ -160,7 +161,7 @@ def build_default_tool_registry(
                     "required": ["reference"],
                     "additionalProperties": False,
                 },
-                handler=list_relevant_tasks,
+                handler=list_tasks,
             ),
             "query_task_detail": ToolSpec(
                 name="query_task_detail",

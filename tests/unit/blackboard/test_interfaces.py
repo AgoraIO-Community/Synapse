@@ -18,6 +18,12 @@ def test_blackboard_store_protocol_exposes_expected_methods():
         "get_binding",
         "put_summary",
         "get_summary",
+        "put_execution_mode",
+        "get_execution_mode",
+        "list_execution_modes",
+        "put_notification_candidate",
+        "get_notification_candidate",
+        "list_notification_candidates",
     ]
 
     for method_name in expected_methods:

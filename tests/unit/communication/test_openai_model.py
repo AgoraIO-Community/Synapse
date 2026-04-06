@@ -2,9 +2,11 @@ import json
 
 import pytest
 
+from synopse.blackboard import InMemoryBlackboard
 from synopse.communication.context import CommunicationContext, ExecutorRuntimeSummary
 from synopse.communication.history import ConversationEntry
 from synopse.communication.models.openai import OpenAICommunicationModel
+from synopse.communication.tools import build_default_tool_registry
 from synopse.communication.tools.base import ToolInputError
 from synopse.protocol import Task, TaskStatus
 
@@ -120,20 +122,11 @@ async def test_openai_model_blocks_real_executor_request_when_only_mock_is_avail
         available_tools=["create_task"],
     )
 
-    class DummyToolSpec:
-        async def invoke(self, **kwargs):
-            return kwargs
-
-    class DummyRegistry:
-        openai_tools = []
-
-        @staticmethod
-        def get(name: str):
-            return DummyToolSpec()
+    registry = build_default_tool_registry(InMemoryBlackboard())
 
     with pytest.raises(ToolInputError, match="real executor"):
         await model.respond(
             user_text="check my pc cpu usage",
             context=context,
-            tool_registry=DummyRegistry(),
+            tool_registry=registry,
         )

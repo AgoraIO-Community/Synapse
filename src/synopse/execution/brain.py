@@ -4,6 +4,7 @@ from synopse.blackboard import BlackboardQueryService, BlackboardStore
 from synopse.executor_core import ExecutorRegistry
 
 from .assignment import AssignmentManager
+from .mode_manager import ExecutionModeManager
 from .reconcile import ReconcileLoop
 from .run_manager import RunManager
 from .session_manager import SessionManager
@@ -26,6 +27,7 @@ class ExecutionBrain:
             assignment=AssignmentManager(worker_id),
             sessions=SessionManager(),
             runs=RunManager(),
+            modes=ExecutionModeManager(),
             summaries=SummaryManager(),
             default_executor_type=default_executor_type,
         )

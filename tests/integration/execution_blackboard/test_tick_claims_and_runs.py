@@ -32,6 +32,9 @@ async def test_execution_brain_tick_claims_runs_and_completes():
     summary = await store.get_summary("task_1")
     assert summary is not None
     assert summary.latest_user_visible_status == "completed"
+    execution_mode = await store.get_execution_mode("task_1")
+    assert execution_mode is not None
+    assert execution_mode.mode.value == "lightweight"
 
 
 @pytest.mark.anyio

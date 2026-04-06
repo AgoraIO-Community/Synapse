@@ -16,7 +16,7 @@ This page should stay short and current.
 ## Explicitly Out of Scope Right Now
 
 - production-grade executor adapters
-- finalized proactive notification behavior
+- mature notification tuning beyond the first end-to-end implementation
 
 ## Transition Condition
 

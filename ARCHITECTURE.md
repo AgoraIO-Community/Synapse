@@ -12,7 +12,7 @@ The design goal is not a single-threaded assistant that thinks, talks, and execu
 
 - This document is the stable architecture target for Synopse `v2`.
 - Detailed subsystem and protocol references remain under `docs/architecture/`, `docs/protocol/`, and `docs/roadmap/`.
-- Accepted target-state concepts that are not yet stable protocol objects should be marked explicitly. In this document, `ExecutionMode = undecided / lightweight / managed` is one such target-state concept.
+- `ExecutionMode = undecided / lightweight / managed` is now treated as a stable execution projection, while richer mode-dependent behavior remains implementation work for later phases.
 
 ## Terminology
 
@@ -84,11 +84,11 @@ Communication Brain should use a small, semantically clear tool surface:
 - `create_task`
 - `update_task`
 - `control_task`
+- `add_task_note`
+- `add_constraint`
 - `list_tasks`
 - `query_task_summary`
 - `query_task_detail`
-
-Additional semantic tools such as `add_task_note` and `add_constraint` fit naturally under the same model when the runtime needs more precise task-writing behavior.
 
 The outward reply policy is strict:
 
@@ -110,7 +110,12 @@ Not:
 - "task updated successfully"
 - "command applied"
 
-Capability-gated requests deserve special treatment. Requests like checking machine state, reading the current workspace, or running commands are not normal chat. When a real executor is available, they should usually become tasks. When only a mock executor is available, the system should explain clearly that it cannot actually perform the check, rather than pretending to do it.
+Task-first routing is the default.
+
+- only clear social, subjective, or Synopse-meta conversation should remain pure chat
+- actionable requests should usually become tasks, even when phrased as questions
+- capability-gated requests such as checking machine state, reading the current workspace, or running commands are one important subset of those task requests
+- when only a mock executor is available, ordinary task requests should be blocked by default unless they are explicitly mock-safe
 
 ## Execution Brain
 
@@ -133,17 +138,18 @@ It is responsible for:
 - summary refresh
 - choosing how execution should continue after updates or interruptions
 
-### Target-State Execution Classification
+### Execution Classification
 
-`ExecutionMode = undecided / lightweight / managed` is an accepted target-state design concept, but it is not yet a stable protocol object.
+`ExecutionMode = undecided / lightweight / managed` is a stable execution projection.
 
-The intended direction is:
+The first-version classification rule is:
 
 - tasks begin as `undecided`
-- short or trivial execution can be treated as `lightweight`
-- longer-running or stateful work can be treated as `managed`
+- terminal tasks below the elapsed-time threshold become `lightweight`
+- tasks at or above the elapsed-time threshold become `managed`
+- mode transitions only upgrade; they do not automatically downgrade
 
-The important boundary is that executors provide execution signals, while Execution Brain owns classification decisions and writes the classification result back to blackboard-facing state.
+The important boundary is that executors provide execution signals, while Execution Brain owns classification decisions and writes the resulting projection back to blackboard-facing state.
 
 ## Blackboard
 
@@ -159,8 +165,8 @@ It should at least carry:
 - `SessionBinding`
 - `TaskSummary`
 - `NotificationCandidate`
+- `TaskExecutionMode`
 - interruption-related state
-- target-state execution-mode facts when that layer is stabilized
 
 Its role is to record:
 

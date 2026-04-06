@@ -31,10 +31,11 @@ Default execution model:
 - execution runs are disposable historical attempts
 - `SessionBinding` is the current active lease/binding projection, not a permanent 1:1 identity map
 
-Target-state note:
+Stable execution projection:
 
-- `ExecutionMode = undecided / lightweight / managed` is an accepted design direction
-- it is not yet a stable protocol object
+- `ExecutionMode = undecided / lightweight / managed`
+- classification is owned by Execution Brain and published as blackboard state
+- the first version uses elapsed-time thresholds and upgrade-only transitions
 
 Important subsystems:
 

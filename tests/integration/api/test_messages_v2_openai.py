@@ -14,11 +14,14 @@ from synopse.runtime import Settings, build_runtime_container
 class FakeProvider:
     async def run_tool_calling(self, **kwargs):
         runner = kwargs["tool_runner"]
-        result = await runner("create_task", {"title": "Check flights", "goal": "Check flights"})
+        result = await runner(
+            "create_task",
+            {"title": "Check flights", "goal": "Check flights", "mock_safe": True},
+        )
         return "I'll take care of that.", [
             {
                 "name": "create_task",
-                "args": {"title": "Check flights", "goal": "Check flights"},
+                "args": {"title": "Check flights", "goal": "Check flights", "mock_safe": True},
                 "result": result,
             }
         ]

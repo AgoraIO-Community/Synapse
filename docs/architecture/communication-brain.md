@@ -29,8 +29,10 @@ Core communication policy:
 - invalid tool arguments from the model should be returned through the tool loop for correction instead of crashing the message transport
 - invalid executor ids should be rejected before task creation, and pre-existing bad tasks should fail cleanly rather than crashing execution
 - ambiguous task references should not silently fall back to the latest task; the communication brain should resolve them explicitly or ask for clarification
-- capability-gated requests such as checking machine state, reading the workspace, or running commands are not normal chat; when a real executor is available they should usually become tasks
-- if only the mock executor is available, capability-gated requests should be blocked with a clear natural-language explanation instead of fake task execution or generic manual tips
+- task-first routing is the default; only clear social, subjective, or Synopse-meta conversation should remain pure chat
+- actionable requests should usually become tasks even when phrased as questions
+- capability-gated requests such as checking machine state, reading the workspace, or running commands are a high-value subset of those task requests
+- if only the mock executor is available, ordinary task requests should be blocked by default unless they are explicitly mock-safe
 - there is no standalone message interpreter in the primary `v2` design; interpretation is part of Communication Brain tool use
 
 Primary tool surface:
@@ -55,6 +57,7 @@ Tool intent defaults:
 - use `add_constraint` for execution constraints such as deadlines, formatting rules, or do-not-send instructions
 - use `update_task` only for core structured task fields such as title, goal, priority, executor preference, or latest instruction
 - use `list_tasks` before a write or query when the target task is uncertain
+- use `create_task.mock_safe = true` only for explicit simulation, demo, or record-only tasks
 
 `control_task.command_type` must use the canonical protocol values from
 [`TaskCommandType`](../protocol/mutation-and-command.md), for example `resume_task`

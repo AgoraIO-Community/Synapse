@@ -6,9 +6,11 @@ from collections import defaultdict
 from synopse.protocol import (
     ExecutionRun,
     ExecutionSession,
+    NotificationCandidate,
     SessionBinding,
     Task,
     TaskCommand,
+    TaskExecutionMode,
     TaskMutation,
     TaskSummary,
 )
@@ -30,6 +32,9 @@ class InMemoryBlackboard(BlackboardStore):
         self._runs: dict[str, ExecutionRun] = {}
         self._bindings_by_task: dict[str, SessionBinding] = {}
         self._summaries_by_task: dict[str, TaskSummary] = {}
+        self._execution_modes_by_task: dict[str, TaskExecutionMode] = {}
+        self._notification_candidates: dict[str, NotificationCandidate] = {}
+        self._notification_candidate_order: list[str] = []
         self._recent_writes: list[BlackboardWriteEvent] = []
         self._subscriptions = SubscriptionManager()
         self._lock = asyncio.Lock()
@@ -159,6 +164,51 @@ class InMemoryBlackboard(BlackboardStore):
 
     async def get_summary(self, task_id: str) -> TaskSummary | None:
         return self._summaries_by_task.get(task_id)
+
+    async def put_execution_mode(self, execution_mode: TaskExecutionMode) -> None:
+        async with self._lock:
+            self._execution_modes_by_task[execution_mode.task_id] = execution_mode
+        await self._publish(
+            BlackboardWriteEvent(
+                kind=BlackboardWriteKind.EXECUTION_MODE,
+                entity_id=execution_mode.task_id,
+                task_id=execution_mode.task_id,
+                payload={"mode": execution_mode.mode.value},
+            )
+        )
+
+    async def get_execution_mode(self, task_id: str) -> TaskExecutionMode | None:
+        return self._execution_modes_by_task.get(task_id)
+
+    async def list_execution_modes(self) -> list[TaskExecutionMode]:
+        return list(self._execution_modes_by_task.values())
+
+    async def put_notification_candidate(self, candidate: NotificationCandidate) -> None:
+        async with self._lock:
+            if candidate.candidate_id not in self._notification_candidates:
+                self._notification_candidate_order.append(candidate.candidate_id)
+            self._notification_candidates[candidate.candidate_id] = candidate
+        await self._publish(
+            BlackboardWriteEvent(
+                kind=BlackboardWriteKind.NOTIFICATION,
+                entity_id=candidate.candidate_id,
+                task_id=candidate.task_id,
+                payload={
+                    "candidate_type": candidate.candidate_type.value,
+                    "delivery_status": candidate.delivery_status.value,
+                },
+            )
+        )
+
+    async def get_notification_candidate(self, candidate_id: str) -> NotificationCandidate | None:
+        return self._notification_candidates.get(candidate_id)
+
+    async def list_notification_candidates(self) -> list[NotificationCandidate]:
+        return [
+            self._notification_candidates[candidate_id]
+            for candidate_id in self._notification_candidate_order
+            if candidate_id in self._notification_candidates
+        ]
 
     async def list_recent_writes(self, limit: int = 50) -> list[BlackboardWriteEvent]:
         return list(self._recent_writes[-limit:])

@@ -62,7 +62,11 @@ async def test_messages_v2_create_task_and_run_tick():
                     tool_calls=[
                         ToolCall(
                             name="create_task",
-                            args={"title": "Check flights", "goal": "Check flights"},
+                            args={
+                                "title": "Check flights",
+                                "goal": "Check flights",
+                                "mock_safe": True,
+                            },
                         )
                     ],
                 )

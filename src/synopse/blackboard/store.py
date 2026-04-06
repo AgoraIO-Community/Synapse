@@ -13,6 +13,8 @@ class BlackboardWriteKind(StrEnum):
     SESSION = "session"
     BINDING = "binding"
     SUMMARY = "summary"
+    EXECUTION_MODE = "execution_mode"
+    NOTIFICATION = "notification"
 
 
 @dataclass(slots=True)

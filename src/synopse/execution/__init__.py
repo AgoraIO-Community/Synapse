@@ -2,6 +2,7 @@
 
 from .assignment import AssignmentManager
 from .brain import ExecutionBrain
+from .mode_manager import ExecutionModeManager
 from .reconcile import ReconcileLoop
 from .run_manager import RunManager
 from .scheduler import Scheduler
@@ -11,6 +12,7 @@ from .summary_manager import SummaryManager
 __all__ = [
     "AssignmentManager",
     "ExecutionBrain",
+    "ExecutionModeManager",
     "ReconcileLoop",
     "RunManager",
     "Scheduler",

@@ -22,7 +22,7 @@ async def test_commands_v2_pause_task():
                     tool_calls=[
                         ToolCall(
                             name="create_task",
-                            args={"title": "Draft email", "goal": "Draft email"},
+                            args={"title": "Draft email", "goal": "Draft email", "mock_safe": True},
                         )
                     ],
                 )

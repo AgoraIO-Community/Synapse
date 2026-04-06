@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from synopse.communication.history import ConversationEntry
 from synopse.blackboard import BlackboardStore
+from synopse.protocol import NotificationCandidate
 from synopse.executor_core import ExecutorCapabilities
 
 from .context import CommunicationContextBuilder
@@ -77,4 +78,32 @@ class CommunicationBrain:
             conversational_act=result.conversational_act or "model_reply",
             tool_invocations=result.tool_invocations,
             affected_task_ids=result.affected_task_ids,
+        )
+
+    async def emit_notification(
+        self,
+        conversation_id: str,
+        *,
+        candidates: list[NotificationCandidate],
+    ) -> CommunicationTurnResult:
+        context = await self._context_builder.build(
+            conversation_id,
+            available_tools=self._tool_usage_policy.available_tools,
+        )
+        try:
+            reply_text = await self._model.render_notification(
+                context=context,
+                candidates=candidates,
+            )
+        except Exception:
+            if len(candidates) == 1:
+                reply_text = candidates[0].summary_short
+            else:
+                reply_text = "; ".join(candidate.summary_short for candidate in candidates)
+        assistant_entry = self._history.append_assistant(conversation_id, reply_text)
+        return CommunicationTurnResult(
+            message_id=assistant_entry.message_id,
+            reply_text=reply_text,
+            conversational_act="inform_progress",
+            affected_task_ids=sorted({candidate.task_id for candidate in candidates}),
         )

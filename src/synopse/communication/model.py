@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Protocol
 
 from .context import CommunicationContext
+from synopse.protocol import NotificationCandidate
 from .types import ToolInvocationRecord
 
 if TYPE_CHECKING:
@@ -37,4 +38,12 @@ class CommunicationModel(Protocol):
         tool_registry: "ToolRegistry",
         on_text_delta: TextDeltaCallback | None = None,
     ) -> CommunicationModelResult:
+        ...
+
+    async def render_notification(
+        self,
+        *,
+        context: CommunicationContext,
+        candidates: list[NotificationCandidate],
+    ) -> str:
         ...

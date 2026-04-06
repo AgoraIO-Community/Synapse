@@ -82,6 +82,7 @@ Verify quality of behavior and interaction rather than strict deterministic corr
 
 - whether replies sound mechanical
 - whether tools are used appropriately
+- whether actionable requests collapse into plain chat instead of tasks
 - whether task-reference resolution guesses the wrong task
 - whether proactive notifications are too noisy
 - whether interruption handling feels natural
@@ -120,6 +121,8 @@ Communication evals should include at least:
 - pure chat with no tool call
 - capability-gated request with a real executor available
 - capability-gated request in mock-only mode
+- task-first routing for ordinary actionable requests
+- `ExecutionMode` threshold and transition behavior
 
 ## Recommended Repository Separation
 

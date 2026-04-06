@@ -17,7 +17,7 @@ async def test_communication_brain_creates_task_and_returns_natural_reply():
                 tool_calls=[
                     ToolCall(
                         name="create_task",
-                        args={"title": "Draft email", "goal": "Draft an email"},
+                        args={"title": "Draft email", "goal": "Draft an email", "mock_safe": True},
                     )
                 ],
             )

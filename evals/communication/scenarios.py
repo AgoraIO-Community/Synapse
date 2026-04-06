@@ -23,7 +23,8 @@ COMMUNICATION_EVAL_SCENARIOS = [
     CommunicationEvalScenario(
         name="create_task_cn",
         user_text="帮我查一下明天上海到北京的航班",
-        expected_tools=["create_task"],
+        expected_tools_when_real_executor=["create_task"],
+        forbidden_tools_when_mock_only=["create_task"],
         forbidden_tools=["query_task_summary", "control_task"],
     ),
     CommunicationEvalScenario(

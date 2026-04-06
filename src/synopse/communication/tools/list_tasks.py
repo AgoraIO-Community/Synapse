@@ -4,8 +4,8 @@ from synopse.blackboard import BlackboardStore
 from synopse.communication.resolver import TaskResolver
 
 
-class ListRelevantTasksTool:
-    name = "list_relevant_tasks"
+class ListTasksTool:
+    name = "list_tasks"
 
     def __init__(self, store: BlackboardStore) -> None:
         self._store = store
@@ -18,7 +18,11 @@ class ListRelevantTasksTool:
         limit: int = 5,
     ) -> dict[str, object]:
         tasks = await self._store.list_tasks()
-        candidates = self._resolver.list_relevant(tasks, reference=reference, limit=max(1, min(limit, 5)))
+        candidates = self._resolver.list_relevant(
+            tasks,
+            reference=reference,
+            limit=max(1, min(limit, 5)),
+        )
         summaries = {
             task.task_id: await self._store.get_summary(task.task_id)
             for task in [candidate.task for candidate in candidates]

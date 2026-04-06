@@ -6,9 +6,11 @@ from typing import Protocol
 from synopse.protocol import (
     ExecutionRun,
     ExecutionSession,
+    NotificationCandidate,
     SessionBinding,
     Task,
     TaskCommand,
+    TaskExecutionMode,
     TaskMutation,
     TaskSummary,
 )
@@ -78,6 +80,24 @@ class BlackboardStore(Protocol):
 
     async def get_summary(self, task_id: str) -> TaskSummary | None:
         """Fetch the current summary for one task."""
+
+    async def put_execution_mode(self, execution_mode: TaskExecutionMode) -> None:
+        """Store or replace the current execution-mode projection for one task."""
+
+    async def get_execution_mode(self, task_id: str) -> TaskExecutionMode | None:
+        """Fetch the current execution-mode projection for one task."""
+
+    async def list_execution_modes(self) -> list[TaskExecutionMode]:
+        """List current execution-mode projections."""
+
+    async def put_notification_candidate(self, candidate: NotificationCandidate) -> None:
+        """Store or replace a notification candidate projection."""
+
+    async def get_notification_candidate(self, candidate_id: str) -> NotificationCandidate | None:
+        """Fetch one notification candidate by id."""
+
+    async def list_notification_candidates(self) -> list[NotificationCandidate]:
+        """List notification candidates across the session."""
 
     async def list_recent_writes(self, limit: int = 50) -> list[BlackboardWriteEvent]:
         """List recent blackboard write events for debugging."""

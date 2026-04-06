@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 import json
-import re
 
 from synopse.infrastructure.llm import OpenAIProvider
-from synopse.communication.tools.base import ToolInputError
+from synopse.protocol import NotificationCandidate
 
 from ..context import CommunicationContext
 from ..model import CommunicationModelResult, TextDeltaCallback
@@ -28,13 +27,7 @@ class OpenAICommunicationModel:
         reply_text, invocations = await self._provider.run_tool_calling(
             messages=_build_messages(user_text, context),
             tools=tool_registry.openai_tools,
-            tool_runner=lambda name, args: _run_tool_with_guard(
-                name=name,
-                args=args,
-                user_text=user_text,
-                context=context,
-                tool_registry=tool_registry,
-            ),
+            tool_runner=lambda name, args: tool_registry.get(name).invoke(**args),
             on_text_delta=on_text_delta,
         )
         tool_invocations = [
@@ -52,21 +45,18 @@ class OpenAICommunicationModel:
             conversational_act=infer_conversational_act(tool_invocations, reply_text),
         )
 
-
-REAL_EXECUTOR_REQUIRED_MESSAGE = (
-    "A real executor is required to actually inspect the machine, run commands, "
-    "or read the environment, but only the mock executor is available right now."
-)
-
-
-REAL_EXECUTOR_PATTERNS = [
-    re.compile(pattern, re.IGNORECASE)
-    for pattern in [
-        r"\b(check|inspect|look at|monitor|run|read|list|show|find)\b.*\b(cpu|memory|ram|process|network|repo|repository|workspace|directory|folder|file|files|environment|env|command|test|tests)\b",
-        r"\b(my pc|my computer|this machine|this repo|this repository|this directory|this folder)\b",
-        r"(看|查|检查|监控|读取|运行|列出|帮我看|帮我查).*(cpu|内存|进程|网络|仓库|目录|文件|环境|测试|命令|状态)",
-    ]
-]
+    async def render_notification(
+        self,
+        *,
+        context: CommunicationContext,
+        candidates: list[NotificationCandidate],
+    ) -> str:
+        reply_text, _ = await self._provider.run_tool_calling(
+            messages=_build_notification_messages(context, candidates),
+            tools=[],
+            tool_runner=_unused_tool_runner,
+        )
+        return reply_text
 
 
 def _build_messages(user_text: str, context: CommunicationContext) -> list[dict[str, object]]:
@@ -100,36 +90,40 @@ def _build_instructions(user_text: str, available_tools: list[str]) -> str:
 def _build_tool_policy(context: CommunicationContext) -> str:
     lines = [
         "Tool-selection policy:",
-        "- create_task: brand-new work that is not already represented by an existing task.",
+        "- create_task: brand-new work or actionable user requests that should become a task.",
         "- update_task: change core structured task fields such as title, goal, priority, executor preference, or latest_instruction.",
         "- add_task_note: append extra user context, examples, preferences, or clarifications to an existing task.",
         "- add_constraint: append execution constraints such as deadlines, formatting rules, do-not-send, forbidden actions, or required approach.",
         "- control_task: pause, resume, cancel, retry, or preempt a task.",
-        "- list_relevant_tasks: resolve references like 'that one', 'the email task', or 'the last task' before a write or query when target is uncertain.",
+        "- list_tasks: resolve references like 'that one', 'the email task', or 'the last task' before a write or query when the target is uncertain.",
         "- query_task_summary: answer user-facing progress questions.",
         "- query_task_detail: answer deeper status questions that need more execution detail.",
         "Decision rules:",
-        "- Pure chat, social replies, and meta questions should not call tools.",
-        "- Requests to inspect the user's machine, inspect the current repo/workspace, run commands, or read the environment are not pure chat. They should normally become tasks.",
-        "- For existing-task writes, if the target is uncertain, call list_relevant_tasks first.",
+        "- Default to the task model for actionable requests, even when the user phrases them as a question.",
+        "- Only clear social chat, subjective/persona questions, and Synopse meta questions should stay as pure chat.",
+        "- Requests to inspect the user's machine, inspect the current repo/workspace, run commands, or read the environment should normally become tasks.",
+        "- For existing-task writes or queries, if the target is uncertain, call list_tasks first.",
         "- Prefer add_task_note or add_constraint over update_task when the user is appending context rather than changing the task's core identity.",
         "- Use at most one write tool unless a read-then-write step is necessary.",
         "- When using control_task, command_type must exactly match the schema value such as 'resume_task', not shortened verbs like 'resume'.",
     ]
     if context.executor_runtime.has_real_executor:
         lines.append(
-            "- At least one real executor is available, so capability-gated requests should become tasks rather than fallback advice."
+            "- At least one real executor is available, so normal actionable requests should usually become tasks."
         )
     else:
         lines.append(
-            "- Only the mock executor is available. Do not pretend to inspect the machine, run commands, or read the environment."
+            "- Only the mock executor is available. Do not create ordinary work tasks unless the user explicitly asks for a mock or simulated task."
         )
         lines.append(
-            "- If the user asks for a real inspection or execution that needs a real executor, explain that you cannot actually do it right now."
+            "- When only the mock executor is available, normal task requests should be blocked with a clear natural-language explanation instead of fake task creation."
         )
         lines.append(
-            "- Do not reply with generic manual tips like opening Task Manager or Activity Monitor unless the user explicitly asks for instructions."
+            "- Do not reply with generic manual tips unless the user explicitly asks for instructions."
         )
+    lines.append(
+        "- Only set create_task.mock_safe=true when the user explicitly wants a mock, simulated, or record-only task."
+    )
     return "\n".join(lines)
 
 
@@ -140,17 +134,20 @@ def _build_examples(context: CommunicationContext) -> str:
         "Preferred tool: create_task",
         "Preferred reply style: 好，我先查一下。",
         "User: 给刚才那个邮件任务补一句，语气再简短一点",
-        "Preferred tool: add_task_note or update_task when the target is clear; list_relevant_tasks first when target is not clear.",
+        "Preferred tool: add_task_note or update_task when the target is clear; list_tasks first when target is not clear.",
         "Preferred reply style: 好，我补上这条要求。",
         "User: 那个任务先别发出去",
-        "Preferred tool: add_constraint when the target is clear; otherwise list_relevant_tasks first.",
+        "Preferred tool: add_constraint when the target is clear; otherwise list_tasks first.",
         "Preferred reply style: 好，这个我先按住，不发出去。",
         "User: 那个任务现在到哪了",
-        "Preferred tool: query_task_summary when target is clear; otherwise list_relevant_tasks first.",
+        "Preferred tool: query_task_summary when target is clear; otherwise list_tasks first.",
         "Preferred reply style: 这个现在已经处理到……",
         "User: 你觉得我今天状态怎么样",
         "Preferred tool: no tool.",
         "Preferred reply style: 直接自然回答，不要硬转成任务。",
+        "User: Can you help me analyze this bug?",
+        "Preferred tool: create_task",
+        "Preferred reply style: Sure, I'll dig into it.",
     ]
     if context.executor_runtime.has_real_executor:
         lines.extend(
@@ -166,6 +163,9 @@ def _build_examples(context: CommunicationContext) -> str:
                 "User: check my pc cpu usage",
                 "Preferred tool: no tool or create_task rejected in-band because no real executor is available.",
                 "Preferred reply style: I can't actually check your machine right now because I don't have a real executor connected.",
+                "User: help me draft an email reply",
+                "Preferred tool: no tool or create_task rejected in-band because only the mock executor is available.",
+                "Preferred reply style: I can't actually take that on right now because I don't have a real executor connected.",
             ]
         )
     return "\n".join(lines)
@@ -214,6 +214,48 @@ def _build_runtime_context(context: CommunicationContext) -> dict[str, object]:
     }
 
 
+def _build_notification_messages(
+    context: CommunicationContext,
+    candidates: list[NotificationCandidate],
+) -> list[dict[str, object]]:
+    return [
+        _message(
+            "system",
+            "\n".join(
+                [
+                    "You are the Communication Brain for Synopse.",
+                    "Generate one proactive assistant update from the selected notification facts.",
+                    "Keep the same language and persona as the recent visible conversation.",
+                    "Keep it concise, spoken-language friendly, and natural.",
+                    "Do not mention internal terms like notification candidate, task id, or runtime state.",
+                    "Do not use tools.",
+                ]
+            ),
+        ),
+        _message(
+            "system",
+            json.dumps(_build_runtime_context(context)),
+        ),
+        _message(
+            "system",
+            json.dumps(
+                {
+                    "notification_candidates": [
+                        {
+                            "candidate_type": candidate.candidate_type.value,
+                            "task_id": candidate.task_id,
+                            "summary_short": candidate.summary_short,
+                            "priority": candidate.priority.value,
+                        }
+                        for candidate in candidates
+                    ]
+                }
+            ),
+        ),
+        *[_message(entry.role, entry.text) for entry in context.recent_history],
+    ]
+
+
 def _message(role: str, text: str) -> dict[str, object]:
     return {"role": role, "content": text}
 
@@ -230,28 +272,5 @@ def _extract_task_id(result: object) -> str | None:
     return None
 
 
-async def _run_tool_with_guard(
-    *,
-    name: str,
-    args: dict[str, object],
-    user_text: str,
-    context: CommunicationContext,
-    tool_registry: ToolRegistry,
-) -> object:
-    if (
-        name == "create_task"
-        and not context.executor_runtime.has_real_executor
-        and _looks_like_real_executor_request(user_text)
-    ):
-        raise ToolInputError(
-            REAL_EXECUTOR_REQUIRED_MESSAGE,
-            code="real_executor_required",
-        )
-    return await tool_registry.get(name).invoke(**args)
-
-
-def _looks_like_real_executor_request(user_text: str) -> bool:
-    normalized = user_text.strip()
-    if not normalized:
-        return False
-    return any(pattern.search(normalized) for pattern in REAL_EXECUTOR_PATTERNS)
+async def _unused_tool_runner(name: str, args: dict[str, object]) -> object:
+    raise RuntimeError(f"Unexpected tool call during notification rendering: {name}")

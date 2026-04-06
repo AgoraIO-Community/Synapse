@@ -14,6 +14,7 @@ async def test_create_update_note_constraint_control_and_query_tools():
     created = await registry.get("create_task")(
         title="Draft email",
         goal="Draft an email reply",
+        mock_safe=True,
     )
     assert created.task_id.startswith("task-")
     assert created.preferred_executor == "mock"
@@ -60,19 +61,21 @@ async def test_create_update_note_constraint_control_and_query_tools():
 
 
 @pytest.mark.anyio
-async def test_list_relevant_tasks_returns_ranked_matches():
+async def test_list_tasks_returns_ranked_matches():
     store = InMemoryBlackboard()
     registry = build_default_tool_registry(store)
     await registry.get("create_task")(
         title="Draft sales email",
         goal="Draft sales email",
+        mock_safe=True,
     )
     await registry.get("create_task")(
         title="Book flight",
         goal="Book flight to Shanghai",
+        mock_safe=True,
     )
 
-    result = await registry.get("list_relevant_tasks")(reference="email")
+    result = await registry.get("list_tasks")(reference="email")
 
     assert result["reference"] == "email"
     assert len(result["matches"]) == 1
@@ -100,6 +103,7 @@ def test_create_task_schema_uses_registered_executor_values():
     preferred_executor_schema = registry.get("create_task").input_schema["properties"][
         "preferred_executor"
     ]
+    mock_safe_schema = registry.get("create_task").input_schema["properties"]["mock_safe"]
 
     assert preferred_executor_schema == {
         "anyOf": [
@@ -107,6 +111,7 @@ def test_create_task_schema_uses_registered_executor_values():
             {"type": "null"},
         ]
     }
+    assert mock_safe_schema == {"type": "boolean"}
 
 
 @pytest.mark.anyio
@@ -116,6 +121,7 @@ async def test_control_task_rejects_non_canonical_command_aliases():
     created = await registry.get("create_task")(
         title="Draft email",
         goal="Draft an email reply",
+        mock_safe=True,
     )
 
     with pytest.raises(ToolInputError, match="Invalid control_task command_type 'resume'"):
@@ -135,6 +141,7 @@ async def test_update_task_rejects_unknown_patch_fields():
     created = await registry.get("create_task")(
         title="Draft email",
         goal="Draft an email reply",
+        mock_safe=True,
     )
 
     with pytest.raises(ToolInputError, match="Invalid update_task fields"):
@@ -151,10 +158,12 @@ async def test_query_tools_reject_ambiguous_reference():
     await registry.get("create_task")(
         title="Draft email",
         goal="Draft an email reply",
+        mock_safe=True,
     )
     await registry.get("create_task")(
         title="Send email",
         goal="Send an email follow-up",
+        mock_safe=True,
     )
 
     with pytest.raises(ToolInputError, match="ambiguous"):
@@ -195,3 +204,19 @@ async def test_create_task_uses_default_executor_when_omitted():
     )
 
     assert created.preferred_executor == "codex"
+
+
+@pytest.mark.anyio
+async def test_create_task_rejects_mock_default_without_explicit_mock_safe():
+    store = InMemoryBlackboard()
+    registry = build_default_tool_registry(
+        store,
+        executor_types=["mock"],
+        default_executor_type="mock",
+    )
+
+    with pytest.raises(ToolInputError, match="real executor is required"):
+        await registry.get("create_task")(
+            title="Draft email",
+            goal="Draft an email reply",
+        )

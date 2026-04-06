@@ -25,6 +25,12 @@ class RunStatus(StrEnum):
     CANCELLED = "cancelled"
 
 
+class ExecutionMode(StrEnum):
+    UNDECIDED = "undecided"
+    LIGHTWEIGHT = "lightweight"
+    MANAGED = "managed"
+
+
 class SessionStatus(StrEnum):
     IDLE = "idle"
     WARM_IDLE = "warm_idle"
@@ -54,6 +60,18 @@ class NotificationPriority(StrEnum):
     P1 = "p1"
     P2 = "p2"
     P3 = "p3"
+
+
+class NotificationCandidateType(StrEnum):
+    COMPLETED = "completed"
+    BLOCKED = "blocked"
+    NEEDS_INPUT = "needs_input"
+
+
+class NotificationDeliveryStatus(StrEnum):
+    PENDING = "pending"
+    EMITTED = "emitted"
+    SUPPRESSED = "suppressed"
 
 
 class InterruptionType(StrEnum):

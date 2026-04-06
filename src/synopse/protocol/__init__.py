@@ -5,14 +5,18 @@ from .command import TaskCommand
 from .enums import (
     BindingStatus,
     ConversationEffect,
+    ExecutionMode,
     InterruptionType,
     MutationType,
+    NotificationCandidateType,
+    NotificationDeliveryStatus,
     NotificationPriority,
     RunStatus,
     SessionStatus,
     TaskCommandType,
     TaskStatus,
 )
+from .execution_mode import TaskExecutionMode
 from .interruption import Interruption
 from .mutation import TaskMutation
 from .notification import NotificationCandidate
@@ -26,12 +30,15 @@ __all__ = [
     "AssignmentLease",
     "BindingStatus",
     "ConversationEffect",
+    "ExecutionMode",
     "ExecutionRun",
     "ExecutionSession",
     "Interruption",
     "InterruptionType",
     "MutationType",
     "NotificationCandidate",
+    "NotificationCandidateType",
+    "NotificationDeliveryStatus",
     "NotificationPriority",
     "QueuedRunRequest",
     "RunStatus",
@@ -39,6 +46,7 @@ __all__ = [
     "SessionStatus",
     "Task",
     "TaskCommand",
+    "TaskExecutionMode",
     "TaskCommandType",
     "TaskMutation",
     "TaskStatus",

@@ -24,6 +24,7 @@
 - [Task](./protocol/task.md)
 - [Mutation and Command](./protocol/mutation-and-command.md)
 - [Execution Session and Run](./protocol/execution-session-and-run.md)
+- [Execution Mode](./protocol/execution-mode.md)
 - [Summary and Notification](./protocol/summary-notification.md)
 - [Interruption](./protocol/interruption.md)
 

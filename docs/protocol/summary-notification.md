@@ -17,6 +17,19 @@ Summary principle:
 
 `NotificationCandidate` should exist before any proactive message is emitted.
 
+`NotificationCandidate` should include:
+
+- `candidate_id`
+- `task_id`
+- `candidate_type`
+- `priority`
+- `summary_short`
+- `source_run_id`
+- `created_at`
+- `delivery_status`
+- `merge_key`
+- `requires_immediate_delivery`
+
 Notification principles:
 
 - candidate first

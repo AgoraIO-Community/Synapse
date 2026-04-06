@@ -8,6 +8,7 @@ Key objects:
 - `ExecutionSession`
 - `ExecutionRun`
 - `SessionBinding`
+- `TaskExecutionMode`
 - `ExecutionState`
 
 Responsibilities:
@@ -24,6 +25,8 @@ Responsibilities:
   - one concrete run inside that lineage
 - `SessionBinding`
   - current active lease/binding projection
+- `TaskExecutionMode`
+  - current task-level execution classification projection
 - `ExecutionState`
   - current runtime snapshot
 

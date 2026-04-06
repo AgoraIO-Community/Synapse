@@ -4,6 +4,14 @@ import pytest
 
 from synopse.communication.models import ScriptedCommunicationModel
 from synopse.communication.models.scripted import ScriptedPlan
+from synopse.protocol import (
+    ExecutionMode,
+    NotificationCandidate,
+    NotificationCandidateType,
+    NotificationDeliveryStatus,
+    NotificationPriority,
+    TaskExecutionMode,
+)
 from synopse.executor_core import ExecutorCapabilities, ExecutorEvent, ExecutorEventType, ExecutorSession
 from synopse.protocol import Task, TaskStatus
 from synopse.runtime import Settings
@@ -25,7 +33,8 @@ async def test_session_runtime_publish_snapshot_notifies_subscribers():
     published = await queue.get()
 
     assert snapshot.session_id == "session-1"
-    assert published.session_id == "session-1"
+    assert published.type == "snapshot"
+    assert published.snapshot.session_id == "session-1"
 
     session.unsubscribe(queue)
 
@@ -104,9 +113,64 @@ async def test_session_runtime_snapshot_pump_publishes_background_execution_upda
     snapshots = []
     for _ in range(3):
         snapshots.append(await asyncio.wait_for(queue.get(), timeout=1.0))
-        if snapshots[-1].execution_runs and snapshots[-1].execution_runs[0].status == "completed":
+        if (
+            snapshots[-1].type == "snapshot"
+            and snapshots[-1].snapshot.execution_runs
+            and snapshots[-1].snapshot.execution_runs[0].status == "completed"
+        ):
             break
 
-    assert any(snapshot.execution_runs for snapshot in snapshots)
-    assert snapshots[-1].tasks[0].status == "completed"
+    snapshot_payloads = [event.snapshot for event in snapshots if event.type == "snapshot"]
+    assert any(snapshot.execution_runs for snapshot in snapshot_payloads)
+    assert snapshot_payloads[-1].tasks[0].status == "completed"
     session.unsubscribe(queue)
+
+
+@pytest.mark.anyio
+async def test_session_runtime_snapshot_includes_execution_modes():
+    session = create_session_runtime(
+        "session-4",
+        model=ScriptedCommunicationModel(
+            {"__default__": ScriptedPlan(conversational_act="request_clarification")}
+        ),
+        settings=Settings(),
+    )
+    await session.blackboard.put_execution_mode(
+        TaskExecutionMode(
+            task_id="task-1",
+            mode=ExecutionMode.MANAGED,
+            decided_from_run_id="run-1",
+            elapsed_seconds=32.0,
+        )
+    )
+
+    snapshot = await session.snapshot()
+
+    assert snapshot.execution_modes[0].mode == ExecutionMode.MANAGED
+
+
+@pytest.mark.anyio
+async def test_session_runtime_snapshot_includes_notification_candidates():
+    session = create_session_runtime(
+        "session-5",
+        model=ScriptedCommunicationModel(
+            {"__default__": ScriptedPlan(conversational_act="request_clarification")}
+        ),
+        settings=Settings(),
+    )
+    await session.blackboard.put_notification_candidate(
+        NotificationCandidate(
+            candidate_id="notif-1",
+            task_id="task-1",
+            candidate_type=NotificationCandidateType.COMPLETED,
+            priority=NotificationPriority.P2,
+            summary_short="Task completed.",
+            created_at="2026-04-06T00:00:00+00:00",
+            delivery_status=NotificationDeliveryStatus.PENDING,
+            merge_key="completed_digest",
+        )
+    )
+
+    snapshot = await session.snapshot()
+
+    assert snapshot.notification_candidates[0].candidate_id == "notif-1"

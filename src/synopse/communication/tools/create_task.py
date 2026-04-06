@@ -3,7 +3,7 @@ from __future__ import annotations
 from uuid import uuid4
 
 from synopse.blackboard import BlackboardStore
-from synopse.protocol import MutationType, Task, TaskMutation
+from synopse.protocol import ExecutionMode, MutationType, Task, TaskExecutionMode, TaskMutation
 
 from .base import ToolInputError
 
@@ -33,6 +33,7 @@ class CreateTaskTool:
         goal: str,
         preferred_executor: str | None = None,
         requires_confirmation: bool = False,
+        mock_safe: bool = False,
     ) -> Task:
         resolved_executor = preferred_executor or self._default_executor_type
         if resolved_executor not in self._valid_executor_types:
@@ -40,6 +41,11 @@ class CreateTaskTool:
             raise ToolInputError(
                 f"Invalid create_task preferred_executor '{resolved_executor}'. Use one of: {allowed}.",
                 code="invalid_executor_type",
+            )
+        if resolved_executor == "mock" and not mock_safe:
+            raise ToolInputError(
+                "A real executor is required for normal task execution, but only the mock executor is available right now.",
+                code="real_executor_required",
             )
 
         task_id = f"task-{uuid4().hex[:8]}"
@@ -50,8 +56,15 @@ class CreateTaskTool:
             goal=goal,
             preferred_executor=resolved_executor,
             requires_confirmation=requires_confirmation,
+            metadata={"mock_safe": True} if mock_safe else {},
         )
         await self._store.put_task(task)
+        await self._store.put_execution_mode(
+            TaskExecutionMode(
+                task_id=task_id,
+                mode=ExecutionMode.UNDECIDED,
+            )
+        )
         await self._store.append_mutation(
             TaskMutation(
                 mutation_id=f"mut-{uuid4().hex[:8]}",
@@ -61,6 +74,7 @@ class CreateTaskTool:
                     "title": title,
                     "goal": goal,
                     "preferred_executor": resolved_executor,
+                    "mock_safe": mock_safe,
                 },
                 created_by="communication_brain",
             )

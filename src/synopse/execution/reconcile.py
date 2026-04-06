@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import time
+
 from synopse.blackboard import BlackboardQueryService, BlackboardStore
 from synopse.executor_adapters.codex import CodexExecutor, CodexExecutorSession
 from synopse.executor_core import ExecutorRegistry, UnknownExecutorError
 from synopse.protocol import BindingStatus, RunStatus, Task, TaskStatus, TaskSummary
 
 from .assignment import AssignmentManager
+from .mode_manager import ExecutionModeManager
 from .run_manager import RunManager
 from .scheduler import Scheduler
 from .session_manager import SessionManager
@@ -21,6 +24,7 @@ class ReconcileLoop:
         assignment: AssignmentManager,
         sessions: SessionManager,
         runs: RunManager,
+        modes: ExecutionModeManager,
         summaries: SummaryManager,
         *,
         default_executor_type: str,
@@ -31,6 +35,7 @@ class ReconcileLoop:
         self._assignment = assignment
         self._sessions = sessions
         self._runs = runs
+        self._modes = modes
         self._summaries = summaries
         self._scheduler = Scheduler(queries)
         self._default_executor_type = default_executor_type
@@ -61,8 +66,17 @@ class ReconcileLoop:
                 claimed_by=claimed.claimed_by,
                 executor_type=executor_type,
             )
+            await self._modes.initialize_task_mode(self._store, task.task_id)
+            started_at = time.monotonic()
             async for event in executor.run_task(run, task, executor_session):
                 await self._runs.apply_event(self._store, task, run, event)
+                await self._modes.classify(
+                    self._store,
+                    task_id=task.task_id,
+                    run_id=run.run_id,
+                    run_status=run.status,
+                    elapsed_seconds=max(0.0, time.monotonic() - started_at),
+                )
             await self._sync_executor_session(executor, session, executor_session)
             summary = self._summaries.build_summary(task, run)
             await self._store.put_summary(summary)

@@ -5,8 +5,10 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from synopse.protocol import (
+    TaskExecutionMode,
     ExecutionRun,
     ExecutionSession,
+    NotificationCandidate,
     SessionBinding,
     Task,
     TaskCommand,
@@ -29,8 +31,10 @@ class SessionSnapshot(BaseModel):
     commands: list[TaskCommand] = Field(default_factory=list)
     execution_sessions: list[ExecutionSession] = Field(default_factory=list)
     execution_runs: list[ExecutionRun] = Field(default_factory=list)
+    execution_modes: list[TaskExecutionMode] = Field(default_factory=list)
     bindings: list[SessionBinding] = Field(default_factory=list)
     summaries: list[TaskSummary] = Field(default_factory=list)
+    notification_candidates: list[NotificationCandidate] = Field(default_factory=list)
     recent_blackboard_writes: list[BlackboardWriteEvent] = Field(default_factory=list)
     conversation_history: list[ConversationHistoryEntryModel] = Field(default_factory=list)
 

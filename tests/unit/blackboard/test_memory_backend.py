@@ -5,12 +5,18 @@ import pytest
 from synopse.blackboard.backends import InMemoryBlackboard
 from synopse.protocol import (
     BindingStatus,
+    ExecutionMode,
     ExecutionRun,
     ExecutionSession,
+    NotificationCandidate,
+    NotificationCandidateType,
+    NotificationDeliveryStatus,
+    NotificationPriority,
     SessionBinding,
     Task,
     TaskCommand,
     TaskCommandType,
+    TaskExecutionMode,
     TaskMutation,
     TaskStatus,
     TaskSummary,
@@ -48,18 +54,36 @@ async def test_memory_blackboard_round_trip_for_core_objects():
         task_id="task_1",
         conversational_summary="I am working on it.",
     )
+    execution_mode = TaskExecutionMode(
+        task_id="task_1",
+        mode=ExecutionMode.UNDECIDED,
+    )
+    candidate = NotificationCandidate(
+        candidate_id="notif_1",
+        task_id="task_1",
+        candidate_type=NotificationCandidateType.COMPLETED,
+        priority=NotificationPriority.P2,
+        summary_short="Task completed.",
+        created_at="2026-04-06T00:00:00+00:00",
+        delivery_status=NotificationDeliveryStatus.PENDING,
+        merge_key="completed_digest",
+    )
 
     await store.put_task(task)
     await store.put_session(session)
     await store.put_run(run)
     await store.put_binding(binding)
     await store.put_summary(summary)
+    await store.put_execution_mode(execution_mode)
+    await store.put_notification_candidate(candidate)
 
     assert await store.get_task("task_1") == task
     assert await store.get_session("sess_1") == session
     assert await store.get_run("run_1") == run
     assert await store.get_binding("task_1") == binding
     assert await store.get_summary("task_1") == summary
+    assert await store.get_execution_mode("task_1") == execution_mode
+    assert await store.get_notification_candidate("notif_1") == candidate
 
 
 @pytest.mark.anyio

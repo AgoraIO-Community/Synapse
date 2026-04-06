@@ -1,17 +1,21 @@
 from synopse.protocol import (
     AssignmentLease,
     ConversationEffect,
+    ExecutionMode,
     ExecutionRun,
     ExecutionSession,
     Interruption,
     InterruptionType,
     NotificationCandidate,
+    NotificationCandidateType,
+    NotificationDeliveryStatus,
     NotificationPriority,
     RunStatus,
     SessionBinding,
     Task,
     TaskCommand,
     TaskCommandType,
+    TaskExecutionMode,
     TaskMutation,
     TaskStatus,
     TaskSummary,
@@ -72,14 +76,21 @@ def test_execution_lineage_models():
     assert run.status == RunStatus.CREATED
     assert binding.execution_revision == 0
 
+    execution_mode = TaskExecutionMode(task_id="task_1", mode=ExecutionMode.UNDECIDED)
+    assert execution_mode.mode == ExecutionMode.UNDECIDED
+
 
 def test_summary_notification_and_interruption_models():
     summary = TaskSummary(task_id="task_1", conversational_summary="I am on it.")
     candidate = NotificationCandidate(
         candidate_id="notif_1",
         task_id="task_1",
+        candidate_type=NotificationCandidateType.COMPLETED,
         priority=NotificationPriority.P1,
         summary_short="Task completed.",
+        created_at="2026-04-06T00:00:00+00:00",
+        delivery_status=NotificationDeliveryStatus.PENDING,
+        merge_key="completed_digest",
     )
     interruption = Interruption(
         interruption_id="int_1",
@@ -95,5 +106,6 @@ def test_summary_notification_and_interruption_models():
 
     assert summary.needs_user_input is False
     assert candidate.priority == NotificationPriority.P1
+    assert candidate.candidate_type == NotificationCandidateType.COMPLETED
     assert interruption.interruption_type == InterruptionType.SPEECH_ONLY
     assert lease.claimed_by == "worker_1"

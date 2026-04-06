@@ -17,7 +17,11 @@ async def test_create_task_flow():
                 tool_calls=[
                     ToolCall(
                         name="create_task",
-                        args={"title": "Check Tokyo flights", "goal": "Check Tokyo flights"},
+                        args={
+                            "title": "Check Tokyo flights",
+                            "goal": "Check Tokyo flights",
+                            "mock_safe": True,
+                        },
                     )
                 ],
             )

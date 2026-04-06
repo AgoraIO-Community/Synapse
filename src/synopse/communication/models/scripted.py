@@ -10,6 +10,7 @@ from ..model import CommunicationModelResult, TextDeltaCallback, ToolCall
 from ..policies import infer_conversational_act, render_reply
 from ..tools import ToolRegistry
 from ..types import ToolInvocationRecord
+from synopse.protocol import NotificationCandidate
 
 
 @dataclass(slots=True)
@@ -76,6 +77,21 @@ class ScriptedCommunicationModel:
             conversational_act=plan.conversational_act
             or infer_conversational_act(tool_invocations, reply_text),
         )
+
+    async def render_notification(
+        self,
+        *,
+        context: CommunicationContext,
+        candidates: list[NotificationCandidate],
+    ) -> str:
+        if not candidates:
+            return "I have an update."
+        if len(candidates) == 1:
+            return candidates[0].summary_short
+        if all(candidate.candidate_type.value == "completed" for candidate in candidates):
+            return f"I finished {len(candidates)} tasks."
+        joined = "; ".join(candidate.summary_short for candidate in candidates)
+        return joined
 
 
 def _extract_task_id(result: object) -> str | None:
