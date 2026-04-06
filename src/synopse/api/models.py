@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 from synopse.protocol import TaskCommandType
@@ -41,11 +43,29 @@ class CommandResponse(BaseModel):
     affected_task_ids: list[str] = Field(default_factory=list)
 
 
+class SendMessageSocketAction(BaseModel):
+    type: Literal["send_message"] = "send_message"
+    request_id: str
+    text: str
+
+
+class SendCommandSocketAction(BaseModel):
+    type: Literal["send_command"] = "send_command"
+    request_id: str
+    command_type: TaskCommandType
+    task_id: str | None = None
+    reference: str | None = None
+    payload: dict[str, object] = Field(default_factory=dict)
+    reason: str | None = None
+
+
 __all__ = [
     "CommandRequest",
     "CommandResponse",
     "MessageRequest",
     "MessageResponse",
+    "SendCommandSocketAction",
+    "SendMessageSocketAction",
     "SessionResponse",
     "SessionSnapshot",
     "ToolInvocationSummary",

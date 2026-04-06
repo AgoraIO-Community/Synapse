@@ -7,6 +7,7 @@ from synopse.blackboard import InMemoryBlackboard
 from synopse.communication import CommunicationBrain, InMemoryConversationHistory
 from synopse.communication.model import CommunicationModel
 from synopse.communication.tools import build_default_tool_registry
+from synopse.communication.types import CommunicationTurnResult
 from synopse.execution import ExecutionBrain
 from synopse.executor_adapters.codex import CodexExecutor
 from synopse.executor_adapters.mock import MockExecutor
@@ -14,7 +15,28 @@ from synopse.executor_core import ExecutorRegistry
 from synopse.protocol import TaskCommand, TaskCommandType, TaskStatus
 
 from .config import Settings
-from .models import ConversationHistoryEntryModel, SessionSnapshot
+from .models import (
+    ActionAcceptedStreamEvent,
+    ActionRejectedStreamEvent,
+    AssistantResponseCompletedStreamEvent,
+    AssistantResponseDeltaStreamEvent,
+    AssistantResponseFailedStreamEvent,
+    AssistantResponseStartedStreamEvent,
+    ConversationHistoryEntryModel,
+    SessionSnapshot,
+    SessionStreamEventBase,
+    SnapshotStreamEvent,
+)
+
+
+FALLBACK_ASSISTANT_ERROR_MESSAGE = "Sorry, something went wrong while generating the reply."
+
+
+@dataclass(slots=True)
+class PendingMessageRequest:
+    request_id: str
+    user_text: str
+    completion: asyncio.Future[CommunicationTurnResult]
 
 
 @dataclass(slots=True)
@@ -25,10 +47,13 @@ class SessionRuntime:
     registry: ExecutorRegistry
     communication_brain: CommunicationBrain
     execution_brain: ExecutionBrain
-    subscribers: list[asyncio.Queue[SessionSnapshot]] = field(default_factory=list)
+    subscribers: list[asyncio.Queue[SessionStreamEventBase]] = field(default_factory=list)
+    _message_queue: asyncio.Queue[PendingMessageRequest] = field(default_factory=asyncio.Queue)
     _execution_task: asyncio.Task[None] | None = field(default=None, init=False, repr=False)
+    _communication_task: asyncio.Task[None] | None = field(default=None, init=False, repr=False)
     _snapshot_task: asyncio.Task[None] | None = field(default=None, init=False, repr=False)
     _blackboard_queue: asyncio.Queue | None = field(default=None, init=False, repr=False)
+    _next_sequence: int = field(default=1, init=False, repr=False)
 
     async def snapshot(self) -> SessionSnapshot:
         tasks = await self.blackboard.list_tasks()
@@ -64,13 +89,13 @@ class SessionRuntime:
             conversation_history=history,
         )
 
-    def subscribe(self) -> asyncio.Queue[SessionSnapshot]:
-        queue: asyncio.Queue[SessionSnapshot] = asyncio.Queue()
+    def subscribe(self) -> asyncio.Queue[SessionStreamEventBase]:
+        queue: asyncio.Queue[SessionStreamEventBase] = asyncio.Queue()
         self.subscribers.append(queue)
         self._ensure_snapshot_pump()
         return queue
 
-    def unsubscribe(self, queue: asyncio.Queue[SessionSnapshot]) -> None:
+    def unsubscribe(self, queue: asyncio.Queue[SessionStreamEventBase]) -> None:
         if queue in self.subscribers:
             self.subscribers.remove(queue)
         if not self.subscribers and self._snapshot_task is not None:
@@ -78,9 +103,69 @@ class SessionRuntime:
 
     async def publish_snapshot(self) -> SessionSnapshot:
         snapshot = await self.snapshot()
-        for queue in list(self.subscribers):
-            await queue.put(snapshot)
+        await self._broadcast_event(self._snapshot_event(snapshot))
         return snapshot
+
+    async def initial_snapshot_event(self) -> SnapshotStreamEvent:
+        return self._snapshot_event(await self.snapshot())
+
+    async def publish_private_event(
+        self,
+        queue: asyncio.Queue[SessionStreamEventBase],
+        event: SessionStreamEventBase,
+    ) -> None:
+        await queue.put(event)
+
+    async def submit_message(
+        self,
+        request_id: str,
+        user_text: str,
+        *,
+        start_processing: bool = True,
+    ) -> tuple[str, asyncio.Future[CommunicationTurnResult]]:
+        user_entry = self.communication_brain.append_user_message(self.session_id, user_text)
+        completion = asyncio.get_running_loop().create_future()
+        await self._message_queue.put(
+            PendingMessageRequest(
+                request_id=request_id,
+                user_text=user_text,
+                completion=completion,
+            )
+        )
+        if start_processing:
+            self._ensure_communication_pump()
+        return user_entry.message_id, completion
+
+    def start_message_processing(self) -> None:
+        self._ensure_communication_pump()
+
+    def action_accepted_event(
+        self,
+        request_id: str,
+        *,
+        action_type: str,
+    ) -> ActionAcceptedStreamEvent:
+        return ActionAcceptedStreamEvent(
+            sequence=self._next_event_sequence(),
+            request_id=request_id,
+            action_type=action_type,
+        )
+
+    def action_rejected_event(
+        self,
+        request_id: str,
+        *,
+        action_type: str,
+        error_code: str,
+        message: str,
+    ) -> ActionRejectedStreamEvent:
+        return ActionRejectedStreamEvent(
+            sequence=self._next_event_sequence(),
+            request_id=request_id,
+            action_type=action_type,
+            error_code=error_code,
+            message=message,
+        )
 
     def schedule_execution(self) -> None:
         if self._execution_task is not None and not self._execution_task.done():
@@ -114,11 +199,89 @@ class SessionRuntime:
         tasks = await self.blackboard.list_tasks()
         return any(task.status in {TaskStatus.CREATED, TaskStatus.QUEUED} for task in tasks)
 
+    def _ensure_communication_pump(self) -> None:
+        if self._communication_task is not None and not self._communication_task.done():
+            return
+        self._communication_task = asyncio.create_task(self._communication_loop())
+
     def _ensure_snapshot_pump(self) -> None:
         if self._snapshot_task is not None and not self._snapshot_task.done():
             return
         self._blackboard_queue = self.blackboard.subscribe()
         self._snapshot_task = asyncio.create_task(self._snapshot_loop())
+
+    async def _communication_loop(self) -> None:
+        try:
+            while True:
+                request = await self._message_queue.get()
+                try:
+                    await self._handle_message_request(request)
+                finally:
+                    self._message_queue.task_done()
+        except asyncio.CancelledError:
+            raise
+        finally:
+            if asyncio.current_task() is self._communication_task:
+                self._communication_task = None
+
+    async def _handle_message_request(self, request: PendingMessageRequest) -> None:
+        await self._broadcast_event(
+            AssistantResponseStartedStreamEvent(
+                sequence=self._next_event_sequence(),
+                request_id=request.request_id,
+            )
+        )
+        try:
+            if self.subscribers:
+                result = await self.communication_brain.generate_reply(
+                    self.session_id,
+                    request.user_text,
+                    on_text_delta=lambda delta: self._broadcast_event(
+                        AssistantResponseDeltaStreamEvent(
+                            sequence=self._next_event_sequence(),
+                            request_id=request.request_id,
+                            delta=delta,
+                        )
+                    ),
+                )
+            else:
+                result = await self.communication_brain.generate_reply(
+                    self.session_id,
+                    request.user_text,
+                )
+        except Exception:
+            assistant_entry = self.history.append_assistant(
+                self.session_id,
+                FALLBACK_ASSISTANT_ERROR_MESSAGE,
+            )
+            result = CommunicationTurnResult(
+                message_id=assistant_entry.message_id,
+                reply_text=FALLBACK_ASSISTANT_ERROR_MESSAGE,
+                conversational_act="model_reply",
+            )
+            await self._broadcast_event(
+                AssistantResponseFailedStreamEvent(
+                    sequence=self._next_event_sequence(),
+                    request_id=request.request_id,
+                    message=FALLBACK_ASSISTANT_ERROR_MESSAGE,
+                )
+            )
+        else:
+            await self._broadcast_event(
+                AssistantResponseCompletedStreamEvent(
+                    sequence=self._next_event_sequence(),
+                    request_id=request.request_id,
+                    message_id=result.message_id,
+                    reply_text=result.reply_text,
+                    conversational_act=result.conversational_act,
+                    affected_task_ids=result.affected_task_ids,
+                )
+            )
+
+        await self.publish_snapshot()
+        self.schedule_execution()
+        if not request.completion.done():
+            request.completion.set_result(result)
 
     async def _snapshot_loop(self) -> None:
         queue = self._blackboard_queue
@@ -141,6 +304,21 @@ class SessionRuntime:
                 self._blackboard_queue = None
             if asyncio.current_task() is self._snapshot_task:
                 self._snapshot_task = None
+
+    async def _broadcast_event(self, event: SessionStreamEventBase) -> None:
+        for queue in list(self.subscribers):
+            await queue.put(event)
+
+    def _snapshot_event(self, snapshot: SessionSnapshot) -> SnapshotStreamEvent:
+        return SnapshotStreamEvent(
+            sequence=self._next_event_sequence(),
+            snapshot=snapshot,
+        )
+
+    def _next_event_sequence(self) -> int:
+        sequence = self._next_sequence
+        self._next_sequence += 1
+        return sequence
 
 
 def create_session_runtime(

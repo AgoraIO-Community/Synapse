@@ -1,14 +1,14 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
-import { createSession, openSessionStream, sendCommand, sendMessage } from "./client";
+import { createSession, openSessionStream, sendSocketCommand, sendSocketMessage } from "./client";
 import type {
+  AssistantResponseCompletedStreamEvent,
   BlackboardWriteEvent,
-  CommandResponse,
   ConnectionStatus,
   ConversationHistoryEntry,
   ExecutionRun,
   ExecutionSession,
-  MessageResponse,
   SessionBinding,
+  SessionStreamEvent,
   SessionResponse,
   SessionSnapshot,
   SnapshotDiffItem,
@@ -17,7 +17,6 @@ import type {
   TaskCommandType,
   TaskMutation,
   TaskSummary,
-  ToolInvocationSummary,
 } from "./types";
 
 type TaskResultDetail = {
@@ -32,6 +31,22 @@ type TaskResultDetail = {
     | "run_progress"
     | "none";
 };
+
+type LiveAssistantBubble = {
+  requestId: string;
+  text: string;
+  state: "streaming" | "completed" | "failed";
+  messageId?: string;
+  conversationalAct?: string;
+  affectedTaskIds: string[];
+};
+
+function makeRequestId() {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `req-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
 
 function formatTime(value: string | null | undefined) {
   if (!value) {
@@ -297,15 +312,19 @@ export default function App() {
   const [isSending, setIsSending] = useState(false);
   const [snapshot, setSnapshot] = useState<SessionSnapshot | null>(null);
   const [previousSnapshot, setPreviousSnapshot] = useState<SessionSnapshot | null>(null);
-  const [lastMessageResponse, setLastMessageResponse] = useState<MessageResponse | null>(null);
-  const [lastCommandResponse, setLastCommandResponse] = useState<CommandResponse | null>(null);
+  const [lastAssistantResponse, setLastAssistantResponse] =
+    useState<AssistantResponseCompletedStreamEvent | null>(null);
+  const [liveAssistant, setLiveAssistant] = useState<LiveAssistantBubble | null>(null);
+  const [lastCommandStatus, setLastCommandStatus] = useState<string | null>(null);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [taskSelectionPinned, setTaskSelectionPinned] = useState(false);
   const [selectedExecutionSessionId, setSelectedExecutionSessionId] = useState<string | null>(null);
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [pendingCommand, setPendingCommand] = useState<string | null>(null);
+  const socketRef = useRef<WebSocket | null>(null);
   const latestSnapshotRef = useRef<SessionSnapshot | null>(null);
   const taskSelectionPinnedRef = useRef(false);
+  const pendingCommandRequestsRef = useRef<Map<string, string>>(new Map());
 
   useEffect(() => {
     let active = true;
@@ -340,6 +359,27 @@ export default function App() {
   }, [taskSelectionPinned]);
 
   useEffect(() => {
+    if (!liveAssistant || !snapshot) {
+      return;
+    }
+    if (liveAssistant.messageId) {
+      const persisted = snapshot.conversation_history.some(
+        (entry) => entry.message_id === liveAssistant.messageId,
+      );
+      if (persisted) {
+        setLiveAssistant(null);
+      }
+      return;
+    }
+    const persisted = snapshot.conversation_history.some(
+      (entry) => entry.role === "assistant" && entry.text === liveAssistant.text,
+    );
+    if (persisted) {
+      setLiveAssistant(null);
+    }
+  }, [liveAssistant, snapshot]);
+
+  useEffect(() => {
     if (!sessionId) {
       return;
     }
@@ -347,26 +387,119 @@ export default function App() {
     setActionError(null);
     const socket = openSessionStream(sessionId, {
       onOpen: () => setConnectionStatus("connecting"),
-      onClose: () =>
-        setConnectionStatus((current) => (current === "error" ? current : "disconnected")),
-      onError: () => {
-        setConnectionStatus("error");
-        setActionError("Failed to connect to the session snapshot stream.");
+      onClose: () => {
+        socketRef.current = null;
+        setConnectionStatus((current) => (current === "error" ? current : "disconnected"));
       },
-      onMessage: (nextSnapshot) => {
-        const previous = latestSnapshotRef.current;
-        setConnectionStatus("connected");
-        setPreviousSnapshot(previous);
-        setSnapshot(nextSnapshot);
-        latestSnapshotRef.current = nextSnapshot;
-        setSelectedTaskId((current) =>
-          taskSelectionPinnedRef.current
-            ? current
-            : pickAutoSelectedTask(nextSnapshot, previous, current),
-        );
+      onError: () => {
+        socketRef.current = null;
+        setConnectionStatus("error");
+        setActionError("Failed to connect to the session stream.");
+      },
+      onMessage: (event: SessionStreamEvent) => {
+        if (event.type === "snapshot") {
+          const nextSnapshot = event.snapshot;
+          const previous = latestSnapshotRef.current;
+          setConnectionStatus("connected");
+          setPreviousSnapshot(previous);
+          setSnapshot(nextSnapshot);
+          latestSnapshotRef.current = nextSnapshot;
+          setSelectedTaskId((current) =>
+            taskSelectionPinnedRef.current
+              ? current
+              : pickAutoSelectedTask(nextSnapshot, previous, current),
+          );
+          return;
+        }
+
+        if (event.type === "action_accepted") {
+          if (event.action_type === "send_message") {
+            setIsSending(false);
+          }
+          if (event.action_type === "send_command") {
+            const commandKey = pendingCommandRequestsRef.current.get(event.request_id) ?? null;
+            if (commandKey) {
+              setPendingCommand((current) => (current === commandKey ? null : current));
+              pendingCommandRequestsRef.current.delete(event.request_id);
+            }
+            setLastCommandStatus("accepted");
+          }
+          return;
+        }
+
+        if (event.type === "action_rejected") {
+          setActionError(event.message);
+          if (event.action_type === "send_message") {
+            setIsSending(false);
+          }
+          if (event.action_type === "send_command") {
+            const commandKey = pendingCommandRequestsRef.current.get(event.request_id) ?? null;
+            if (commandKey) {
+              setPendingCommand((current) => (current === commandKey ? null : current));
+              pendingCommandRequestsRef.current.delete(event.request_id);
+            }
+            setLastCommandStatus("rejected");
+          }
+          return;
+        }
+
+        if (event.type === "assistant_response_started") {
+          setLiveAssistant({
+            requestId: event.request_id,
+            text: "",
+            state: "streaming",
+            affectedTaskIds: [],
+          });
+          return;
+        }
+
+        if (event.type === "assistant_response_delta") {
+          setLiveAssistant((current) => {
+            if (!current || current.requestId !== event.request_id) {
+              return {
+                requestId: event.request_id,
+                text: event.delta,
+                state: "streaming",
+                affectedTaskIds: [],
+              };
+            }
+            return {
+              ...current,
+              text: `${current.text}${event.delta}`,
+            };
+          });
+          return;
+        }
+
+        if (event.type === "assistant_response_completed") {
+          setLastAssistantResponse(event);
+          setLiveAssistant({
+            requestId: event.request_id,
+            text: event.reply_text,
+            state: "completed",
+            messageId: event.message_id,
+            conversationalAct: event.conversational_act,
+            affectedTaskIds: event.affected_task_ids,
+          });
+          return;
+        }
+
+        if (event.type === "assistant_response_failed") {
+          setActionError(event.message);
+          setLiveAssistant({
+            requestId: event.request_id,
+            text: event.message,
+            state: "failed",
+            affectedTaskIds: [],
+          });
+        }
       },
     });
-    return () => socket.close();
+    socketRef.current = socket;
+    return () => {
+      socketRef.current = null;
+      socket.close();
+    };
   }, [sessionId]);
 
   useEffect(() => {
@@ -437,33 +570,33 @@ export default function App() {
     if (!sessionId || !composer.trim()) {
       return;
     }
+    const socket = socketRef.current;
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      setActionError("Session socket is not connected.");
+      return;
+    }
     setActionError(null);
     setIsSending(true);
-    try {
-      const response = await sendMessage(sessionId, composer.trim());
-      setLastMessageResponse(response);
-      setComposer("");
-    } catch (error) {
-      setActionError(error instanceof Error ? error.message : "Failed to send message.");
-    } finally {
-      setIsSending(false);
-    }
+    const requestId = makeRequestId();
+    sendSocketMessage(socket, requestId, composer.trim());
+    setComposer("");
   }
 
   async function handleCommand(taskId: string, commandType: TaskCommandType) {
     if (!sessionId) {
       return;
     }
-    setActionError(null);
-    setPendingCommand(`${taskId}:${commandType}`);
-    try {
-      const response = await sendCommand(sessionId, commandType, taskId);
-      setLastCommandResponse(response);
-    } catch (error) {
-      setActionError(error instanceof Error ? error.message : "Failed to send command.");
-    } finally {
-      setPendingCommand(null);
+    const socket = socketRef.current;
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      setActionError("Session socket is not connected.");
+      return;
     }
+    setActionError(null);
+    const commandKey = `${taskId}:${commandType}`;
+    const requestId = makeRequestId();
+    pendingCommandRequestsRef.current.set(requestId, commandKey);
+    setPendingCommand(commandKey);
+    sendSocketCommand(socket, requestId, commandType, taskId);
   }
 
   const tasks = snapshot?.tasks ?? [];
@@ -499,18 +632,29 @@ export default function App() {
             </div>
           </div>
           <div className="inspector-scroll conversation-panel">
-            {conversation.length === 0 ? (
+            {conversation.length === 0 && !liveAssistant ? (
               <div className="empty-state">Waiting for the first conversation turn.</div>
             ) : (
-              conversation.map((entry: ConversationHistoryEntry) => (
-                <article key={entry.message_id} className={`bubble bubble-${entry.role}`}>
-                  <div className="bubble-meta">
-                    <span>{entry.role === "user" ? "User" : "Assistant"}</span>
-                    <span>{entry.message_id}</span>
-                  </div>
-                  <p>{entry.text}</p>
-                </article>
-              ))
+              <>
+                {conversation.map((entry: ConversationHistoryEntry) => (
+                  <article key={entry.message_id} className={`bubble bubble-${entry.role}`}>
+                    <div className="bubble-meta">
+                      <span>{entry.role === "user" ? "User" : "Assistant"}</span>
+                      <span>{entry.message_id}</span>
+                    </div>
+                    <p>{entry.text}</p>
+                  </article>
+                ))}
+                {liveAssistant ? (
+                  <article key={liveAssistant.requestId} className="bubble bubble-assistant">
+                    <div className="bubble-meta">
+                      <span>Assistant</span>
+                      <span>{liveAssistant.state}</span>
+                    </div>
+                    <p>{liveAssistant.text || "..."}</p>
+                  </article>
+                ) : null}
+              </>
             )}
           </div>
           <form className="composer" onSubmit={handleSendMessage}>
@@ -533,17 +677,17 @@ export default function App() {
           <div className="inspector-footer">
             <section className="meta-card">
               <h3>Last Reply</h3>
-              {lastMessageResponse ? (
+              {lastAssistantResponse ? (
                 <>
-                  <p>{lastMessageResponse.reply_text}</p>
+                  <p>{lastAssistantResponse.reply_text}</p>
                   <dl className="kv">
                     <div>
                       <dt>Act</dt>
-                      <dd>{lastMessageResponse.conversational_act}</dd>
+                      <dd>{lastAssistantResponse.conversational_act}</dd>
                     </div>
                     <div>
                       <dt>Tasks</dt>
-                      <dd>{lastMessageResponse.affected_task_ids.join(", ") || "none"}</dd>
+                      <dd>{lastAssistantResponse.affected_task_ids.join(", ") || "none"}</dd>
                     </div>
                   </dl>
                 </>
@@ -552,17 +696,11 @@ export default function App() {
               )}
             </section>
             <section className="meta-card">
-              <h3>Tool Invocations</h3>
-              {lastMessageResponse?.tool_invocations.length ? (
-                lastMessageResponse.tool_invocations.map((tool: ToolInvocationSummary) => (
-                  <div key={`${tool.tool_name}-${JSON.stringify(tool.args)}`} className="tool-row">
-                    <strong>{tool.tool_name}</strong>
-                    <pre>{formatJson(tool.args)}</pre>
-                  </div>
-                ))
-              ) : (
-                <p className="muted-copy">No tool activity recorded for the latest turn.</p>
-              )}
+              <h3>Client Stream</h3>
+              <p className="muted-copy">
+                Tool activity is kept internal. The frontend stream only receives assistant text and
+                snapshot/debug events.
+              </p>
             </section>
           </div>
         </section>
@@ -843,7 +981,7 @@ export default function App() {
           <div className="feed-meta">
             <span>{diffItems.length} diffs</span>
             <span>{recentWrites.length} writes</span>
-            {lastCommandResponse ? <span>last command: {lastCommandResponse.status}</span> : null}
+            {lastCommandStatus ? <span>last command: {lastCommandStatus}</span> : null}
           </div>
         </div>
         <div className="change-feed-grid">

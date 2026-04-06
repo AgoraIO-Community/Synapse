@@ -1,14 +1,8 @@
 import type {
-  CommandResponse,
-  SessionSnapshot,
+  SessionStreamEvent,
   TaskCommandType,
-  MessageResponse,
   SessionResponse,
 } from "./types";
-
-const JSON_HEADERS = {
-  "Content-Type": "application/json",
-};
 
 async function ensureOk(response: Response) {
   if (!response.ok) {
@@ -21,34 +15,6 @@ async function ensureOk(response: Response) {
 export async function createSession(): Promise<SessionResponse> {
   const response = await fetch("/sessions", {
     method: "POST",
-  });
-  return (await ensureOk(response)).json();
-}
-
-export async function sendMessage(
-  sessionId: string,
-  text: string,
-): Promise<MessageResponse> {
-  const response = await fetch(`/sessions/${sessionId}/messages`, {
-    method: "POST",
-    headers: JSON_HEADERS,
-    body: JSON.stringify({ text }),
-  });
-  return (await ensureOk(response)).json();
-}
-
-export async function sendCommand(
-  sessionId: string,
-  commandType: TaskCommandType,
-  targetTaskId: string,
-): Promise<CommandResponse> {
-  const response = await fetch(`/sessions/${sessionId}/commands`, {
-    method: "POST",
-    headers: JSON_HEADERS,
-    body: JSON.stringify({
-      command_type: commandType,
-      task_id: targetTaskId,
-    }),
   });
   return (await ensureOk(response)).json();
 }
@@ -80,10 +46,36 @@ export function openSessionStream(
   sessionId: string,
   handlers: {
     onOpen: () => void;
-    onMessage: (event: SessionSnapshot) => void;
+    onMessage: (event: SessionStreamEvent) => void;
     onClose: () => void;
     onError: () => void;
   },
 ): WebSocket {
-  return openSocket<SessionSnapshot>(`/sessions/${sessionId}/stream`, handlers);
+  return openSocket<SessionStreamEvent>(`/sessions/${sessionId}/stream`, handlers);
+}
+
+export function sendSocketMessage(socket: WebSocket, requestId: string, text: string) {
+  socket.send(
+    JSON.stringify({
+      type: "send_message",
+      request_id: requestId,
+      text,
+    }),
+  );
+}
+
+export function sendSocketCommand(
+  socket: WebSocket,
+  requestId: string,
+  commandType: TaskCommandType,
+  targetTaskId: string,
+) {
+  socket.send(
+    JSON.stringify({
+      type: "send_command",
+      request_id: requestId,
+      command_type: commandType,
+      task_id: targetTaskId,
+    }),
+  );
 }

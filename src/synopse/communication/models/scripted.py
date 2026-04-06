@@ -2,10 +2,11 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
+import inspect
 from typing import Any
 
 from ..context import CommunicationContext
-from ..model import CommunicationModelResult, ToolCall
+from ..model import CommunicationModelResult, TextDeltaCallback, ToolCall
 from ..policies import infer_conversational_act, render_reply
 from ..tools import ToolRegistry
 from ..types import ToolInvocationRecord
@@ -34,6 +35,7 @@ class ScriptedCommunicationModel:
         user_text: str,
         context: CommunicationContext,
         tool_registry: ToolRegistry,
+        on_text_delta: TextDeltaCallback | None = None,
     ) -> CommunicationModelResult:
         if user_text in self._scripted:
             selected = self._scripted[user_text]
@@ -63,6 +65,10 @@ class ScriptedCommunicationModel:
             tool_results=tool_results,
             reply_override=plan.reply_override,
         )
+        if on_text_delta is not None and reply_text:
+            maybe_awaitable = on_text_delta(reply_text)
+            if inspect.isawaitable(maybe_awaitable):
+                await maybe_awaitable
         return CommunicationModelResult(
             reply_text=reply_text,
             tool_invocations=tool_invocations,

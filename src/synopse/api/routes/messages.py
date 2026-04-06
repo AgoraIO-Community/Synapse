@@ -1,3 +1,5 @@
+from uuid import uuid4
+
 from fastapi import APIRouter, HTTPException, Request
 
 from synopse.api.models import MessageRequest, MessageResponse, ToolInvocationSummary
@@ -17,9 +19,14 @@ async def submit_message(
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
-    result = await session.communication_brain.handle_user_message(session_id, request.text)
-    session.schedule_execution()
+    _, completion = await session.submit_message(
+        f"http-msg-{uuid4().hex[:8]}",
+        request.text,
+        start_processing=False,
+    )
     await session.publish_snapshot()
+    session.start_message_processing()
+    result = await completion
     return MessageResponse(
         message_id=result.message_id,
         reply_text=result.reply_text,

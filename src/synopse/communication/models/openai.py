@@ -5,7 +5,7 @@ import json
 from synopse.infrastructure.llm import OpenAIProvider
 
 from ..context import CommunicationContext
-from ..model import CommunicationModelResult
+from ..model import CommunicationModelResult, TextDeltaCallback
 from ..policies import infer_conversational_act
 from ..tools import ToolRegistry
 from ..types import ToolInvocationRecord
@@ -21,11 +21,13 @@ class OpenAICommunicationModel:
         user_text: str,
         context: CommunicationContext,
         tool_registry: ToolRegistry,
+        on_text_delta: TextDeltaCallback | None = None,
     ) -> CommunicationModelResult:
         reply_text, invocations = await self._provider.run_tool_calling(
             messages=_build_messages(context),
             tools=tool_registry.openai_tools,
             tool_runner=lambda name, args: tool_registry.get(name).invoke(**args),
+            on_text_delta=on_text_delta,
         )
         tool_invocations = [
             ToolInvocationRecord(tool_name=item["name"], args=item["args"], result=item["result"])

@@ -60,6 +60,69 @@ class FakeClient:
         self.chat = SimpleNamespace(completions=FakeChatCompletionsAPI(queued_responses))
 
 
+class FakeStream:
+    def __init__(self, chunks: list[SimpleNamespace]) -> None:
+        self._chunks = list(chunks)
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        if not self._chunks:
+            raise StopAsyncIteration
+        return self._chunks.pop(0)
+
+
+def _stream_chunk(
+    *,
+    content: str | None = None,
+    tool_calls: list[SimpleNamespace] | None = None,
+) -> SimpleNamespace:
+    return SimpleNamespace(
+        choices=[
+            SimpleNamespace(
+                delta=SimpleNamespace(
+                    content=content,
+                    tool_calls=tool_calls,
+                )
+            )
+        ]
+    )
+
+
+def _tool_call_delta(
+    *,
+    index: int,
+    id: str | None = None,
+    name: str | None = None,
+    arguments: str | None = None,
+) -> SimpleNamespace:
+    return SimpleNamespace(
+        index=index,
+        id=id,
+        type="function",
+        function=SimpleNamespace(
+            name=name,
+            arguments=arguments,
+        ),
+    )
+
+
+class FakeStreamingChatCompletionsAPI:
+    def __init__(self, queued_streams: list[list[SimpleNamespace]]) -> None:
+        self._queued_streams = list(queued_streams)
+        self.calls: list[dict[str, object]] = []
+
+    async def create(self, **kwargs):
+        self.calls.append(kwargs)
+        return FakeStream(self._queued_streams.pop(0))
+
+
+class FakeStreamingClient:
+    def __init__(self, queued_streams: list[list[SimpleNamespace]]) -> None:
+        self.chat = SimpleNamespace(completions=FakeStreamingChatCompletionsAPI(queued_streams))
+
+
 @pytest.mark.anyio
 async def test_openai_provider_returns_tool_input_errors_as_tool_messages():
     client = FakeClient(
@@ -154,3 +217,63 @@ async def test_openai_provider_appends_tool_results_before_final_reply():
         "tool_call_id": "call-1",
         "content": json.dumps({"tasks": [{"task_id": "task-1"}]}),
     }
+
+
+@pytest.mark.anyio
+async def test_openai_provider_streams_only_final_assistant_text_after_tool_calls():
+    client = FakeStreamingClient(
+        [
+            [
+                _stream_chunk(content="Let me check that."),
+                _stream_chunk(
+                    tool_calls=[
+                        _tool_call_delta(
+                            index=0,
+                            id="call-1",
+                            name="list_tasks",
+                            arguments='{"query"',
+                        )
+                    ]
+                ),
+                _stream_chunk(
+                    tool_calls=[
+                        _tool_call_delta(
+                            index=0,
+                            arguments=': "email"}',
+                        )
+                    ]
+                ),
+            ],
+            [
+                _stream_chunk(content="I found "),
+                _stream_chunk(content="the task."),
+            ],
+        ]
+    )
+    provider = OpenAIProvider(
+        Settings(communication_backend="openai", openai_api_key="test-key"),
+        client=client,
+    )
+
+    streamed_chunks: list[str] = []
+
+    async def tool_runner(name: str, args: dict[str, object]) -> object:
+        return {"tasks": [{"task_id": "task-1"}]}
+
+    reply_text, invocations = await provider.run_tool_calling(
+        messages=[{"role": "user", "content": "What tasks mention email?"}],
+        tools=[],
+        tool_runner=tool_runner,
+        on_text_delta=streamed_chunks.append,
+    )
+
+    assert reply_text == "I found the task."
+    assert streamed_chunks == ["I found ", "the task."]
+    assert invocations == [
+        {
+            "name": "list_tasks",
+            "args": {"query": "email"},
+            "result": {"tasks": [{"task_id": "task-1"}]},
+        }
+    ]
+    assert client.chat.completions.calls[0]["stream"] is True

@@ -1,6 +1,12 @@
 import asyncio
+from uuid import uuid4
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from pydantic import ValidationError
+
+from synopse.api.models import SendCommandSocketAction, SendMessageSocketAction
+from synopse.communication.resolver import TaskResolver
+from synopse.protocol import TaskCommand
 
 router = APIRouter()
 
@@ -16,13 +22,154 @@ async def session_stream(websocket: WebSocket, session_id: str):
 
     await websocket.accept()
     queue = session.subscribe()
+    await session.publish_private_event(queue, await session.initial_snapshot_event())
+    sender = asyncio.create_task(_send_events(websocket, queue))
     try:
-        snapshot = await session.snapshot()
-        await websocket.send_json(snapshot.model_dump(mode="json"))
         while True:
-            snapshot = await queue.get()
-            await websocket.send_json(snapshot.model_dump(mode="json"))
+            payload = await websocket.receive_json()
+            await _handle_client_action(session, queue, payload)
     except (WebSocketDisconnect, asyncio.CancelledError):
         pass
     finally:
+        sender.cancel()
+        try:
+            await sender
+        except (asyncio.CancelledError, RuntimeError, WebSocketDisconnect):
+            pass
         session.unsubscribe(queue)
+
+
+async def _send_events(websocket: WebSocket, queue: asyncio.Queue) -> None:
+    while True:
+        event = await queue.get()
+        await websocket.send_json(event.model_dump(mode="json"))
+
+
+async def _handle_client_action(session, queue: asyncio.Queue, payload: object) -> None:
+    if not isinstance(payload, dict):
+        await session.publish_private_event(
+            queue,
+            session.action_rejected_event(
+                "",
+                action_type="unknown",
+                error_code="invalid_payload",
+                message="Socket action payload must be an object.",
+            ),
+        )
+        return
+
+    action_type = payload.get("type")
+    request_id = payload.get("request_id")
+    request_id_value = request_id if isinstance(request_id, str) else ""
+    action_type_value = action_type if isinstance(action_type, str) else "unknown"
+
+    if action_type_value == "send_message":
+        await _handle_send_message(session, queue, payload)
+        return
+    if action_type_value == "send_command":
+        await _handle_send_command(session, queue, payload)
+        return
+
+    await session.publish_private_event(
+        queue,
+        session.action_rejected_event(
+            request_id_value,
+            action_type=action_type_value,
+            error_code="unknown_action_type",
+            message="Unknown websocket action type.",
+        ),
+    )
+
+
+async def _handle_send_message(session, queue: asyncio.Queue, payload: dict[str, object]) -> None:
+    try:
+        action = SendMessageSocketAction.model_validate(payload)
+    except ValidationError as exc:
+        await session.publish_private_event(
+            queue,
+            session.action_rejected_event(
+                _request_id_from_payload(payload),
+                action_type="send_message",
+                error_code="invalid_payload",
+                message=str(exc),
+            ),
+        )
+        return
+
+    text = action.text.strip()
+    if not text:
+        await session.publish_private_event(
+            queue,
+            session.action_rejected_event(
+                action.request_id,
+                action_type=action.type,
+                error_code="invalid_message_text",
+                message="Message text must not be empty.",
+            ),
+        )
+        return
+
+    await session.submit_message(action.request_id, text, start_processing=False)
+    await session.publish_private_event(
+        queue,
+        session.action_accepted_event(
+            action.request_id,
+            action_type=action.type,
+        ),
+    )
+    await session.publish_snapshot()
+    session.start_message_processing()
+
+
+async def _handle_send_command(session, queue: asyncio.Queue, payload: dict[str, object]) -> None:
+    try:
+        action = SendCommandSocketAction.model_validate(payload)
+    except ValidationError as exc:
+        await session.publish_private_event(
+            queue,
+            session.action_rejected_event(
+                _request_id_from_payload(payload),
+                action_type="send_command",
+                error_code="invalid_payload",
+                message=str(exc),
+            ),
+        )
+        return
+
+    tasks = await session.blackboard.list_tasks()
+    task = TaskResolver().resolve(tasks, task_id=action.task_id, reference=action.reference)
+    if task is None:
+        await session.publish_private_event(
+            queue,
+            session.action_rejected_event(
+                action.request_id,
+                action_type=action.type,
+                error_code="task_not_found",
+                message="Task not found.",
+            ),
+        )
+        return
+
+    command = TaskCommand(
+        command_id=f"cmd-{uuid4().hex[:8]}",
+        task_id=task.task_id,
+        command_type=action.command_type,
+        payload=action.payload,
+        created_by="api",
+        reason=action.reason,
+    )
+    await session.publish_private_event(
+        queue,
+        session.action_accepted_event(
+            action.request_id,
+            action_type=action.type,
+        ),
+    )
+    await session.apply_command(command)
+    session.schedule_execution()
+    await session.publish_snapshot()
+
+
+def _request_id_from_payload(payload: dict[str, object]) -> str:
+    request_id = payload.get("request_id")
+    return request_id if isinstance(request_id, str) else ""

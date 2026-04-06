@@ -22,6 +22,8 @@ Core communication policy:
 - default replies should sound like a human accepting and starting work
 - bounded user-visible message history is the authoritative conversation state for follow-up context
 - OpenAI-backed communication should use a traditional OpenAI-compatible chat-completions loop and replay local user-visible history each turn
+- in-flight assistant replies may stream over the session websocket as transient `assistant_response_*` events while only the final assistant reply is persisted
+- communication-model tool calls stay internal to the runtime and are not exposed on the frontend websocket contract
 - internal runtime vocabulary should stay hidden unless the user explicitly asks for it
 - invalid tool arguments from the model should be returned through the tool loop for correction instead of crashing the message transport
 - invalid executor ids should be rejected before task creation, and pre-existing bad tasks should fail cleanly rather than crashing execution

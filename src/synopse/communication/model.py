@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Protocol
 
@@ -8,6 +9,9 @@ from .types import ToolInvocationRecord
 
 if TYPE_CHECKING:
     from .tools import ToolRegistry
+
+
+TextDeltaCallback = Callable[[str], Awaitable[None] | None]
 
 
 @dataclass(slots=True)
@@ -31,5 +35,6 @@ class CommunicationModel(Protocol):
         user_text: str,
         context: CommunicationContext,
         tool_registry: "ToolRegistry",
+        on_text_delta: TextDeltaCallback | None = None,
     ) -> CommunicationModelResult:
         ...

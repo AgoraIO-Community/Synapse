@@ -45,7 +45,17 @@ class OpenAIProvider:
         tools: list[dict[str, object]],
         tool_runner: Callable[[str, dict[str, object]], Awaitable[object]],
         max_rounds: int = 6,
+        on_text_delta: Callable[[str], Awaitable[None] | None] | None = None,
     ) -> tuple[str, list[dict[str, object]]]:
+        if on_text_delta is not None:
+            return await self._run_tool_calling_streamed(
+                messages=messages,
+                tools=tools,
+                tool_runner=tool_runner,
+                max_rounds=max_rounds,
+                on_text_delta=on_text_delta,
+            )
+
         chat_messages = list(messages)
         invocations: list[dict[str, object]] = []
         for _ in range(max_rounds):
@@ -83,6 +93,69 @@ class OpenAIProvider:
 
         raise RuntimeError("OpenAI tool-calling loop did not produce a final reply.")
 
+    async def _run_tool_calling_streamed(
+        self,
+        *,
+        messages: list[dict[str, object]],
+        tools: list[dict[str, object]],
+        tool_runner: Callable[[str, dict[str, object]], Awaitable[object]],
+        max_rounds: int,
+        on_text_delta: Callable[[str], Awaitable[None] | None],
+    ) -> tuple[str, list[dict[str, object]]]:
+        chat_messages = list(messages)
+        invocations: list[dict[str, object]] = []
+        for _ in range(max_rounds):
+            text_chunks: list[str] = []
+            tool_call_chunks: dict[int, dict[str, object]] = {}
+
+            async for chunk in self._iter_completion_chunks(chat_messages, tools=tools):
+                delta = _extract_chunk_delta(chunk)
+                if delta is None:
+                    continue
+                text = _extract_delta_content(delta)
+                if text:
+                    text_chunks.append(text)
+                for tool_call_delta in _extract_delta_tool_calls(delta):
+                    _accumulate_tool_call_delta(tool_call_chunks, tool_call_delta)
+
+            tool_calls = _finalize_tool_call_chunks(tool_call_chunks)
+            if tool_calls:
+                chat_messages.append(
+                    _assistant_tool_call_message_from_parts("".join(text_chunks), tool_calls)
+                )
+                for tool_call in tool_calls:
+                    args = _parse_tool_args(tool_call["arguments"])
+                    try:
+                        result = await tool_runner(str(tool_call["name"]), args)
+                    except ToolInputError as exc:
+                        chat_messages.append(
+                            _tool_message(
+                                str(tool_call["id"]),
+                                {"error": exc.as_payload()},
+                            )
+                        )
+                        continue
+                    invocations.append(
+                        {"name": tool_call["name"], "args": args, "result": result}
+                    )
+                    chat_messages.append(
+                        _tool_message(
+                            str(tool_call["id"]),
+                            _jsonable(result),
+                        )
+                    )
+                continue
+
+            content = "".join(text_chunks)
+            if content:
+                for chunk in text_chunks:
+                    maybe_awaitable = on_text_delta(chunk)
+                    if inspect.isawaitable(maybe_awaitable):
+                        await maybe_awaitable
+                return content.strip(), invocations
+
+        raise RuntimeError("OpenAI tool-calling loop did not produce a final reply.")
+
     async def _create_completion(
         self,
         messages: list[dict[str, object]],
@@ -96,6 +169,35 @@ class OpenAIProvider:
         if tools:
             request_kwargs["tools"] = tools
         return await self.create_completion(**request_kwargs)
+
+    async def _iter_completion_chunks(
+        self,
+        messages: list[dict[str, object]],
+        *,
+        tools: list[dict[str, object]],
+    ):
+        request_kwargs: dict[str, object] = {
+            "model": self._settings.openai_model,
+            "messages": messages,
+            "stream": True,
+        }
+        if tools:
+            request_kwargs["tools"] = tools
+
+        stream = await self.create_completion(**request_kwargs)
+        if hasattr(stream, "__aenter__") and hasattr(stream, "__aexit__"):
+            async with stream as entered:
+                async for chunk in entered:
+                    yield chunk
+            return
+
+        try:
+            async for chunk in stream:
+                yield chunk
+        finally:
+            close = getattr(stream, "aclose", None)
+            if callable(close):
+                await self._await_if_needed(close())
 
 
 def _get_first_message(completion: Any) -> Any:
@@ -125,6 +227,13 @@ def _assistant_tool_call_message(
     message: Any,
     tool_calls: list[dict[str, object]],
 ) -> dict[str, object]:
+    return _assistant_tool_call_message_from_parts(_extract_message_content(message), tool_calls)
+
+
+def _assistant_tool_call_message_from_parts(
+    content: str | None,
+    tool_calls: list[dict[str, object]],
+) -> dict[str, object]:
     assistant_message: dict[str, object] = {
         "role": "assistant",
         "tool_calls": [
@@ -139,7 +248,6 @@ def _assistant_tool_call_message(
             for tool_call in tool_calls
         ],
     }
-    content = _extract_message_content(message)
     if content:
         assistant_message["content"] = content
     return assistant_message
@@ -165,8 +273,106 @@ def _extract_message_content(message: Any) -> str | None:
             text = _get_value(part, "text")
             if isinstance(text, str):
                 text_parts.append(text)
+                continue
+            text_value = _get_value(text, "value")
+            if isinstance(text_value, str):
+                text_parts.append(text_value)
         return "".join(text_parts)
     return str(content)
+
+
+def _extract_chunk_delta(chunk: Any) -> Any | None:
+    choices = _get_value(chunk, "choices") or []
+    if not choices:
+        return None
+    return _get_value(choices[0], "delta")
+
+
+def _extract_delta_content(delta: Any) -> str:
+    content = _get_value(delta, "content")
+    if content is None:
+        return ""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        text_parts: list[str] = []
+        for part in content:
+            text = _get_value(part, "text")
+            if isinstance(text, str):
+                text_parts.append(text)
+                continue
+            text_value = _get_value(text, "value")
+            if isinstance(text_value, str):
+                text_parts.append(text_value)
+        return "".join(text_parts)
+    return str(content)
+
+
+def _extract_delta_tool_calls(delta: Any) -> list[dict[str, object]]:
+    tool_calls: list[dict[str, object]] = []
+    for item in _get_value(delta, "tool_calls") or []:
+        tool_calls.append(
+            {
+                "index": int(_get_value(item, "index", 0) or 0),
+                "id": _get_value(item, "id"),
+                "type": _get_value(item, "type"),
+                "name": _get_value(_get_value(item, "function"), "name"),
+                "arguments": _get_value(_get_value(item, "function"), "arguments"),
+            }
+        )
+    return tool_calls
+
+
+def _accumulate_tool_call_delta(
+    buffers: dict[int, dict[str, object]],
+    delta: dict[str, object],
+) -> None:
+    index = int(delta.get("index", 0) or 0)
+    item = buffers.setdefault(
+        index,
+        {
+            "id": "",
+            "name": "",
+            "arguments": "",
+            "type": "function",
+        },
+    )
+    item["id"] = _append_fragment(str(item["id"]), delta.get("id"))
+    item["name"] = _append_fragment(str(item["name"]), delta.get("name"))
+    item["arguments"] = _append_fragment(str(item["arguments"]), delta.get("arguments"))
+    item_type = delta.get("type")
+    if isinstance(item_type, str) and item_type:
+        item["type"] = item_type
+
+
+def _finalize_tool_call_chunks(
+    buffers: dict[int, dict[str, object]],
+) -> list[dict[str, object]]:
+    tool_calls: list[dict[str, object]] = []
+    for index in sorted(buffers):
+        item = buffers[index]
+        if item["type"] != "function" or not item["name"]:
+            continue
+        tool_calls.append(
+            {
+                "id": str(item["id"] or f"call-{index}"),
+                "name": str(item["name"]),
+                "arguments": str(item["arguments"] or "{}"),
+            }
+        )
+    return tool_calls
+
+
+def _append_fragment(existing: str, fragment: object) -> str:
+    if not isinstance(fragment, str) or not fragment:
+        return existing
+    if not existing:
+        return fragment
+    if fragment.startswith(existing):
+        return fragment
+    if existing.endswith(fragment):
+        return existing
+    return existing + fragment
 
 
 def _parse_tool_args(raw: object) -> dict[str, object]:

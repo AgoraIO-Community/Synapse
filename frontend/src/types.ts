@@ -5,6 +5,8 @@ export type ConnectionStatus =
   | "disconnected"
   | "error";
 
+export type SessionActionType = "send_message" | "send_command";
+
 export type TaskStatus =
   | "created"
   | "queued"
@@ -167,25 +169,6 @@ export interface SessionResponse {
   session_id: string;
 }
 
-export interface ToolInvocationSummary {
-  tool_name: string;
-  args: Record<string, unknown>;
-}
-
-export interface MessageResponse {
-  message_id: string;
-  reply_text: string;
-  conversational_act: string;
-  affected_task_ids: string[];
-  tool_invocations: ToolInvocationSummary[];
-}
-
-export interface CommandResponse {
-  command_id: string;
-  status: string;
-  affected_task_ids: string[];
-}
-
 export interface SnapshotDiffItem {
   id: string;
   entityKind: string;
@@ -194,3 +177,62 @@ export interface SnapshotDiffItem {
   taskId?: string | null;
   details: string;
 }
+
+export interface StreamEventBase {
+  sequence: number;
+  type: string;
+}
+
+export interface SnapshotStreamEvent extends StreamEventBase {
+  type: "snapshot";
+  snapshot: SessionSnapshot;
+}
+
+export interface ActionAcceptedStreamEvent extends StreamEventBase {
+  type: "action_accepted";
+  request_id: string;
+  action_type: SessionActionType;
+}
+
+export interface ActionRejectedStreamEvent extends StreamEventBase {
+  type: "action_rejected";
+  request_id: string;
+  action_type: SessionActionType | "unknown";
+  error_code: string;
+  message: string;
+}
+
+export interface AssistantResponseStartedStreamEvent extends StreamEventBase {
+  type: "assistant_response_started";
+  request_id: string;
+}
+
+export interface AssistantResponseDeltaStreamEvent extends StreamEventBase {
+  type: "assistant_response_delta";
+  request_id: string;
+  delta: string;
+}
+
+export interface AssistantResponseCompletedStreamEvent extends StreamEventBase {
+  type: "assistant_response_completed";
+  request_id: string;
+  message_id: string;
+  reply_text: string;
+  conversational_act: string;
+  affected_task_ids: string[];
+}
+
+export interface AssistantResponseFailedStreamEvent extends StreamEventBase {
+  type: "assistant_response_failed";
+  request_id: string;
+  message: string;
+}
+
+export type SessionStreamEvent =
+  | SnapshotStreamEvent
+  | ActionAcceptedStreamEvent
+  | ActionRejectedStreamEvent
+  | AssistantResponseStartedStreamEvent
+  | AssistantResponseDeltaStreamEvent
+  | AssistantResponseCompletedStreamEvent
+  | AssistantResponseFailedStreamEvent;
