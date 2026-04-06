@@ -56,3 +56,4 @@
 - [RFC Index](./rfcs/index.md)
 - [0001 Design V2](./rfcs/0001-design-v2.md)
 - [0002 Execution Sessions and Runs](./rfcs/0002-execution-sessions-and-runs.md)
+- [0003 Communication Prompt Modularization](./rfcs/0003-communication-prompt-modularization.md)

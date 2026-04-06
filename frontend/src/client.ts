@@ -1,7 +1,10 @@
 import type {
+  ConversationSnapshot,
+  DebugSnapshot,
   SessionStreamEvent,
   TaskCommandType,
   SessionResponse,
+  SessionSnapshot,
 } from "./types";
 
 async function ensureOk(response: Response) {
@@ -16,6 +19,21 @@ export async function createSession(): Promise<SessionResponse> {
   const response = await fetch("/sessions", {
     method: "POST",
   });
+  return (await ensureOk(response)).json();
+}
+
+export async function getSessionSnapshot(sessionId: string): Promise<SessionSnapshot> {
+  const response = await fetch(`/sessions/${sessionId}`);
+  return (await ensureOk(response)).json();
+}
+
+export async function getConversationSnapshot(sessionId: string): Promise<ConversationSnapshot> {
+  const response = await fetch(`/sessions/${sessionId}/conversation`);
+  return (await ensureOk(response)).json();
+}
+
+export async function getDebugSnapshot(sessionId: string): Promise<DebugSnapshot> {
+  const response = await fetch(`/sessions/${sessionId}/debug`);
   return (await ensureOk(response)).json();
 }
 

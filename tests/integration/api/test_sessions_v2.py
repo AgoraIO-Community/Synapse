@@ -20,6 +20,22 @@ async def test_sessions_v2_create_and_get_snapshot():
         body = snapshot.json()
         assert body["session_id"] == session_id
         assert body["tasks"] == []
-        assert body["mutations"] == []
-        assert body["commands"] == []
-        assert body["recent_blackboard_writes"] == []
+        assert "mutations" not in body
+        assert "commands" not in body
+        assert "recent_blackboard_writes" not in body
+
+        conversation = await client.get(f"/sessions/{session_id}/conversation")
+        assert conversation.status_code == 200
+        assert conversation.json() == {
+            "session_id": session_id,
+            "conversation_history": [],
+        }
+
+        debug = await client.get(f"/sessions/{session_id}/debug")
+        assert debug.status_code == 200
+        assert debug.json() == {
+            "session_id": session_id,
+            "mutations": [],
+            "commands": [],
+            "recent_blackboard_writes": [],
+        }

@@ -73,8 +73,11 @@ async def test_openai_model_maps_payload_to_model_result():
     assert provider.calls[0]["messages"][0]["role"] == "system"
     assert "Communication Brain" in provider.calls[0]["messages"][0]["content"]
     assert "Tool-selection policy" in provider.calls[0]["messages"][1]["content"]
-    assert "Examples:" in provider.calls[0]["messages"][2]["content"]
-    assert json.loads(provider.calls[0]["messages"][3]["content"]) == {
+    assert "spoken-language friendly" in provider.calls[0]["messages"][2]["content"]
+    assert "Do not expose internal tool names" in provider.calls[0]["messages"][3]["content"]
+    assert "The latest user message is: Draft email" in provider.calls[0]["messages"][4]["content"]
+    assert "Examples:" in provider.calls[0]["messages"][5]["content"]
+    assert json.loads(provider.calls[0]["messages"][6]["content"]) == {
         "conversation_id": "conv-1",
         "active_tasks": [],
         "recent_tasks": [],
@@ -86,7 +89,7 @@ async def test_openai_model_maps_payload_to_model_result():
         },
         "available_tools": ["create_task"],
     }
-    assert provider.calls[0]["messages"][4] == {
+    assert provider.calls[0]["messages"][7] == {
         "role": "user",
         "content": "hi",
     }

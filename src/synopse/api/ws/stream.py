@@ -22,7 +22,7 @@ async def session_stream(websocket: WebSocket, session_id: str):
 
     await websocket.accept()
     queue = session.subscribe()
-    await session.publish_private_event(queue, await session.initial_snapshot_event())
+    await websocket.send_json((await session.initial_snapshot_event()).model_dump(mode="json"))
     sender = asyncio.create_task(_send_events(websocket, queue))
     try:
         while True:

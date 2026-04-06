@@ -1,10 +1,20 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
-import { createSession, openSessionStream, sendSocketCommand, sendSocketMessage } from "./client";
+import {
+  createSession,
+  getConversationSnapshot,
+  getDebugSnapshot,
+  getSessionSnapshot,
+  openSessionStream,
+  sendSocketCommand,
+  sendSocketMessage,
+} from "./client";
 import type {
   AssistantResponseCompletedStreamEvent,
   BlackboardWriteEvent,
   ConnectionStatus,
+  ConversationSnapshot,
   ConversationHistoryEntry,
+  DebugSnapshot,
   ExecutionRun,
   ExecutionSession,
   SessionBinding,
@@ -71,6 +81,8 @@ function summarizeWriteEvent(event: BlackboardWriteEvent) {
 function buildDiffItems(
   current: SessionSnapshot | null,
   previous: SessionSnapshot | null,
+  currentDebug: DebugSnapshot | null,
+  previousDebug: DebugSnapshot | null,
 ): SnapshotDiffItem[] {
   if (!current) {
     return [];
@@ -140,8 +152,10 @@ function buildDiffItems(
     }
   }
 
-  const previousCommands = new Set(previous?.commands.map((command) => command.command_id) ?? []);
-  for (const command of current.commands) {
+  const previousCommands = new Set(
+    previousDebug?.commands.map((command) => command.command_id) ?? [],
+  );
+  for (const command of currentDebug?.commands ?? []) {
     if (!previousCommands.has(command.command_id)) {
       items.push({
         id: `command-${command.command_id}`,
@@ -154,8 +168,10 @@ function buildDiffItems(
     }
   }
 
-  const previousMutations = new Set(previous?.mutations.map((mutation) => mutation.mutation_id) ?? []);
-  for (const mutation of current.mutations) {
+  const previousMutations = new Set(
+    previousDebug?.mutations.map((mutation) => mutation.mutation_id) ?? [],
+  );
+  for (const mutation of currentDebug?.mutations ?? []) {
     if (!previousMutations.has(mutation.mutation_id)) {
       items.push({
         id: `mutation-${mutation.mutation_id}`,
@@ -311,7 +327,10 @@ export default function App() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [isSending, setIsSending] = useState(false);
   const [snapshot, setSnapshot] = useState<SessionSnapshot | null>(null);
+  const [conversationSnapshot, setConversationSnapshot] = useState<ConversationSnapshot | null>(null);
+  const [debugSnapshot, setDebugSnapshot] = useState<DebugSnapshot | null>(null);
   const [previousSnapshot, setPreviousSnapshot] = useState<SessionSnapshot | null>(null);
+  const [previousDebugSnapshot, setPreviousDebugSnapshot] = useState<DebugSnapshot | null>(null);
   const [lastAssistantResponse, setLastAssistantResponse] =
     useState<AssistantResponseCompletedStreamEvent | null>(null);
   const [liveAssistant, setLiveAssistant] = useState<LiveAssistantBubble | null>(null);
@@ -323,6 +342,7 @@ export default function App() {
   const [pendingCommand, setPendingCommand] = useState<string | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
   const latestSnapshotRef = useRef<SessionSnapshot | null>(null);
+  const latestDebugSnapshotRef = useRef<DebugSnapshot | null>(null);
   const taskSelectionPinnedRef = useRef(false);
   const pendingCommandRequestsRef = useRef<Map<string, string>>(new Map());
 
@@ -355,15 +375,78 @@ export default function App() {
   }, [snapshot]);
 
   useEffect(() => {
+    latestDebugSnapshotRef.current = debugSnapshot;
+  }, [debugSnapshot]);
+
+  useEffect(() => {
     taskSelectionPinnedRef.current = taskSelectionPinned;
   }, [taskSelectionPinned]);
 
   useEffect(() => {
-    if (!liveAssistant || !snapshot) {
+    if (!sessionId) {
+      return;
+    }
+    let active = true;
+    async function loadInitialStateSnapshot() {
+      try {
+        const stateSnapshot = await getSessionSnapshot(sessionId);
+        if (!active) {
+          return;
+        }
+        setSnapshot(stateSnapshot);
+        latestSnapshotRef.current = stateSnapshot;
+        setConnectionStatus("connecting");
+      } catch (error) {
+        if (!active) {
+          return;
+        }
+        setConnectionStatus("error");
+        setActionError(error instanceof Error ? error.message : "Failed to load session data.");
+      }
+    }
+    void loadInitialStateSnapshot();
+    return () => {
+      active = false;
+    };
+  }, [sessionId]);
+
+  useEffect(() => {
+    if (!sessionId || !snapshot) {
+      return;
+    }
+    let active = true;
+    async function refreshAuxiliaryProjections() {
+      try {
+        const [chatSnapshot, inspectorSnapshot] = await Promise.all([
+          getConversationSnapshot(sessionId),
+          getDebugSnapshot(sessionId),
+        ]);
+        if (!active) {
+          return;
+        }
+        setPreviousDebugSnapshot(latestDebugSnapshotRef.current);
+        setConversationSnapshot(chatSnapshot);
+        setDebugSnapshot(inspectorSnapshot);
+        latestDebugSnapshotRef.current = inspectorSnapshot;
+      } catch (error) {
+        if (!active) {
+          return;
+        }
+        setActionError(error instanceof Error ? error.message : "Failed to refresh session projections.");
+      }
+    }
+    void refreshAuxiliaryProjections();
+    return () => {
+      active = false;
+    };
+  }, [sessionId, snapshot]);
+
+  useEffect(() => {
+    if (!liveAssistant || !conversationSnapshot) {
       return;
     }
     if (liveAssistant.messageId) {
-      const persisted = snapshot.conversation_history.some(
+      const persisted = conversationSnapshot.conversation_history.some(
         (entry) => entry.message_id === liveAssistant.messageId,
       );
       if (persisted) {
@@ -371,13 +454,13 @@ export default function App() {
       }
       return;
     }
-    const persisted = snapshot.conversation_history.some(
+    const persisted = conversationSnapshot.conversation_history.some(
       (entry) => entry.role === "assistant" && entry.text === liveAssistant.text,
     );
     if (persisted) {
       setLiveAssistant(null);
     }
-  }, [liveAssistant, snapshot]);
+  }, [liveAssistant, conversationSnapshot]);
 
   useEffect(() => {
     if (!sessionId) {
@@ -515,16 +598,19 @@ export default function App() {
     }
   }, [snapshot, previousSnapshot, selectedTaskId]);
 
-  const diffItems = useMemo(() => buildDiffItems(snapshot, previousSnapshot), [snapshot, previousSnapshot]);
+  const diffItems = useMemo(
+    () => buildDiffItems(snapshot, previousSnapshot, debugSnapshot, previousDebugSnapshot),
+    [snapshot, previousSnapshot, debugSnapshot, previousDebugSnapshot],
+  );
   const summaryByTaskId = useMemo(() => buildTaskSummaryMap(snapshot), [snapshot]);
   const latestRunByTaskId = useMemo(() => buildLatestRunMap(snapshot), [snapshot]);
 
   const selectedTask = snapshot?.tasks.find((task) => task.task_id === selectedTaskId) ?? null;
   const selectedSummary = selectedTaskId ? summaryByTaskId.get(selectedTaskId) ?? null : null;
   const selectedMutations =
-    snapshot?.mutations.filter((mutation) => mutation.task_id === selectedTaskId) ?? [];
+    debugSnapshot?.mutations.filter((mutation) => mutation.task_id === selectedTaskId) ?? [];
   const selectedCommands =
-    snapshot?.commands.filter((command) => command.task_id === selectedTaskId) ?? [];
+    debugSnapshot?.commands.filter((command) => command.task_id === selectedTaskId) ?? [];
   const selectedBindings =
     snapshot?.bindings.filter((binding) => binding.task_id === selectedTaskId) ?? [];
   const selectedSessions =
@@ -600,8 +686,8 @@ export default function App() {
   }
 
   const tasks = snapshot?.tasks ?? [];
-  const conversation = snapshot?.conversation_history ?? [];
-  const recentWrites = snapshot?.recent_blackboard_writes ?? [];
+  const conversation = conversationSnapshot?.conversation_history ?? [];
+  const recentWrites = debugSnapshot?.recent_blackboard_writes ?? [];
 
   return (
     <main className="shell debug-shell">

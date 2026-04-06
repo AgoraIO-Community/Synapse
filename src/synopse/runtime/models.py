@@ -27,16 +27,24 @@ class ConversationHistoryEntryModel(BaseModel):
 class SessionSnapshot(BaseModel):
     session_id: str
     tasks: list[Task] = Field(default_factory=list)
-    mutations: list[TaskMutation] = Field(default_factory=list)
-    commands: list[TaskCommand] = Field(default_factory=list)
     execution_sessions: list[ExecutionSession] = Field(default_factory=list)
     execution_runs: list[ExecutionRun] = Field(default_factory=list)
     execution_modes: list[TaskExecutionMode] = Field(default_factory=list)
     bindings: list[SessionBinding] = Field(default_factory=list)
     summaries: list[TaskSummary] = Field(default_factory=list)
     notification_candidates: list[NotificationCandidate] = Field(default_factory=list)
-    recent_blackboard_writes: list[BlackboardWriteEvent] = Field(default_factory=list)
+ 
+
+class ConversationSnapshot(BaseModel):
+    session_id: str
     conversation_history: list[ConversationHistoryEntryModel] = Field(default_factory=list)
+
+
+class DebugSnapshot(BaseModel):
+    session_id: str
+    mutations: list[TaskMutation] = Field(default_factory=list)
+    commands: list[TaskCommand] = Field(default_factory=list)
+    recent_blackboard_writes: list[BlackboardWriteEvent] = Field(default_factory=list)
 
 
 class SessionStreamEventBase(BaseModel):

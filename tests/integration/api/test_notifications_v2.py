@@ -22,6 +22,22 @@ async def _wait_for_snapshot(client: AsyncClient, session_id: str, predicate, ti
         await asyncio.sleep(0.05)
 
 
+async def _wait_for_conversation(
+    client: AsyncClient,
+    session_id: str,
+    predicate,
+    timeout: float = 4.0,
+):
+    deadline = asyncio.get_running_loop().time() + timeout
+    while True:
+        snapshot = (await client.get(f"/sessions/{session_id}/conversation")).json()
+        if predicate(snapshot):
+            return snapshot
+        if asyncio.get_running_loop().time() >= deadline:
+            raise AssertionError("Timed out waiting for expected conversation state.")
+        await asyncio.sleep(0.05)
+
+
 def _build_app():
     app = create_app()
     app.state.runtime_container = RuntimeContainer(
@@ -61,7 +77,7 @@ async def test_completed_notification_is_emitted_into_conversation_history():
         )
         session.schedule_execution()
 
-        snapshot = await _wait_for_snapshot(
+        conversation = await _wait_for_conversation(
             client,
             session_id,
             lambda snap: any(
@@ -69,12 +85,14 @@ async def test_completed_notification_is_emitted_into_conversation_history():
                 for entry in snap["conversation_history"]
             ),
         )
+        snapshot = (await client.get(f"/sessions/{session_id}")).json()
 
         assert any(
             candidate["candidate_type"] == "completed"
             and candidate["delivery_status"] == "emitted"
             for candidate in snapshot["notification_candidates"]
         )
+        assert conversation["conversation_history"][-1]["text"] == "Done from notification flow."
 
 
 @pytest.mark.anyio
@@ -100,7 +118,7 @@ async def test_blocked_notification_is_emitted_immediately():
         )
         session.schedule_execution()
 
-        snapshot = await _wait_for_snapshot(
+        conversation = await _wait_for_conversation(
             client,
             session_id,
             lambda snap: any(
@@ -109,12 +127,14 @@ async def test_blocked_notification_is_emitted_immediately():
             ),
             timeout=2.0,
         )
+        snapshot = (await client.get(f"/sessions/{session_id}")).json()
 
         assert any(
             candidate["candidate_type"] == "blocked"
             and candidate["delivery_status"] == "emitted"
             for candidate in snapshot["notification_candidates"]
         )
+        assert conversation["conversation_history"][-1]["text"] == "Need confirmation."
 
 
 @pytest.mark.anyio
@@ -144,7 +164,7 @@ async def test_needs_input_summary_notification_can_emit_without_run_event():
             )
         )
 
-        snapshot = await _wait_for_snapshot(
+        conversation = await _wait_for_conversation(
             client,
             session_id,
             lambda snap: any(
@@ -154,9 +174,11 @@ async def test_needs_input_summary_notification_can_emit_without_run_event():
             ),
             timeout=2.0,
         )
+        snapshot = (await client.get(f"/sessions/{session_id}")).json()
 
         assert any(
             candidate["candidate_type"] == "needs_input"
             and candidate["delivery_status"] == "emitted"
             for candidate in snapshot["notification_candidates"]
         )
+        assert conversation["conversation_history"][-1]["text"] == "I need one more detail from you."

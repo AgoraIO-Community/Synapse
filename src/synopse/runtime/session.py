@@ -24,6 +24,8 @@ from .models import (
     AssistantResponseFailedStreamEvent,
     AssistantResponseStartedStreamEvent,
     ConversationHistoryEntryModel,
+    ConversationSnapshot,
+    DebugSnapshot,
     SessionSnapshot,
     SessionStreamEventBase,
     SnapshotStreamEvent,
@@ -63,8 +65,6 @@ class SessionRuntime:
 
     async def snapshot(self) -> SessionSnapshot:
         tasks = await self.blackboard.list_tasks()
-        mutations = await self.blackboard.list_all_mutations()
-        commands = await self.blackboard.list_all_commands()
         sessions = await self.blackboard.list_sessions()
         runs = await self.blackboard.list_runs()
         execution_modes = await self.blackboard.list_execution_modes()
@@ -75,7 +75,18 @@ class SessionRuntime:
             for summary in [await self.blackboard.get_summary(task.task_id) for task in tasks]
             if summary is not None
         ]
-        recent_writes = await self.blackboard.list_recent_writes()
+        return SessionSnapshot(
+            session_id=self.session_id,
+            tasks=tasks,
+            execution_sessions=sessions,
+            execution_runs=runs,
+            execution_modes=execution_modes,
+            bindings=bindings,
+            summaries=summaries,
+            notification_candidates=notification_candidates,
+        )
+
+    async def conversation_snapshot(self) -> ConversationSnapshot:
         history = [
             ConversationHistoryEntryModel(
                 role=entry.role,
@@ -84,19 +95,17 @@ class SessionRuntime:
             )
             for entry in self.history.get_recent(self.session_id, limit=50)
         ]
-        return SessionSnapshot(
+        return ConversationSnapshot(
             session_id=self.session_id,
-            tasks=tasks,
-            mutations=mutations,
-            commands=commands,
-            execution_sessions=sessions,
-            execution_runs=runs,
-            execution_modes=execution_modes,
-            bindings=bindings,
-            summaries=summaries,
-            notification_candidates=notification_candidates,
-            recent_blackboard_writes=recent_writes,
             conversation_history=history,
+        )
+
+    async def debug_snapshot(self) -> DebugSnapshot:
+        return DebugSnapshot(
+            session_id=self.session_id,
+            mutations=await self.blackboard.list_all_mutations(),
+            commands=await self.blackboard.list_all_commands(),
+            recent_blackboard_writes=await self.blackboard.list_recent_writes(),
         )
 
     def subscribe(self) -> asyncio.Queue[SessionStreamEventBase]:

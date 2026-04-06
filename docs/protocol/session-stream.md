@@ -23,7 +23,7 @@ Server events:
 
 - `snapshot`
   - carries the durable `SessionSnapshot`
-  - preserves the original debugger-oriented snapshot feed
+  - this is the stable session-state projection, not the generic debugger dump
 - `action_accepted`
   - acknowledges a valid client action by `request_id`
 - `action_rejected`
@@ -39,3 +39,12 @@ Assistant stream rules:
 - assistant deltas are transient and are not persisted in conversation history
 - only the final assistant reply is durable in `conversation_history`
 - communication-model tool calls remain internal and are not exposed on the websocket
+
+Projection rules:
+
+- `snapshot` should only carry durable runtime state such as tasks, execution,
+  summaries, bindings, and notification candidates
+- conversation history should not be packed into `snapshot`; read it through a
+  dedicated conversation projection
+- debugger/audit payloads should not be packed into `snapshot`; read them
+  through dedicated debug-oriented projection routes

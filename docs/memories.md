@@ -54,3 +54,4 @@ Short log of important design decisions and changes for Synopse.
 - Added a repo-root `ARCHITECTURE.md` as the unified stable architecture overview and aligned the stable split docs to the same dual-brain, blackboard-centered target design.
 - Unified Communication Brain around a task-first mental model with explicit mock-safe task creation, and added stable `TaskExecutionMode` blackboard projection with `undecided / lightweight / managed` classification.
 - Added end-to-end proactive notification delivery with persisted `NotificationCandidate` projections, basic merge/defer policy, and emitted assistant updates written into user-visible conversation history.
+- Narrowed `SessionSnapshot` to durable task/execution state only, and split durable conversation history plus debugger-oriented mutation/command/recent-write data into separate session projections and stream events.

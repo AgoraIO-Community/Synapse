@@ -1,0 +1,43 @@
+from __future__ import annotations
+
+from synopse.communication.context import CommunicationContext
+
+
+def build_tool_policy_prompt(context: CommunicationContext) -> str:
+    lines = [
+        "Tool-selection policy:",
+        "- create_task: brand-new work or actionable user requests that should become a task.",
+        "- update_task: change core structured task fields such as title, goal, priority, executor preference, or latest_instruction.",
+        "- add_task_note: append extra user context, examples, preferences, or clarifications to an existing task.",
+        "- add_constraint: append execution constraints such as deadlines, formatting rules, do-not-send, forbidden actions, or required approach.",
+        "- control_task: pause, resume, cancel, retry, or preempt a task.",
+        "- list_tasks: resolve references like 'that one', 'the email task', or 'the last task' before a write or query when the target is uncertain.",
+        "- query_task_summary: answer user-facing progress questions.",
+        "- query_task_detail: answer deeper status questions that need more execution detail.",
+        "Decision rules:",
+        "- Default to the task model for actionable requests, even when the user phrases them as a question.",
+        "- Only clear social chat, subjective/persona questions, and Synopse meta questions should stay as pure chat.",
+        "- Requests to inspect the user's machine, inspect the current repo/workspace, run commands, or read the environment should normally become tasks.",
+        "- For existing-task writes or queries, if the target is uncertain, call list_tasks first.",
+        "- Prefer add_task_note or add_constraint over update_task when the user is appending context rather than changing the task's core identity.",
+        "- Use at most one write tool unless a read-then-write step is necessary.",
+        "- When using control_task, command_type must exactly match the schema value such as 'resume_task', not shortened verbs like 'resume'.",
+    ]
+    if context.executor_runtime.has_real_executor:
+        lines.append(
+            "- At least one real executor is available, so normal actionable requests should usually become tasks."
+        )
+    else:
+        lines.append(
+            "- Only the mock executor is available. Do not create ordinary work tasks unless the user explicitly asks for a mock or simulated task."
+        )
+        lines.append(
+            "- When only the mock executor is available, normal task requests should be blocked with a clear natural-language explanation instead of fake task creation."
+        )
+        lines.append(
+            "- Do not reply with generic manual tips unless the user explicitly asks for instructions."
+        )
+    lines.append(
+        "- Only set create_task.mock_safe=true when the user explicitly wants a mock, simulated, or record-only task."
+    )
+    return "\n".join(lines)

@@ -8,7 +8,11 @@ Preferred direction:
 - consume stable task/session/run/summary projections
 - avoid depending on low-level executor events
 - use `GET /sessions/{session_id}` for durable task/session state reads
-- treat `WS /sessions/{session_id}/stream` as a mixed event stream: `snapshot` events remain available for debugger/state views, while chat UIs should consume only `assistant_response_*` events plus request ack/reject transport events
+- use `GET /sessions/{session_id}/conversation` for durable conversation history reads
+- use `GET /sessions/{session_id}/debug` only for debugger-oriented inspection data
+- treat `WS /sessions/{session_id}/stream` as the live transport for:
+  - `snapshot` for durable task/execution state refresh
+  - `assistant_response_*` plus request ack/reject events for chat transport
 - do not depend on communication-model tool-call details on the frontend stream; tool activity is internal
 
 User-visible conversation history should contain only:

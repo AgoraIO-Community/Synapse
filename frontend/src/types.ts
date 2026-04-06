@@ -181,20 +181,28 @@ export interface ConversationHistoryEntry {
 export interface SessionSnapshot {
   session_id: string;
   tasks: Task[];
-  mutations: TaskMutation[];
-  commands: TaskCommand[];
   execution_sessions: ExecutionSession[];
   execution_runs: ExecutionRun[];
   execution_modes: TaskExecutionMode[];
   bindings: SessionBinding[];
   summaries: TaskSummary[];
   notification_candidates: NotificationCandidate[];
-  recent_blackboard_writes: BlackboardWriteEvent[];
+}
+
+export interface ConversationSnapshot {
+  session_id: string;
   conversation_history: ConversationHistoryEntry[];
 }
 
 export interface SessionResponse {
   session_id: string;
+}
+
+export interface DebugSnapshot {
+  session_id: string;
+  mutations: TaskMutation[];
+  commands: TaskCommand[];
+  recent_blackboard_writes: BlackboardWriteEvent[];
 }
 
 export interface SnapshotDiffItem {

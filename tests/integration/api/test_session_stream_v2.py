@@ -1,6 +1,8 @@
 import asyncio
 
-from fastapi.testclient import TestClient
+import pytest
+from fastapi import FastAPI, WebSocket
+from httpx import ASGITransport, AsyncClient
 
 from synopse.api.app import create_app
 from synopse.communication.model import ToolCall
@@ -10,18 +12,38 @@ from synopse.protocol import Task
 from synopse.runtime import Settings
 from synopse.runtime.container import RuntimeContainer
 
+from tests.helpers.asgi_websocket import ASGIWebSocketSession
 
-def _receive_until(websocket, predicate, *, limit: int = 12):
+
+async def _receive_until(websocket, predicate, *, limit: int = 12):
     events = []
     for _ in range(limit):
-        event = websocket.receive_json()
+        event = await websocket.receive_json()
         events.append(event)
         if predicate(events):
             return events
     raise AssertionError(f"Timed out waiting for expected websocket events: {events!r}")
 
 
-def test_session_stream_accepts_message_actions_and_keeps_snapshot_events():
+@pytest.mark.anyio
+async def test_asgi_websocket_harness_receives_minimal_json_messages():
+    app = FastAPI()
+
+    @app.websocket("/ws")
+    async def ws(websocket: WebSocket):
+        await websocket.accept()
+        await websocket.send_json({"type": "hello"})
+        await websocket.receive_json()
+        await websocket.send_json({"type": "bye"})
+
+    async with ASGIWebSocketSession(app, "/ws") as websocket:
+        assert (await websocket.receive_json()) == {"type": "hello"}
+        await websocket.send_json({"type": "ping"})
+        assert (await websocket.receive_json()) == {"type": "bye"}
+
+
+@pytest.mark.anyio
+async def test_session_stream_accepts_message_actions_and_keeps_snapshot_events():
     app = create_app()
     app.state.runtime_container = RuntimeContainer(
         communication_model=ScriptedCommunicationModel(
@@ -45,14 +67,17 @@ def test_session_stream_accepts_message_actions_and_keeps_snapshot_events():
         settings=Settings(),
     )
 
-    with TestClient(app) as client:
-        session_id = client.post("/sessions").json()["session_id"]
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        session_id = (await client.post("/sessions")).json()["session_id"]
 
-        with client.websocket_connect(f"/sessions/{session_id}/stream") as websocket:
-            initial_event = websocket.receive_json()
+        async with ASGIWebSocketSession(app, f"/sessions/{session_id}/stream") as websocket:
+            initial_event = await websocket.receive_json()
             assert initial_event["type"] == "snapshot"
 
-            websocket.send_json(
+            await websocket.send_json(
                 {
                     "type": "send_message",
                     "request_id": "req-1",
@@ -60,11 +85,13 @@ def test_session_stream_accepts_message_actions_and_keeps_snapshot_events():
                 }
             )
 
-            events = _receive_until(
+            events = await _receive_until(
                 websocket,
                 lambda items: any(item["type"] == "assistant_response_completed" for item in items)
                 and sum(1 for item in items if item["type"] == "snapshot") >= 2,
             )
+
+        conversation = (await client.get(f"/sessions/{session_id}/conversation")).json()
 
     event_types = [event["type"] for event in events]
     assert "action_accepted" in event_types
@@ -77,10 +104,11 @@ def test_session_stream_accepts_message_actions_and_keeps_snapshot_events():
 
     final_snapshot = [event["snapshot"] for event in events if event["type"] == "snapshot"][-1]
     assert len(final_snapshot["tasks"]) == 1
-    assert final_snapshot["conversation_history"][-1]["text"] == "I'll take care of that."
+    assert conversation["conversation_history"][-1]["text"] == "I'll take care of that."
 
 
-def test_session_stream_accepts_command_actions_and_returns_snapshot_updates():
+@pytest.mark.anyio
+async def test_session_stream_accepts_command_actions_and_returns_snapshot_updates():
     app = create_app()
     app.state.runtime_container = RuntimeContainer(
         communication_model=ScriptedCommunicationModel(
@@ -94,25 +122,26 @@ def test_session_stream_accepts_command_actions_and_returns_snapshot_updates():
         settings=Settings(),
     )
 
-    with TestClient(app) as client:
-        session_id = client.post("/sessions").json()["session_id"]
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        session_id = (await client.post("/sessions")).json()["session_id"]
         session = app.state.runtime_container.get_session(session_id)
-        asyncio.run(
-            session.blackboard.put_task(
-                Task(
-                    task_id="task-email",
-                    root_task_id="task-email",
-                    title="Draft email",
-                    goal="Draft email",
-                )
+        await session.blackboard.put_task(
+            Task(
+                task_id="task-email",
+                root_task_id="task-email",
+                title="Draft email",
+                goal="Draft email",
             )
         )
 
-        with client.websocket_connect(f"/sessions/{session_id}/stream") as websocket:
-            initial_event = websocket.receive_json()
+        async with ASGIWebSocketSession(app, f"/sessions/{session_id}/stream") as websocket:
+            initial_event = await websocket.receive_json()
             assert initial_event["type"] == "snapshot"
 
-            websocket.send_json(
+            await websocket.send_json(
                 {
                     "type": "send_command",
                     "request_id": "req-2",
@@ -121,7 +150,7 @@ def test_session_stream_accepts_command_actions_and_returns_snapshot_updates():
                 }
             )
 
-            events = _receive_until(
+            events = await _receive_until(
                 websocket,
                 lambda items: any(item["type"] == "action_accepted" for item in items)
                 and any(
@@ -139,7 +168,8 @@ def test_session_stream_accepts_command_actions_and_returns_snapshot_updates():
     assert final_snapshot["tasks"][0]["status"] == "paused"
 
 
-def test_session_stream_rejects_invalid_command_targets():
+@pytest.mark.anyio
+async def test_session_stream_rejects_invalid_command_targets():
     app = create_app()
     app.state.runtime_container = RuntimeContainer(
         communication_model=ScriptedCommunicationModel(
@@ -153,14 +183,17 @@ def test_session_stream_rejects_invalid_command_targets():
         settings=Settings(),
     )
 
-    with TestClient(app) as client:
-        session_id = client.post("/sessions").json()["session_id"]
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        session_id = (await client.post("/sessions")).json()["session_id"]
 
-        with client.websocket_connect(f"/sessions/{session_id}/stream") as websocket:
-            initial_event = websocket.receive_json()
+        async with ASGIWebSocketSession(app, f"/sessions/{session_id}/stream") as websocket:
+            initial_event = await websocket.receive_json()
             assert initial_event["type"] == "snapshot"
 
-            websocket.send_json(
+            await websocket.send_json(
                 {
                     "type": "send_command",
                     "request_id": "req-3",
@@ -169,10 +202,12 @@ def test_session_stream_rejects_invalid_command_targets():
                 }
             )
 
-            rejected_event = _receive_until(
-                websocket,
-                lambda items: any(item["type"] == "action_rejected" for item in items),
-                limit=4,
+            rejected_event = (
+                await _receive_until(
+                    websocket,
+                    lambda items: any(item["type"] == "action_rejected" for item in items),
+                    limit=4,
+                )
             )[-1]
 
     assert rejected_event["type"] == "action_rejected"
