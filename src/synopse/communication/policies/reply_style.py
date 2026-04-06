@@ -46,12 +46,14 @@ def infer_conversational_act(tool_invocations: list[ToolInvocationRecord], reply
     tool_names = {item.tool_name for item in tool_invocations}
     if "create_task" in tool_names:
         return "acknowledge_and_start"
-    if "update_task" in tool_names:
+    if tool_names & {"update_task", "add_task_note", "add_constraint"}:
         return "acknowledge_and_modify"
     if "control_task" in tool_names:
         return "acknowledge_and_hold"
     if "query_task_summary" in tool_names or "query_task_detail" in tool_names:
         return "inform_progress"
-    if "?" in reply_text:
+    if "list_relevant_tasks" in tool_names:
+        return "request_clarification"
+    if "?" in reply_text or "？" in reply_text:
         return "request_clarification"
     return "model_reply"

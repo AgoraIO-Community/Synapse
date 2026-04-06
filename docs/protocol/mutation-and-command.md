@@ -8,6 +8,7 @@ Synopse separates:
 `TaskMutation` is for structured task changes, such as:
 
 - update title
+- add task note
 - add constraint
 - attach user clarification
 - change priority
@@ -34,6 +35,12 @@ Key fields:
 Communication-model tool calls must use these exact canonical `command_type` tokens.
 Short aliases such as `resume` are invalid tool input and should be handled in-band,
 not as transport failures.
+
+Communication-brain task resolution should also be explicit:
+
+- ambiguous references should return an in-band tool error
+- missing references should return an in-band tool error
+- tools should not silently default to the latest task when the target is unclear
 
 Key fields:
 

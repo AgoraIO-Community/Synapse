@@ -4,6 +4,7 @@ The Communication Brain owns:
 
 - acknowledgement
 - clarification
+- user-intent understanding inside the communication loop
 - direct conversational replies
 - task reference resolution
 - task manipulation through tools
@@ -27,6 +28,10 @@ Core communication policy:
 - internal runtime vocabulary should stay hidden unless the user explicitly asks for it
 - invalid tool arguments from the model should be returned through the tool loop for correction instead of crashing the message transport
 - invalid executor ids should be rejected before task creation, and pre-existing bad tasks should fail cleanly rather than crashing execution
+- ambiguous task references should not silently fall back to the latest task; the communication brain should resolve them explicitly or ask for clarification
+- capability-gated requests such as checking machine state, reading the workspace, or running commands are not normal chat; when a real executor is available they should usually become tasks
+- if only the mock executor is available, capability-gated requests should be blocked with a clear natural-language explanation instead of fake task execution or generic manual tips
+- there is no standalone message interpreter in the primary `v2` design; interpretation is part of Communication Brain tool use
 
 Primary tool surface:
 
@@ -35,9 +40,21 @@ Primary tool surface:
 - `control_task`
 - `add_task_note`
 - `add_constraint`
-- `list_relevant_tasks`
+- `list_tasks`
 - `query_task_summary`
 - `query_task_detail`
+
+Architecture terminology note:
+
+- `list_tasks` here means the task-retrieval and disambiguation tool used by Communication Brain
+- it does not mean an unscoped "dump every task" storage API
+
+Tool intent defaults:
+
+- use `add_task_note` for extra user context, examples, preferences, or clarifications on an existing task
+- use `add_constraint` for execution constraints such as deadlines, formatting rules, or do-not-send instructions
+- use `update_task` only for core structured task fields such as title, goal, priority, executor preference, or latest instruction
+- use `list_tasks` before a write or query when the target task is uncertain
 
 `control_task.command_type` must use the canonical protocol values from
 [`TaskCommandType`](../protocol/mutation-and-command.md), for example `resume_task`

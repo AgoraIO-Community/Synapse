@@ -3,7 +3,7 @@ from uuid import uuid4
 from fastapi import APIRouter, HTTPException, Request
 
 from synopse.api.models import CommandRequest, CommandResponse
-from synopse.communication.resolver import TaskResolver
+from synopse.communication.resolver import TaskResolver, describe_candidates
 from synopse.protocol import TaskCommand
 
 router = APIRouter()
@@ -22,7 +22,16 @@ async def submit_command(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
     tasks = await session.blackboard.list_tasks()
-    task = TaskResolver().resolve(tasks, task_id=request.task_id, reference=request.reference)
+    resolution = TaskResolver().resolve(tasks, task_id=request.task_id, reference=request.reference)
+    if resolution.status == "ambiguous":
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Task reference is ambiguous. Relevant tasks: "
+                f"{describe_candidates(resolution.candidates)}."
+            ),
+        )
+    task = resolution.task
     if task is None:
         raise HTTPException(status_code=404, detail="Task not found.")
 

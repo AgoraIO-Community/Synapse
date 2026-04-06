@@ -5,9 +5,11 @@ from typing import Any
 
 from synopse.blackboard import BlackboardStore
 
+from .add_constraint import AddConstraintTool
+from .add_task_note import AddTaskNoteTool
 from .control_task import ControlTaskTool
 from .create_task import CreateTaskTool
-from .list_tasks import ListTasksTool
+from .list_relevant_tasks import ListRelevantTasksTool
 from .query_task_detail import QueryTaskDetailTool
 from .query_task_summary import QueryTaskSummaryTool
 from .update_task import UpdateTaskTool
@@ -65,13 +67,46 @@ def build_default_tool_registry(
         valid_executor_types=resolved_executor_types,
         default_executor_type=default_executor_type,
     )
+    add_constraint = AddConstraintTool(store)
+    add_task_note = AddTaskNoteTool(store)
     control_task = ControlTaskTool(store)
-    list_tasks = ListTasksTool(store)
+    list_relevant_tasks = ListRelevantTasksTool(store)
     query_task_detail = QueryTaskDetailTool(store)
     query_task_summary = QueryTaskSummaryTool(store)
-    update_task = UpdateTaskTool(store)
+    update_task = UpdateTaskTool(store, valid_executor_types=resolved_executor_types)
     return ToolRegistry(
         tools={
+            "add_constraint": ToolSpec(
+                name="add_constraint",
+                description="Add an execution-relevant constraint to an existing task.",
+                input_schema={
+                    "type": "object",
+                    "properties": {
+                        "constraint": {"type": "string"},
+                        "category": {"type": ["string", "null"]},
+                        "task_id": {"type": ["string", "null"]},
+                        "reference": {"type": ["string", "null"]},
+                    },
+                    "required": ["constraint"],
+                    "additionalProperties": False,
+                },
+                handler=add_constraint,
+            ),
+            "add_task_note": ToolSpec(
+                name="add_task_note",
+                description="Attach an extra user note or contextual hint to an existing task.",
+                input_schema={
+                    "type": "object",
+                    "properties": {
+                        "note": {"type": "string"},
+                        "task_id": {"type": ["string", "null"]},
+                        "reference": {"type": ["string", "null"]},
+                    },
+                    "required": ["note"],
+                    "additionalProperties": False,
+                },
+                handler=add_task_note,
+            ),
             "control_task": ToolSpec(
                 name="control_task",
                 description="Pause, cancel, retry, resume, or preempt a task.",
@@ -113,17 +148,19 @@ def build_default_tool_registry(
                 },
                 handler=create_task,
             ),
-            "list_tasks": ToolSpec(
-                name="list_tasks",
-                description="List tasks, optionally filtered by a text query.",
+            "list_relevant_tasks": ToolSpec(
+                name="list_relevant_tasks",
+                description="List the most relevant tasks for a user reference such as 'that one' or 'the email task'.",
                 input_schema={
                     "type": "object",
                     "properties": {
-                        "query": {"type": ["string", "null"]},
+                        "reference": {"type": "string"},
+                        "limit": {"type": "integer", "minimum": 1, "maximum": 5},
                     },
+                    "required": ["reference"],
                     "additionalProperties": False,
                 },
-                handler=list_tasks,
+                handler=list_relevant_tasks,
             ),
             "query_task_detail": ToolSpec(
                 name="query_task_detail",
@@ -153,13 +190,31 @@ def build_default_tool_registry(
             ),
             "update_task": ToolSpec(
                 name="update_task",
-                description="Update a task with new instructions or constraints.",
+                description="Update core structured task fields such as goal, title, instruction, priority, or executor preference.",
                 input_schema={
                     "type": "object",
                     "properties": {
                         "task_id": {"type": ["string", "null"]},
                         "reference": {"type": ["string", "null"]},
-                        "patch": {"type": "object"},
+                        "patch": {
+                            "type": "object",
+                            "properties": {
+                                "goal": {"type": "string"},
+                                "interruptible": {"type": "boolean"},
+                                "latest_instruction": {"type": "string"},
+                                "preferred_executor": {
+                                    "anyOf": [
+                                        {"type": "string", "enum": resolved_executor_types},
+                                        {"type": "null"},
+                                    ]
+                                },
+                                "priority": {"type": "integer"},
+                                "requires_confirmation": {"type": "boolean"},
+                                "session_affinity": {"type": ["string", "null"]},
+                                "title": {"type": "string"},
+                            },
+                            "additionalProperties": False,
+                        },
                     },
                     "required": ["patch"],
                     "additionalProperties": False,

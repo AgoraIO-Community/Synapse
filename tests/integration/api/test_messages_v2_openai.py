@@ -238,6 +238,47 @@ async def test_messages_v2_invalid_executor_alias_does_not_persist_bad_task():
 
 
 @pytest.mark.anyio
+async def test_messages_v2_capability_gated_request_is_blocked_when_only_mock_executor_exists():
+    app = create_app()
+    provider = OpenAIProvider(
+        Settings(communication_backend="openai", openai_api_key="test-key"),
+        client=FakeClient(
+            [
+                _tool_completion(
+                    name="create_task",
+                    arguments={"title": "Check CPU usage", "goal": "Check my PC CPU usage"},
+                ),
+                _text_completion(
+                    "I can't actually check your machine right now because I don't have a real executor connected.",
+                ),
+            ]
+        ),
+    )
+    app.state.runtime_container = build_runtime_container(
+        settings=Settings(communication_backend="openai", openai_api_key="test-key"),
+        provider=provider,
+    )
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        session_id = (await client.post("/sessions")).json()["session_id"]
+        response = await client.post(
+            f"/sessions/{session_id}/messages",
+            json={"text": "check my pc cpu usage"},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["reply_text"] == (
+            "I can't actually check your machine right now because I don't have a real executor connected."
+        )
+
+        snapshot = (await client.get(f"/sessions/{session_id}")).json()
+        assert snapshot["tasks"] == []
+
+
+@pytest.mark.anyio
 async def test_messages_v2_preseeded_bad_executor_task_fails_instead_of_500():
     app = create_app()
     provider = OpenAIProvider(

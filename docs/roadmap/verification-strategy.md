@@ -82,6 +82,7 @@ Verify quality of behavior and interaction rather than strict deterministic corr
 
 - whether replies sound mechanical
 - whether tools are used appropriately
+- whether task-reference resolution guesses the wrong task
 - whether proactive notifications are too noisy
 - whether interruption handling feels natural
 
@@ -109,6 +110,16 @@ Two fake components are recommended early:
 - fake or scripted communication model / tool harness
 
 These keep early phases testable without depending on external systems.
+
+Communication evals should include at least:
+
+- new-task creation
+- note / constraint attachment
+- progress query
+- ambiguous task reference
+- pure chat with no tool call
+- capability-gated request with a real executor available
+- capability-gated request in mock-only mode
 
 ## Recommended Repository Separation
 

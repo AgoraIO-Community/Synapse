@@ -3,7 +3,7 @@ from __future__ import annotations
 from uuid import uuid4
 
 from synopse.blackboard import BlackboardStore
-from synopse.communication.resolver import TaskResolver
+from synopse.communication.resolver import TaskResolver, describe_candidates
 from synopse.protocol import Task, TaskCommand, TaskCommandType
 
 from .base import ToolInputError
@@ -27,7 +27,14 @@ class ControlTaskTool:
         reason: str | None = None,
     ) -> TaskCommand:
         tasks = await self._store.list_tasks()
-        task = self._resolver.resolve(tasks, task_id=task_id, reference=reference)
+        resolution = self._resolver.resolve(tasks, task_id=task_id, reference=reference)
+        if resolution.status == "ambiguous":
+            raise ToolInputError(
+                "Task reference is ambiguous. Relevant tasks: "
+                f"{describe_candidates(resolution.candidates)}.",
+                code="ambiguous_reference",
+            )
+        task = resolution.task
         if task is None:
             raise ToolInputError("Task not found for control.", code="task_not_found")
         try:

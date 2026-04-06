@@ -184,8 +184,8 @@ async def test_openai_provider_appends_tool_results_before_final_reply():
     client = FakeClient(
         [
             _tool_completion(
-                name="list_tasks",
-                arguments={"query": "email"},
+                name="list_relevant_tasks",
+                arguments={"reference": "email"},
             ),
             _text_completion("I found the task you asked about."),
         ]
@@ -207,8 +207,8 @@ async def test_openai_provider_appends_tool_results_before_final_reply():
     assert reply_text == "I found the task you asked about."
     assert invocations == [
         {
-            "name": "list_tasks",
-            "args": {"query": "email"},
+            "name": "list_relevant_tasks",
+            "args": {"reference": "email"},
             "result": {"tasks": [{"task_id": "task-1"}]},
         }
     ]
@@ -230,8 +230,8 @@ async def test_openai_provider_streams_only_final_assistant_text_after_tool_call
                         _tool_call_delta(
                             index=0,
                             id="call-1",
-                            name="list_tasks",
-                            arguments='{"query"',
+                            name="list_relevant_tasks",
+                            arguments='{"reference"',
                         )
                     ]
                 ),
@@ -271,8 +271,8 @@ async def test_openai_provider_streams_only_final_assistant_text_after_tool_call
     assert streamed_chunks == ["I found ", "the task."]
     assert invocations == [
         {
-            "name": "list_tasks",
-            "args": {"query": "email"},
+            "name": "list_relevant_tasks",
+            "args": {"reference": "email"},
             "result": {"tasks": [{"task_id": "task-1"}]},
         }
     ]

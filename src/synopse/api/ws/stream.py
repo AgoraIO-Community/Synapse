@@ -5,7 +5,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from pydantic import ValidationError
 
 from synopse.api.models import SendCommandSocketAction, SendMessageSocketAction
-from synopse.communication.resolver import TaskResolver
+from synopse.communication.resolver import TaskResolver, describe_candidates
 from synopse.protocol import TaskCommand
 
 router = APIRouter()
@@ -137,7 +137,22 @@ async def _handle_send_command(session, queue: asyncio.Queue, payload: dict[str,
         return
 
     tasks = await session.blackboard.list_tasks()
-    task = TaskResolver().resolve(tasks, task_id=action.task_id, reference=action.reference)
+    resolution = TaskResolver().resolve(tasks, task_id=action.task_id, reference=action.reference)
+    if resolution.status == "ambiguous":
+        await session.publish_private_event(
+            queue,
+            session.action_rejected_event(
+                action.request_id,
+                action_type=action.type,
+                error_code="ambiguous_reference",
+                message=(
+                    "Task reference is ambiguous. Relevant tasks: "
+                    f"{describe_candidates(resolution.candidates)}."
+                ),
+            ),
+        )
+        return
+    task = resolution.task
     if task is None:
         await session.publish_private_event(
             queue,

@@ -133,7 +133,7 @@ Make Communication Brain able to manipulate and query blackboard through tools, 
 ### What Gets Built
 
 - communication brain
-- create/update/control/query tools
+- create/update/control/list/query tools
 - task reference resolution
 - action-commitment reply policy
 - fake/scripted communication model harness
@@ -152,7 +152,7 @@ Make Communication Brain able to manipulate and query blackboard through tools, 
 
 ### Exit Criteria
 
-- communication brain can reliably create/update/control/query
+- communication brain can reliably create/update/control/list/query
 - replies do not degrade into system acknowledgements
 - task reference resolution is minimally usable
 - deterministic tests can exercise the brain with a fake/scripted model

@@ -13,9 +13,16 @@ Core concepts:
 - `SessionBinding`
   - current live binding and lease projection
 
+Important relationship rule:
+
+- `Task` and `ExecutionSession` are not conceptually the same object
+- bindings are phase-based and lease-based, not permanent identity coupling
+
 Default policy:
 
 - one active task owns one active session
+- one session runs one active task at a time in the first version
+- multi-task concurrency is achieved primarily through multiple sessions
 - task follow-ups reuse the current session when possible
 - retries append new runs
 - completed tasks can be reopened without creating duplicate tasks

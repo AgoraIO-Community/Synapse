@@ -343,6 +343,8 @@ def create_session_runtime(
             executor_types=registry.list_executor_types(),
             default_executor_type=default_executor_type,
         ),
+        executor_capabilities=registry.list_capabilities(),
+        default_executor_type=default_executor_type,
     )
     execution_brain = ExecutionBrain(
         blackboard,

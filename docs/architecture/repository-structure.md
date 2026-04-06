@@ -6,6 +6,7 @@ Recommended repository structure:
 
 ```text
 .
+├─ ARCHITECTURE.md
 ├─ README.md
 ├─ LICENSE
 ├─ CONTRIBUTING.md
@@ -69,6 +70,8 @@ This keeps the project easier to understand and extend in open source.
 
 Additional repository-level guidance:
 
+- `ARCHITECTURE.md`
+  - single-entry open-source architecture overview
 - `tests/`
   - deterministic correctness
 - `evals/`

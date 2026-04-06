@@ -10,6 +10,11 @@ User-visible state should be projected through stable summary and notification o
 - `needs_user_input`
 - `summary_generated_at`
 
+Summary principle:
+
+- structured facts come first
+- natural-language rendering can be generated later from those facts
+
 `NotificationCandidate` should exist before any proactive message is emitted.
 
 Notification principles:

@@ -8,6 +8,7 @@ The Execution Brain owns:
 - executor dispatch
 - execution-state updates
 - summary refresh
+- execution classification decisions
 - interruption resolution on the execution side
 
 It should be driven by:
@@ -20,6 +21,7 @@ Long-running executor activity should continue in the background while websocket
 subscribers receive updated session snapshots as blackboard state changes.
 
 It should not depend on Communication Brain internals.
+It should not generate final user-facing dialogue.
 
 Default execution model:
 
@@ -27,6 +29,12 @@ Default execution model:
 - tasks are durable
 - execution sessions are lineage
 - execution runs are disposable historical attempts
+- `SessionBinding` is the current active lease/binding projection, not a permanent 1:1 identity map
+
+Target-state note:
+
+- `ExecutionMode = undecided / lightweight / managed` is an accepted design direction
+- it is not yet a stable protocol object
 
 Important subsystems:
 

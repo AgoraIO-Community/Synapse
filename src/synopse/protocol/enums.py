@@ -37,6 +37,7 @@ class MutationType(StrEnum):
     CREATE = "create"
     UPDATE = "update"
     CONTROL = "control"
+    ADD_TASK_NOTE = "add_task_note"
     ADD_CONSTRAINT = "add_constraint"
 
 

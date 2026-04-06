@@ -242,6 +242,25 @@ class CodexExecutor:
         ]
         if task.latest_instruction:
             parts.append(f"Latest instruction: {task.latest_instruction}")
+        notes = [
+            item.strip()
+            for item in task.metadata.get("notes", [])
+            if isinstance(item, str) and item.strip()
+        ]
+        if notes:
+            parts.append("Task notes:")
+            parts.extend(f"- {note}" for note in notes)
+        constraints = [
+            item
+            for item in task.metadata.get("constraints", [])
+            if isinstance(item, dict) and isinstance(item.get("constraint"), str)
+        ]
+        if constraints:
+            parts.append("Execution constraints:")
+            for constraint in constraints:
+                category = constraint.get("category")
+                prefix = f"[{category}] " if isinstance(category, str) and category.strip() else ""
+                parts.append(f"- {prefix}{constraint['constraint'].strip()}")
         parts.append(
             "Work inside the current repository and return a concise final result."
         )

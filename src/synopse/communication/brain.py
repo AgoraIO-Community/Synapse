@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from synopse.communication.history import ConversationEntry
 from synopse.blackboard import BlackboardStore
+from synopse.executor_core import ExecutorCapabilities
 
 from .context import CommunicationContextBuilder
 from .history import InMemoryConversationHistory
@@ -19,13 +20,20 @@ class CommunicationBrain:
         *,
         history: InMemoryConversationHistory | None = None,
         tool_registry: ToolRegistry | None = None,
+        executor_capabilities: list[ExecutorCapabilities] | None = None,
+        default_executor_type: str | None = None,
     ) -> None:
         self._store = store
         self._model = model
         self._history = history or InMemoryConversationHistory()
         self._tools = tool_registry or build_default_tool_registry(store)
         self._tool_usage_policy = ToolUsagePolicy(self._tools.names)
-        self._context_builder = CommunicationContextBuilder(store, self._history)
+        self._context_builder = CommunicationContextBuilder(
+            store,
+            self._history,
+            executor_capabilities=executor_capabilities,
+            default_executor_type=default_executor_type,
+        )
 
     async def handle_user_message(
         self,

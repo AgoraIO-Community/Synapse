@@ -25,6 +25,11 @@ Codex note:
 - Codex follow-ups should reuse durable runtime session lineage plus executor-native thread handles when available
 - executor-native continuity still remains optional across executor families
 
+Adapter direction:
+
+- Codex is one real adapter family
+- OpenClaw or other executor families should fit behind the same normalized executor contract
+
 This is why:
 
 - `AgentResumeHandle` must stay optional

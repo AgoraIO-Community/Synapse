@@ -17,10 +17,10 @@ Primary object groups:
 - execution sessions
 - execution runs
 - session bindings
-- execution state
 - task summaries
 - notification candidates
 - interruption state
+- target-state execution-mode facts when that layer is stabilized
 
 Core responsibilities:
 
@@ -29,6 +29,7 @@ Core responsibilities:
 - lease and claim visibility
 - subscription and notify
 - stable query surface for both brains
+- fact-first projections that can later be rendered into natural language
 
 It should not become:
 

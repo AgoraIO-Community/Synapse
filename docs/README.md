@@ -7,6 +7,7 @@
 
 ## Architecture
 
+- [Root Architecture Overview](../ARCHITECTURE.md)
 - [Architecture Index](./architecture/index.md)
 - [V2 Overview](./architecture/overview.md)
 - [Communication Brain](./architecture/communication-brain.md)

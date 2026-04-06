@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from .executor import Executor
+from .capabilities import ExecutorCapabilities
 
 
 class UnknownExecutorError(KeyError):
@@ -22,3 +23,6 @@ class ExecutorRegistry:
 
     def list_executor_types(self) -> list[str]:
         return list(self._executors.keys())
+
+    def list_capabilities(self) -> list[ExecutorCapabilities]:
+        return [executor.get_capabilities() for executor in self._executors.values()]

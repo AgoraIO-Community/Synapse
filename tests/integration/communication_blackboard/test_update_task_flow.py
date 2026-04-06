@@ -16,8 +16,8 @@ async def test_update_task_flow():
                 conversational_act="acknowledge_and_modify",
                 tool_calls=[
                     ToolCall(
-                        name="update_task",
-                        args={"reference": "email", "patch": {"latest_instruction": "Shorter"}},
+                        name="add_task_note",
+                        args={"reference": "email", "note": "Make it shorter."},
                     )
                 ],
             )
@@ -32,5 +32,5 @@ async def test_update_task_flow():
 
     task = await store.get_task("task_1")
     assert task is not None
-    assert task.latest_instruction == "Shorter"
+    assert task.metadata["notes"] == ["Make it shorter."]
     assert result.conversational_act == "acknowledge_and_modify"

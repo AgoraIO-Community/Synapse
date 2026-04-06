@@ -3,11 +3,11 @@ import pytest
 from synopse.blackboard import InMemoryBlackboard
 from synopse.communication.tools import build_default_tool_registry
 from synopse.communication.tools.base import ToolInputError
-from synopse.protocol import TaskCommandType
+from synopse.protocol import MutationType, TaskCommandType
 
 
 @pytest.mark.anyio
-async def test_create_update_control_and_query_tools():
+async def test_create_update_note_constraint_control_and_query_tools():
     store = InMemoryBlackboard()
     registry = build_default_tool_registry(store)
 
@@ -24,6 +24,21 @@ async def test_create_update_control_and_query_tools():
     )
     assert updated.latest_instruction == "Make it shorter."
 
+    noted = await registry.get("add_task_note")(
+        task_id=created.task_id,
+        note="Keep it friendly.",
+    )
+    assert noted.metadata["notes"] == ["Keep it friendly."]
+
+    constrained = await registry.get("add_constraint")(
+        task_id=created.task_id,
+        constraint="Do not send yet.",
+        category="delivery",
+    )
+    assert constrained.metadata["constraints"] == [
+        {"constraint": "Do not send yet.", "category": "delivery"}
+    ]
+
     command = await registry.get("control_task")(
         task_id=created.task_id,
         command_type=TaskCommandType.PAUSE_TASK.value,
@@ -36,6 +51,32 @@ async def test_create_update_control_and_query_tools():
     detail = await registry.get("query_task_detail")(task_id=created.task_id)
     assert detail is not None
     assert detail["task"].task_id == created.task_id
+    assert [mutation.mutation_type for mutation in detail["mutations"]] == [
+        MutationType.CREATE,
+        MutationType.UPDATE,
+        MutationType.ADD_TASK_NOTE,
+        MutationType.ADD_CONSTRAINT,
+    ]
+
+
+@pytest.mark.anyio
+async def test_list_relevant_tasks_returns_ranked_matches():
+    store = InMemoryBlackboard()
+    registry = build_default_tool_registry(store)
+    await registry.get("create_task")(
+        title="Draft sales email",
+        goal="Draft sales email",
+    )
+    await registry.get("create_task")(
+        title="Book flight",
+        goal="Book flight to Shanghai",
+    )
+
+    result = await registry.get("list_relevant_tasks")(reference="email")
+
+    assert result["reference"] == "email"
+    assert len(result["matches"]) == 1
+    assert result["matches"][0]["title"] == "Draft sales email"
 
 
 def test_control_task_schema_uses_canonical_command_values():
@@ -85,6 +126,39 @@ async def test_control_task_rejects_non_canonical_command_aliases():
 
     commands = await store.list_commands(created.task_id)
     assert commands == []
+
+
+@pytest.mark.anyio
+async def test_update_task_rejects_unknown_patch_fields():
+    store = InMemoryBlackboard()
+    registry = build_default_tool_registry(store)
+    created = await registry.get("create_task")(
+        title="Draft email",
+        goal="Draft an email reply",
+    )
+
+    with pytest.raises(ToolInputError, match="Invalid update_task fields"):
+        await registry.get("update_task")(
+            task_id=created.task_id,
+            patch={"note": "Keep it shorter."},
+        )
+
+
+@pytest.mark.anyio
+async def test_query_tools_reject_ambiguous_reference():
+    store = InMemoryBlackboard()
+    registry = build_default_tool_registry(store)
+    await registry.get("create_task")(
+        title="Draft email",
+        goal="Draft an email reply",
+    )
+    await registry.get("create_task")(
+        title="Send email",
+        goal="Send an email follow-up",
+    )
+
+    with pytest.raises(ToolInputError, match="ambiguous"):
+        await registry.get("query_task_summary")(reference="email")
 
 
 @pytest.mark.anyio

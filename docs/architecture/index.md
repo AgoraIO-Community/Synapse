@@ -2,7 +2,9 @@
 
 This directory contains the stable topic-level architecture docs for the proposed `v2` runtime.
 
-Use this section when you want to understand how the system is intended to work by subsystem.
+For a single-entry architecture narrative, start with [../../ARCHITECTURE.md](../../ARCHITECTURE.md).
+
+Use this section when you want to understand the system by subsystem.
 
 - [Overview](./overview.md)
 - [Communication Brain](./communication-brain.md)

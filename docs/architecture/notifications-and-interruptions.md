@@ -13,12 +13,15 @@ Important rules:
 - user-visible updates first become notification candidates
 - only emitted proactive messages enter user-visible conversation history
 - digest-first delivery is preferred over one-event-one-message
+- notification policy decides whether to send, merge, or defer before any wording is generated
+- selected notification facts may be rendered into final natural wording later, but delivery policy itself should stay rule-driven
 
 Interruption rules:
 
 - `barge-in` first stops current output
 - `barge-in` does not cancel tasks by default
 - only explicit task-control or task-update intent should affect execution
+- user speech and current assistant speech both take precedence over proactive notification delivery
 
 Interruption classes:
 

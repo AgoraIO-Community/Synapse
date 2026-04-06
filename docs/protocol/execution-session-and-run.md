@@ -27,6 +27,13 @@ Responsibilities:
 - `ExecutionState`
   - current runtime snapshot
 
+Relationship note:
+
+- task identity is durable
+- session identity is executor-side lineage
+- run identity is disposable
+- binding is phase-based rather than permanent
+
 Core rule:
 
 - task identity is durable
