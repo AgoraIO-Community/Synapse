@@ -70,3 +70,10 @@ Short log of important design decisions and changes for Synopse.
 - Tightened Communication Brain prompt policy so fact-checking, current-world information, and other live external-fact requests now default toward executor-backed `create_task` handling, with short clarifications for missing required details and no generic website/app fallback advice in mock-only mode.
 - Focused notification LLM rendering on selected candidate-linked task context by adding structured recent-chat continuity, key-task, and relevant-task payloads, and added explicit diagnostics for adopted notification plans plus key-task/relevant-task selection on proactive updates.
 - Tightened proactive notification wording so notification messages stay plain-text and spoken-style, explicitly avoiding markdown and list formatting in user-visible updates.
+
+## 2026-04-08
+
+- Added a standalone `examples/agora_conversational_ai` bridge that binds one live Agora Conversational AI agent to one Synopse session, exposes an OpenAI-compatible `/chat/completions` edge outside the main app, and reuses `conversation_appended` notification events to drive Agora `/speak` delivery for proactive updates only.
+- Added a configurable frontend adapter and example-local React voice client under `examples/agora_conversational_ai`, so browser testing can start and stop Agora sample sessions through local normalized routes instead of binding the UI directly to an external sample-backend contract.
+- Moved example auth and notification REST ownership fully to the external sample backend by storing `sample_session_id` in bridge bindings and proxying notification speech through a sample-backend speak route instead of using local auth-header env configuration.
+- Collapsed `examples/agora_conversational_ai` into a single local backend using `agora-agent` plus local client-token generation, removed the separate sample-backend proxy model, and made `/frontend/session/start` / `/stop` own ConvoAI lifecycle directly inside this repo.

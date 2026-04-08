@@ -36,6 +36,7 @@
 - [Add Executor Adapter](./guides/add-executor-adapter.md)
 - [Add Blackboard Backend](./guides/add-blackboard-backend.md)
 - [Frontend Contracts](./guides/frontend-contracts.md)
+- [Agora Conversational AI](./guides/agora-conversational-ai.md)
 
 ## Roadmap
 

@@ -18,7 +18,7 @@ Synopse requires Python 3.12 or newer.
 Create a virtual environment in the repo root:
 
 ```bash
-python3.12 -m venv .venv
+python3 -m venv .venv
 ```
 
 If `python3.12` is not available on your machine, use another Python 3.12+
