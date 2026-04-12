@@ -86,3 +86,4 @@ Short log of important design decisions and changes for Synapse.
 ## 2026-04-13
 
 - Renamed the public package, CLI, docs, env prefixes, and example bridge surface from `synopse` to `synapse`, and added a repo-root `synapse` bootstrap launcher plus a first-class Python CLI for setup, doctor, and local app startup.
+- Split local bootstrap so `install.sh` now installs supported dev dependencies and repo packages, while `synapse setup` became an env-configuration wizard for the root `.env.local` with a non-interactive automation path.

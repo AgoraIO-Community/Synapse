@@ -26,33 +26,82 @@ def test_frontend_tool_falls_back_to_npm(monkeypatch):
     assert cli_main.preferred_frontend_tool() == "npm"
 
 
-def test_setup_creates_env_file_and_installs(monkeypatch, tmp_path: Path):
-    root = tmp_path
-    frontend = root / "frontend"
-    frontend.mkdir()
-    (root / ".env.example").write_text("OPENAI_API_KEY=test\n", encoding="utf-8")
-    venv_python = root / ".venv" / "bin" / "python"
-    commands: list[tuple[list[str], Path]] = []
+def write_template(path: Path) -> None:
+    path.write_text(
+        "\n".join(
+            [
+                "OPENAI_API_KEY=your_openai_api_key_here",
+                "SYNAPSE_OPENAI_MODEL=gpt-4o-mini",
+                "SYNAPSE_OPENAI_TIMEOUT_SECONDS=30",
+                "# SYNAPSE_OPENAI_BASE_URL=",
+                "SYNAPSE_CODEX_EXECUTOR_ENABLED=false",
+                "# SYNAPSE_CODEX_COMMAND=codex",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
 
-    def fake_run(cmd: list[str], cwd: Path, check: bool) -> FakeCompletedProcess:
-        commands.append((cmd, cwd))
-        if cmd[:3] == [sys.executable, "-m", "venv"]:
-            venv_python.parent.mkdir(parents=True, exist_ok=True)
-            venv_python.write_text("", encoding="utf-8")
-        return FakeCompletedProcess()
 
+def configure_repo_paths(monkeypatch, root: Path) -> None:
     monkeypatch.setattr(cli_main, "ROOT", root)
-    monkeypatch.setattr(cli_main, "FRONTEND", frontend)
+    monkeypatch.setattr(cli_main, "FRONTEND", root / "frontend")
     monkeypatch.setattr(cli_main, "VENV_DIR", root / ".venv")
     monkeypatch.setattr(cli_main, "ENV_EXAMPLE", root / ".env.example")
     monkeypatch.setattr(cli_main, "ENV_LOCAL", root / ".env.local")
-    monkeypatch.setattr(cli_main, "preferred_frontend_tool", lambda: "npm")
-    monkeypatch.setattr(cli_main.subprocess, "run", fake_run)
+
+
+def test_setup_interactive_updates_env_file(monkeypatch, tmp_path: Path):
+    root = tmp_path
+    (root / "frontend").mkdir()
+    write_template(root / ".env.example")
+    (root / ".env.local").write_text(
+        "SYNAPSE_OPENAI_MODEL=gpt-4.1-mini\nEXTRA_FLAG=keep-me\n",
+        encoding="utf-8",
+    )
+
+    configure_repo_paths(monkeypatch, root)
+    monkeypatch.setattr(cli_main, "setup_can_prompt", lambda: True)
+    monkeypatch.setattr(cli_main.getpass, "getpass", lambda _prompt: "sk-test")
+    responses = iter(["yes", "/custom/codex"])
+    monkeypatch.setattr("builtins.input", lambda _prompt: next(responses))
+    monkeypatch.setattr(cli_main, "_codex_command_available", lambda command: command == "/custom/codex")
 
     assert cli_main.main(["setup"]) == 0
-    assert (root / ".env.local").read_text(encoding="utf-8") == "OPENAI_API_KEY=test\n"
-    assert commands[0][0][:3] == [sys.executable, "-m", "venv"]
-    assert commands[-1][0] == ["npm", "install"]
+
+    configured = (root / ".env.local").read_text(encoding="utf-8")
+    assert "OPENAI_API_KEY=sk-test" in configured
+    assert "SYNAPSE_OPENAI_MODEL=gpt-4.1-mini" in configured
+    assert "SYNAPSE_CODEX_EXECUTOR_ENABLED=true" in configured
+    assert "SYNAPSE_CODEX_COMMAND=/custom/codex" in configured
+    assert configured.strip().endswith("EXTRA_FLAG=keep-me")
+
+
+def test_setup_non_interactive_uses_existing_and_env(monkeypatch, tmp_path: Path):
+    root = tmp_path
+    (root / "frontend").mkdir()
+    write_template(root / ".env.example")
+
+    configure_repo_paths(monkeypatch, root)
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-env")
+
+    assert cli_main.main(["setup", "--non-interactive"]) == 0
+
+    configured = (root / ".env.local").read_text(encoding="utf-8")
+    assert "OPENAI_API_KEY=sk-env" in configured
+    assert "SYNAPSE_CODEX_EXECUTOR_ENABLED=false" in configured
+    assert "# SYNAPSE_CODEX_COMMAND=codex" in configured
+
+
+def test_setup_non_interactive_requires_openai(monkeypatch, tmp_path: Path, capsys):
+    root = tmp_path
+    (root / "frontend").mkdir()
+    write_template(root / ".env.example")
+
+    configure_repo_paths(monkeypatch, root)
+
+    assert cli_main.main(["setup", "--non-interactive"]) == 1
+    assert "OPENAI_API_KEY is required for non-interactive setup" in capsys.readouterr().err
 
 
 def test_backend_requires_setup(monkeypatch, tmp_path: Path):
@@ -68,14 +117,23 @@ def test_doctor_reads_openai_key_from_env_file(monkeypatch, tmp_path: Path, caps
     venv_python.parent.mkdir(parents=True, exist_ok=True)
     venv_python.write_text("", encoding="utf-8")
 
-    monkeypatch.setattr(cli_main, "ROOT", tmp_path)
-    monkeypatch.setattr(cli_main, "VENV_DIR", tmp_path / ".venv")
-    monkeypatch.setattr(cli_main, "ENV_LOCAL", env_local)
+    configure_repo_paths(monkeypatch, tmp_path)
     monkeypatch.setattr(cli_main, "report_port", lambda _port: True)
     monkeypatch.setattr(cli_main, "report_command", lambda _name, required=True: True)
 
     assert cli_main.main(["doctor"]) == 0
     assert "[ok] env: OPENAI_API_KEY" in capsys.readouterr().out
+
+
+def test_doctor_points_to_install_and_setup(monkeypatch, tmp_path: Path, capsys):
+    configure_repo_paths(monkeypatch, tmp_path)
+    monkeypatch.setattr(cli_main, "report_port", lambda _port: True)
+    monkeypatch.setattr(cli_main, "report_command", lambda _name, required=True: True)
+
+    assert cli_main.main(["doctor"]) == 1
+    output = capsys.readouterr().out
+    assert "[missing] virtualenv: run ./install.sh" in output
+    assert "[missing] env file: run ./synapse setup" in output
 
 
 def test_report_port_tolerates_permission_error(monkeypatch, capsys):
@@ -117,9 +175,7 @@ def test_dev_uses_repo_venv_and_frontend_command(monkeypatch, tmp_path: Path):
         spawned.append((cmd, cwd))
         return processes[len(spawned) - 1]
 
-    monkeypatch.setattr(cli_main, "ROOT", tmp_path)
-    monkeypatch.setattr(cli_main, "FRONTEND", tmp_path / "frontend")
-    monkeypatch.setattr(cli_main, "VENV_DIR", tmp_path / ".venv")
+    configure_repo_paths(monkeypatch, tmp_path)
     monkeypatch.setattr(cli_main.subprocess, "Popen", fake_popen)
     monkeypatch.setattr(cli_main.time, "sleep", lambda _seconds: None)
     monkeypatch.setattr(cli_main.signal, "signal", lambda *_args, **_kwargs: None)

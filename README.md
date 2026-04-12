@@ -16,14 +16,21 @@ Synapse requires Python 3.12 or newer.
 For a fresh clone, use the repo bootstrap launcher:
 
 ```bash
+./install.sh
 ./synapse setup
 ./synapse doctor
 ./synapse dev
 ```
 
-`./synapse setup` creates `.venv`, installs the project in editable mode, installs
-frontend dependencies with Bun first and npm fallback, and creates `.env.local`
-from `.env.example` when missing.
+`./install.sh` installs supported local development dependencies, creates `.venv`,
+installs the project in editable mode, and installs frontend dependencies.
+
+`./synapse setup` configures the repo-root `.env.local`. By default it prompts for
+required runtime values such as `OPENAI_API_KEY`. For automation, use:
+
+```bash
+OPENAI_API_KEY=... ./synapse setup --non-interactive
+```
 
 If you prefer the module entrypoint, it is available from the repo root and after
 editable install:
@@ -40,6 +47,7 @@ so set `OPENAI_API_KEY` in `.env.local` before starting the app.
 ## Common Commands
 
 ```bash
+./install.sh
 ./synapse setup
 ./synapse doctor
 ./synapse dev

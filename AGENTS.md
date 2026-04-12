@@ -20,6 +20,8 @@ Core concepts:
 
 ## Run
 ```bash
+./install.sh
+./synapse setup
 ./synapse backend
 ```
 

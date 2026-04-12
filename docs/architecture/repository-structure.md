@@ -11,6 +11,7 @@ Recommended repository structure:
 ├─ LICENSE
 ├─ CONTRIBUTING.md
 ├─ pyproject.toml
+├─ install.sh
 ├─ .env.example
 ├─ docs/
 ├─ examples/
