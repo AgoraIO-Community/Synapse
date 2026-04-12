@@ -22,10 +22,10 @@ def _get_bool(name: str, default: bool) -> bool:
 @dataclass(slots=True)
 class AgoraBridgeSettings:
     service_base_url: str = "http://127.0.0.1:8010"
+    synopse_base_url: str = "http://127.0.0.1:8000"
     default_app_id: str | None = None
     app_certificate: str | None = None
     convoai_area: str = "CN"
-    openai_api_key: str | None = None
     deepgram_api_key: str | None = None
     deepgram_language: str = "en-US"
     elevenlabs_api_key: str | None = None
@@ -33,7 +33,6 @@ class AgoraBridgeSettings:
     elevenlabs_model_id: str = "eleven_flash_v2_5"
     elevenlabs_sample_rate: int = 24000
     default_model: str = "synopse-agora-bridge"
-    convoai_openai_model: str = "gpt-4o-mini"
     agent_instructions: str = "You are a helpful voice assistant."
     agent_greeting: str = "Hello. How can I help you today?"
     agent_uid: int = 9001
@@ -57,10 +56,13 @@ def load_bridge_settings() -> AgoraBridgeSettings:
     runtime_config_module.load_local_env()
     return AgoraBridgeSettings(
         service_base_url=os.getenv("AGORA_BRIDGE_SERVICE_BASE_URL", "http://127.0.0.1:8010"),
+        synopse_base_url=os.getenv(
+            "AGORA_BRIDGE_SYNOPSE_BASE_URL",
+            "http://127.0.0.1:8000",
+        ),
         default_app_id=os.getenv("AGORA_APP_ID") or None,
         app_certificate=os.getenv("AGORA_APP_CERTIFICATE") or None,
         convoai_area=os.getenv("AGORA_CONVOAI_AREA", "CN").upper(),
-        openai_api_key=os.getenv("OPENAI_API_KEY") or None,
         deepgram_api_key=os.getenv("DEEPGRAM_API_KEY") or None,
         deepgram_language=os.getenv("AGORA_DEEPGRAM_LANGUAGE", "en-US"),
         elevenlabs_api_key=os.getenv("ELEVENLABS_API_KEY") or None,
@@ -68,7 +70,6 @@ def load_bridge_settings() -> AgoraBridgeSettings:
         elevenlabs_model_id=os.getenv("AGORA_ELEVENLABS_MODEL_ID", "eleven_flash_v2_5"),
         elevenlabs_sample_rate=int(os.getenv("AGORA_ELEVENLABS_SAMPLE_RATE", "24000")),
         default_model=os.getenv("AGORA_BRIDGE_MODEL", "synopse-agora-bridge"),
-        convoai_openai_model=os.getenv("AGORA_CONVOAI_OPENAI_MODEL", "gpt-4o-mini"),
         agent_instructions=os.getenv(
             "AGORA_CONVOAI_AGENT_INSTRUCTIONS",
             "You are a helpful voice assistant.",

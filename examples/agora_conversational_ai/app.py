@@ -10,8 +10,6 @@ from uuid import uuid4
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
-from synopse.runtime import RuntimeContainer, build_runtime_container
-
 from .bridge import BridgeRegistry, DuplicateBindingError, MissingRegistrationConfigError
 from .convoai_service import AgoraSDKConvoAIService
 from .frontend_adapter import (
@@ -32,18 +30,22 @@ from .models import (
 )
 from .settings import AgoraBridgeSettings, load_bridge_settings
 from .settings import configure_example_env
+from .synopse_client import ExternalSynopseClient, SynopseBridgeClient, SynopseBridgeError
 
 
 def create_app(
     *,
-    runtime_container: RuntimeContainer | None = None,
     bridge_settings: AgoraBridgeSettings | None = None,
     bridge_registry: BridgeRegistry | None = None,
     frontend_service: FrontendSessionService | None = None,
+    synopse_client: SynopseBridgeClient | None = None,
 ) -> FastAPI:
     configure_example_env()
     settings = bridge_settings or load_bridge_settings()
-    container = runtime_container or build_runtime_container()
+    bridge_client = synopse_client or ExternalSynopseClient(
+        settings.synopse_base_url,
+        request_timeout_seconds=settings.request_timeout_seconds,
+    )
     convoai_service = AgoraSDKConvoAIService(settings)
 
     @asynccontextmanager
@@ -52,11 +54,15 @@ def create_app(
             yield
         finally:
             await app.state.bridge_registry.close()
+            await app.state.synopse_client.close()
 
     app = FastAPI(title="Synopse Agora ConvoAI Bridge", lifespan=lifespan)
-    app.state.runtime_container = container
+    app.state.synopse_client = bridge_client
     app.state.bridge_settings = settings
-    app.state.bridge_registry = bridge_registry or BridgeRegistry(container, speaker=convoai_service)
+    app.state.bridge_registry = bridge_registry or BridgeRegistry(
+        bridge_client,
+        speaker=convoai_service,
+    )
     app.state.frontend_service = frontend_service or FrontendSessionService(
         app.state.bridge_registry,
         settings,
@@ -95,6 +101,8 @@ def create_app(
             return await service.activate_session(payload)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except SynopseBridgeError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
         except ConvoAIConfigurationError as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
         except ConvoAIRuntimeError as exc:
@@ -128,20 +136,16 @@ def create_app(
         if binding is None:
             raise HTTPException(status_code=404, detail="Unknown bridge session.")
 
-        container: RuntimeContainer = request.app.state.runtime_container
-        try:
-            session = container.get_session(binding.synopse_session_id)
-        except KeyError as exc:
-            raise HTTPException(status_code=404, detail=str(exc)) from exc
-
         user_text = _extract_latest_user_text(payload.messages)
         if user_text is None:
             raise HTTPException(status_code=400, detail="No user message found in messages.")
 
+        synopse_client: SynopseBridgeClient = request.app.state.synopse_client
         if payload.stream:
             return StreamingResponse(
                 _stream_completion(
-                    session=session,
+                    synopse_client=synopse_client,
+                    synopse_session_id=binding.synopse_session_id,
                     user_text=user_text,
                     model_name=payload.model or request.app.state.bridge_settings.default_model,
                 ),
@@ -149,49 +153,41 @@ def create_app(
                 headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
             )
 
-        request_id = f"agora-chat-{uuid4().hex[:8]}"
-        _, completion = await session.submit_message(
-            request_id,
-            user_text,
-            start_processing=False,
-        )
-        session.start_message_processing()
-        result = await completion
-        return JSONResponse(
-            _build_completion_response(
-                completion_id=f"chatcmpl-{uuid4().hex[:8]}",
-                created=int(time.time()),
-                model_name=payload.model or request.app.state.bridge_settings.default_model,
-                reply_text=result.reply_text,
+        try:
+            result = await synopse_client.send_message(binding.synopse_session_id, user_text)
+            return JSONResponse(
+                _build_completion_response(
+                    completion_id=f"chatcmpl-{uuid4().hex[:8]}",
+                    created=int(time.time()),
+                    model_name=payload.model or request.app.state.bridge_settings.default_model,
+                    reply_text=result.reply_text,
+                )
             )
-        )
+        except SynopseBridgeError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     return app
 
 
 async def _stream_completion(
     *,
-    session,
+    synopse_client: SynopseBridgeClient,
+    synopse_session_id: str,
     user_text: str,
     model_name: str,
 ) -> AsyncIterator[str]:
-    queue = session.subscribe()
     request_id = f"agora-chat-{uuid4().hex[:8]}"
     completion_id = f"chatcmpl-{uuid4().hex[:8]}"
     created = int(time.time())
     role_sent = False
     try:
-        _, completion = await session.submit_message(
-            request_id,
+        async for event in synopse_client.stream_message(
+            synopse_session_id,
             user_text,
-            start_processing=False,
-        )
-        session.start_message_processing()
-        while True:
-            event = await queue.get()
-            if getattr(event, "request_id", None) != request_id:
-                continue
-            if event.type == "assistant_response_started":
+            request_id=request_id,
+        ):
+            event_type = event.get("type")
+            if event_type == "assistant_response_started":
                 if not role_sent:
                     role_sent = True
                     yield _sse_payload(
@@ -203,7 +199,7 @@ async def _stream_completion(
                         )
                     )
                 continue
-            if event.type == "assistant_response_delta":
+            if event_type == "assistant_response_delta":
                 if not role_sent:
                     role_sent = True
                     yield _sse_payload(
@@ -219,11 +215,11 @@ async def _stream_completion(
                         completion_id=completion_id,
                         created=created,
                         model_name=model_name,
-                        delta={"content": event.delta},
+                        delta={"content": str(event.get("delta") or "")},
                     )
                 )
                 continue
-            if event.type == "assistant_response_completed":
+            if event_type == "assistant_response_completed":
                 if not role_sent:
                     role_sent = True
                     yield _sse_payload(
@@ -231,7 +227,10 @@ async def _stream_completion(
                             completion_id=completion_id,
                             created=created,
                             model_name=model_name,
-                            delta={"role": "assistant", "content": event.reply_text},
+                            delta={
+                                "role": "assistant",
+                                "content": str(event.get("reply_text") or ""),
+                            },
                         )
                     )
                 yield _sse_payload(
@@ -244,7 +243,7 @@ async def _stream_completion(
                     )
                 )
                 break
-            if event.type == "assistant_response_failed":
+            if event_type == "assistant_response_failed":
                 if not role_sent:
                     role_sent = True
                     yield _sse_payload(
@@ -252,7 +251,10 @@ async def _stream_completion(
                             completion_id=completion_id,
                             created=created,
                             model_name=model_name,
-                            delta={"role": "assistant", "content": event.message},
+                            delta={
+                                "role": "assistant",
+                                "content": str(event.get("message") or ""),
+                            },
                         )
                     )
                 yield _sse_payload(
@@ -265,10 +267,9 @@ async def _stream_completion(
                     )
                 )
                 break
-        await completion
         yield "data: [DONE]\n\n"
-    finally:
-        session.unsubscribe(queue)
+    except SynopseBridgeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
 def _resolve_bridge_session_id(request: Request) -> str:

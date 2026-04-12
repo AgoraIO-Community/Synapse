@@ -77,3 +77,8 @@ Short log of important design decisions and changes for Synopse.
 - Added a configurable frontend adapter and example-local React voice client under `examples/agora_conversational_ai`, so browser testing can start and stop Agora sample sessions through local normalized routes instead of binding the UI directly to an external sample-backend contract.
 - Moved example auth and notification REST ownership fully to the external sample backend by storing `sample_session_id` in bridge bindings and proxying notification speech through a sample-backend speak route instead of using local auth-header env configuration.
 - Collapsed `examples/agora_conversational_ai` into a single local backend using `agora-agent` plus local client-token generation, removed the separate sample-backend proxy model, and made `/frontend/session/start` / `/stop` own ConvoAI lifecycle directly inside this repo.
+
+## 2026-04-12
+
+- Switched `examples/agora_conversational_ai` to a bridge-first LLM path, reserving `bridge_session_id` before Agora activation and passing the public `/chat/completions` URL into the Agora SDK so live ConvoAI turns route through the bound local Synopse session instead of calling OpenAI directly from Agora.
+- Reworked `examples/agora_conversational_ai` from an embedded-runtime example into an external bridge that creates and streams Synopse sessions through the main `8000` API server while keeping Agora lifecycle and the public custom-LLM callback on the separate `8010` bridge backend.

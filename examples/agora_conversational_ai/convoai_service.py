@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import time
 from dataclasses import dataclass
 from typing import Protocol
 from uuid import uuid4
@@ -78,7 +77,12 @@ class ConvoAIService(Protocol):
     ) -> PreparedConvoAISession:
         ...
 
-    async def activate_session(self, prepared_session_id: str) -> ActivatedConvoAISession:
+    async def activate_session(
+        self,
+        prepared_session_id: str,
+        *,
+        chat_completions_url: str,
+    ) -> ActivatedConvoAISession:
         ...
 
     async def stop_session(self, runtime_agent_id: str) -> None:
@@ -122,7 +126,6 @@ class AgoraSDKConvoAIService:
             _require(self._settings.app_certificate, "AGORA_APP_CERTIFICATE")
         )
         deepgram_api_key = str(_require(self._settings.deepgram_api_key, "DEEPGRAM_API_KEY"))
-        openai_api_key = str(_require(self._settings.openai_api_key, "OPENAI_API_KEY"))
         elevenlabs_api_key = str(
             _require(self._settings.elevenlabs_api_key, "ELEVENLABS_API_KEY")
         )
@@ -134,9 +137,9 @@ class AgoraSDKConvoAIService:
             AsyncAgora,
             Area,
             Agent,
-            AsyncAgentSession,
+            _AsyncAgentSession,
             DeepgramSTT,
-            OpenAI,
+            _OpenAI,
             ElevenLabsTTS,
             AdvancedFeatures,
             SessionParams,
@@ -195,12 +198,6 @@ class AgoraSDKConvoAIService:
                 language=self._settings.deepgram_language,
             )
         )
-        agent = agent.with_llm(
-            OpenAI(
-                api_key=openai_api_key,
-                model=self._settings.convoai_openai_model,
-            )
-        )
         agent = agent.with_tts(
             ElevenLabsTTS(
                 key=elevenlabs_api_key,
@@ -246,7 +243,12 @@ class AgoraSDKConvoAIService:
         )
         return bootstrap
 
-    async def activate_session(self, prepared_session_id: str) -> ActivatedConvoAISession:
+    async def activate_session(
+        self,
+        prepared_session_id: str,
+        *,
+        chat_completions_url: str,
+    ) -> ActivatedConvoAISession:
         try:
             state = self._prepared_sessions.pop(prepared_session_id)
         except KeyError as exc:
@@ -254,9 +256,16 @@ class AgoraSDKConvoAIService:
 
         bootstrap = state.bootstrap
         AsyncAgentSession = self._load_sdk_types()[3]
+        OpenAI = self._load_sdk_types()[5]
+        agent = state.agent.with_llm(
+            OpenAI(
+                base_url=chat_completions_url,
+                model=self._settings.default_model,
+            )
+        )
         session = AsyncAgentSession(
             client=state.client,
-            agent=state.agent,
+            agent=agent,
             app_id=bootstrap.app_id,
             app_certificate=str(_require(self._settings.app_certificate, "AGORA_APP_CERTIFICATE")),
             name=f"synopse_agent_{uuid4().hex[:8]}",

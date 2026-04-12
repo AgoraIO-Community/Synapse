@@ -49,10 +49,10 @@ class FrontendSessionService:
         missing: list[str] = []
         if not self._settings.default_app_id:
             missing.append("AGORA_APP_ID")
+        if not self._settings.synopse_base_url:
+            missing.append("AGORA_BRIDGE_SYNOPSE_BASE_URL")
         if not self._settings.app_certificate:
             missing.append("AGORA_APP_CERTIFICATE")
-        if not self._settings.openai_api_key:
-            missing.append("OPENAI_API_KEY")
         if not self._settings.deepgram_api_key:
             missing.append("DEEPGRAM_API_KEY")
         if not self._settings.elevenlabs_api_key:
@@ -94,19 +94,41 @@ class FrontendSessionService:
         self,
         request_payload: FrontendSessionActivateRequest,
     ) -> FrontendSessionActivateResponse:
-        activated = await self._convoai_service.activate_session(request_payload.prepared_session_id)
+        reserved = await self._bridge_registry.reserve()
+        chat_completions_url = self._build_chat_completions_url(reserved.bridge_session_id)
+        activated: ActivatedConvoAISession | None = None
         try:
-            binding = await self._bridge_registry.register(
-                agent_id=activated.runtime_agent_id,
+            activated = await self._convoai_service.activate_session(
+                request_payload.prepared_session_id,
+                chat_completions_url=chat_completions_url,
+            )
+            binding = await self._bridge_registry.finalize(
+                reserved.bridge_session_id,
                 channel_name=activated.channel_name,
                 runtime_agent_id=activated.runtime_agent_id,
             )
         except (DuplicateBindingError, MissingRegistrationConfigError, KeyError):
+            if activated is not None:
+                try:
+                    await self._convoai_service.stop_session(activated.runtime_agent_id)
+                except Exception:
+                    pass
+            await self._bridge_registry.unregister(reserved.bridge_session_id)
+            raise
+        except ConvoAIRuntimeError:
+            await self._bridge_registry.unregister(reserved.bridge_session_id)
+            raise
+        except Exception:
+            await self._bridge_registry.unregister(reserved.bridge_session_id)
+            raise
+
+        if binding.runtime_agent_id != activated.runtime_agent_id:
             try:
                 await self._convoai_service.stop_session(activated.runtime_agent_id)
             except Exception:
                 pass
-            raise
+            await self._bridge_registry.unregister(binding.bridge_session_id)
+            raise RuntimeError("Bridge session binding did not finalize correctly.")
 
         self._sessions[binding.bridge_session_id] = FrontendSessionHandle(
             bridge_session_id=binding.bridge_session_id,
@@ -172,10 +194,7 @@ class FrontendSessionService:
             bridge_session_id=bridge_session_id,
             synopse_session_id=synopse_session_id,
             runtime_agent_id=activated.runtime_agent_id,
-            chat_completions_url=(
-                f"{self._settings.service_base_url.rstrip('/')}"
-                f"/chat/completions?bridge_session_id={bridge_session_id}"
-            ),
+            chat_completions_url=self._build_chat_completions_url(bridge_session_id),
             app_id=activated.app_id,
             channel_name=activated.channel_name,
             token=activated.token,
@@ -187,6 +206,12 @@ class FrontendSessionService:
             profile=activated.profile,
             display_name=activated.display_name,
             diagnostics=activated.diagnostics,
+        )
+
+    def _build_chat_completions_url(self, bridge_session_id: str) -> str:
+        return (
+            f"{self._settings.service_base_url.rstrip('/')}"
+            f"/chat/completions?bridge_session_id={bridge_session_id}"
         )
 
 
