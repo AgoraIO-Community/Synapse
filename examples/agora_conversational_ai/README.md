@@ -8,22 +8,22 @@ It does three jobs:
 - exposes a public OpenAI-compatible `/chat/completions` edge for Agora custom-LLM callbacks
 - serves as the backend for the local React voice test client
 
-This backend is now a bridge in front of a separate Synopse server. Run Synopse itself on
+This backend is now a bridge in front of a separate Synapse server. Run Synapse itself on
 port `8000`, and run this Agora bridge on port `8010`.
 
 ## Flow
 
-1. Start the normal Synopse server on `8000`.
+1. Start the normal Synapse server on `8000`.
 2. Configure this example backend with Agora App Credentials plus the provider keys it needs.
 3. Start the example backend on `8010`.
 4. Start the example-local voice frontend.
 5. The frontend calls `POST /frontend/session/prepare`.
 6. The browser initializes RTC and RTM, subscribes to the channel, and then calls `POST /frontend/session/activate`.
-7. This backend creates a Synopse session on `8000`, reserves a `bridge_session_id`, starts the ConvoAI agent locally with that public `/chat/completions` URL as its LLM endpoint, and forwards those callback turns into the bound external Synopse session.
+7. This backend creates a Synapse session on `8000`, reserves a `bridge_session_id`, starts the ConvoAI agent locally with that public `/chat/completions` URL as its LLM endpoint, and forwards those callback turns into the bound external Synapse session.
 
 ## Run
 
-Install Synopse first:
+Install Synapse first:
 
 ```bash
 pip install -e '.[dev]'
@@ -38,10 +38,10 @@ Create the example-local env file:
 cp examples/agora_conversational_ai/.env.example examples/agora_conversational_ai/.env.local
 ```
 
-Run Synopse itself first:
+Run Synapse itself first:
 
 ```bash
-uvicorn synopse.api.app:app --reload --port 8000
+./synapse backend --port 8000
 ```
 
 Run the Agora bridge backend:
@@ -79,16 +79,16 @@ AGORA_APP_CERTIFICATE=...
 DEEPGRAM_API_KEY=...
 ELEVENLABS_API_KEY=...
 ELEVENLABS_VOICE_ID=...
-AGORA_BRIDGE_SYNOPSE_BASE_URL=http://127.0.0.1:8000
+AGORA_BRIDGE_SYNAPSE_BASE_URL=http://127.0.0.1:8000
 ```
 
-The Synopse server on `8000` keeps its own runtime env in the repo-root `.env.local`.
-If that Synopse server should call a different OpenAI-compatible backend, configure
-`OPENAI_API_KEY` and optional `SYNOPSE_OPENAI_BASE_URL` there, not in this example env file.
+The Synapse server on `8000` keeps its own runtime env in the repo-root `.env.local`.
+If that Synapse server should call a different OpenAI-compatible backend, configure
+`OPENAI_API_KEY` and optional `SYNAPSE_OPENAI_BASE_URL` there, not in this example env file.
 
 ```bash
 OPENAI_API_KEY=...
-SYNOPSE_OPENAI_BASE_URL=https://your-llm.example.com/v1
+SYNAPSE_OPENAI_BASE_URL=https://your-llm.example.com/v1
 ```
 
 Recommended local default for this environment:
@@ -112,12 +112,12 @@ AGORA_CONVOAI_AGENT_GREETING=Hello. How can I help you today?
 AGORA_CONVOAI_SDK_DEBUG=false
 
 AGORA_FRONTEND_DEFAULT_PROFILE=VOICE
-AGORA_FRONTEND_DEFAULT_CHANNEL_NAME=synopse-voice-demo
-AGORA_FRONTEND_DEFAULT_DISPLAY_NAME=Synopse Tester
+AGORA_FRONTEND_DEFAULT_CHANNEL_NAME=synapse-voice-demo
+AGORA_FRONTEND_DEFAULT_DISPLAY_NAME=Synapse Tester
 
-AGORA_BRIDGE_SYNOPSE_BASE_URL=http://127.0.0.1:8000
+AGORA_BRIDGE_SYNAPSE_BASE_URL=http://127.0.0.1:8000
 AGORA_BRIDGE_SERVICE_BASE_URL=http://127.0.0.1:8010
-AGORA_BRIDGE_MODEL=synopse-agora-bridge
+AGORA_BRIDGE_MODEL=synapse-agora-bridge
 AGORA_BRIDGE_SPEAK_PRIORITY=APPEND
 AGORA_BRIDGE_SPEAK_INTERRUPTABLE=true
 AGORA_BRIDGE_REQUEST_TIMEOUT_SECONDS=10
@@ -132,7 +132,7 @@ ${AGORA_BRIDGE_SERVICE_BASE_URL}/chat/completions?bridge_session_id=...
 
 as the custom-LLM callback URL.
 
-`AGORA_BRIDGE_SYNOPSE_BASE_URL` is the separate Synopse server this bridge calls for:
+`AGORA_BRIDGE_SYNAPSE_BASE_URL` is the separate Synapse server this bridge calls for:
 
 - `POST /sessions`
 - `POST /sessions/{session_id}/messages`
@@ -172,7 +172,7 @@ Activates the local Agora agent only after the browser has:
 Returns:
 
 - `bridge_session_id`
-- `synopse_session_id`
+- `synapse_session_id`
 - runtime `agent_id`
 - `chat_completions_url`
 - diagnostics
@@ -185,7 +185,7 @@ Stops the local Agora session and unregisters the bridge binding.
 
 This is the OpenAI-compatible custom-LLM endpoint the locally started ConvoAI agent uses.
 The bridge resolves `bridge_session_id`, submits the latest user turn into the bound
-Synopse session on `8000`, and returns the Synopse reply in OpenAI-compatible format.
+Synapse session on `8000`, and returns the Synapse reply in OpenAI-compatible format.
 
 Example:
 
@@ -194,7 +194,7 @@ curl -X POST \
   'http://127.0.0.1:8010/chat/completions?bridge_session_id=bridge-ab12cd34' \
   -H 'Content-Type: application/json' \
   --data '{
-    "model": "synopse-agora-bridge",
+    "model": "synapse-agora-bridge",
     "messages": [
       {"role": "user", "content": "Check the build status."}
     ]
@@ -225,8 +225,8 @@ For a live user turn, the call chain is:
 1. browser audio/text enters Agora RTC/RTM
 2. Agora ConvoAI calls this backend's public `chat_completions_url`
 3. `/chat/completions` resolves `bridge_session_id`
-4. the bridge submits the latest user text into the Synopse server on `8000`
-5. Synopse calls its configured upstream OpenAI-compatible backend
+4. the bridge submits the latest user text into the Synapse server on `8000`
+5. Synapse calls its configured upstream OpenAI-compatible backend
 6. `/chat/completions` returns the reply back to Agora
 
 ## Connectivity Note

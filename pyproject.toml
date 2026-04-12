@@ -1,5 +1,5 @@
 [project]
-name = "synopse"
+name = "synapse"
 version = "0.1.0"
 description = "Communication brain / execution brain runtime prototype"
 readme = "README.md"
@@ -26,6 +26,9 @@ dev = [
   "ruff>=0.6,<1",
 ]
 
+[project.scripts]
+synapse = "synapse.cli.main:main"
+
 [build-system]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
@@ -35,7 +38,7 @@ package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["synopse*"]
+include = ["synapse*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

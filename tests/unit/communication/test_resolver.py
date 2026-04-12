@@ -1,5 +1,5 @@
-from synopse.communication.resolver import TaskResolver
-from synopse.protocol import Task, TaskStatus
+from synapse.communication.resolver import TaskResolver
+from synapse.protocol import Task, TaskStatus
 
 
 def test_task_resolver_returns_resolved_match_for_unique_reference():

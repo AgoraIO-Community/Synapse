@@ -1,6 +1,6 @@
 # Memories
 
-Short log of important design decisions and changes for Synopse.
+Short log of important design decisions and changes for Synapse.
 
 ## 2026-04-04
 
@@ -46,7 +46,7 @@ Short log of important design decisions and changes for Synopse.
 - Tightened `control_task` so the communication tool surface accepts only canonical protocol command tokens such as `resume_task`, and invalid LLM-emitted aliases now round-trip through the OpenAI tool loop instead of crashing the message route.
 - Switched the communication LLM path to a traditional OpenAI-compatible `chat.completions` loop that replays the local 30-message conversation history each turn instead of using Responses API conversation-state handles.
 - Tightened executor selection so `create_task` rejects unknown `preferred_executor` ids and queued tasks with already-invalid executor ids now fail with a summary instead of crashing execution.
-- Added a real Codex app-server executor path in `src/synopse`, wired runtime bootstrap to enable it via `SYNOPSE_CODEX_EXECUTOR_ENABLED`, and made Codex the default executor when enabled successfully while keeping mock available for explicit fallback and tests.
+- Added a real Codex app-server executor path in `src/synapse`, wired runtime bootstrap to enable it via `SYNAPSE_CODEX_EXECUTOR_ENABLED`, and made Codex the default executor when enabled successfully while keeping mock available for explicit fallback and tests.
 - Changed session message and command handling to schedule execution in a background loop instead of awaiting executor completion inline, so Codex-backed work no longer blocks the HTTP request path and snapshot updates flow over the existing session stream.
 - Reused the session websocket as a bidirectional mixed stream, keeping snapshot/debug events while adding websocket `send_message` / `send_command` actions plus transient assistant-response events and hiding internal communication tool calls from the frontend transport.
 - Reworked the communication tool surface around `add_task_note`, `add_constraint`, and `list_tasks`, removed silent latest-task fallback for ambiguous references, and added communication eval scaffolding for tool choice and spoken-reply quality regression checks.
@@ -63,7 +63,7 @@ Short log of important design decisions and changes for Synopse.
 - Removed the dedicated debug route and debugger-only websocket events, moving prompt/tool/blackboard inspection onto log-backed diagnostics timeline events while keeping the session websocket focused on assistant transport and durable snapshots.
 - Quieted local access logs by filtering diagnostics timeline polling requests from `uvicorn.access` by default, and made the frontend diagnostics polling visibility-aware instead of polling continuously in hidden tabs.
 - Removed the dedicated LLM trace UI and dropped backend prompt-trace diagnostic events, keeping tool-call and lifecycle logs as the main communication-side debugging surface.
-- Restored backend-only LLM diagnostic events as summary logs by default, with verbose prompt/message payloads gated behind `SYNOPSE_LOG_LLM_DETAILS`, while leaving the dedicated LLM trace UI removed.
+- Restored backend-only LLM diagnostic events as summary logs by default, with verbose prompt/message payloads gated behind `SYNAPSE_LOG_LLM_DETAILS`, while leaving the dedicated LLM trace UI removed.
 
 ## 2026-04-07
 
@@ -73,12 +73,16 @@ Short log of important design decisions and changes for Synopse.
 
 ## 2026-04-08
 
-- Added a standalone `examples/agora_conversational_ai` bridge that binds one live Agora Conversational AI agent to one Synopse session, exposes an OpenAI-compatible `/chat/completions` edge outside the main app, and reuses `conversation_appended` notification events to drive Agora `/speak` delivery for proactive updates only.
+- Added a standalone `examples/agora_conversational_ai` bridge that binds one live Agora Conversational AI agent to one Synapse session, exposes an OpenAI-compatible `/chat/completions` edge outside the main app, and reuses `conversation_appended` notification events to drive Agora `/speak` delivery for proactive updates only.
 - Added a configurable frontend adapter and example-local React voice client under `examples/agora_conversational_ai`, so browser testing can start and stop Agora sample sessions through local normalized routes instead of binding the UI directly to an external sample-backend contract.
 - Moved example auth and notification REST ownership fully to the external sample backend by storing `sample_session_id` in bridge bindings and proxying notification speech through a sample-backend speak route instead of using local auth-header env configuration.
 - Collapsed `examples/agora_conversational_ai` into a single local backend using `agora-agent` plus local client-token generation, removed the separate sample-backend proxy model, and made `/frontend/session/start` / `/stop` own ConvoAI lifecycle directly inside this repo.
 
 ## 2026-04-12
 
-- Switched `examples/agora_conversational_ai` to a bridge-first LLM path, reserving `bridge_session_id` before Agora activation and passing the public `/chat/completions` URL into the Agora SDK so live ConvoAI turns route through the bound local Synopse session instead of calling OpenAI directly from Agora.
-- Reworked `examples/agora_conversational_ai` from an embedded-runtime example into an external bridge that creates and streams Synopse sessions through the main `8000` API server while keeping Agora lifecycle and the public custom-LLM callback on the separate `8010` bridge backend.
+- Switched `examples/agora_conversational_ai` to a bridge-first LLM path, reserving `bridge_session_id` before Agora activation and passing the public `/chat/completions` URL into the Agora SDK so live ConvoAI turns route through the bound local Synapse session instead of calling OpenAI directly from Agora.
+- Reworked `examples/agora_conversational_ai` from an embedded-runtime example into an external bridge that creates and streams Synapse sessions through the main `8000` API server while keeping Agora lifecycle and the public custom-LLM callback on the separate `8010` bridge backend.
+
+## 2026-04-13
+
+- Renamed the public package, CLI, docs, env prefixes, and example bridge surface from `synopse` to `synapse`, and added a repo-root `synapse` bootstrap launcher plus a first-class Python CLI for setup, doctor, and local app startup.

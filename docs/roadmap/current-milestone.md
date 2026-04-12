@@ -11,7 +11,7 @@ This page should stay short and current.
 
 - remove the legacy `runtime/` implementation
 - remove legacy tests that depend on `runtime.*`
-- leave `src/synopse` as the only active backend path
+- leave `src/synapse` as the only active backend path
 
 ## Explicitly Out of Scope Right Now
 
@@ -24,4 +24,4 @@ Move into the next phase when:
 
 - no active code imports `runtime.*`
 - no active tests depend on `runtime.*`
-- docs and run guidance point only to `synopse.api.app`
+- docs and run guidance point only to `synapse.api.app`

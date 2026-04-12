@@ -16,8 +16,8 @@ from examples.agora_conversational_ai.convoai_service import (
 from examples.agora_conversational_ai.frontend_adapter import FrontendSessionService
 from examples.agora_conversational_ai.models import FrontendSessionDiagnostics
 from examples.agora_conversational_ai.settings import AgoraBridgeSettings
-from examples.agora_conversational_ai.synopse_client import SynopseBridgeClient, SynopseMessageResult
-from synopse.runtime import config as runtime_config_module
+from examples.agora_conversational_ai.synapse_client import SynapseBridgeClient, SynapseMessageResult
+from synapse.runtime import config as runtime_config_module
 
 
 class FakeConvoAIService:
@@ -37,7 +37,7 @@ class FakeConvoAIService:
             agent_rtm_uid="9001-demo-room",
             enable_string_uid=False,
             profile="VOICE",
-            display_name="Synopse Tester",
+            display_name="Synapse Tester",
             diagnostics=FrontendSessionDiagnostics(
                 convoai_area="CN",
                 selected_url="https://api-cn-test.agora.io/api/conversational-ai-agent",
@@ -65,7 +65,7 @@ class FakeConvoAIService:
             agent_rtm_uid="9001-demo-room",
             enable_string_uid=False,
             profile="VOICE",
-            display_name="Synopse Tester",
+            display_name="Synapse Tester",
             diagnostics=FrontendSessionDiagnostics(
                 convoai_area="CN",
                 selected_url="https://api-cn-test.agora.io/api/conversational-ai-agent",
@@ -129,7 +129,7 @@ class FakeConvoAIService:
         )
 
 
-class FakeSynopseClient(SynopseBridgeClient):
+class FakeSynapseClient(SynapseBridgeClient):
     def __init__(self, reply_text: str = "Bridge reply.") -> None:
         self.reply_text = reply_text
         self.created_sessions: list[str] = []
@@ -143,9 +143,9 @@ class FakeSynopseClient(SynopseBridgeClient):
         self._notification_queues[session_id] = asyncio.Queue()
         return session_id
 
-    async def send_message(self, session_id: str, text: str) -> SynopseMessageResult:
+    async def send_message(self, session_id: str, text: str) -> SynapseMessageResult:
         self.message_calls.append({"session_id": session_id, "text": text})
-        return SynopseMessageResult(reply_text=self.reply_text)
+        return SynapseMessageResult(reply_text=self.reply_text)
 
     async def stream_message(self, session_id: str, text: str, *, request_id: str):
         self.stream_calls.append(
@@ -207,7 +207,7 @@ def test_real_agora_sdk_vendor_constructors_accept_current_option_names():
     DeepgramSTT(api_key="deepgram-key", language="en-US")
     OpenAI(
         base_url="https://bridge.example.com/chat/completions?bridge_session_id=bridge-1234",
-        model="synopse-agora-bridge",
+        model="synapse-agora-bridge",
     )
     ElevenLabsTTS(
         key="elevenlabs-key",
@@ -396,7 +396,7 @@ async def test_local_convoai_service_activate_uses_bridge_chat_completions_url(m
     assert activated.runtime_agent_id == "runtime-agent-1"
     assert created["llm_kwargs"] == {
         "base_url": "https://bridge.example.com/chat/completions?bridge_session_id=bridge-1234",
-        "model": "synopse-agora-bridge",
+        "model": "synapse-agora-bridge",
     }
     assert created["session_kwargs"]["agent"] is not None
 
@@ -481,7 +481,7 @@ async def test_local_convoai_service_activate_wraps_connect_error(monkeypatch):
 def _build_settings(**overrides) -> AgoraBridgeSettings:
     base = AgoraBridgeSettings(
         service_base_url="http://testserver",
-        synopse_base_url="http://upstream-testserver",
+        synapse_base_url="http://upstream-testserver",
         default_app_id="agora-app",
         app_certificate="app-certificate",
         deepgram_api_key="deepgram-key",
@@ -498,12 +498,12 @@ def _build_app(
     *,
     bridge_settings: AgoraBridgeSettings | None = None,
     convoai_service: FakeConvoAIService | None = None,
-    synopse_client: FakeSynopseClient | None = None,
+    synapse_client: FakeSynapseClient | None = None,
 ):
     bridge_settings = bridge_settings or _build_settings()
     convoai_service = convoai_service or FakeConvoAIService()
-    synopse_client = synopse_client or FakeSynopseClient(reply_text=reply_text)
-    bridge_registry = BridgeRegistry(synopse_client, speaker=convoai_service)
+    synapse_client = synapse_client or FakeSynapseClient(reply_text=reply_text)
+    bridge_registry = BridgeRegistry(synapse_client, speaker=convoai_service)
     frontend_service = FrontendSessionService(
         bridge_registry,
         bridge_settings,
@@ -513,9 +513,9 @@ def _build_app(
         bridge_settings=bridge_settings,
         bridge_registry=bridge_registry,
         frontend_service=frontend_service,
-        synopse_client=synopse_client,
+        synapse_client=synapse_client,
     )
-    return app, convoai_service, synopse_client
+    return app, convoai_service, synapse_client
 
 
 @pytest.mark.anyio
@@ -532,7 +532,7 @@ async def test_frontend_config_reports_ready_defaults():
     payload = response.json()
     assert payload["ready"] is True
     assert payload["defaults"]["profile"] == "VOICE"
-    assert payload["defaults"]["channel_name"] == "synopse-voice-demo"
+    assert payload["defaults"]["channel_name"] == "synapse-voice-demo"
     assert payload["service_base_url"] == "http://testserver"
 
 
@@ -577,7 +577,7 @@ async def test_prepare_returns_official_sample_like_bootstrap():
 
 @pytest.mark.anyio
 async def test_activate_returns_bridge_payload_and_chat_completion_works():
-    app, convoai_service, synopse_client = _build_app()
+    app, convoai_service, synapse_client = _build_app()
 
     async with AsyncClient(
         transport=ASGITransport(app=app),
@@ -595,7 +595,7 @@ async def test_activate_returns_bridge_payload_and_chat_completion_works():
         response = await client.post(
             f"/chat/completions?bridge_session_id={payload['bridge_session_id']}",
             json={
-                "model": "synopse-agora-bridge",
+                "model": "synapse-agora-bridge",
                 "messages": [{"role": "user", "content": "hello"}],
             },
         )
@@ -603,7 +603,7 @@ async def test_activate_returns_bridge_payload_and_chat_completion_works():
     assert activated.status_code == 200
     assert payload["runtime_agent_id"] == "runtime-agent-1"
     assert payload["bridge_session_id"].startswith("bridge-")
-    assert payload["synopse_session_id"] == "session-0001"
+    assert payload["synapse_session_id"] == "session-0001"
     assert payload["agent"]["uid"] == "9001"
     assert payload["agent_rtm_uid"] == "9001-demo-room"
     assert payload["user_rtm_uid"] == "101-demo-room"
@@ -613,7 +613,7 @@ async def test_activate_returns_bridge_payload_and_chat_completion_works():
             "chat_completions_url": payload["chat_completions_url"],
         }
     ]
-    assert synopse_client.message_calls == [
+    assert synapse_client.message_calls == [
         {"session_id": "session-0001", "text": "hello"}
     ]
     assert response.status_code == 200
@@ -621,8 +621,8 @@ async def test_activate_returns_bridge_payload_and_chat_completion_works():
 
 
 @pytest.mark.anyio
-async def test_chat_completions_stream_uses_upstream_synopse_stream():
-    app, _, synopse_client = _build_app(reply_text="Streamed bridge reply.")
+async def test_chat_completions_stream_uses_upstream_synapse_stream():
+    app, _, synapse_client = _build_app(reply_text="Streamed bridge reply.")
 
     async with AsyncClient(
         transport=ASGITransport(app=app),
@@ -640,7 +640,7 @@ async def test_chat_completions_stream_uses_upstream_synopse_stream():
         response = await client.post(
             f"/chat/completions?bridge_session_id={payload['bridge_session_id']}",
             json={
-                "model": "synopse-agora-bridge",
+                "model": "synapse-agora-bridge",
                 "messages": [{"role": "user", "content": "hello"}],
                 "stream": True,
             },
@@ -648,11 +648,11 @@ async def test_chat_completions_stream_uses_upstream_synopse_stream():
 
     assert response.status_code == 200
     assert "Streamed bridge reply." in response.text
-    assert synopse_client.stream_calls == [
+    assert synapse_client.stream_calls == [
         {
             "session_id": "session-0001",
             "text": "hello",
-            "request_id": synopse_client.stream_calls[0]["request_id"],
+            "request_id": synapse_client.stream_calls[0]["request_id"],
         }
     ]
 
@@ -689,7 +689,7 @@ async def test_activate_failure_cleans_up_reserved_bridge_binding():
 
 @pytest.mark.anyio
 async def test_notification_events_trigger_local_speak():
-    app, convoai_service, synopse_client = _build_app()
+    app, convoai_service, synapse_client = _build_app()
 
     async with AsyncClient(
         transport=ASGITransport(app=app),
@@ -703,8 +703,8 @@ async def test_notification_events_trigger_local_speak():
             "/frontend/session/activate",
             json={"prepared_session_id": prepared.json()["prepared_session_id"]},
         )
-        session_id = activated.json()["synopse_session_id"]
-        await synopse_client.emit_notification(
+        session_id = activated.json()["synapse_session_id"]
+        await synapse_client.emit_notification(
             session_id,
             "I need one more detail from you.",
         )

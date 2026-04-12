@@ -29,7 +29,7 @@ Core communication policy:
 - invalid tool arguments from the model should be returned through the tool loop for correction instead of crashing the message transport
 - invalid executor ids should be rejected before task creation, and pre-existing bad tasks should fail cleanly rather than crashing execution
 - ambiguous task references should not silently fall back to the latest task; the communication brain should resolve them explicitly or ask for clarification
-- task-first routing is the default; only clear social, subjective, or Synopse-meta conversation should remain pure chat
+- task-first routing is the default; only clear social, subjective, or Synapse-meta conversation should remain pure chat
 - actionable requests should usually become tasks even when phrased as questions
 - fact-checking, claim verification, current-world information, and other live external-fact requests should normally route toward `create_task` rather than unsupported pure-chat answers
 - when a live verification request is missing a required operand such as location, ticker, date, or target claim, the communication brain should ask a short clarification before task creation

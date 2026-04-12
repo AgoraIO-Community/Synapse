@@ -4,14 +4,14 @@ import pytest
 from fastapi import FastAPI, WebSocket
 from httpx import ASGITransport, AsyncClient
 
-from synopse.api.app import create_app
-from synopse.communication.model import ToolCall
-from synopse.communication.models import ScriptedCommunicationModel
-from synopse.communication.models.scripted import ScriptedPlan
-from synopse.runtime import build_runtime_container
-from synopse.protocol import Task, TaskStatus
-from synopse.runtime import Settings
-from synopse.runtime.container import RuntimeContainer
+from synapse.api.app import create_app
+from synapse.communication.model import ToolCall
+from synapse.communication.models import ScriptedCommunicationModel
+from synapse.communication.models.scripted import ScriptedPlan
+from synapse.runtime import build_runtime_container
+from synapse.protocol import Task, TaskStatus
+from synapse.runtime import Settings
+from synapse.runtime.container import RuntimeContainer
 
 from tests.helpers.asgi_websocket import ASGIWebSocketSession
 

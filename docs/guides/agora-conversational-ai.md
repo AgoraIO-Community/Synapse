@@ -1,6 +1,6 @@
 # Agora Conversational AI
 
-This guide documents the supported Synopse integration path for `examples/agora_conversational_ai`.
+This guide documents the supported Synapse integration path for `examples/agora_conversational_ai`.
 
 ## Example Shape
 
@@ -12,13 +12,13 @@ That backend owns:
 
 - Agora ConvoAI lifecycle via the Python SDK module `agora_agent`
 - browser RTC/RTM token generation
-- Synopse bridge binding
+- Synapse bridge binding
 - the public custom-LLM callback URL used by Agora
 - proactive notification speech through the local ConvoAI session
 
-The example bridge runs separately from the main Synopse API server:
+The example bridge runs separately from the main Synapse API server:
 
-- Synopse server: `8000`
+- Synapse server: `8000`
 - Agora bridge: `8010`
 
 It also exposes the browser-facing routes:
@@ -33,13 +33,13 @@ There is no separate sample-backend proxy in this example anymore.
 
 ## Behavior
 
-- one live Agora agent binds to one Synopse session
+- one live Agora agent binds to one Synapse session
 - duplicate runtime-agent bindings are rejected
-- the bridge translates the latest Agora custom-LLM turn into a Synopse session on the external Synopse server
-- Synopse owns conversational replies behind the bridge callback
+- the bridge translates the latest Agora custom-LLM turn into a Synapse session on the external Synapse server
+- Synapse owns conversational replies behind the bridge callback
 - this example backend owns Agora auth and calls Agora APIs on behalf of this example
 - the browser prepares and subscribes RTC/RTM before agent activation, matching the official sample
-- proactive notification delivery is triggered only for Synopse notification events
+- proactive notification delivery is triggered only for Synapse notification events
 - normal chat replies are not replayed through `/speak`
 - the example frontend talks only to this repo's example backend
 
@@ -58,18 +58,18 @@ and passes that full URL into the Agora SDK as the OpenAI-compatible LLM endpoin
 When Agora calls that URL:
 
 1. the bridge resolves `bridge_session_id`
-2. the latest user turn is submitted into the bound external Synopse session on `8000`
-3. Synopse generates the reply through its configured OpenAI-compatible backend
+2. the latest user turn is submitted into the bound external Synapse session on `8000`
+3. Synapse generates the reply through its configured OpenAI-compatible backend
 4. the bridge returns an OpenAI-compatible `chat.completions` response to Agora
 
-`OPENAI_API_KEY` and optional `SYNOPSE_OPENAI_BASE_URL` therefore belong to the
-separate Synopse server on `8000`, not the Agora bridge process on `8010`.
+`OPENAI_API_KEY` and optional `SYNAPSE_OPENAI_BASE_URL` therefore belong to the
+separate Synapse server on `8000`, not the Agora bridge process on `8010`.
 
 ## Notification Delivery
 
-The bridge subscribes to the Synopse session stream and watches for `conversation_appended` events with `source="notification"`.
+The bridge subscribes to the Synapse session stream and watches for `conversation_appended` events with `source="notification"`.
 
-When such an event arrives, the bridge calls the local ConvoAI service `say()` path for the started SDK session. This keeps Agora auth inside the example backend and out of the frontend while sourcing notification text from the external Synopse server.
+When such an event arrives, the bridge calls the local ConvoAI service `say()` path for the started SDK session. This keeps Agora auth inside the example backend and out of the frontend while sourcing notification text from the external Synapse server.
 
 ## Identity Model
 
@@ -84,11 +84,11 @@ The frontend uses the agent RTM uid for toolkit messaging calls and the agent RT
 
 ## Run
 
-Install Synopse in editable mode, then run:
+Install Synapse in editable mode, then run:
 
 ```bash
 pip install -e '.[dev]'
-uvicorn synopse.api.app:app --reload --port 8000
+uvicorn synapse.api.app:app --reload --port 8000
 uvicorn examples.agora_conversational_ai.app:app --reload --port 8010
 ```
 
@@ -103,7 +103,7 @@ npm install
 npm run dev
 ```
 
-The example reads its env from `examples/agora_conversational_ai/.env.local`. Configure App Credentials, provider keys, and `AGORA_BRIDGE_SYNOPSE_BASE_URL` there before starting live sessions.
+The example reads its env from `examples/agora_conversational_ai/.env.local`. Configure App Credentials, provider keys, and `AGORA_BRIDGE_SYNAPSE_BASE_URL` there before starting live sessions.
 
 For live Agora sessions, `AGORA_BRIDGE_SERVICE_BASE_URL` must be a public URL that can
 reach this backend.

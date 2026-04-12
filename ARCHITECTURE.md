@@ -1,6 +1,6 @@
-# Synopse Architecture
+# Synapse Architecture
 
-Synopse is a backend-first runtime built around a dual-brain model:
+Synapse is a backend-first runtime built around a dual-brain model:
 
 - `Communication Brain`
 - `Execution Brain`
@@ -10,7 +10,7 @@ The design goal is not a single-threaded assistant that thinks, talks, and execu
 
 ## Status
 
-- This document is the stable architecture target for Synopse `v2`.
+- This document is the stable architecture target for Synapse `v2`.
 - Detailed subsystem and protocol references remain under `docs/architecture/`, `docs/protocol/`, and `docs/roadmap/`.
 - `ExecutionMode = undecided / lightweight / managed` is now treated as a stable execution projection, while richer mode-dependent behavior remains implementation work for later phases.
 
@@ -24,7 +24,7 @@ The design goal is not a single-threaded assistant that thinks, talks, and execu
 
 ## Design Goal
 
-Synopse should let users interact with the system as if they were talking to a person who can both converse and work:
+Synapse should let users interact with the system as if they were talking to a person who can both converse and work:
 
 - users can hand off tasks conversationally
 - the assistant can acknowledge, clarify, and continue talking while work happens asynchronously
@@ -116,7 +116,7 @@ Not:
 
 Task-first routing is the default.
 
-- only clear social, subjective, or Synopse-meta conversation should remain pure chat
+- only clear social, subjective, or Synapse-meta conversation should remain pure chat
 - actionable requests should usually become tasks, even when phrased as questions
 - capability-gated requests such as checking machine state, reading the current workspace, or running commands are one important subset of those task requests
 - when only a mock executor is available, ordinary task requests should be blocked by default unless they are explicitly mock-safe
@@ -157,7 +157,7 @@ The important boundary is that executors provide execution signals, while Execut
 
 ## Observability
 
-Synopse should instrument boundary crossings and runtime decisions with one
+Synapse should instrument boundary crossings and runtime decisions with one
 canonical diagnostic event schema.
 
 The first version keeps observability diagnosis-focused:
@@ -298,7 +298,7 @@ The principle is simple:
 
 ## Repository Structure
 
-Synopse should stay organized by domain boundaries rather than by generic web-backend layers.
+Synapse should stay organized by domain boundaries rather than by generic web-backend layers.
 
 Recommended core modules:
 

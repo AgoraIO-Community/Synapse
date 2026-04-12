@@ -1,9 +1,9 @@
 import json
 
-from synopse.communication.context import CommunicationContext, ExecutorRuntimeSummary
-from synopse.communication.history import ConversationEntry
-from synopse.communication.prompts import build_notification_messages, build_reply_messages
-from synopse.protocol import (
+from synapse.communication.context import CommunicationContext, ExecutorRuntimeSummary
+from synapse.communication.history import ConversationEntry
+from synapse.communication.prompts import build_notification_messages, build_reply_messages
+from synapse.protocol import (
     NotificationCandidate,
     NotificationCandidateType,
     NotificationPriority,

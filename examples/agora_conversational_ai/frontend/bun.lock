@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "synopse-agora-convoai-frontend",
+      "name": "synapse-agora-convoai-frontend",
       "dependencies": {
         "agora-agent-client-toolkit": "^1.0.0",
         "agora-rtc-sdk-ng": "^4.24.0",

@@ -9,8 +9,8 @@ proposal is fully adopted.
 
 ## Summary
 
-Synopse currently assembles Communication Brain prompts inline inside
-`src/synopse/communication/models/openai.py`.
+Synapse currently assembles Communication Brain prompts inline inside
+`src/synapse/communication/models/openai.py`.
 
 That file currently mixes:
 
@@ -20,7 +20,7 @@ That file currently mixes:
 - provider transport invocation
 
 This RFC proposes moving prompt assembly into a dedicated
-`synopse.communication.prompts` package while preserving current behavior.
+`synapse.communication.prompts` package while preserving current behavior.
 
 The immediate target is the two currently implemented prompt paths:
 
@@ -42,7 +42,7 @@ but it becomes harder to maintain as prompt tuning grows.
 
 ## Goals
 
-- introduce a dedicated `synopse.communication.prompts` package
+- introduce a dedicated `synapse.communication.prompts` package
 - separate prompt assembly from `OpenAICommunicationModel`
 - preserve current behavior and message ordering where practical
 - keep runtime context as a structured payload instead of mixing it into prose
@@ -62,12 +62,12 @@ but it becomes harder to maintain as prompt tuning grows.
 
 Current prompt assembly lives in:
 
-- `src/synopse/communication/models/openai.py`
+- `src/synapse/communication/models/openai.py`
 
 Current runtime policy still belongs in:
 
-- `src/synopse/communication/policies/tool_usage_policy.py`
-- `src/synopse/communication/policies/reply_style.py`
+- `src/synapse/communication/policies/tool_usage_policy.py`
+- `src/synapse/communication/policies/reply_style.py`
 
 The broader communication package boundary already anticipates a prompt package
 in the long-form V2 proposal:
@@ -81,7 +81,7 @@ in the long-form V2 proposal:
 Add:
 
 ```text
-src/synopse/communication/prompts/
+src/synapse/communication/prompts/
 ├─ __init__.py
 ├─ base/
 │  ├─ __init__.py
@@ -213,7 +213,7 @@ The proposal intentionally distinguishes:
   - selected notification facts
   - replayed conversation history
 
-This split should stay explicit even if Synopse does not yet implement a formal
+This split should stay explicit even if Synapse does not yet implement a formal
 prompt-cache boundary.
 
 ## Testing Strategy
@@ -252,6 +252,6 @@ be added once there are real independent prompt entrypoints for them.
 
 When this proposal is implemented and treated as current design, stable docs may
 be updated to mention the concrete prompt-package structure under
-`synopse.communication.prompts`.
+`synapse.communication.prompts`.
 
 Until then, this RFC is design intent only.

@@ -1,11 +1,11 @@
 import pytest
 
-from synopse.blackboard import InMemoryBlackboard
-from synopse.communication import CommunicationBrain
-from synopse.communication.model import ToolCall
-from synopse.communication.models import ScriptedCommunicationModel
-from synopse.communication.models.scripted import ScriptedPlan
-from synopse.protocol import Task, TaskCommandType
+from synapse.blackboard import InMemoryBlackboard
+from synapse.communication import CommunicationBrain
+from synapse.communication.model import ToolCall
+from synapse.communication.models import ScriptedCommunicationModel
+from synapse.communication.models.scripted import ScriptedPlan
+from synapse.protocol import Task, TaskCommandType
 
 
 @pytest.mark.anyio

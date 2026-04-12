@@ -1,10 +1,10 @@
 import pytest
 
-from synopse.blackboard import InMemoryBlackboard
-from synopse.communication import CommunicationBrain
-from synopse.communication.model import ToolCall
-from synopse.communication.models import ScriptedCommunicationModel
-from synopse.communication.models.scripted import ScriptedPlan
+from synapse.blackboard import InMemoryBlackboard
+from synapse.communication import CommunicationBrain
+from synapse.communication.model import ToolCall
+from synapse.communication.models import ScriptedCommunicationModel
+from synapse.communication.models.scripted import ScriptedPlan
 
 
 @pytest.mark.anyio
@@ -23,7 +23,7 @@ async def test_update_task_flow():
             )
         }
     )
-    from synopse.protocol import Task
+    from synapse.protocol import Task
 
     await store.put_task(Task(task_id="task_1", root_task_id="task_1", title="Draft email", goal="Draft email"))
     brain = CommunicationBrain(store, model)

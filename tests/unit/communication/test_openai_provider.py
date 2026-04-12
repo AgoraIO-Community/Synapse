@@ -3,9 +3,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from synopse.communication.tools.base import ToolInputError
-from synopse.infrastructure.llm import OpenAIProvider
-from synopse.runtime import Settings
+from synapse.communication.tools.base import ToolInputError
+from synapse.infrastructure.llm import OpenAIProvider
+from synapse.runtime import Settings
 
 
 def _tool_completion(*, name: str, arguments: dict[str, object]) -> SimpleNamespace:

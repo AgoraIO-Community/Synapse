@@ -30,7 +30,7 @@ from .models import (
 )
 from .settings import AgoraBridgeSettings, load_bridge_settings
 from .settings import configure_example_env
-from .synopse_client import ExternalSynopseClient, SynopseBridgeClient, SynopseBridgeError
+from .synapse_client import ExternalSynapseClient, SynapseBridgeClient, SynapseBridgeError
 
 
 def create_app(
@@ -38,12 +38,12 @@ def create_app(
     bridge_settings: AgoraBridgeSettings | None = None,
     bridge_registry: BridgeRegistry | None = None,
     frontend_service: FrontendSessionService | None = None,
-    synopse_client: SynopseBridgeClient | None = None,
+    synapse_client: SynapseBridgeClient | None = None,
 ) -> FastAPI:
     configure_example_env()
     settings = bridge_settings or load_bridge_settings()
-    bridge_client = synopse_client or ExternalSynopseClient(
-        settings.synopse_base_url,
+    bridge_client = synapse_client or ExternalSynapseClient(
+        settings.synapse_base_url,
         request_timeout_seconds=settings.request_timeout_seconds,
     )
     convoai_service = AgoraSDKConvoAIService(settings)
@@ -54,10 +54,10 @@ def create_app(
             yield
         finally:
             await app.state.bridge_registry.close()
-            await app.state.synopse_client.close()
+            await app.state.synapse_client.close()
 
-    app = FastAPI(title="Synopse Agora ConvoAI Bridge", lifespan=lifespan)
-    app.state.synopse_client = bridge_client
+    app = FastAPI(title="Synapse Agora ConvoAI Bridge", lifespan=lifespan)
+    app.state.synapse_client = bridge_client
     app.state.bridge_settings = settings
     app.state.bridge_registry = bridge_registry or BridgeRegistry(
         bridge_client,
@@ -101,7 +101,7 @@ def create_app(
             return await service.activate_session(payload)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
-        except SynopseBridgeError as exc:
+        except SynapseBridgeError as exc:
             raise HTTPException(status_code=502, detail=str(exc)) from exc
         except ConvoAIConfigurationError as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
@@ -140,12 +140,12 @@ def create_app(
         if user_text is None:
             raise HTTPException(status_code=400, detail="No user message found in messages.")
 
-        synopse_client: SynopseBridgeClient = request.app.state.synopse_client
+        synapse_client: SynapseBridgeClient = request.app.state.synapse_client
         if payload.stream:
             return StreamingResponse(
                 _stream_completion(
-                    synopse_client=synopse_client,
-                    synopse_session_id=binding.synopse_session_id,
+                    synapse_client=synapse_client,
+                    synapse_session_id=binding.synapse_session_id,
                     user_text=user_text,
                     model_name=payload.model or request.app.state.bridge_settings.default_model,
                 ),
@@ -154,7 +154,7 @@ def create_app(
             )
 
         try:
-            result = await synopse_client.send_message(binding.synopse_session_id, user_text)
+            result = await synapse_client.send_message(binding.synapse_session_id, user_text)
             return JSONResponse(
                 _build_completion_response(
                     completion_id=f"chatcmpl-{uuid4().hex[:8]}",
@@ -163,7 +163,7 @@ def create_app(
                     reply_text=result.reply_text,
                 )
             )
-        except SynopseBridgeError as exc:
+        except SynapseBridgeError as exc:
             raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     return app
@@ -171,8 +171,8 @@ def create_app(
 
 async def _stream_completion(
     *,
-    synopse_client: SynopseBridgeClient,
-    synopse_session_id: str,
+    synapse_client: SynapseBridgeClient,
+    synapse_session_id: str,
     user_text: str,
     model_name: str,
 ) -> AsyncIterator[str]:
@@ -181,8 +181,8 @@ async def _stream_completion(
     created = int(time.time())
     role_sent = False
     try:
-        async for event in synopse_client.stream_message(
-            synopse_session_id,
+        async for event in synapse_client.stream_message(
+            synapse_session_id,
             user_text,
             request_id=request_id,
         ):
@@ -268,7 +268,7 @@ async def _stream_completion(
                 )
                 break
         yield "data: [DONE]\n\n"
-    except SynopseBridgeError as exc:
+    except SynapseBridgeError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 

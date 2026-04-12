@@ -5,13 +5,13 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol
 from uuid import uuid4
 
-from .synopse_client import SynopseBridgeClient
+from .synapse_client import SynapseBridgeClient
 
 
 @dataclass(slots=True)
 class ActiveAgentBinding:
     bridge_session_id: str
-    synopse_session_id: str
+    synapse_session_id: str
     channel_name: str | None
     runtime_agent_id: str | None
     task: asyncio.Task[None]
@@ -33,10 +33,10 @@ class BridgeSpeaker(Protocol):
 class BridgeRegistry:
     def __init__(
         self,
-        synopse_client: SynopseBridgeClient,
+        synapse_client: SynapseBridgeClient,
         speaker: BridgeSpeaker,
     ) -> None:
-        self._synopse_client = synopse_client
+        self._synapse_client = synapse_client
         self._speaker = speaker
         self._bindings: dict[str, ActiveAgentBinding] = {}
         self._lock = asyncio.Lock()
@@ -45,30 +45,30 @@ class BridgeRegistry:
         self,
         *,
         channel_name: str | None = None,
-        synopse_session_id: str | None = None,
+        synapse_session_id: str | None = None,
     ) -> ActiveAgentBinding:
         async with self._lock:
-            resolved_session_id = synopse_session_id or await self._synopse_client.create_session()
+            resolved_session_id = synapse_session_id or await self._synapse_client.create_session()
             if (
-                synopse_session_id is not None
+                synapse_session_id is not None
                 and any(
-                    binding.synopse_session_id == resolved_session_id
+                    binding.synapse_session_id == resolved_session_id
                     for binding in self._bindings.values()
                 )
             ):
                 raise DuplicateBindingError(
-                    f"Synopse session '{resolved_session_id}' is already bound."
+                    f"Synapse session '{resolved_session_id}' is already bound."
                 )
 
             bridge_session_id = f"bridge-{uuid4().hex[:8]}"
             binding = ActiveAgentBinding(
                 bridge_session_id=bridge_session_id,
-                synopse_session_id=resolved_session_id,
+                synapse_session_id=resolved_session_id,
                 channel_name=channel_name,
                 runtime_agent_id=None,
                 task=asyncio.create_task(
                     self._watch_notifications(
-                        synopse_session_id=resolved_session_id,
+                        synapse_session_id=resolved_session_id,
                         bridge_session_id=bridge_session_id,
                     )
                 ),
@@ -129,11 +129,11 @@ class BridgeRegistry:
     async def _watch_notifications(
         self,
         *,
-        synopse_session_id: str,
+        synapse_session_id: str,
         bridge_session_id: str,
     ) -> None:
         try:
-            async for text in self._synopse_client.watch_notification_texts(synopse_session_id):
+            async for text in self._synapse_client.watch_notification_texts(synapse_session_id):
                 binding = self._bindings.get(bridge_session_id)
                 if binding is None:
                     return

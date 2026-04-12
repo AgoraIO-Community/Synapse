@@ -864,7 +864,7 @@ export default function App() {
     <main className="shell debug-shell">
       <header className="hero debug-hero">
         <div>
-          <p className="eyebrow">Synopse Runtime Debugger</p>
+          <p className="eyebrow">Synapse Runtime Debugger</p>
           <h1>Blackboard Inspector</h1>
           <p className="intro">
             Inspect how the communication brain writes to the blackboard, how the execution brain

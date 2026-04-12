@@ -55,7 +55,7 @@ export interface FrontendPrepareResponse {
 export interface FrontendActivateResponse {
   prepared_session_id: string;
   bridge_session_id: string;
-  synopse_session_id: string;
+  synapse_session_id: string;
   runtime_agent_id: string;
   chat_completions_url: string;
   app_id: string;

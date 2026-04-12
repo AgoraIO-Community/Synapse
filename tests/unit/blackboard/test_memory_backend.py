@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from synopse.blackboard.backends import InMemoryBlackboard
-from synopse.protocol import (
+from synapse.blackboard.backends import InMemoryBlackboard
+from synapse.protocol import (
     BindingStatus,
     ExecutionMode,
     ExecutionRun,

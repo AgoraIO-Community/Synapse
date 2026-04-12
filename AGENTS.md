@@ -1,7 +1,7 @@
 # AGENTS.md
 
 ## Project
-Synopse is a backend-first prototype for a communication-brain / execution-brain runtime.
+Synapse is a backend-first prototype for a communication-brain / execution-brain runtime.
 
 Core concepts:
 - Communication Brain
@@ -20,12 +20,12 @@ Core concepts:
 
 ## Run
 ```bash
-uvicorn synopse.api.app:app --reload
+./synapse backend
 ```
 
 ## Test
 ```bash
-pytest
+.venv/bin/python -m pytest
 ```
 
 ## Guardrails

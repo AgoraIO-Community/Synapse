@@ -2,7 +2,7 @@
 
 `Task` is the durable user-visible work item.
 
-It is the unified logical work unit for Synopse, rather than one of two separate task systems.
+It is the unified logical work unit for Synapse, rather than one of two separate task systems.
 
 Typical fields:
 

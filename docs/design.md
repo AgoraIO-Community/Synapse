@@ -1,11 +1,11 @@
-# Synopse Design
+# Synapse Design
 
 > Legacy v1 architecture reference.  
 > Current stable design work should follow `docs/architecture/`, `docs/protocol/`, and `docs/roadmap/`.
 
 ## Overview
 
-Synopse is a backend-first prototype for a `communication brain + execution brain` runtime.
+Synapse is a backend-first prototype for a `communication brain + execution brain` runtime.
 
 The core idea is that language-facing interaction and task-facing execution should be decoupled:
 
@@ -241,7 +241,7 @@ Message outcomes should be treated as four distinct cases:
 - conversation-only
 - clarification
 
-`clarify` should only be used when task/control intent exists but cannot be resolved safely. `conversation-only` is reserved for social chat, subjective or persona-directed questions the agent can answer directly, and meta questions about Synopse itself. `create_task` requests default to requiring a real executor, but the action bundle may explicitly mark a task as mock-safe through `input_context.requires_executor_capability = false`. If only the mock executor is active, capability-gated task creation should fail clearly instead of producing fake-success task output.
+`clarify` should only be used when task/control intent exists but cannot be resolved safely. `conversation-only` is reserved for social chat, subjective or persona-directed questions the agent can answer directly, and meta questions about Synapse itself. `create_task` requests default to requiring a real executor, but the action bundle may explicitly mark a task as mock-safe through `input_context.requires_executor_capability = false`. If only the mock executor is active, capability-gated task creation should fail clearly instead of producing fake-success task output.
 
 Response generation should operate from the agent’s perspective, using the typed action plus all supplied context, instead of mechanically rewriting a thin action shell.
 

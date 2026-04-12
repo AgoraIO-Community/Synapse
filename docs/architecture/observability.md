@@ -1,6 +1,6 @@
 # Observability
 
-Synopse uses a diagnosis-first observability model.
+Synapse uses a diagnosis-first observability model.
 
 The goal is to answer, within a few minutes of an incident:
 
@@ -41,14 +41,14 @@ These serve different purposes and should not be collapsed into one stream.
 
 Console formatting defaults:
 
-- `SYNOPSE_LOG_FORMAT=auto`
+- `SYNAPSE_LOG_FORMAT=auto`
   - terminal: pretty single-line logs
   - pipe/file: JSON lines
-- `SYNOPSE_LOG_COLOR=auto`
+- `SYNAPSE_LOG_COLOR=auto`
   - enable ANSI colors only for terminal output
-- `SYNOPSE_QUIET_DIAGNOSTICS_ACCESS_LOGS=true`
+- `SYNAPSE_QUIET_DIAGNOSTICS_ACCESS_LOGS=true`
   - suppress access-log noise from frontend diagnostics polling
-- `SYNOPSE_LOG_LLM_DETAILS=false`
+- `SYNAPSE_LOG_LLM_DETAILS=false`
   - keep LLM diagnostics summary-only by default and enable verbose prompt/message payloads only when explicitly needed
 
 ## Canonical Event Shape
@@ -126,7 +126,7 @@ Phase 1 prioritizes boundary and decision events:
 
 ## Boundaries And Storage
 
-Observability code lives in `synopse.observability` as a first-class package.
+Observability code lives in `synapse.observability` as a first-class package.
 
 Instrumentation is added at the runtime edges:
 

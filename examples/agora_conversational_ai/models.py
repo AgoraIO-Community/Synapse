@@ -72,7 +72,7 @@ class FrontendSessionPrepareResponse(BaseModel):
 class FrontendSessionActivateResponse(BaseModel):
     prepared_session_id: str
     bridge_session_id: str
-    synopse_session_id: str
+    synapse_session_id: str
     runtime_agent_id: str
     chat_completions_url: str
     app_id: str

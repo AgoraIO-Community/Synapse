@@ -145,7 +145,7 @@ class AgoraSDKConvoAIService:
             SessionParams,
         ) = self._load_sdk_types()
 
-        channel = channel_name.strip() if channel_name.strip() else f"synopse-{uuid4().hex[:8]}"
+        channel = channel_name.strip() if channel_name.strip() else f"synapse-{uuid4().hex[:8]}"
         user_uid = _parse_numeric_uid(user_id, self._settings.user_uid)
         user_rtm_uid = f"{user_uid}-{channel}"
         agent_uid = str(self._settings.agent_uid)
@@ -176,7 +176,7 @@ class AgoraSDKConvoAIService:
         await client.select_best_domain()
 
         agent = Agent(
-            name=f"synopse_agent_{uuid4().hex[:8]}",
+            name=f"synapse_agent_{uuid4().hex[:8]}",
             instructions=self._settings.agent_instructions,
             greeting=self._settings.agent_greeting,
             advanced_features=AdvancedFeatures(enable_rtm=True),
@@ -268,7 +268,7 @@ class AgoraSDKConvoAIService:
             agent=agent,
             app_id=bootstrap.app_id,
             app_certificate=str(_require(self._settings.app_certificate, "AGORA_APP_CERTIFICATE")),
-            name=f"synopse_agent_{uuid4().hex[:8]}",
+            name=f"synapse_agent_{uuid4().hex[:8]}",
             channel=bootstrap.channel_name,
             agent_uid=bootstrap.agent_uid,
             remote_uids=["*"],

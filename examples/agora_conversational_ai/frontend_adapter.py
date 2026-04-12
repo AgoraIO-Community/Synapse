@@ -26,7 +26,7 @@ from .settings import AgoraBridgeSettings
 @dataclass(slots=True)
 class FrontendSessionHandle:
     bridge_session_id: str
-    synopse_session_id: str
+    synapse_session_id: str
     runtime_agent_id: str
     channel_name: str
     profile: str | None
@@ -49,8 +49,8 @@ class FrontendSessionService:
         missing: list[str] = []
         if not self._settings.default_app_id:
             missing.append("AGORA_APP_ID")
-        if not self._settings.synopse_base_url:
-            missing.append("AGORA_BRIDGE_SYNOPSE_BASE_URL")
+        if not self._settings.synapse_base_url:
+            missing.append("AGORA_BRIDGE_SYNAPSE_BASE_URL")
         if not self._settings.app_certificate:
             missing.append("AGORA_APP_CERTIFICATE")
         if not self._settings.deepgram_api_key:
@@ -132,14 +132,14 @@ class FrontendSessionService:
 
         self._sessions[binding.bridge_session_id] = FrontendSessionHandle(
             bridge_session_id=binding.bridge_session_id,
-            synopse_session_id=binding.synopse_session_id,
+            synapse_session_id=binding.synapse_session_id,
             runtime_agent_id=activated.runtime_agent_id,
             channel_name=activated.channel_name,
             profile=activated.profile,
         )
         return self._build_activate_response(
             binding.bridge_session_id,
-            binding.synopse_session_id,
+            binding.synapse_session_id,
             activated,
         )
 
@@ -186,13 +186,13 @@ class FrontendSessionService:
     def _build_activate_response(
         self,
         bridge_session_id: str,
-        synopse_session_id: str,
+        synapse_session_id: str,
         activated: ActivatedConvoAISession,
     ) -> FrontendSessionActivateResponse:
         return FrontendSessionActivateResponse(
             prepared_session_id=activated.prepared_session_id,
             bridge_session_id=bridge_session_id,
-            synopse_session_id=synopse_session_id,
+            synapse_session_id=synapse_session_id,
             runtime_agent_id=activated.runtime_agent_id,
             chat_completions_url=self._build_chat_completions_url(bridge_session_id),
             app_id=activated.app_id,

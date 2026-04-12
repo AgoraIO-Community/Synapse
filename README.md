@@ -1,4 +1,4 @@
-# Synopse
+# Synapse
 
 Backend-first prototype for a communication-brain / execution-brain runtime.
 
@@ -9,57 +9,52 @@ Backend-first prototype for a communication-brain / execution-brain runtime.
 - `Shared Blackboard`: the session-level state synchronization layer.
 - `Protocols`: explicit schemas for messages, tasks, execution events, and stream events.
 
-## Run
+## CLI
 
-## Backend Setup
+Synapse requires Python 3.12 or newer.
 
-Synopse requires Python 3.12 or newer.
-
-Create a virtual environment in the repo root:
+For a fresh clone, use the repo bootstrap launcher:
 
 ```bash
-python3 -m venv .venv
+./synapse setup
+./synapse doctor
+./synapse dev
 ```
 
-If `python3.12` is not available on your machine, use another Python 3.12+
-interpreter path that resolves to the same version.
+`./synapse setup` creates `.venv`, installs the project in editable mode, installs
+frontend dependencies with Bun first and npm fallback, and creates `.env.local`
+from `.env.example` when missing.
 
-Activate the virtual environment:
-
-```bash
-source .venv/bin/activate
-```
-
-Install backend dependencies:
+If you prefer the module entrypoint, it is available from the repo root and after
+editable install:
 
 ```bash
-pip install -e '.[dev]'
-```
-
-Configure environment variables:
-
-```bash
-cp .env.example .env.local
-# then fill in OPENAI_API_KEY in .env.local
+python3 -m synapse --help
+.venv/bin/python -m synapse --help
 ```
 
 `.env.local` is auto-loaded by the backend at startup. You do not need to export
-variables manually.
+variables manually. OpenAI is required for normal development and demo runtime,
+so set `OPENAI_API_KEY` in `.env.local` before starting the app.
 
-OpenAI is required for normal development and demo runtime. Without a valid
-`OPENAI_API_KEY` in `.env.local` or your shell environment, the backend should
-fail to start.
+## Common Commands
+
+```bash
+./synapse setup
+./synapse doctor
+./synapse dev
+./synapse backend
+./synapse frontend
+./synapse start
+```
+
+The installed console script is also named `synapse`, so after setup you can run
+`.venv/bin/synapse dev` or activate the virtual environment and use `synapse dev`.
 
 ## Run Backend
 
 ```bash
-uvicorn synopse.api.app:app --reload
-```
-
-If you prefer not to activate the virtual environment first:
-
-```bash
-.venv/bin/uvicorn synopse.api.app:app --reload
+./synapse backend
 ```
 
 FastAPI docs will be available at:
@@ -72,21 +67,13 @@ If the frontend shows `error` and messages do not progress, first confirm the
 backend is running from the same virtual environment where dependencies were
 installed.
 
-Frontend:
+To run only the frontend:
 
 ```bash
-cd frontend
-bun install
-bun run dev
+./synapse frontend
 ```
 
 ## Test
-
-```bash
-pytest
-```
-
-Or without activating the virtual environment:
 
 ```bash
 .venv/bin/python -m pytest

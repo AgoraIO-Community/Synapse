@@ -141,8 +141,8 @@ export default function App() {
           details: loaded,
         });
         setProfile(loaded.defaults.profile ?? "VOICE");
-        setChannelName(loaded.defaults.channel_name ?? "synopse-voice-demo");
-        setDisplayName(loaded.defaults.display_name ?? "Synopse Tester");
+        setChannelName(loaded.defaults.channel_name ?? "synapse-voice-demo");
+        setDisplayName(loaded.defaults.display_name ?? "Synapse Tester");
         setPhase(loaded.ready ? "ready" : "error");
         if (!loaded.ready) {
           setError(`Missing backend config: ${loaded.missing_requirements.join(", ")}`);
@@ -587,7 +587,7 @@ export default function App() {
     <main className="page-shell">
       <section className="hero-card">
         <div>
-          <p className="eyebrow">Synopse x Agora</p>
+          <p className="eyebrow">Synapse x Agora</p>
           <h1>Voice Test Client</h1>
           <p className="hero-copy">
             Join RTC and RTM first, then activate the local Agora agent, following the official sample flow.
@@ -627,7 +627,7 @@ export default function App() {
               <input
                 value={channelName}
                 onChange={(event) => setChannelName(event.target.value)}
-                placeholder="synopse-voice-demo"
+                placeholder="synapse-voice-demo"
                 disabled={phase === "starting" || phase === "connected" || phase === "stopping"}
               />
             </label>
@@ -637,7 +637,7 @@ export default function App() {
               <input
                 value={displayName}
                 onChange={(event) => setDisplayName(event.target.value)}
-                placeholder="Synopse Tester"
+                placeholder="Synapse Tester"
                 disabled={phase === "starting" || phase === "connected" || phase === "stopping"}
               />
             </label>
@@ -689,8 +689,8 @@ export default function App() {
               <strong>{activeSession?.bridge_session_id ?? "Not started"}</strong>
             </div>
             <div className="meta-card">
-              <p>Synopse session</p>
-              <strong>{activeSession?.synopse_session_id ?? "Not started"}</strong>
+              <p>Synapse session</p>
+              <strong>{activeSession?.synapse_session_id ?? "Not started"}</strong>
             </div>
             <div className="meta-card">
               <p>Runtime agent</p>
