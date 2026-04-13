@@ -88,3 +88,9 @@ Short log of important design decisions and changes for Synapse.
 - Renamed the public package, CLI, docs, env prefixes, and example bridge surface from `synopse` to `synapse`, and added a repo-root `synapse` bootstrap launcher plus a first-class Python CLI for setup, doctor, and local app startup.
 - Split local bootstrap so `install.sh` now installs supported dev dependencies and repo packages, while `synapse setup` became an env-configuration wizard for the root `.env.local` with a non-interactive automation path.
 - Added a separate headless gateway host plus first-party `src/synapse/gateways/` modules, promoted Agora ConvoAI into the new gateway module structure, and extended the CLI so gateway config can be prompted from `synapse setup` or `synapse gateway setup` and auto-started from `synapse dev` / `synapse start`.
+
+## 2026-04-14
+
+- Switched gateway host configuration to a shared `config/gateway.yaml` contract referenced by `SYNAPSE_GATEWAY_CONFIG_FILE`, renamed public gateway config naming from `modules` to `gateways`, and moved Agora ConvoAI ASR/TTS selection to YAML-backed managed or BYOK settings.
+- Updated the Agora gateway prepare flow so frontend requests can override `agent_instructions`, `agent_greeting`, `agent_uid`, and `user_uid` per session while keeping the Synapse bridge-backed LLM path internal.
+- Moved the live runtime env and gateway YAML out of the repo and into `~/.synapse/.env` plus `~/.synapse/config.yaml`, keeping repo files as setup templates only.

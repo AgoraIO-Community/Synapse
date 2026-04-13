@@ -10,7 +10,7 @@ Preferred local bootstrap and run flow:
 ```
 
 `./install.sh` owns local dependency bootstrap. `./synapse setup` owns
-interactive runtime env configuration for the repo-root `.env.local`.
+interactive runtime env configuration for `~/.synapse/.env`.
 
 By default, diagnostics timeline polling requests from the frontend inspector are
 filtered out of `uvicorn.access` output so local access logs are less noisy. Set
@@ -24,7 +24,7 @@ Current test command:
 ```
 
 To use the Codex executor locally, make sure the `codex` CLI is installed and keep
-`SYNAPSE_CODEX_EXECUTOR_ENABLED=true` in `.env.local`. Set `SYNAPSE_CODEX_COMMAND`
+`SYNAPSE_CODEX_EXECUTOR_ENABLED=true` in `~/.synapse/.env`. Set `SYNAPSE_CODEX_COMMAND`
 only if Synapse should launch a non-default Codex binary path.
 
 Backend-only and frontend-only commands:

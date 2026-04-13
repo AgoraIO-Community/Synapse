@@ -13,12 +13,18 @@ import subprocess
 import sys
 import time
 
+from synapse.config_home import (
+    SYNAPSE_ENV_FILE,
+    format_user_path,
+)
+from synapse.yaml_support import load_yaml_file
+
 
 ROOT = Path(__file__).resolve().parents[3]
 FRONTEND = ROOT / "frontend"
 VENV_DIR = ROOT / ".venv"
 ENV_EXAMPLE = ROOT / ".env.example"
-ENV_LOCAL = ROOT / ".env.local"
+ENV_LOCAL = SYNAPSE_ENV_FILE
 ENV_LINE_RE = re.compile(r"^\s*(?P<comment>#\s*)?(?P<key>[A-Z0-9_]+)=(?P<value>.*)$")
 TRUTHY_VALUES = {"1", "true", "yes", "on", "y"}
 FALSY_VALUES = {"0", "false", "no", "off", "n"}
@@ -42,15 +48,25 @@ class EnvTemplateLine:
     commented: bool = False
 
 
+@dataclass(slots=True)
+class GatewaySetupResult:
+    env_values: dict[str, str | None]
+    config_path: Path | None = None
+    config_text: str | None = None
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="synapse", description="Synapse developer CLI.")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    setup_parser = subparsers.add_parser("setup", help="Interactively configure the root .env.local.")
+    setup_parser = subparsers.add_parser(
+        "setup",
+        help=f"Interactively configure {format_user_path(ENV_LOCAL)}.",
+    )
     setup_parser.add_argument(
         "--non-interactive",
         action="store_true",
-        help="Resolve values from .env.local and process env without prompting.",
+        help=f"Resolve values from {format_user_path(ENV_LOCAL)} and process env without prompting.",
     )
 
     dev_parser = subparsers.add_parser("dev", help="Run backend and frontend together.")
@@ -127,13 +143,13 @@ def cmd_setup(_args: argparse.Namespace) -> int:
         environ=os.environ,
         interactive=not args.non_interactive,
     )
-    gateway_values = resolve_gateway_setup_values(
+    gateway_setup = resolve_gateway_setup_values(
         existing_values=existing_values,
         environ=os.environ,
         interactive=not args.non_interactive,
         force_prompt=False,
     )
-    resolved_values.update(gateway_values)
+    resolved_values.update(gateway_setup.env_values)
     write_env_file(
         template_lines=template_lines,
         resolved_values=resolved_values,
@@ -141,7 +157,8 @@ def cmd_setup(_args: argparse.Namespace) -> int:
         existing_order=existing_order,
         destination=ENV_LOCAL,
     )
-    print(f"[write] configured {ENV_LOCAL.relative_to(ROOT)}")
+    _write_gateway_config_if_needed(gateway_setup)
+    print(f"[write] configured {format_user_path(ENV_LOCAL)}")
     return 0
 
 
@@ -224,7 +241,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     ok &= report_port(args.frontend_port)
 
     if ENV_LOCAL.exists():
-        print(f"[ok] env file: {ENV_LOCAL.relative_to(ROOT)}")
+        print(f"[ok] env file: {format_user_path(ENV_LOCAL)}")
     else:
         print("[missing] env file: run ./synapse setup")
         ok = False
@@ -256,7 +273,7 @@ def cmd_gateway_setup(_args: argparse.Namespace) -> int:
 
     template_lines = load_env_template(ENV_EXAMPLE)
     existing_values, existing_order = load_env_assignments(ENV_LOCAL)
-    resolved_values = resolve_gateway_setup_values(
+    gateway_setup = resolve_gateway_setup_values(
         existing_values=existing_values,
         environ=os.environ,
         interactive=True,
@@ -264,12 +281,13 @@ def cmd_gateway_setup(_args: argparse.Namespace) -> int:
     )
     write_env_file(
         template_lines=template_lines,
-        resolved_values={**existing_values, **resolved_values},
+        resolved_values={**existing_values, **gateway_setup.env_values},
         existing_values=existing_values,
         existing_order=existing_order,
         destination=ENV_LOCAL,
     )
-    print(f"[write] configured {ENV_LOCAL.relative_to(ROOT)}")
+    _write_gateway_config_if_needed(gateway_setup)
+    print(f"[write] configured {format_user_path(ENV_LOCAL)}")
     return 0
 
 
@@ -521,7 +539,7 @@ def resolve_setup_values(
     else:
         if openai_default is None:
             raise CliError(
-                "OPENAI_API_KEY is required for non-interactive setup. Set it in .env.local or the shell environment."
+                f"OPENAI_API_KEY is required for non-interactive setup. Set it in {format_user_path(ENV_LOCAL)} or the shell environment."
             )
         resolved[OPENAI_KEY] = openai_default
 
@@ -552,137 +570,259 @@ def resolve_gateway_setup_values(
     environ: os._Environ[str],
     interactive: bool,
     force_prompt: bool,
-) -> dict[str, str | None]:
+) -> GatewaySetupResult:
     if not interactive:
-        return {}
+        return GatewaySetupResult(env_values={})
 
     existing_enabled = pick_env_value(GATEWAY_ENABLED_KEY, existing_values, environ)
     default_enabled = parse_bool_value(existing_enabled) if existing_enabled is not None else False
     should_configure = prompt_bool_value("Configure gateway host", default=bool(default_enabled or force_prompt))
     if not should_configure:
         if not force_prompt:
-            return {}
-        return {
-            GATEWAY_ENABLED_KEY: "false",
-            GATEWAY_MODULES_KEY: None,
-        }
+            return GatewaySetupResult(env_values={})
+        return GatewaySetupResult(
+            env_values={},
+            config_path=gateway_config_path(),
+            config_text=render_gateway_config(
+                host={
+                    "enabled": False,
+                    "host": "0.0.0.0",
+                    "port": 8010,
+                    "public_base_url": "http://127.0.0.1:8010",
+                    "synapse_base_url": "http://127.0.0.1:8000",
+                    "enabled_gateways": [],
+                },
+                gateways={},
+            ),
+        )
 
-    modules = prompt_gateway_module_selection()
+    config_path = gateway_config_path()
+    existing_gateway_yaml = _load_existing_gateway_yaml(config_path)
+
+    gateways = prompt_gateway_selection()
     host = prompt_text_value(
         "Gateway host",
-        default_value=pick_env_value(GATEWAY_HOST_KEY, existing_values, environ) or "0.0.0.0",
+        default_value=_existing_yaml_value(existing_gateway_yaml, "host", "host")
+        or pick_env_value(GATEWAY_HOST_KEY, existing_values, environ)
+        or "0.0.0.0",
         required=True,
     )
     port = prompt_text_value(
         "Gateway port",
-        default_value=pick_env_value(GATEWAY_PORT_KEY, existing_values, environ) or "8010",
+        default_value=str(
+            _existing_yaml_value(existing_gateway_yaml, "host", "port")
+            or pick_env_value(GATEWAY_PORT_KEY, existing_values, environ)
+            or "8010"
+        ),
         required=True,
     )
     public_base_url = prompt_text_value(
         "Gateway public base URL",
-        default_value=pick_env_value(GATEWAY_PUBLIC_BASE_URL_KEY, existing_values, environ)
+        default_value=_existing_yaml_value(existing_gateway_yaml, "host", "public_base_url")
+        or pick_env_value(GATEWAY_PUBLIC_BASE_URL_KEY, existing_values, environ)
         or f"http://127.0.0.1:{port}",
         required=True,
     )
     synapse_base_url = prompt_text_value(
         "Synapse API base URL for gateway callbacks",
-        default_value=pick_env_value(GATEWAY_SYNAPSE_BASE_URL_KEY, existing_values, environ)
+        default_value=_existing_yaml_value(existing_gateway_yaml, "host", "synapse_base_url")
+        or pick_env_value(GATEWAY_SYNAPSE_BASE_URL_KEY, existing_values, environ)
         or "http://127.0.0.1:8000",
         required=True,
     )
 
-    resolved: dict[str, str | None] = {
-        GATEWAY_ENABLED_KEY: "true",
-        GATEWAY_HOST_KEY: host,
-        GATEWAY_PORT_KEY: port,
-        GATEWAY_PUBLIC_BASE_URL_KEY: public_base_url,
-        GATEWAY_SYNAPSE_BASE_URL_KEY: synapse_base_url,
-        GATEWAY_MODULES_KEY: ",".join(modules),
-    }
-    for module in modules:
-        if module == "agora-convoai":
-            resolved.update(resolve_agora_gateway_setup_values(existing_values, environ))
-    return resolved
+    resolved_env: dict[str, str | None] = {}
+    gateway_blocks: dict[str, dict[str, object]] = {}
+    for gateway in gateways:
+        if gateway == "agora-convoai":
+            block, env_updates = resolve_agora_gateway_setup_values(
+                existing_values,
+                environ,
+                existing_gateway_yaml,
+            )
+            gateway_blocks[gateway] = block
+            resolved_env.update(env_updates)
+    config_text = render_gateway_config(
+        host={
+            "enabled": True,
+            "host": host,
+            "port": int(port),
+            "public_base_url": public_base_url,
+            "synapse_base_url": synapse_base_url,
+            "enabled_gateways": gateways,
+        },
+        gateways=gateway_blocks,
+    )
+    return GatewaySetupResult(
+        env_values=resolved_env,
+        config_path=config_path,
+        config_text=config_text,
+    )
 
 
 def resolve_agora_gateway_setup_values(
     existing_values: dict[str, str],
     environ: os._Environ[str],
-) -> dict[str, str | None]:
-    return {
-        "SYNAPSE_GATEWAY_AGORA_CONVOAI_APP_ID": prompt_text_value(
-            "Agora App ID",
-            default_value=pick_env_value("SYNAPSE_GATEWAY_AGORA_CONVOAI_APP_ID", existing_values, environ)
-            or pick_env_value("AGORA_APP_ID", existing_values, environ),
-            required=True,
+    existing_gateway_yaml: dict[str, object],
+) -> tuple[dict[str, object], dict[str, str | None]]:
+    env_updates: dict[str, str | None] = {}
+    existing_gateway = _existing_gateway_block(existing_gateway_yaml, "agora-convoai")
+
+    app_id = prompt_text_value(
+        "Agora App ID",
+        default_value=pick_env_value("AGORA_APP_ID", existing_values, environ) or "",
+        required=True,
+    )
+    app_certificate = prompt_secret_value(
+        "Agora App Certificate",
+        default_value=pick_env_value("AGORA_APP_CERTIFICATE", existing_values, environ),
+    )
+    env_updates["AGORA_APP_ID"] = app_id
+    env_updates["AGORA_APP_CERTIFICATE"] = app_certificate
+
+    asr_mode = prompt_choice_value(
+        "ASR credential mode",
+        choices=["managed", "byok"],
+        default_value=str(
+            _existing_nested_value(existing_gateway, "asr", "credential_mode") or "managed"
         ),
-        "SYNAPSE_GATEWAY_AGORA_CONVOAI_APP_CERTIFICATE": prompt_secret_value(
-            "Agora App Certificate",
-            default_value=pick_env_value(
-                "SYNAPSE_GATEWAY_AGORA_CONVOAI_APP_CERTIFICATE",
-                existing_values,
-                environ,
-            )
-            or pick_env_value("AGORA_APP_CERTIFICATE", existing_values, environ),
-        ),
-        "SYNAPSE_GATEWAY_AGORA_CONVOAI_AREA": prompt_text_value(
-            "Agora ConvoAI area",
-            default_value=pick_env_value("SYNAPSE_GATEWAY_AGORA_CONVOAI_AREA", existing_values, environ)
-            or pick_env_value("AGORA_CONVOAI_AREA", existing_values, environ)
-            or "CN",
-            required=True,
-        ),
-        "SYNAPSE_GATEWAY_AGORA_CONVOAI_DEEPGRAM_API_KEY": prompt_secret_value(
-            "Deepgram API Key",
-            default_value=pick_env_value(
-                "SYNAPSE_GATEWAY_AGORA_CONVOAI_DEEPGRAM_API_KEY",
-                existing_values,
-                environ,
-            )
-            or pick_env_value("DEEPGRAM_API_KEY", existing_values, environ),
-        ),
-        "SYNAPSE_GATEWAY_AGORA_CONVOAI_DEEPGRAM_LANGUAGE": prompt_text_value(
-            "Deepgram language",
-            default_value=pick_env_value(
-                "SYNAPSE_GATEWAY_AGORA_CONVOAI_DEEPGRAM_LANGUAGE",
-                existing_values,
-                environ,
-            )
-            or pick_env_value("AGORA_DEEPGRAM_LANGUAGE", existing_values, environ)
-            or "en-US",
-            required=True,
-        ),
-        "SYNAPSE_GATEWAY_AGORA_CONVOAI_ELEVENLABS_API_KEY": prompt_secret_value(
-            "ElevenLabs API Key",
-            default_value=pick_env_value(
-                "SYNAPSE_GATEWAY_AGORA_CONVOAI_ELEVENLABS_API_KEY",
-                existing_values,
-                environ,
-            )
-            or pick_env_value("ELEVENLABS_API_KEY", existing_values, environ),
-        ),
-        "SYNAPSE_GATEWAY_AGORA_CONVOAI_ELEVENLABS_VOICE_ID": prompt_text_value(
-            "ElevenLabs Voice ID",
-            default_value=pick_env_value(
-                "SYNAPSE_GATEWAY_AGORA_CONVOAI_ELEVENLABS_VOICE_ID",
-                existing_values,
-                environ,
-            )
-            or pick_env_value("ELEVENLABS_VOICE_ID", existing_values, environ),
-            required=True,
-        ),
-        "SYNAPSE_GATEWAY_AGORA_CONVOAI_MODEL": prompt_text_value(
-            "Gateway model label",
-            default_value=pick_env_value(
-                "SYNAPSE_GATEWAY_AGORA_CONVOAI_MODEL",
-                existing_values,
-                environ,
-            )
-            or pick_env_value("AGORA_BRIDGE_MODEL", existing_values, environ)
-            or "synapse-agora-bridge",
-            required=True,
-        ),
+    )
+    asr_model = prompt_choice_value(
+        "ASR model",
+        choices=["nova-3", "nova-2"],
+        default_value=str(_existing_nested_value(existing_gateway, "asr", "model") or "nova-3"),
+    )
+    asr_language = prompt_text_value(
+        "ASR language",
+        default_value=str(_existing_nested_value(existing_gateway, "asr", "language") or "en-US"),
+        required=True,
+    )
+    asr_block: dict[str, object] = {
+        "vendor": "deepgram",
+        "credential_mode": asr_mode,
+        "model": asr_model,
+        "language": asr_language,
     }
+    if asr_mode == "byok":
+        deepgram_api_key = prompt_secret_value(
+            "Deepgram API Key",
+            default_value=pick_env_value("DEEPGRAM_API_KEY", existing_values, environ),
+        )
+        env_updates["DEEPGRAM_API_KEY"] = deepgram_api_key
+        asr_block["api_key"] = "$DEEPGRAM_API_KEY"
+
+    tts_vendor = prompt_choice_value(
+        "TTS vendor",
+        choices=["minimax", "openai", "elevenlabs"],
+        default_value=str(_existing_nested_value(existing_gateway, "tts", "vendor") or "minimax"),
+    )
+    if tts_vendor == "minimax":
+        tts_block: dict[str, object] = {
+            "vendor": "minimax",
+            "credential_mode": "managed",
+            "model": prompt_choice_value(
+                "TTS model",
+                choices=["speech_2_6_turbo", "speech_2_8_turbo"],
+                default_value=str(
+                    _existing_nested_value(existing_gateway, "tts", "model")
+                    or "speech_2_6_turbo"
+                ),
+            ),
+            "voice": normalize_optional_value(
+                prompt_text_value(
+                    "TTS voice",
+                    default_value=_existing_nested_value(existing_gateway, "tts", "voice"),
+                )
+            ),
+            "sample_rate": None,
+        }
+    elif tts_vendor == "openai":
+        tts_block = {
+            "vendor": "openai",
+            "credential_mode": "managed",
+            "model": "tts-1",
+            "voice": normalize_optional_value(
+                prompt_text_value(
+                    "TTS voice",
+                    default_value=_existing_nested_value(existing_gateway, "tts", "voice") or "alloy",
+                )
+            )
+            or "alloy",
+            "sample_rate": None,
+        }
+    else:
+        elevenlabs_api_key = prompt_secret_value(
+            "ElevenLabs API Key",
+            default_value=pick_env_value("ELEVENLABS_API_KEY", existing_values, environ),
+        )
+        env_updates["ELEVENLABS_API_KEY"] = elevenlabs_api_key
+        tts_block = {
+            "vendor": "elevenlabs",
+            "credential_mode": "byok",
+            "model": prompt_text_value(
+                "TTS model",
+                default_value=str(
+                    _existing_nested_value(existing_gateway, "tts", "model")
+                    or "eleven_flash_v2_5"
+                ),
+                required=True,
+            ),
+            "voice": normalize_optional_value(
+                prompt_text_value(
+                    "TTS voice",
+                    default_value=_existing_nested_value(existing_gateway, "tts", "voice"),
+                    required=True,
+                )
+            ),
+            "api_key": "$ELEVENLABS_API_KEY",
+            "sample_rate": int(
+                prompt_text_value(
+                    "TTS sample rate",
+                    default_value=str(
+                        _existing_nested_value(existing_gateway, "tts", "sample_rate") or "24000"
+                    ),
+                    required=True,
+                )
+            ),
+        }
+
+    return (
+        {
+            "app_id": "$AGORA_APP_ID",
+            "app_certificate": "$AGORA_APP_CERTIFICATE",
+            "convoai_area": prompt_text_value(
+                "Agora ConvoAI area",
+                default_value=str(existing_gateway.get("convoai_area") or "CN"),
+                required=True,
+            ).upper(),
+            "client_token_ttl_seconds": int(
+                prompt_text_value(
+                    "Client token TTL seconds",
+                    default_value=str(existing_gateway.get("client_token_ttl_seconds") or "3600"),
+                    required=True,
+                )
+            ),
+            "speak_priority": prompt_text_value(
+                "Speak priority",
+                default_value=str(existing_gateway.get("speak_priority") or "APPEND"),
+                required=True,
+            ).upper(),
+            "speak_interruptable": prompt_bool_value(
+                "Speak interruptable",
+                default=bool(existing_gateway.get("speak_interruptable", True)),
+            ),
+            "request_timeout_seconds": float(
+                prompt_text_value(
+                    "Request timeout seconds",
+                    default_value=str(existing_gateway.get("request_timeout_seconds") or "10.0"),
+                    required=True,
+                )
+            ),
+            "asr": asr_block,
+            "tts": tts_block,
+        },
+        env_updates,
+    )
 
 
 def write_env_file(
@@ -693,6 +833,7 @@ def write_env_file(
     existing_order: list[str],
     destination: Path,
 ) -> None:
+    destination.parent.mkdir(parents=True, exist_ok=True)
     known_keys = [line.key for line in template_lines if line.key is not None]
     rendered_lines: list[str] = []
 
@@ -810,30 +951,34 @@ def prompt_bool_value(label: str, *, default: bool) -> bool:
 
 
 def prompt_gateway_module_selection() -> list[str]:
-    modules = list_available_gateway_modules()
-    if not modules:
-        raise CliError("No gateway modules are currently registered.")
+    return prompt_gateway_selection()
 
-    print("Available gateway modules:")
-    for index, module in enumerate(modules, start=1):
-        print(f"  {index}. {module}")
+
+def prompt_gateway_selection() -> list[str]:
+    gateways = list_available_gateway_modules()
+    if not gateways:
+        raise CliError("No gateways are currently registered.")
+
+    print("Available gateways:")
+    for index, gateway in enumerate(gateways, start=1):
+        print(f"  {index}. {gateway}")
 
     while True:
-        entered = input("Select gateway modules [1]: ").strip()
+        entered = input("Select gateways [1]: ").strip()
         if not entered:
-            return [modules[0]]
+            return [gateways[0]]
         selected: list[str] = []
         try:
             for part in entered.split(","):
                 index = int(part.strip())
-                selected.append(modules[index - 1])
+                selected.append(gateways[index - 1])
         except (ValueError, IndexError):
             print("Enter one or more numeric choices separated by commas.")
             continue
         deduped: list[str] = []
-        for module in selected:
-            if module not in deduped:
-                deduped.append(module)
+        for gateway in selected:
+            if gateway not in deduped:
+                deduped.append(gateway)
         return deduped
 
 
@@ -850,6 +995,16 @@ def prompt_text_value(label: str, *, default_value: str | None, required: bool =
         print(f"{label} is required.")
 
 
+def prompt_choice_value(label: str, *, choices: list[str], default_value: str) -> str:
+    normalized_choices = {choice.lower(): choice for choice in choices}
+    while True:
+        entered = input(f"{label} [{default_value}]: ").strip()
+        value = (entered or default_value).lower()
+        if value in normalized_choices:
+            return normalized_choices[value]
+        print(f"Choose one of: {', '.join(choices)}")
+
+
 def list_available_gateway_modules() -> list[str]:
     from synapse.gateway_host.catalog import list_gateway_module_specs
 
@@ -864,34 +1019,27 @@ def load_gateway_settings():
 
 def load_gateway_settings_if_enabled():
     settings = load_gateway_settings()
-    if not settings.enabled or not settings.enabled_modules:
+    if not settings.enabled or not settings.enabled_gateways:
         return None
     return settings
 
 
 def report_gateway_status(args: argparse.Namespace) -> bool:
-    settings = load_gateway_settings()
+    try:
+        settings = load_gateway_settings()
+    except Exception as exc:
+        print(f"[missing] gateway config: {exc}")
+        return False
     if not settings.enabled:
         print("[ok] gateway: disabled")
         return True
 
     ok = True
-    modules = ", ".join(settings.enabled_modules) or "(none)"
-    print(f"[ok] gateway: enabled -> {modules}")
+    gateways = ", ".join(settings.enabled_gateways) or "(none)"
+    print(f"[ok] gateway: enabled -> {gateways}")
     print(f"[ok] gateway public URL: {settings.public_base_url}")
     ok &= report_port(settings.port)
 
-    for module in settings.enabled_modules:
-        if module == "agora-convoai":
-            ok &= report_required_env_keys(
-                [
-                    "SYNAPSE_GATEWAY_AGORA_CONVOAI_APP_ID",
-                    "SYNAPSE_GATEWAY_AGORA_CONVOAI_APP_CERTIFICATE",
-                    "SYNAPSE_GATEWAY_AGORA_CONVOAI_DEEPGRAM_API_KEY",
-                    "SYNAPSE_GATEWAY_AGORA_CONVOAI_ELEVENLABS_API_KEY",
-                    "SYNAPSE_GATEWAY_AGORA_CONVOAI_ELEVENLABS_VOICE_ID",
-                ]
-            )
     return ok
 
 
@@ -910,6 +1058,101 @@ def report_required_env_keys(keys: list[str]) -> bool:
 
 class CliError(Exception):
     pass
+
+
+def gateway_config_path() -> Path:
+    return ENV_LOCAL.with_name("config.yaml")
+
+
+def _load_existing_gateway_yaml(path: Path) -> dict[str, object]:
+    if not path.exists():
+        return {}
+    loaded = load_yaml_file(path)
+    if isinstance(loaded, dict):
+        return loaded
+    return {}
+
+
+def _existing_yaml_value(raw_gateway_yaml: dict[str, object], *path: str) -> str | None:
+    value: object = raw_gateway_yaml
+    for part in path:
+        if not isinstance(value, dict) or part not in value:
+            return None
+        value = value[part]
+    if value in (None, ""):
+        return None
+    return str(value)
+
+
+def _existing_gateway_block(raw_gateway_yaml: dict[str, object], gateway: str) -> dict[str, object]:
+    raw_gateways = raw_gateway_yaml.get("gateways")
+    if not isinstance(raw_gateways, dict):
+        return {}
+    raw_gateway = raw_gateways.get(gateway)
+    if not isinstance(raw_gateway, dict):
+        return {}
+    return raw_gateway
+
+
+def _existing_nested_value(raw_gateway: dict[str, object], *path: str) -> str | None:
+    value: object = raw_gateway
+    for part in path:
+        if not isinstance(value, dict) or part not in value:
+            return None
+        value = value[part]
+    if value in (None, ""):
+        return None
+    return str(value)
+
+
+def render_gateway_config(*, host: dict[str, object], gateways: dict[str, dict[str, object]]) -> str:
+    lines = ["version: 1", "", "host:"]
+    lines.extend(_render_yaml_mapping(host, indent=2))
+    lines.append("")
+    lines.append("gateways:")
+    if gateways:
+        lines.extend(_render_yaml_mapping(gateways, indent=2))
+    else:
+        lines.append("  {}")
+    return "\n".join(lines) + "\n"
+
+
+def _render_yaml_mapping(mapping: dict[str, object], *, indent: int) -> list[str]:
+    lines: list[str] = []
+    prefix = " " * indent
+    for key, value in mapping.items():
+        if isinstance(value, dict):
+            lines.append(f"{prefix}{key}:")
+            lines.extend(_render_yaml_mapping(value, indent=indent + 2))
+            continue
+        if isinstance(value, list):
+            lines.append(f"{prefix}{key}:")
+            for item in value:
+                lines.append(f"{prefix}  - {_render_yaml_scalar(item)}")
+            continue
+        lines.append(f"{prefix}{key}: {_render_yaml_scalar(value)}")
+    return lines
+
+
+def _render_yaml_scalar(value: object) -> str:
+    if value is None:
+        return "null"
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)):
+        return str(value)
+    text = str(value)
+    if re.search(r"[:#\n]", text):
+        return f'"{text}"'
+    return text
+
+
+def _write_gateway_config_if_needed(result: GatewaySetupResult) -> None:
+    if result.config_path is None or result.config_text is None:
+        return
+    result.config_path.parent.mkdir(parents=True, exist_ok=True)
+    result.config_path.write_text(result.config_text, encoding="utf-8")
+    print(f"[write] configured {format_user_path(result.config_path)}")
 
 
 if __name__ == "__main__":

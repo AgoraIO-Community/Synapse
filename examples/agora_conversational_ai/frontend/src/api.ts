@@ -5,6 +5,10 @@ export interface FrontendConfig {
     profile?: string;
     channel_name?: string;
     display_name?: string;
+    agent_instructions?: string;
+    agent_greeting?: string;
+    agent_uid?: number;
+    user_uid?: number;
   };
   missing_requirements: string[];
 }
@@ -13,7 +17,10 @@ export interface FrontendSessionPrepareRequest {
   profile?: string;
   channel_name?: string;
   display_name?: string;
-  user_id?: string;
+  agent_instructions?: string;
+  agent_greeting?: string;
+  agent_uid?: number;
+  user_uid?: number;
 }
 
 export interface FrontendSessionActivateRequest {
@@ -24,6 +31,12 @@ export interface FrontendSessionDiagnostics {
   convoai_area: string;
   selected_url: string;
   runtime_session_id: string | null;
+  asr_vendor: string;
+  asr_credential_mode: string;
+  asr_model: string;
+  tts_vendor: string;
+  tts_credential_mode: string;
+  tts_model: string;
   agent_uid: string;
   agent_rtm_uid: string;
   rtc_uid: string | number | null;

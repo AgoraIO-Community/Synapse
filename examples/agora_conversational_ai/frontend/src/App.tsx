@@ -105,7 +105,10 @@ export default function App() {
   const [profile, setProfile] = useState("");
   const [channelName, setChannelName] = useState("");
   const [displayName, setDisplayName] = useState("");
-  const [userId, setUserId] = useState("");
+  const [agentInstructions, setAgentInstructions] = useState("");
+  const [agentGreeting, setAgentGreeting] = useState("");
+  const [agentUid, setAgentUid] = useState("");
+  const [userUid, setUserUid] = useState("");
   const [activeSession, setActiveSession] = useState<FrontendActivateResponse | null>(null);
   const [agentState, setAgentState] = useState<string>("idle");
   const [transcript, setTranscript] = useState<TranscriptTurn[]>([]);
@@ -143,6 +146,10 @@ export default function App() {
         setProfile(loaded.defaults.profile ?? "VOICE");
         setChannelName(loaded.defaults.channel_name ?? "synapse-voice-demo");
         setDisplayName(loaded.defaults.display_name ?? "Synapse Tester");
+        setAgentInstructions(loaded.defaults.agent_instructions ?? "You are a helpful voice assistant.");
+        setAgentGreeting(loaded.defaults.agent_greeting ?? "Hello. How can I help you today?");
+        setAgentUid(String(loaded.defaults.agent_uid ?? 9001));
+        setUserUid(String(loaded.defaults.user_uid ?? 101));
         setPhase(loaded.ready ? "ready" : "error");
         if (!loaded.ready) {
           setError(`Missing backend config: ${loaded.missing_requirements.join(", ")}`);
@@ -180,13 +187,16 @@ export default function App() {
       eventType: "session_prepare_requested",
       severity: "info",
       summary: "Preparing browser bootstrap for RTC and RTM.",
-      details: {
-        profile,
-        channelName,
-        displayName,
-        userId: userId || null,
-      },
-    });
+        details: {
+          profile,
+          channelName,
+          displayName,
+          agentInstructions,
+          agentGreeting,
+          agentUid: agentUid || null,
+          userUid: userUid || null,
+        },
+      });
 
     let activated: FrontendActivateResponse | null = null;
     try {
@@ -194,7 +204,10 @@ export default function App() {
         profile,
         channel_name: channelName,
         display_name: displayName,
-        user_id: userId || undefined,
+        agent_instructions: agentInstructions || undefined,
+        agent_greeting: agentGreeting || undefined,
+        agent_uid: agentUid ? Number(agentUid) : undefined,
+        user_uid: userUid ? Number(userUid) : undefined,
       });
       appendDiagnostic({
         source: "backend",
@@ -645,9 +658,40 @@ export default function App() {
             <label className="field">
               <span>User UID override</span>
               <input
-                value={userId}
-                onChange={(event) => setUserId(event.target.value)}
+                value={userUid}
+                onChange={(event) => setUserUid(event.target.value)}
                 placeholder="101"
+                disabled={phase === "starting" || phase === "connected" || phase === "stopping"}
+              />
+            </label>
+
+            <label className="field">
+              <span>Agent UID override</span>
+              <input
+                value={agentUid}
+                onChange={(event) => setAgentUid(event.target.value)}
+                placeholder="9001"
+                disabled={phase === "starting" || phase === "connected" || phase === "stopping"}
+              />
+            </label>
+
+            <label className="field">
+              <span>Agent instructions</span>
+              <textarea
+                value={agentInstructions}
+                onChange={(event) => setAgentInstructions(event.target.value)}
+                rows={3}
+                placeholder="You are a helpful voice assistant."
+                disabled={phase === "starting" || phase === "connected" || phase === "stopping"}
+              />
+            </label>
+
+            <label className="field">
+              <span>Agent greeting</span>
+              <input
+                value={agentGreeting}
+                onChange={(event) => setAgentGreeting(event.target.value)}
+                placeholder="Hello. How can I help you today?"
                 disabled={phase === "starting" || phase === "connected" || phase === "stopping"}
               />
             </label>

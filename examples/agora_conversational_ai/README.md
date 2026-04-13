@@ -42,12 +42,6 @@ pip install -e '.[dev]'
 The editable install now pulls the current Agora Python SDK package,
 `agora-agent-server-sdk`, which provides the `agora_agent` module used by this example.
 
-Create the example-local env file:
-
-```bash
-cp examples/agora_conversational_ai/.env.example examples/agora_conversational_ai/.env.local
-```
-
 Run Synapse with the gateway host first:
 
 ```bash
@@ -71,10 +65,10 @@ The supported package name is `agora-agent-server-sdk`.
 
 ## Environment
 
-This example reads:
+This example reads the shared Synapse home env:
 
 ```text
-examples/agora_conversational_ai/.env.local
+~/.synapse/.env
 ```
 
 Required for the gateway host:
@@ -89,7 +83,7 @@ SYNAPSE_GATEWAY_PUBLIC_BASE_URL=http://127.0.0.1:8010
 SYNAPSE_GATEWAY_SYNAPSE_BASE_URL=http://127.0.0.1:8000
 ```
 
-The Synapse server on `8000` keeps its own runtime env in the repo-root `.env.local`.
+The Synapse server on `8000` keeps its runtime env in `~/.synapse/.env`.
 If that Synapse server should call a different OpenAI-compatible backend, configure
 `OPENAI_API_KEY` and optional `SYNAPSE_OPENAI_BASE_URL` there, not in this example env file.
 
@@ -122,11 +116,7 @@ AGORA_FRONTEND_DEFAULT_PROFILE=VOICE
 AGORA_FRONTEND_DEFAULT_CHANNEL_NAME=synapse-voice-demo
 AGORA_FRONTEND_DEFAULT_DISPLAY_NAME=Synapse Tester
 
-SYNAPSE_GATEWAY_ENABLED=true
-SYNAPSE_GATEWAY_MODULES=agora-convoai
-SYNAPSE_GATEWAY_PUBLIC_BASE_URL=http://127.0.0.1:8010
-SYNAPSE_GATEWAY_SYNAPSE_BASE_URL=http://127.0.0.1:8000
-SYNAPSE_GATEWAY_AGORA_CONVOAI_MODEL=synapse-agora-bridge
+The gateway host settings now live in `~/.synapse/config.yaml`.
 ```
 
 For live Agora sessions, `SYNAPSE_GATEWAY_PUBLIC_BASE_URL` must be a public URL

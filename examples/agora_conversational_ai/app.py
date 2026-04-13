@@ -31,6 +31,7 @@ from .models import (
 from .settings import AgoraBridgeSettings, load_bridge_settings
 from .settings import configure_example_env
 from .synapse_client import ExternalSynapseClient, SynapseBridgeClient, SynapseBridgeError
+from synapse.gateways.agora_convoai.settings import AGORA_BRIDGE_MODEL
 
 
 def create_app(
@@ -143,12 +144,12 @@ def create_app(
         synapse_client: SynapseBridgeClient = request.app.state.synapse_client
         if payload.stream:
             return StreamingResponse(
-                _stream_completion(
-                    synapse_client=synapse_client,
-                    synapse_session_id=binding.synapse_session_id,
-                    user_text=user_text,
-                    model_name=payload.model or request.app.state.bridge_settings.default_model,
-                ),
+                        _stream_completion(
+                            synapse_client=synapse_client,
+                            synapse_session_id=binding.synapse_session_id,
+                            user_text=user_text,
+                            model_name=payload.model or AGORA_BRIDGE_MODEL,
+                        ),
                 media_type="text/event-stream",
                 headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
             )
@@ -156,13 +157,13 @@ def create_app(
         try:
             result = await synapse_client.send_message(binding.synapse_session_id, user_text)
             return JSONResponse(
-                _build_completion_response(
-                    completion_id=f"chatcmpl-{uuid4().hex[:8]}",
-                    created=int(time.time()),
-                    model_name=payload.model or request.app.state.bridge_settings.default_model,
-                    reply_text=result.reply_text,
+                    _build_completion_response(
+                        completion_id=f"chatcmpl-{uuid4().hex[:8]}",
+                        created=int(time.time()),
+                        model_name=payload.model or AGORA_BRIDGE_MODEL,
+                        reply_text=result.reply_text,
+                    )
                 )
-            )
         except SynapseBridgeError as exc:
             raise HTTPException(status_code=502, detail=str(exc)) from exc
 

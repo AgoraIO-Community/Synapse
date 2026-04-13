@@ -42,6 +42,12 @@ class FakeConvoAIService:
                 convoai_area="CN",
                 selected_url="https://api-cn-test.agora.io/api/conversational-ai-agent",
                 runtime_agent_id=None,
+                asr_vendor="deepgram",
+                asr_credential_mode="byok",
+                asr_model="nova-3",
+                tts_vendor="elevenlabs",
+                tts_credential_mode="byok",
+                tts_model="eleven_flash_v2_5",
                 agent_uid="9001",
                 agent_rtm_uid="9001-demo-room",
                 rtc_uid=101,
@@ -70,6 +76,12 @@ class FakeConvoAIService:
                 convoai_area="CN",
                 selected_url="https://api-cn-test.agora.io/api/conversational-ai-agent",
                 runtime_agent_id="runtime-agent-1",
+                asr_vendor="deepgram",
+                asr_credential_mode="byok",
+                asr_model="nova-3",
+                tts_vendor="elevenlabs",
+                tts_credential_mode="byok",
+                tts_model="eleven_flash_v2_5",
                 agent_uid="9001",
                 agent_rtm_uid="9001-demo-room",
                 rtc_uid=101,
@@ -89,14 +101,20 @@ class FakeConvoAIService:
         profile: str,
         channel_name: str,
         display_name: str | None,
-        user_id: str | None,
+        agent_instructions: str,
+        agent_greeting: str,
+        agent_uid: int,
+        user_uid: int | None,
     ) -> PreparedConvoAISession:
         self.prepare_calls.append(
             {
                 "profile": profile,
                 "channel_name": channel_name,
                 "display_name": display_name,
-                "user_id": user_id,
+                "agent_instructions": agent_instructions,
+                "agent_greeting": agent_greeting,
+                "agent_uid": agent_uid,
+                "user_uid": user_uid,
             }
         )
         return self.prepared
@@ -237,6 +255,8 @@ def test_real_agora_sdk_loader_matches_installed_package_shape():
         DeepgramSTT,
         OpenAI,
         ElevenLabsTTS,
+        MiniMaxTTS,
+        OpenAITTS,
         AdvancedFeatures,
         SessionParams,
     ) = service._load_sdk_types()
@@ -248,6 +268,8 @@ def test_real_agora_sdk_loader_matches_installed_package_shape():
     assert DeepgramSTT is not None
     assert OpenAI is not None
     assert ElevenLabsTTS is not None
+    assert MiniMaxTTS is not None
+    assert OpenAITTS is not None
     assert AdvancedFeatures is not None
     assert SessionParams is not None
 
@@ -327,6 +349,8 @@ async def test_local_convoai_service_prepare_uses_official_identity_model(monkey
             FakeDeepgramSTT,
             FakeOpenAI,
             FakeElevenLabsTTS,
+            lambda **kwargs: None,
+            lambda **kwargs: None,
             FakeAdvancedFeatures,
             FakeSessionParams,
         ),
@@ -336,7 +360,10 @@ async def test_local_convoai_service_prepare_uses_official_identity_model(monkey
         profile="VOICE",
         channel_name="demo-room",
         display_name="Tester",
-        user_id="101",
+        agent_instructions="You are a helpful voice assistant.",
+        agent_greeting="Hello. How can I help you today?",
+        agent_uid=9001,
+        user_uid=101,
     )
 
     assert prepared.uid == 101
@@ -412,6 +439,8 @@ async def test_local_convoai_service_activate_uses_bridge_chat_completions_url(m
             lambda **kwargs: None,
             lambda **kwargs: None,
             lambda **kwargs: None,
+            lambda **kwargs: None,
+            lambda **kwargs: None,
         ),
     )
 
@@ -419,7 +448,10 @@ async def test_local_convoai_service_activate_uses_bridge_chat_completions_url(m
         profile="VOICE",
         channel_name="demo-room",
         display_name="Tester",
-        user_id="101",
+        agent_instructions="You are a helpful voice assistant.",
+        agent_greeting="Hello. How can I help you today?",
+        agent_uid=9001,
+        user_uid=101,
     )
     activated = await service.activate_session(
         prepared.prepared_session_id,
@@ -491,13 +523,18 @@ async def test_local_convoai_service_activate_wraps_connect_error(monkeypatch):
             lambda **kwargs: None,
             lambda **kwargs: None,
             lambda **kwargs: None,
+            lambda **kwargs: None,
+            lambda **kwargs: None,
         ),
     )
     prepared = await service.prepare_session(
         profile="VOICE",
         channel_name="demo-room",
         display_name="Tester",
-        user_id="101",
+        agent_instructions="You are a helpful voice assistant.",
+        agent_greeting="Hello. How can I help you today?",
+        agent_uid=9001,
+        user_uid=101,
     )
 
     with pytest.raises(ConvoAIRuntimeError) as exc_info:
@@ -517,7 +554,7 @@ def _build_settings(**overrides) -> AgoraBridgeSettings:
     base = AgoraBridgeSettings(
         service_base_url="http://testserver",
         synapse_base_url="http://upstream-testserver",
-        default_app_id="agora-app",
+        app_id="agora-app",
         app_certificate="app-certificate",
         deepgram_api_key="deepgram-key",
         elevenlabs_api_key="elevenlabs-key",
@@ -567,6 +604,7 @@ async def test_frontend_config_reports_ready_defaults():
     payload = response.json()
     assert payload["ready"] is True
     assert payload["defaults"]["profile"] == "VOICE"
+    assert payload["defaults"]["agent_uid"] == 9001
     assert payload["defaults"]["channel_name"] == "synapse-voice-demo"
     assert payload["service_base_url"] == "http://testserver"
 
@@ -585,7 +623,7 @@ async def test_prepare_returns_official_sample_like_bootstrap():
                 "profile": "VOICE",
                 "channel_name": "demo-room",
                 "display_name": "Tester",
-                "user_id": "101",
+                "user_uid": 101,
             },
         )
 
@@ -605,7 +643,10 @@ async def test_prepare_returns_official_sample_like_bootstrap():
             "profile": "VOICE",
             "channel_name": "demo-room",
             "display_name": "Tester",
-            "user_id": "101",
+            "agent_instructions": "You are a helpful voice assistant.",
+            "agent_greeting": "Hello. How can I help you today?",
+            "agent_uid": 9001,
+            "user_uid": 101,
         }
     ]
 
@@ -620,7 +661,7 @@ async def test_activate_returns_bridge_payload_and_chat_completion_works():
     ) as client:
         prepared = await client.post(
             "/frontend/session/prepare",
-            json={"channel_name": "demo-room", "user_id": "101"},
+            json={"channel_name": "demo-room", "user_uid": 101},
         )
         activated = await client.post(
             "/frontend/session/activate",
@@ -665,7 +706,7 @@ async def test_chat_completions_stream_uses_upstream_synapse_stream():
     ) as client:
         prepared = await client.post(
             "/frontend/session/prepare",
-            json={"channel_name": "demo-room", "user_id": "101"},
+            json={"channel_name": "demo-room", "user_uid": 101},
         )
         activated = await client.post(
             "/frontend/session/activate",
@@ -711,7 +752,7 @@ async def test_activate_failure_cleans_up_reserved_bridge_binding():
     ) as client:
         prepared = await client.post(
             "/frontend/session/prepare",
-            json={"channel_name": "demo-room", "user_id": "101"},
+            json={"channel_name": "demo-room", "user_uid": 101},
         )
         activated = await client.post(
             "/frontend/session/activate",
@@ -732,7 +773,7 @@ async def test_notification_events_trigger_local_speak():
     ) as client:
         prepared = await client.post(
             "/frontend/session/prepare",
-            json={"channel_name": "demo-room", "user_id": "101"},
+            json={"channel_name": "demo-room", "user_uid": 101},
         )
         activated = await client.post(
             "/frontend/session/activate",
@@ -764,7 +805,7 @@ async def test_frontend_stop_unregisters_bridge_and_stops_local_session():
     ) as client:
         prepared = await client.post(
             "/frontend/session/prepare",
-            json={"channel_name": "demo-room", "user_id": "101"},
+            json={"channel_name": "demo-room", "user_uid": 101},
         )
         activated = await client.post(
             "/frontend/session/activate",

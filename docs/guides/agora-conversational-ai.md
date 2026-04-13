@@ -91,7 +91,7 @@ The frontend uses the agent RTM uid for toolkit messaging calls and the agent RT
 
 ## Run
 
-Configure the root `.env.local`, including gateway settings, then run:
+Configure `~/.synapse/.env` and `~/.synapse/config.yaml`, then run:
 
 ```bash
 ./synapse setup
@@ -113,12 +113,14 @@ npm install
 npm run dev
 ```
 
-The gateway host reads its config from the repo-root `.env.local`.
+The gateway host reads its live config from `~/.synapse/config.yaml` and the shared
+runtime env from `~/.synapse/.env`.
 
 For live Agora sessions, `SYNAPSE_GATEWAY_PUBLIC_BASE_URL` must be a public URL
 that can reach the gateway host.
 
-For this example, `AGORA_CONVOAI_AREA=CN` is the recommended starting value. If live start still fails with connectivity errors, try `US`, `EU`, or `AP`.
+For this example, `gateways.agora-convoai.convoai_area: CN` is the recommended starting
+value. If live start still fails with connectivity errors, try `US`, `EU`, or `AP`.
 
 ## Ownership Note
 

@@ -20,7 +20,7 @@ async def test_gateway_host_mounts_enabled_module_routes():
     app = create_app(
         GatewayHostSettings(
             enabled=True,
-            enabled_modules=["agora-convoai"],
+            enabled_gateways=["agora-convoai"],
         )
     )
 
@@ -43,7 +43,7 @@ async def test_gateway_host_skips_disabled_module_routes():
     app = create_app(
         GatewayHostSettings(
             enabled=False,
-            enabled_modules=["agora-convoai"],
+            enabled_gateways=["agora-convoai"],
         )
     )
 
@@ -56,7 +56,7 @@ async def test_gateway_host_skips_disabled_module_routes():
 
     assert health_response.status_code == 200
     assert health_response.json()["enabled"] is False
-    assert health_response.json()["modules"] == ["agora-convoai"]
+    assert health_response.json()["gateways"] == ["agora-convoai"]
     assert response.status_code == 404
 
 
@@ -171,6 +171,8 @@ async def test_agora_gateway_prepare_route_uses_real_loader_path_before_fake_sdk
             lambda **kwargs: None,
             lambda **kwargs: None,
             lambda **kwargs: None,
+            lambda **kwargs: None,
+            lambda **kwargs: None,
             FakeAdvancedFeatures,
             FakeSessionParams,
         ),
@@ -178,11 +180,8 @@ async def test_agora_gateway_prepare_route_uses_real_loader_path_before_fake_sdk
 
     app = create_headless_app(
         AgoraConvoAIGatewaySettings(
-            default_app_id="agora-app",
+            app_id="agora-app",
             app_certificate="app-certificate",
-            deepgram_api_key="deepgram-key",
-            elevenlabs_api_key="elevenlabs-key",
-            elevenlabs_voice_id="voice-id",
         )
     )
 
@@ -196,7 +195,7 @@ async def test_agora_gateway_prepare_route_uses_real_loader_path_before_fake_sdk
                 "profile": "VOICE",
                 "channel_name": "demo-room",
                 "display_name": "Tester",
-                "user_id": "101",
+                "user_uid": 101,
             },
         )
 
@@ -299,6 +298,8 @@ async def test_agora_gateway_activate_ignores_proxy_env_for_synapse_upstream(mon
             lambda **kwargs: None,
             lambda **kwargs: None,
             lambda **kwargs: None,
+            lambda **kwargs: None,
+            lambda **kwargs: None,
             FakeAdvancedFeatures,
             FakeSessionParams,
         ),
@@ -307,11 +308,8 @@ async def test_agora_gateway_activate_ignores_proxy_env_for_synapse_upstream(mon
     app = create_headless_app(
         AgoraConvoAIGatewaySettings(
             synapse_base_url="http://127.0.0.1:8000",
-            default_app_id="agora-app",
+            app_id="agora-app",
             app_certificate="app-certificate",
-            deepgram_api_key="deepgram-key",
-            elevenlabs_api_key="elevenlabs-key",
-            elevenlabs_voice_id="voice-id",
             convoai_area="US",
         )
     )
@@ -326,7 +324,7 @@ async def test_agora_gateway_activate_ignores_proxy_env_for_synapse_upstream(mon
                 "profile": "VOICE",
                 "channel_name": "demo-room",
                 "display_name": "Tester",
-                "user_id": "101",
+                "user_uid": 101,
             },
         )
         assert prepared.status_code == 200

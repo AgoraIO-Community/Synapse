@@ -32,7 +32,7 @@ Run the gateway host only:
 ./synapse gateway run
 ```
 
-When gateway modules are enabled in `.env.local`, these commands also start the
+When gateway config is enabled in `~/.synapse/config.yaml`, these commands also start the
 gateway host automatically:
 
 ```bash
@@ -74,20 +74,22 @@ from the same machine running the gateway host.
 
 ## Config
 
-Gateway host config is stored in the repo-root `.env.local`.
-
-Shared keys use:
+Gateway host config now uses a shared YAML file in the user config home:
 
 ```text
-SYNAPSE_GATEWAY_*
+~/.synapse/config.yaml
 ```
 
-Module-specific keys use:
+The YAML file contains the `host` block plus per-gateway config under `gateways`.
+Scalar values written as `$VAR_NAME` are resolved from environment variables after
+`~/.synapse/.env` is loaded.
+
+The tracked template is:
 
 ```text
-SYNAPSE_GATEWAY_<MODULE>_*
+config/gateway.example.yaml
 ```
 
-Current first-party module:
+Current first-party gateway:
 
 - `agora-convoai`

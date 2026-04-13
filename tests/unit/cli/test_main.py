@@ -46,14 +46,15 @@ def configure_repo_paths(monkeypatch, root: Path) -> None:
     monkeypatch.setattr(cli_main, "FRONTEND", root / "frontend")
     monkeypatch.setattr(cli_main, "VENV_DIR", root / ".venv")
     monkeypatch.setattr(cli_main, "ENV_EXAMPLE", root / ".env.example")
-    monkeypatch.setattr(cli_main, "ENV_LOCAL", root / ".env.local")
+    monkeypatch.setattr(cli_main, "ENV_LOCAL", root / ".synapse" / ".env")
 
 
 def test_setup_interactive_updates_env_file(monkeypatch, tmp_path: Path):
     root = tmp_path
     (root / "frontend").mkdir()
     write_template(root / ".env.example")
-    (root / ".env.local").write_text(
+    (root / ".synapse").mkdir(parents=True, exist_ok=True)
+    (root / ".synapse" / ".env").write_text(
         "SYNAPSE_OPENAI_MODEL=gpt-4.1-mini\nEXTRA_FLAG=keep-me\n",
         encoding="utf-8",
     )
@@ -67,7 +68,7 @@ def test_setup_interactive_updates_env_file(monkeypatch, tmp_path: Path):
 
     assert cli_main.main(["setup"]) == 0
 
-    configured = (root / ".env.local").read_text(encoding="utf-8")
+    configured = (root / ".synapse" / ".env").read_text(encoding="utf-8")
     assert "OPENAI_API_KEY=sk-test" in configured
     assert "SYNAPSE_OPENAI_MODEL=gpt-4.1-mini" in configured
     assert "SYNAPSE_CODEX_EXECUTOR_ENABLED=true" in configured
@@ -83,47 +84,84 @@ def test_gateway_setup_writes_gateway_module_env(monkeypatch, tmp_path: Path):
     configure_repo_paths(monkeypatch, root)
     monkeypatch.setattr(cli_main, "setup_can_prompt", lambda: True)
     monkeypatch.setattr(cli_main, "list_available_gateway_modules", lambda: ["agora-convoai"])
-    secret_responses = iter(["app-cert", "deepgram-key", "elevenlabs-key"])
+    secret_responses = iter(["app-cert"])
     monkeypatch.setattr(cli_main.getpass, "getpass", lambda _prompt: next(secret_responses))
-    text_responses = iter(
-        [
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "agora-app",
-            "",
-            "",
-            "voice-id",
-            "",
-        ]
-    )
-    monkeypatch.setattr("builtins.input", lambda _prompt: next(text_responses))
+
+    def fake_input(prompt: str) -> str:
+        if prompt.startswith("Agora App ID"):
+            return "agora-app"
+        return ""
+
+    monkeypatch.setattr("builtins.input", fake_input)
 
     assert cli_main.main(["gateway", "setup"]) == 0
 
-    configured = (root / ".env.local").read_text(encoding="utf-8")
-    assert "SYNAPSE_GATEWAY_ENABLED=true" in configured
-    assert "SYNAPSE_GATEWAY_MODULES=agora-convoai" in configured
-    assert "SYNAPSE_GATEWAY_PORT=8010" in configured
-    assert "SYNAPSE_GATEWAY_AGORA_CONVOAI_APP_ID=agora-app" in configured
-    assert "SYNAPSE_GATEWAY_AGORA_CONVOAI_APP_CERTIFICATE=app-cert" in configured
-    assert "SYNAPSE_GATEWAY_AGORA_CONVOAI_DEEPGRAM_API_KEY=deepgram-key" in configured
-    assert "SYNAPSE_GATEWAY_AGORA_CONVOAI_ELEVENLABS_API_KEY=elevenlabs-key" in configured
-    assert "SYNAPSE_GATEWAY_AGORA_CONVOAI_ELEVENLABS_VOICE_ID=voice-id" in configured
+    configured = (root / ".synapse" / ".env").read_text(encoding="utf-8")
+    assert "AGORA_APP_ID=agora-app" in configured
+    assert "AGORA_APP_CERTIFICATE=app-cert" in configured
+
+    gateway_config = (root / ".synapse" / "config.yaml").read_text(encoding="utf-8")
+    assert "enabled_gateways:" in gateway_config
+    assert "- agora-convoai" in gateway_config
+    assert "app_id: $AGORA_APP_ID" in gateway_config
+    assert "credential_mode: managed" in gateway_config
+    assert "vendor: minimax" in gateway_config
+
+
+def test_gateway_setup_decline_disables_existing_gateway_config(monkeypatch, tmp_path: Path):
+    root = tmp_path
+    (root / "frontend").mkdir()
+    write_template(root / ".env.example")
+    configure_repo_paths(monkeypatch, root)
+    monkeypatch.setattr(cli_main, "setup_can_prompt", lambda: True)
+    (root / ".synapse").mkdir(parents=True, exist_ok=True)
+    (root / ".synapse" / "config.yaml").write_text(
+        "\n".join(
+            [
+                "version: 1",
+                "host:",
+                "  enabled: true",
+                "  enabled_gateways:",
+                "    - agora-convoai",
+                "gateways:",
+                "  agora-convoai:",
+                "    app_id: $AGORA_APP_ID",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("builtins.input", lambda _prompt: "no")
+
+    assert cli_main.main(["gateway", "setup"]) == 0
+
+    configured = (root / ".synapse" / "config.yaml").read_text(encoding="utf-8")
+    assert "enabled: false" in configured
+    assert "enabled_gateways:" in configured
 
 
 def test_gateway_listing_and_settings_do_not_require_fastapi(monkeypatch, tmp_path: Path):
     root = tmp_path
     (root / "frontend").mkdir()
     write_template(root / ".env.example")
-    (root / ".env.local").write_text(
+    (root / ".synapse").mkdir(parents=True, exist_ok=True)
+    (root / ".synapse" / ".env").write_text(
         "\n".join(
             [
-                "SYNAPSE_GATEWAY_ENABLED=true",
-                "SYNAPSE_GATEWAY_MODULES=agora-convoai",
+                "OPENAI_API_KEY=test-key",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (root / ".synapse" / "config.yaml").write_text(
+        "\n".join(
+            [
+                "version: 1",
+                "host:",
+                "  enabled: true",
+                "  enabled_gateways:",
+                "    - agora-convoai",
             ]
         )
         + "\n",
@@ -145,7 +183,7 @@ def test_gateway_listing_and_settings_do_not_require_fastapi(monkeypatch, tmp_pa
     assert cli_main.list_available_gateway_modules() == ["agora-convoai"]
     settings = cli_main.load_gateway_settings()
     assert settings.enabled is True
-    assert settings.enabled_modules == ["agora-convoai"]
+    assert settings.enabled_gateways == ["agora-convoai"]
 
 
 def test_setup_non_interactive_uses_existing_and_env(monkeypatch, tmp_path: Path):
@@ -158,7 +196,7 @@ def test_setup_non_interactive_uses_existing_and_env(monkeypatch, tmp_path: Path
 
     assert cli_main.main(["setup", "--non-interactive"]) == 0
 
-    configured = (root / ".env.local").read_text(encoding="utf-8")
+    configured = (root / ".synapse" / ".env").read_text(encoding="utf-8")
     assert "OPENAI_API_KEY=sk-env" in configured
     assert "SYNAPSE_CODEX_EXECUTOR_ENABLED=false" in configured
     assert "# SYNAPSE_CODEX_COMMAND=codex" in configured
@@ -182,7 +220,8 @@ def test_backend_requires_setup(monkeypatch, tmp_path: Path):
 
 
 def test_doctor_reads_openai_key_from_env_file(monkeypatch, tmp_path: Path, capsys):
-    env_local = tmp_path / ".env.local"
+    env_local = tmp_path / ".synapse" / ".env"
+    env_local.parent.mkdir(parents=True, exist_ok=True)
     env_local.write_text("OPENAI_API_KEY=test-key\n", encoding="utf-8")
     venv_python = tmp_path / ".venv" / "bin" / "python"
     venv_python.parent.mkdir(parents=True, exist_ok=True)
@@ -247,13 +286,26 @@ def test_dev_uses_repo_venv_and_frontend_command(monkeypatch, tmp_path: Path):
         return processes[len(spawned) - 1]
 
     configure_repo_paths(monkeypatch, tmp_path)
-    (tmp_path / ".env.local").write_text(
+    (tmp_path / ".synapse").mkdir(parents=True, exist_ok=True)
+    (tmp_path / ".synapse" / ".env").write_text(
         "\n".join(
             [
-                "SYNAPSE_GATEWAY_ENABLED=true",
-                "SYNAPSE_GATEWAY_PORT=8010",
-                "SYNAPSE_GATEWAY_PUBLIC_BASE_URL=http://127.0.0.1:8010",
-                "SYNAPSE_GATEWAY_MODULES=agora-convoai",
+                "OPENAI_API_KEY=test-key",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (tmp_path / ".synapse" / "config.yaml").write_text(
+        "\n".join(
+            [
+                "version: 1",
+                "host:",
+                "  enabled: true",
+                "  port: 8010",
+                "  public_base_url: http://127.0.0.1:8010",
+                "  enabled_gateways:",
+                "    - agora-convoai",
             ]
         )
         + "\n",

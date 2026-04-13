@@ -12,6 +12,7 @@ from .convoai_service import (
 )
 from .models import (
     FrontendConfigResponse,
+    FrontendSessionDefaults,
     FrontendPrepareAgentModel,
     FrontendSessionActivateRequest,
     FrontendSessionActivateResponse,
@@ -47,7 +48,7 @@ class FrontendSessionService:
 
     def get_config(self) -> FrontendConfigResponse:
         missing: list[str] = []
-        if not self._settings.default_app_id:
+        if not self._settings.app_id:
             missing.append("AGORA_APP_ID")
         if not self._settings.synapse_base_url:
             missing.append("AGORA_BRIDGE_SYNAPSE_BASE_URL")
@@ -63,11 +64,15 @@ class FrontendSessionService:
         return FrontendConfigResponse(
             ready=not missing,
             service_base_url=self._settings.service_base_url.rstrip("/"),
-            defaults={
-                "profile": self._settings.frontend_default_profile,
-                "channel_name": self._settings.frontend_default_channel_name,
-                "display_name": self._settings.frontend_default_display_name,
-            },
+            defaults=FrontendSessionDefaults(
+                profile=self._settings.frontend_default_profile,
+                channel_name=self._settings.frontend_default_channel_name,
+                display_name=self._settings.frontend_default_display_name,
+                agent_instructions=self._settings.agent_instructions,
+                agent_greeting=self._settings.agent_greeting,
+                agent_uid=self._settings.agent_uid,
+                user_uid=self._settings.user_uid,
+            ),
             missing_requirements=missing,
         )
 
@@ -86,7 +91,22 @@ class FrontendSessionService:
             profile=profile,
             channel_name=channel_name,
             display_name=display_name,
-            user_id=request_payload.user_id,
+            agent_instructions=(
+                request_payload.agent_instructions
+                if request_payload.agent_instructions is not None
+                else self._settings.agent_instructions
+            ),
+            agent_greeting=(
+                request_payload.agent_greeting
+                if request_payload.agent_greeting is not None
+                else self._settings.agent_greeting
+            ),
+            agent_uid=(
+                request_payload.agent_uid
+                if request_payload.agent_uid is not None
+                else self._settings.agent_uid
+            ),
+            user_uid=request_payload.user_uid,
         )
         return self._build_prepare_response(prepared)
 

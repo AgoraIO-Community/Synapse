@@ -17,10 +17,20 @@ class ChatCompletionRequest(BaseModel):
     stream: bool = False
 
 
+class GatewaySessionDefaults(BaseModel):
+    profile: str
+    channel_name: str
+    display_name: str
+    agent_instructions: str
+    agent_greeting: str
+    agent_uid: int
+    user_uid: int
+
+
 class GatewayConfigResponse(BaseModel):
     ready: bool
     service_base_url: str
-    defaults: dict[str, str] = Field(default_factory=dict)
+    defaults: GatewaySessionDefaults
     missing_requirements: list[str] = Field(default_factory=list)
 
 
@@ -28,7 +38,10 @@ class GatewaySessionPrepareRequest(BaseModel):
     profile: str | None = None
     channel_name: str | None = None
     display_name: str | None = None
-    user_id: str | None = None
+    agent_instructions: str | None = None
+    agent_greeting: str | None = None
+    agent_uid: int | None = None
+    user_uid: int | None = None
 
 
 class GatewaySessionActivateRequest(BaseModel):
@@ -39,6 +52,12 @@ class GatewaySessionDiagnostics(BaseModel):
     convoai_area: str
     selected_url: str
     runtime_session_id: str | None = None
+    asr_vendor: str
+    asr_credential_mode: str
+    asr_model: str
+    tts_vendor: str
+    tts_credential_mode: str
+    tts_model: str
     agent_uid: str
     agent_rtm_uid: str
     rtc_uid: str | int | None = None
@@ -94,4 +113,3 @@ class GatewaySessionStopRequest(BaseModel):
 
 class GatewaySessionStopResponse(BaseModel):
     status: str = "stopped"
-

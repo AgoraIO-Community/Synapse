@@ -2,14 +2,19 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from pathlib import Path
 
+from synapse.config_home import SYNAPSE_ENV_FILE
+from synapse.gateways.agora_convoai.settings import (
+    DEFAULT_AGENT_GREETING,
+    DEFAULT_AGENT_INSTRUCTIONS,
+    DEFAULT_CHANNEL_NAME,
+    DEFAULT_DISPLAY_NAME,
+    DEFAULT_PROFILE,
+)
 from synapse.runtime import config as runtime_config_module
 
 
-EXAMPLE_ROOT = Path(__file__).resolve().parent
-EXAMPLE_LOCAL_ENV_FILE = EXAMPLE_ROOT / ".env.local"
-EXAMPLE_ENV_EXAMPLE_FILE = EXAMPLE_ROOT / ".env.example"
+EXAMPLE_LOCAL_ENV_FILE = SYNAPSE_ENV_FILE
 
 
 def _get_bool(name: str, default: bool) -> bool:
@@ -23,7 +28,7 @@ def _get_bool(name: str, default: bool) -> bool:
 class AgoraBridgeSettings:
     service_base_url: str = "http://127.0.0.1:8010"
     synapse_base_url: str = "http://127.0.0.1:8000"
-    default_app_id: str | None = None
+    app_id: str | None = None
     app_certificate: str | None = None
     convoai_area: str = "CN"
     deepgram_api_key: str | None = None
@@ -32,16 +37,15 @@ class AgoraBridgeSettings:
     elevenlabs_voice_id: str | None = None
     elevenlabs_model_id: str = "eleven_flash_v2_5"
     elevenlabs_sample_rate: int = 24000
-    default_model: str = "synapse-agora-bridge"
-    agent_instructions: str = "You are a helpful voice assistant."
-    agent_greeting: str = "Hello. How can I help you today?"
+    agent_instructions: str = DEFAULT_AGENT_INSTRUCTIONS
+    agent_greeting: str = DEFAULT_AGENT_GREETING
     agent_uid: int = 9001
     user_uid: int = 101
     client_token_ttl_seconds: int = 3600
     sdk_debug: bool = False
-    frontend_default_profile: str = "VOICE"
-    frontend_default_channel_name: str = "synapse-voice-demo"
-    frontend_default_display_name: str = "Synapse Tester"
+    frontend_default_profile: str = DEFAULT_PROFILE
+    frontend_default_channel_name: str = DEFAULT_CHANNEL_NAME
+    frontend_default_display_name: str = DEFAULT_DISPLAY_NAME
     speak_priority: str = "APPEND"
     speak_interruptable: bool = True
     request_timeout_seconds: float = 10.0
@@ -60,7 +64,7 @@ def load_bridge_settings() -> AgoraBridgeSettings:
             "AGORA_BRIDGE_SYNAPSE_BASE_URL",
             "http://127.0.0.1:8000",
         ),
-        default_app_id=os.getenv("AGORA_APP_ID") or None,
+        app_id=os.getenv("AGORA_APP_ID") or None,
         app_certificate=os.getenv("AGORA_APP_CERTIFICATE") or None,
         convoai_area=os.getenv("AGORA_CONVOAI_AREA", "CN").upper(),
         deepgram_api_key=os.getenv("DEEPGRAM_API_KEY") or None,
@@ -69,27 +73,26 @@ def load_bridge_settings() -> AgoraBridgeSettings:
         elevenlabs_voice_id=os.getenv("ELEVENLABS_VOICE_ID") or None,
         elevenlabs_model_id=os.getenv("AGORA_ELEVENLABS_MODEL_ID", "eleven_flash_v2_5"),
         elevenlabs_sample_rate=int(os.getenv("AGORA_ELEVENLABS_SAMPLE_RATE", "24000")),
-        default_model=os.getenv("AGORA_BRIDGE_MODEL", "synapse-agora-bridge"),
         agent_instructions=os.getenv(
             "AGORA_CONVOAI_AGENT_INSTRUCTIONS",
-            "You are a helpful voice assistant.",
+            DEFAULT_AGENT_INSTRUCTIONS,
         ),
         agent_greeting=os.getenv(
             "AGORA_CONVOAI_AGENT_GREETING",
-            "Hello. How can I help you today?",
+            DEFAULT_AGENT_GREETING,
         ),
         agent_uid=int(os.getenv("AGORA_CONVOAI_AGENT_UID", "9001")),
         user_uid=int(os.getenv("AGORA_CONVOAI_USER_UID", "101")),
         client_token_ttl_seconds=int(os.getenv("AGORA_CLIENT_TOKEN_TTL_SECONDS", "3600")),
         sdk_debug=_get_bool("AGORA_CONVOAI_SDK_DEBUG", False),
-        frontend_default_profile=os.getenv("AGORA_FRONTEND_DEFAULT_PROFILE", "VOICE"),
+        frontend_default_profile=os.getenv("AGORA_FRONTEND_DEFAULT_PROFILE", DEFAULT_PROFILE),
         frontend_default_channel_name=os.getenv(
             "AGORA_FRONTEND_DEFAULT_CHANNEL_NAME",
-            "synapse-voice-demo",
+            DEFAULT_CHANNEL_NAME,
         ),
         frontend_default_display_name=os.getenv(
             "AGORA_FRONTEND_DEFAULT_DISPLAY_NAME",
-            "Synapse Tester",
+            DEFAULT_DISPLAY_NAME,
         ),
         speak_priority=os.getenv("AGORA_BRIDGE_SPEAK_PRIORITY", "APPEND").upper(),
         speak_interruptable=_get_bool("AGORA_BRIDGE_SPEAK_INTERRUPTABLE", True),

@@ -1,0 +1,31 @@
+version: 1
+
+host:
+  enabled: true
+  host: 0.0.0.0
+  port: 8010
+  public_base_url: "https://asthmatically-subterminal-mila.ngrok-free.dev"
+  synapse_base_url: "http://127.0.0.1:8000"
+  enabled_gateways:
+    - agora-convoai
+
+gateways:
+  agora-convoai:
+    app_id: $AGORA_APP_ID
+    app_certificate: $AGORA_APP_CERTIFICATE
+    convoai_area: US
+    client_token_ttl_seconds: 3600
+    speak_priority: APPEND
+    speak_interruptable: true
+    request_timeout_seconds: 10.0
+    asr:
+      vendor: deepgram
+      credential_mode: managed
+      model: nova-3
+      language: en-US
+    tts:
+      vendor: minimax
+      credential_mode: managed
+      model: speech_2_6_turbo
+      voice: English_expressive_narrator
+      sample_rate: null

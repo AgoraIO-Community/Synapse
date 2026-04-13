@@ -34,7 +34,7 @@ from .service import (
     ConvoAIRuntimeError,
 )
 from .session_service import AgoraGatewaySessionService
-from .settings import AgoraConvoAIGatewaySettings, load_agora_gateway_settings
+from .settings import AGORA_BRIDGE_MODEL, AgoraConvoAIGatewaySettings, load_agora_gateway_settings
 
 
 class AgoraConvoAIGatewayModule(BaseGatewayModule):
@@ -144,7 +144,7 @@ class AgoraConvoAIGatewayModule(BaseGatewayModule):
                         transport=transport,
                         synapse_session_id=binding.synapse_session_id,
                         user_text=user_text,
-                        model_name=payload.model or settings.default_model,
+                        model_name=payload.model or AGORA_BRIDGE_MODEL,
                     ),
                     media_type="text/event-stream",
                     headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
@@ -156,7 +156,7 @@ class AgoraConvoAIGatewayModule(BaseGatewayModule):
                     _build_completion_response(
                         completion_id=f"chatcmpl-{uuid4().hex[:8]}",
                         created=int(time.time()),
-                        model_name=payload.model or settings.default_model,
+                        model_name=payload.model or AGORA_BRIDGE_MODEL,
                         reply_text=result.reply_text,
                     )
                 )

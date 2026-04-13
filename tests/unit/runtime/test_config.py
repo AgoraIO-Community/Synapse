@@ -6,7 +6,7 @@ from synapse.runtime import config as config_module
 
 
 def test_load_settings_reads_openai_config(monkeypatch, tmp_path: Path):
-    env_file = tmp_path / ".env.local"
+    env_file = tmp_path / ".env"
     env_file.write_text(
         "\n".join(
             [
@@ -26,7 +26,7 @@ def test_load_settings_reads_openai_config(monkeypatch, tmp_path: Path):
 
 
 def test_load_settings_reads_log_output_config(monkeypatch, tmp_path: Path):
-    env_file = tmp_path / ".env.local"
+    env_file = tmp_path / ".env"
     env_file.write_text(
         "\n".join(
             [

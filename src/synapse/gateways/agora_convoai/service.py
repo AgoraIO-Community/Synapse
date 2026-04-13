@@ -7,7 +7,7 @@ from uuid import uuid4
 import httpx
 
 from .models import GatewaySessionDiagnostics
-from .settings import AgoraConvoAIGatewaySettings
+from .settings import AGORA_BRIDGE_MODEL, AgoraConvoAIGatewaySettings
 from .token_utils import build_token_with_rtm
 
 
@@ -28,7 +28,9 @@ AGORA_CONVOAI_SDK_LOADER_SIGNATURE = (
     "agora_agent.agentkit:AdvancedFeatures",
     "agora_agent.agentkit:DeepgramSTT",
     "agora_agent.agentkit:ElevenLabsTTS",
+    "agora_agent.agentkit:MiniMaxTTS",
     "agora_agent.agentkit:OpenAI",
+    "agora_agent.agentkit:OpenAITTS",
     "agora_agent.agentkit:SessionParams",
 )
 
@@ -87,7 +89,10 @@ class ConvoAIService(Protocol):
         profile: str,
         channel_name: str,
         display_name: str | None,
-        user_id: str | None,
+        agent_instructions: str,
+        agent_greeting: str,
+        agent_uid: int,
+        user_uid: int | None,
     ) -> PreparedConvoAISession:
         ...
 
@@ -112,13 +117,16 @@ def _require(value: str | int | None, name: str) -> str | int:
     return value
 
 
-def _parse_numeric_uid(value: str | None, fallback: int) -> int:
-    if value is None or not value.strip():
+def _parse_numeric_uid(value: int | str | None, fallback: int) -> int:
+    if value is None:
+        return fallback
+    raw_value = value.strip() if isinstance(value, str) else str(value)
+    if not raw_value:
         return fallback
     try:
-        return int(value)
+        return int(raw_value)
     except ValueError as exc:
-        raise ConvoAIConfigurationError("user_id must be numeric for RTC join.") from exc
+        raise ConvoAIConfigurationError("user_uid must be numeric for RTC join.") from exc
 
 
 class AgoraSDKConvoAIService:
@@ -133,34 +141,18 @@ class AgoraSDKConvoAIService:
         profile: str,
         channel_name: str,
         display_name: str | None,
-        user_id: str | None,
+        agent_instructions: str,
+        agent_greeting: str,
+        agent_uid: int,
+        user_uid: int | None,
     ) -> PreparedConvoAISession:
-        app_id = str(_require(self._settings.default_app_id, "SYNAPSE_GATEWAY_AGORA_CONVOAI_APP_ID"))
+        app_id = str(_require(self._settings.app_id, _app_id_requirement_name(self._settings)))
         app_certificate = str(
             _require(
                 self._settings.app_certificate,
-                "SYNAPSE_GATEWAY_AGORA_CONVOAI_APP_CERTIFICATE",
+                _app_certificate_requirement_name(self._settings),
             )
         )
-        deepgram_api_key = str(
-            _require(
-                self._settings.deepgram_api_key,
-                "SYNAPSE_GATEWAY_AGORA_CONVOAI_DEEPGRAM_API_KEY",
-            )
-        )
-        elevenlabs_api_key = str(
-            _require(
-                self._settings.elevenlabs_api_key,
-                "SYNAPSE_GATEWAY_AGORA_CONVOAI_ELEVENLABS_API_KEY",
-            )
-        )
-        elevenlabs_voice_id = str(
-            _require(
-                self._settings.elevenlabs_voice_id,
-                "SYNAPSE_GATEWAY_AGORA_CONVOAI_ELEVENLABS_VOICE_ID",
-            )
-        )
-
         (
             AsyncAgora,
             Area,
@@ -169,19 +161,21 @@ class AgoraSDKConvoAIService:
             DeepgramSTT,
             _OpenAI,
             ElevenLabsTTS,
+            MiniMaxTTS,
+            OpenAITTS,
             AdvancedFeatures,
             SessionParams,
         ) = self._load_sdk_types()
 
         channel = channel_name.strip() if channel_name.strip() else f"synapse-{uuid4().hex[:8]}"
-        user_uid = _parse_numeric_uid(user_id, self._settings.user_uid)
-        user_rtm_uid = f"{user_uid}-{channel}"
-        agent_uid = str(self._settings.agent_uid)
-        agent_rtm_uid = f"{agent_uid}-{channel}"
+        resolved_user_uid = _parse_numeric_uid(user_uid, self._settings.user_uid)
+        user_rtm_uid = f"{resolved_user_uid}-{channel}"
+        resolved_agent_uid = str(agent_uid)
+        agent_rtm_uid = f"{resolved_agent_uid}-{channel}"
 
         client_token = build_token_with_rtm(
             channel_name=channel,
-            rtc_uid=user_uid,
+            rtc_uid=resolved_user_uid,
             app_id=app_id,
             app_certificate=app_certificate,
             rtm_uid=user_rtm_uid,
@@ -199,14 +193,14 @@ class AgoraSDKConvoAIService:
             area=area,
             app_id=app_id,
             app_certificate=app_certificate,
-            debug=self._settings.sdk_debug,
+            debug=False,
         )
         await client.select_best_domain()
 
         agent = Agent(
             name=f"synapse_agent_{uuid4().hex[:8]}",
-            instructions=self._settings.agent_instructions,
-            greeting=self._settings.agent_greeting,
+            instructions=agent_instructions,
+            greeting=agent_greeting,
             advanced_features=AdvancedFeatures(enable_rtm=True),
             parameters=SessionParams(
                 data_channel="rtm",
@@ -220,18 +214,13 @@ class AgoraSDKConvoAIService:
                 enable_dump=True,
             ),
         )
-        agent = agent.with_stt(
-            DeepgramSTT(
-                api_key=deepgram_api_key,
-                language=self._settings.deepgram_language,
-            )
-        )
+        agent = agent.with_stt(_build_asr_vendor(self._settings, DeepgramSTT=DeepgramSTT))
         agent = agent.with_tts(
-            ElevenLabsTTS(
-                key=elevenlabs_api_key,
-                voice_id=elevenlabs_voice_id,
-                model_id=self._settings.elevenlabs_model_id,
-                sample_rate=self._settings.elevenlabs_sample_rate,
+            _build_tts_vendor(
+                self._settings,
+                ElevenLabsTTS=ElevenLabsTTS,
+                MiniMaxTTS=MiniMaxTTS,
+                OpenAITTS=OpenAITTS,
             )
         )
 
@@ -240,9 +229,15 @@ class AgoraSDKConvoAIService:
             convoai_area=self._settings.convoai_area,
             selected_url=client.get_current_url(),
             runtime_session_id=None,
-            agent_uid=agent_uid,
+            asr_vendor=self._settings.asr.vendor,
+            asr_credential_mode=self._settings.asr.credential_mode,
+            asr_model=self._settings.asr.model,
+            tts_vendor=self._settings.tts.vendor,
+            tts_credential_mode=self._settings.tts.credential_mode,
+            tts_model=self._settings.tts.model,
+            agent_uid=resolved_agent_uid,
             agent_rtm_uid=agent_rtm_uid,
-            rtc_uid=user_uid,
+            rtc_uid=resolved_user_uid,
             rtm_user_id=user_rtm_uid,
             enable_string_uid=False,
             enable_rtm=True,
@@ -255,9 +250,9 @@ class AgoraSDKConvoAIService:
             app_id=app_id,
             channel_name=channel,
             token=client_token.token,
-            uid=user_uid,
+            uid=resolved_user_uid,
             user_rtm_uid=user_rtm_uid,
-            agent_uid=agent_uid,
+            agent_uid=resolved_agent_uid,
             agent_rtm_uid=agent_rtm_uid,
             enable_string_uid=False,
             profile=profile,
@@ -288,7 +283,7 @@ class AgoraSDKConvoAIService:
         agent = state.agent.with_llm(
             OpenAI(
                 base_url=chat_completions_url,
-                model=self._settings.default_model,
+                model=AGORA_BRIDGE_MODEL,
             )
         )
         session = AsyncAgentSession(
@@ -298,7 +293,7 @@ class AgoraSDKConvoAIService:
             app_certificate=str(
                 _require(
                     self._settings.app_certificate,
-                    "SYNAPSE_GATEWAY_AGORA_CONVOAI_APP_CERTIFICATE",
+                    _app_certificate_requirement_name(self._settings),
                 )
             ),
             name=f"synapse_agent_{uuid4().hex[:8]}",
@@ -307,7 +302,8 @@ class AgoraSDKConvoAIService:
             remote_uids=["*"],
             enable_string_uid=False,
             expires_in=self._settings.client_token_ttl_seconds,
-            debug=self._settings.sdk_debug,
+            debug=False,
+            preset=_build_session_preset(self._settings),
         )
 
         try:
@@ -324,6 +320,12 @@ class AgoraSDKConvoAIService:
             convoai_area=self._settings.convoai_area,
             selected_url=state.client.get_current_url(),
             runtime_session_id=runtime_session_id,
+            asr_vendor=self._settings.asr.vendor,
+            asr_credential_mode=self._settings.asr.credential_mode,
+            asr_model=self._settings.asr.model,
+            tts_vendor=self._settings.tts.vendor,
+            tts_credential_mode=self._settings.tts.credential_mode,
+            tts_model=self._settings.tts.model,
             agent_uid=bootstrap.agent_uid,
             agent_rtm_uid=bootstrap.agent_rtm_uid,
             rtc_uid=bootstrap.uid,
@@ -379,7 +381,9 @@ class AgoraSDKConvoAIService:
             AdvancedFeatures,
             DeepgramSTT,
             ElevenLabsTTS,
+            MiniMaxTTS,
             OpenAI,
+            OpenAITTS,
             SessionParams,
         )
 
@@ -391,6 +395,119 @@ class AgoraSDKConvoAIService:
             DeepgramSTT,
             OpenAI,
             ElevenLabsTTS,
+            MiniMaxTTS,
+            OpenAITTS,
             AdvancedFeatures,
             SessionParams,
         )
+
+
+def _build_asr_vendor(settings: AgoraConvoAIGatewaySettings, *, DeepgramSTT):
+    if settings.asr.vendor != "deepgram":
+        raise ConvoAIConfigurationError(f"Unsupported ASR vendor: {settings.asr.vendor}")
+    kwargs: dict[str, object] = {
+        "language": settings.asr.language,
+        "model": settings.asr.model,
+    }
+    if settings.asr.credential_mode == "byok":
+        kwargs["api_key"] = str(
+            _require(settings.asr.api_key, _asr_api_key_requirement_name(settings))
+        )
+    return DeepgramSTT(**kwargs)
+
+
+def _build_tts_vendor(
+    settings: AgoraConvoAIGatewaySettings,
+    *,
+    ElevenLabsTTS,
+    MiniMaxTTS,
+    OpenAITTS,
+):
+    if settings.tts.credential_mode == "managed":
+        if settings.tts.vendor == "minimax":
+            kwargs: dict[str, object] = {"model": settings.tts.model}
+            if settings.tts.voice:
+                kwargs["voice_id"] = settings.tts.voice
+            return MiniMaxTTS(**kwargs)
+        if settings.tts.vendor == "openai":
+            return OpenAITTS(model=settings.tts.model, voice=settings.tts.voice or "alloy")
+        raise ConvoAIConfigurationError(
+            f"Unsupported managed TTS vendor: {settings.tts.vendor}"
+        )
+
+    if settings.tts.vendor != "elevenlabs":
+        raise ConvoAIConfigurationError(f"Unsupported BYOK TTS vendor: {settings.tts.vendor}")
+
+    kwargs = {
+        "key": str(_require(settings.tts.api_key, _tts_api_key_requirement_name(settings))),
+        "voice_id": str(_require(settings.tts.voice, _tts_voice_requirement_name(settings))),
+        "model_id": settings.tts.model,
+    }
+    if settings.tts.sample_rate is not None:
+        kwargs["sample_rate"] = settings.tts.sample_rate
+    return ElevenLabsTTS(**kwargs)
+
+
+def _build_session_preset(settings: AgoraConvoAIGatewaySettings) -> str | None:
+    asr_preset_map = {"nova-2": "deepgram_nova_2", "nova-3": "deepgram_nova_3"}
+    tts_preset_map = {
+        ("minimax", "speech_2_6_turbo"): "minimax_speech_2_6_turbo",
+        ("minimax", "speech_2_8_turbo"): "minimax_speech_2_8_turbo",
+        ("openai", "tts-1"): "openai_tts_1",
+    }
+    presets: list[str] = []
+    if settings.asr.credential_mode == "managed":
+        preset = asr_preset_map.get(settings.asr.model)
+        if preset is None:
+            raise ConvoAIConfigurationError(
+                f"Unsupported managed ASR model: {settings.asr.model}"
+            )
+        presets.append(preset)
+    if settings.tts.credential_mode == "managed":
+        preset = tts_preset_map.get((settings.tts.vendor, settings.tts.model))
+        if preset is None:
+            raise ConvoAIConfigurationError(
+                f"Unsupported managed TTS vendor/model: {settings.tts.vendor}/{settings.tts.model}"
+            )
+        presets.append(preset)
+    return ",".join(presets) or None
+
+
+def _app_id_requirement_name(settings: AgoraConvoAIGatewaySettings) -> str:
+    return (
+        "gateways.agora-convoai.app_id"
+        if settings.uses_yaml_config
+        else "SYNAPSE_GATEWAY_AGORA_CONVOAI_APP_ID"
+    )
+
+
+def _app_certificate_requirement_name(settings: AgoraConvoAIGatewaySettings) -> str:
+    return (
+        "gateways.agora-convoai.app_certificate"
+        if settings.uses_yaml_config
+        else "SYNAPSE_GATEWAY_AGORA_CONVOAI_APP_CERTIFICATE"
+    )
+
+
+def _asr_api_key_requirement_name(settings: AgoraConvoAIGatewaySettings) -> str:
+    return (
+        "gateways.agora-convoai.asr.api_key"
+        if settings.uses_yaml_config
+        else "SYNAPSE_GATEWAY_AGORA_CONVOAI_DEEPGRAM_API_KEY"
+    )
+
+
+def _tts_api_key_requirement_name(settings: AgoraConvoAIGatewaySettings) -> str:
+    return (
+        "gateways.agora-convoai.tts.api_key"
+        if settings.uses_yaml_config
+        else "SYNAPSE_GATEWAY_AGORA_CONVOAI_ELEVENLABS_API_KEY"
+    )
+
+
+def _tts_voice_requirement_name(settings: AgoraConvoAIGatewaySettings) -> str:
+    return (
+        "gateways.agora-convoai.tts.voice"
+        if settings.uses_yaml_config
+        else "SYNAPSE_GATEWAY_AGORA_CONVOAI_ELEVENLABS_VOICE_ID"
+    )

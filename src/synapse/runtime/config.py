@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from pathlib import Path
 
 from dotenv import load_dotenv
 
+from synapse.config_home import SYNAPSE_ENV_FILE
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
-LOCAL_ENV_FILE = REPO_ROOT / ".env.local"
+
+LOCAL_ENV_FILE = SYNAPSE_ENV_FILE
 
 
 def load_local_env() -> None:

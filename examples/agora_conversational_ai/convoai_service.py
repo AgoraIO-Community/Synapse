@@ -6,6 +6,8 @@ from uuid import uuid4
 
 import httpx
 
+from synapse.gateways.agora_convoai.settings import AGORA_BRIDGE_MODEL
+
 from .models import FrontendSessionDiagnostics
 from .settings import AgoraBridgeSettings
 from .token_utils import build_token_with_rtm
@@ -73,7 +75,10 @@ class ConvoAIService(Protocol):
         profile: str,
         channel_name: str,
         display_name: str | None,
-        user_id: str | None,
+        agent_instructions: str,
+        agent_greeting: str,
+        agent_uid: int,
+        user_uid: int | None,
     ) -> PreparedConvoAISession:
         ...
 
@@ -98,13 +103,16 @@ def _require(value: str | int | None, name: str) -> str | int:
     return value
 
 
-def _parse_numeric_uid(value: str | None, fallback: int) -> int:
-    if value is None or not value.strip():
+def _parse_numeric_uid(value: int | str | None, fallback: int) -> int:
+    if value is None:
+        return fallback
+    raw_value = value.strip() if isinstance(value, str) else str(value)
+    if not raw_value:
         return fallback
     try:
-        return int(value)
+        return int(raw_value)
     except ValueError as exc:
-        raise ConvoAIConfigurationError("user_id must be numeric for RTC join.") from exc
+        raise ConvoAIConfigurationError("user_uid must be numeric for RTC join.") from exc
 
 
 class AgoraSDKConvoAIService:
@@ -119,9 +127,12 @@ class AgoraSDKConvoAIService:
         profile: str,
         channel_name: str,
         display_name: str | None,
-        user_id: str | None,
+        agent_instructions: str,
+        agent_greeting: str,
+        agent_uid: int,
+        user_uid: int | None,
     ) -> PreparedConvoAISession:
-        app_id = str(_require(self._settings.default_app_id, "AGORA_APP_ID"))
+        app_id = str(_require(self._settings.app_id, "AGORA_APP_ID"))
         app_certificate = str(
             _require(self._settings.app_certificate, "AGORA_APP_CERTIFICATE")
         )
@@ -141,19 +152,21 @@ class AgoraSDKConvoAIService:
             DeepgramSTT,
             _OpenAI,
             ElevenLabsTTS,
+            _MiniMaxTTS,
+            _OpenAITTS,
             AdvancedFeatures,
             SessionParams,
         ) = self._load_sdk_types()
 
         channel = channel_name.strip() if channel_name.strip() else f"synapse-{uuid4().hex[:8]}"
-        user_uid = _parse_numeric_uid(user_id, self._settings.user_uid)
-        user_rtm_uid = f"{user_uid}-{channel}"
-        agent_uid = str(self._settings.agent_uid)
-        agent_rtm_uid = f"{agent_uid}-{channel}"
+        resolved_user_uid = _parse_numeric_uid(user_uid, self._settings.user_uid)
+        user_rtm_uid = f"{resolved_user_uid}-{channel}"
+        resolved_agent_uid = str(agent_uid)
+        agent_rtm_uid = f"{resolved_agent_uid}-{channel}"
 
         client_token = build_token_with_rtm(
             channel_name=channel,
-            rtc_uid=user_uid,
+            rtc_uid=resolved_user_uid,
             app_id=app_id,
             app_certificate=app_certificate,
             rtm_uid=user_rtm_uid,
@@ -171,14 +184,14 @@ class AgoraSDKConvoAIService:
             area=area,
             app_id=app_id,
             app_certificate=app_certificate,
-            debug=self._settings.sdk_debug,
+            debug=False,
         )
         await client.select_best_domain()
 
         agent = Agent(
             name=f"synapse_agent_{uuid4().hex[:8]}",
-            instructions=self._settings.agent_instructions,
-            greeting=self._settings.agent_greeting,
+            instructions=agent_instructions,
+            greeting=agent_greeting,
             advanced_features=AdvancedFeatures(enable_rtm=True),
             parameters=SessionParams(
                 data_channel="rtm",
@@ -212,9 +225,15 @@ class AgoraSDKConvoAIService:
             convoai_area=self._settings.convoai_area,
             selected_url=client.get_current_url(),
             runtime_agent_id=None,
-            agent_uid=agent_uid,
+            asr_vendor="deepgram",
+            asr_credential_mode="byok",
+            asr_model="nova-3",
+            tts_vendor="elevenlabs",
+            tts_credential_mode="byok",
+            tts_model=self._settings.elevenlabs_model_id,
+            agent_uid=resolved_agent_uid,
             agent_rtm_uid=agent_rtm_uid,
-            rtc_uid=user_uid,
+            rtc_uid=resolved_user_uid,
             rtm_user_id=user_rtm_uid,
             enable_string_uid=False,
             enable_rtm=True,
@@ -227,9 +246,9 @@ class AgoraSDKConvoAIService:
             app_id=app_id,
             channel_name=channel,
             token=client_token.token,
-            uid=user_uid,
+            uid=resolved_user_uid,
             user_rtm_uid=user_rtm_uid,
-            agent_uid=agent_uid,
+            agent_uid=resolved_agent_uid,
             agent_rtm_uid=agent_rtm_uid,
             enable_string_uid=False,
             profile=profile,
@@ -260,7 +279,7 @@ class AgoraSDKConvoAIService:
         agent = state.agent.with_llm(
             OpenAI(
                 base_url=chat_completions_url,
-                model=self._settings.default_model,
+                model=AGORA_BRIDGE_MODEL,
             )
         )
         session = AsyncAgentSession(
@@ -274,7 +293,7 @@ class AgoraSDKConvoAIService:
             remote_uids=["*"],
             enable_string_uid=False,
             expires_in=self._settings.client_token_ttl_seconds,
-            debug=self._settings.sdk_debug,
+            debug=False,
         )
 
         try:
@@ -291,6 +310,12 @@ class AgoraSDKConvoAIService:
             convoai_area=self._settings.convoai_area,
             selected_url=state.client.get_current_url(),
             runtime_agent_id=runtime_agent_id,
+            asr_vendor="deepgram",
+            asr_credential_mode="byok",
+            asr_model="nova-3",
+            tts_vendor="elevenlabs",
+            tts_credential_mode="byok",
+            tts_model=self._settings.elevenlabs_model_id,
             agent_uid=bootstrap.agent_uid,
             agent_rtm_uid=bootstrap.agent_rtm_uid,
             rtc_uid=bootstrap.uid,
@@ -346,7 +371,9 @@ class AgoraSDKConvoAIService:
                 AdvancedFeatures,
                 DeepgramSTT,
                 ElevenLabsTTS,
+                MiniMaxTTS,
                 OpenAI,
+                OpenAITTS,
                 SessionParams,
             )
         except ImportError as exc:
@@ -361,6 +388,8 @@ class AgoraSDKConvoAIService:
             DeepgramSTT,
             OpenAI,
             ElevenLabsTTS,
+            MiniMaxTTS,
+            OpenAITTS,
             AdvancedFeatures,
             SessionParams,
         )
