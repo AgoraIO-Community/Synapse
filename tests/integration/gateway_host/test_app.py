@@ -134,7 +134,7 @@ async def test_agora_gateway_prepare_route_uses_real_loader_path_before_fake_sdk
             return "https://fake-convoai.local/api"
 
     class FakeArea:
-        CN = "CN"
+        US = "US"
 
     class FakeAgent:
         def __init__(self, **kwargs):

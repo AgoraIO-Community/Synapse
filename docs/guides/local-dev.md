@@ -9,8 +9,10 @@ Preferred local bootstrap and run flow:
 ./synapse dev
 ```
 
-`./install.sh` owns local dependency bootstrap. `./synapse setup` owns
-interactive runtime env configuration for `~/.synapse/.env`.
+`./install.sh` owns local dependency bootstrap and creates starter
+`~/.synapse/.env` plus `~/.synapse/config.yaml` files when they do not already
+exist. `./synapse setup` owns interactive runtime env configuration for
+`~/.synapse/.env`.
 
 By default, diagnostics timeline polling requests from the frontend inspector are
 filtered out of `uvicorn.access` output so local access logs are less noisy. Set

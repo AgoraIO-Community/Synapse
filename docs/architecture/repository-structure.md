@@ -12,7 +12,6 @@ Recommended repository structure:
 ├─ CONTRIBUTING.md
 ├─ pyproject.toml
 ├─ install.sh
-├─ .env.example
 ├─ docs/
 ├─ examples/
 ├─ exmaple-ui/

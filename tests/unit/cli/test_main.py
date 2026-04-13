@@ -24,35 +24,16 @@ def test_frontend_tool_falls_back_to_npm(monkeypatch):
     assert cli_main.preferred_frontend_tool() == "npm"
 
 
-def write_template(path: Path) -> None:
-    path.write_text(
-        "\n".join(
-            [
-                "OPENAI_API_KEY=your_openai_api_key_here",
-                "SYNAPSE_OPENAI_MODEL=gpt-4o-mini",
-                "SYNAPSE_OPENAI_TIMEOUT_SECONDS=30",
-                "# SYNAPSE_OPENAI_BASE_URL=",
-                "SYNAPSE_CODEX_EXECUTOR_ENABLED=false",
-                "# SYNAPSE_CODEX_COMMAND=codex",
-            ]
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-
-
 def configure_repo_paths(monkeypatch, root: Path) -> None:
     monkeypatch.setattr(cli_main, "ROOT", root)
     monkeypatch.setattr(cli_main, "FRONTEND", root / "src" / "synapse" / "ui")
     monkeypatch.setattr(cli_main, "VENV_DIR", root / ".venv")
-    monkeypatch.setattr(cli_main, "ENV_EXAMPLE", root / ".env.example")
     monkeypatch.setattr(cli_main, "ENV_LOCAL", root / ".synapse" / ".env")
 
 
 def test_setup_interactive_updates_env_file(monkeypatch, tmp_path: Path):
     root = tmp_path
     (root / "src" / "synapse" / "ui").mkdir(parents=True)
-    write_template(root / ".env.example")
     (root / ".synapse").mkdir(parents=True, exist_ok=True)
     (root / ".synapse" / ".env").write_text(
         "SYNAPSE_OPENAI_MODEL=gpt-4.1-mini\nEXTRA_FLAG=keep-me\n",
@@ -79,7 +60,6 @@ def test_setup_interactive_updates_env_file(monkeypatch, tmp_path: Path):
 def test_gateway_setup_writes_gateway_module_env(monkeypatch, tmp_path: Path):
     root = tmp_path
     (root / "src" / "synapse" / "ui").mkdir(parents=True)
-    write_template(root / ".env.example")
 
     configure_repo_paths(monkeypatch, root)
     monkeypatch.setattr(cli_main, "setup_can_prompt", lambda: True)
@@ -87,10 +67,27 @@ def test_gateway_setup_writes_gateway_module_env(monkeypatch, tmp_path: Path):
     secret_responses = iter(["app-cert"])
     monkeypatch.setattr(cli_main.getpass, "getpass", lambda _prompt: next(secret_responses))
 
+    allowed_empty_prompts = {
+        "Configure gateway host [Y/n]: ",
+        "Select gateways [1]: ",
+        "Gateway host [0.0.0.0]: ",
+        "Gateway port [8010]: ",
+        "Gateway public base URL [http://127.0.0.1:8010]: ",
+        "Synapse API base URL for gateway callbacks [http://127.0.0.1:8000]: ",
+        "ASR credential mode [managed]: ",
+        "ASR model [nova-3]: ",
+        "ASR language [en-US]: ",
+        "TTS vendor [minimax]: ",
+        "TTS model [speech_2_6_turbo]: ",
+        "TTS voice [English_magnetic_voiced_man]: ",
+    }
+
     def fake_input(prompt: str) -> str:
         if prompt.startswith("Agora App ID"):
             return "agora-app"
-        return ""
+        if prompt in allowed_empty_prompts:
+            return ""
+        raise AssertionError(f"Unexpected prompt: {prompt}")
 
     monkeypatch.setattr("builtins.input", fake_input)
 
@@ -104,14 +101,15 @@ def test_gateway_setup_writes_gateway_module_env(monkeypatch, tmp_path: Path):
     assert "enabled_gateways:" in gateway_config
     assert "- agora-convoai" in gateway_config
     assert "app_id: $AGORA_APP_ID" in gateway_config
+    assert "convoai_area: US" in gateway_config
     assert "credential_mode: managed" in gateway_config
     assert "vendor: minimax" in gateway_config
+    assert "voice: English_magnetic_voiced_man" in gateway_config
 
 
 def test_gateway_setup_decline_disables_existing_gateway_config(monkeypatch, tmp_path: Path):
     root = tmp_path
     (root / "src" / "synapse" / "ui").mkdir(parents=True)
-    write_template(root / ".env.example")
     configure_repo_paths(monkeypatch, root)
     monkeypatch.setattr(cli_main, "setup_can_prompt", lambda: True)
     (root / ".synapse").mkdir(parents=True, exist_ok=True)
@@ -143,7 +141,6 @@ def test_gateway_setup_decline_disables_existing_gateway_config(monkeypatch, tmp
 def test_gateway_listing_and_settings_do_not_require_fastapi(monkeypatch, tmp_path: Path):
     root = tmp_path
     (root / "src" / "synapse" / "ui").mkdir(parents=True)
-    write_template(root / ".env.example")
     (root / ".synapse").mkdir(parents=True, exist_ok=True)
     (root / ".synapse" / ".env").write_text(
         "\n".join(
@@ -189,7 +186,6 @@ def test_gateway_listing_and_settings_do_not_require_fastapi(monkeypatch, tmp_pa
 def test_setup_non_interactive_uses_existing_and_env(monkeypatch, tmp_path: Path):
     root = tmp_path
     (root / "src" / "synapse" / "ui").mkdir(parents=True)
-    write_template(root / ".env.example")
 
     configure_repo_paths(monkeypatch, root)
     monkeypatch.setenv("OPENAI_API_KEY", "sk-env")
@@ -205,12 +201,64 @@ def test_setup_non_interactive_uses_existing_and_env(monkeypatch, tmp_path: Path
 def test_setup_non_interactive_requires_openai(monkeypatch, tmp_path: Path, capsys):
     root = tmp_path
     (root / "src" / "synapse" / "ui").mkdir(parents=True)
-    write_template(root / ".env.example")
 
     configure_repo_paths(monkeypatch, root)
 
     assert cli_main.main(["setup", "--non-interactive"]) == 1
     assert "OPENAI_API_KEY is required for non-interactive setup" in capsys.readouterr().err
+
+
+def test_setup_bootstrap_defaults_creates_env_and_gateway_config(monkeypatch, tmp_path: Path):
+    root = tmp_path
+    (root / "src" / "synapse" / "ui").mkdir(parents=True)
+
+    configure_repo_paths(monkeypatch, root)
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-shell-secret")
+    monkeypatch.setenv("AGORA_APP_ID", "agora-shell-app")
+    monkeypatch.setenv("SYNAPSE_CODEX_EXECUTOR_ENABLED", "true")
+    monkeypatch.setenv("SYNAPSE_CODEX_COMMAND", "/shell/codex")
+
+    assert cli_main.main(["setup", "--bootstrap-defaults"]) == 0
+
+    configured_env = (root / ".synapse" / ".env").read_text(encoding="utf-8")
+    assert "OPENAI_API_KEY=\n" in configured_env
+    assert "SYNAPSE_OPENAI_MODEL=gpt-4o-mini" in configured_env
+    assert "SYNAPSE_CODEX_EXECUTOR_ENABLED=false" in configured_env
+    assert "sk-shell-secret" not in configured_env
+    assert "agora-shell-app" not in configured_env
+    assert "/shell/codex" not in configured_env
+
+    configured_gateway = (root / ".synapse" / "config.yaml").read_text(encoding="utf-8")
+    assert "enabled: false" in configured_gateway
+    assert 'public_base_url: "http://127.0.0.1:8010"' in configured_gateway
+    assert "enabled_gateways:" in configured_gateway
+
+
+def test_setup_bootstrap_defaults_preserves_existing_files(monkeypatch, tmp_path: Path):
+    root = tmp_path
+    (root / "src" / "synapse" / "ui").mkdir(parents=True)
+    (root / ".synapse").mkdir(parents=True, exist_ok=True)
+    (root / ".synapse" / ".env").write_text("OPENAI_API_KEY=existing\n", encoding="utf-8")
+    (root / ".synapse" / "config.yaml").write_text("version: 1\n", encoding="utf-8")
+
+    configure_repo_paths(monkeypatch, root)
+
+    assert cli_main.main(["setup", "--bootstrap-defaults"]) == 0
+    assert (root / ".synapse" / ".env").read_text(encoding="utf-8") == "OPENAI_API_KEY=existing\n"
+    assert (root / ".synapse" / "config.yaml").read_text(encoding="utf-8") == "version: 1\n"
+
+
+def test_setup_bootstrap_defaults_ignores_malformed_codex_shell_env(monkeypatch, tmp_path: Path):
+    root = tmp_path
+    (root / "src" / "synapse" / "ui").mkdir(parents=True)
+
+    configure_repo_paths(monkeypatch, root)
+    monkeypatch.setenv("SYNAPSE_CODEX_EXECUTOR_ENABLED", "not-a-bool")
+
+    assert cli_main.main(["setup", "--bootstrap-defaults"]) == 0
+
+    configured_env = (root / ".synapse" / ".env").read_text(encoding="utf-8")
+    assert "SYNAPSE_CODEX_EXECUTOR_ENABLED=false" in configured_env
 
 
 def test_backend_requires_setup(monkeypatch, tmp_path: Path):

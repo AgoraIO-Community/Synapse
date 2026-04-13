@@ -46,7 +46,7 @@ class _CapturingConvoAIService:
             profile=str(kwargs["profile"]),
             display_name=kwargs["display_name"],
             diagnostics=GatewaySessionDiagnostics(
-                convoai_area="CN",
+                convoai_area="US",
                 selected_url="https://fake-convoai.local/api",
                 runtime_session_id=None,
                 asr_vendor="deepgram",

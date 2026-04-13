@@ -29,7 +29,7 @@ class AgoraConvoAITTSSettings:
     vendor: str = "minimax"
     credential_mode: str = "managed"
     model: str = "speech_2_6_turbo"
-    voice: str | None = None
+    voice: str | None = "English_magnetic_voiced_man"
     api_key: str | None = None
     sample_rate: int | None = None
 
@@ -41,7 +41,7 @@ class AgoraConvoAIGatewaySettings:
     synapse_base_url: str = "http://127.0.0.1:8000"
     app_id: str | None = None
     app_certificate: str | None = None
-    convoai_area: str = "CN"
+    convoai_area: str = "US"
     asr: AgoraConvoAIASRSettings = field(default_factory=AgoraConvoAIASRSettings)
     tts: AgoraConvoAITTSSettings = field(default_factory=AgoraConvoAITTSSettings)
     agent_instructions: str = DEFAULT_AGENT_INSTRUCTIONS
@@ -72,7 +72,7 @@ def load_agora_gateway_settings(*, env_file: Path | None = None) -> AgoraConvoAI
             synapse_base_url=loaded_gateway_config.host_settings.synapse_base_url,
             app_id=None,
             app_certificate=None,
-            convoai_area="CN",
+            convoai_area="US",
             asr=AgoraConvoAIASRSettings(),
             tts=AgoraConvoAITTSSettings(),
             agent_instructions=DEFAULT_AGENT_INSTRUCTIONS,
@@ -113,7 +113,7 @@ def _load_agora_gateway_settings_from_yaml(loaded_gateway_config) -> AgoraConvoA
         synapse_base_url=host_settings.synapse_base_url,
         app_id=_read_optional_string(raw_gateway, "app_id", source_path),
         app_certificate=_read_optional_string(raw_gateway, "app_certificate", source_path),
-        convoai_area=str(raw_gateway.get("convoai_area", "CN")).upper(),
+        convoai_area="US",
         asr=asr,
         tts=tts,
         agent_instructions=DEFAULT_AGENT_INSTRUCTIONS,
@@ -171,7 +171,11 @@ def _parse_yaml_tts_settings(raw_tts, source_path: Path) -> AgoraConvoAITTSSetti
         vendor=str(raw_tts.get("vendor", "minimax")).lower(),
         credential_mode=str(raw_tts.get("credential_mode", "managed")).lower(),
         model=str(raw_tts.get("model", "speech_2_6_turbo")),
-        voice=_read_optional_string(raw_tts, "voice", source_path),
+        voice=_read_optional_string(raw_tts, "voice", source_path) or (
+            "English_magnetic_voiced_man"
+            if str(raw_tts.get("vendor", "minimax")).lower() == "minimax"
+            else None
+        ),
         api_key=_read_optional_string(raw_tts, "api_key", source_path),
         sample_rate=(
             int(raw_tts["sample_rate"])

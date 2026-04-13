@@ -96,4 +96,7 @@ Short log of important design decisions and changes for Synapse.
 - Moved the live runtime env and gateway YAML out of the repo and into `~/.synapse/.env` plus `~/.synapse/config.yaml`, keeping repo files as setup templates only.
 - Moved the main React/Vite frontend workspace from repo-root `frontend/` to `src/synapse/ui/`, while keeping `synapse frontend`, `synapse dev`, and `install.sh` wired to the new location.
 - Moved the Agora example browser client from `examples/agora_conversational_ai/frontend/` to repo-root `exmaple-ui/` while keeping `src/synapse/ui/` as the main CLI-managed frontend workspace.
+- Removed the CLI dependency on a tracked repo `.env.example` and moved the setup wizard to a code-defined env template while keeping `~/.synapse/.env` as the rendered config destination.
+- Updated `install.sh` to create starter `~/.synapse/.env` and `~/.synapse/config.yaml` files during bootstrap without overwriting existing user config, leaving `synapse setup` for filling in real values afterward.
+- Pinned Agora ConvoAI gateway setup to the `US` region, removed interactive prompts for token TTL and speak/request tuning, and changed the managed Minimax default voice to `English_magnetic_voiced_man`.
 - Removed the legacy `examples/agora_conversational_ai` bridge package and its dedicated integration tests, leaving the first-party `src/synapse/gateways/agora_convoai/` gateway module plus repo-root `exmaple-ui/` as the supported Agora path.

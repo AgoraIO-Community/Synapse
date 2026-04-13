@@ -137,6 +137,15 @@ bootstrap_repo_dependencies() {
   die "Need Bun or npm to install frontend dependencies."
 }
 
+bootstrap_config_files() {
+  local venv_python="$ROOT/.venv/bin/python"
+
+  [[ -x "$venv_python" ]] || die "Expected virtualenv python at $venv_python"
+
+  log "Creating starter Synapse config files"
+  "$venv_python" -m synapse setup --bootstrap-defaults
+}
+
 main() {
   local uname_out
   local python_bin
@@ -157,6 +166,7 @@ main() {
 
   python_bin="$(choose_python)"
   bootstrap_repo_dependencies "$python_bin"
+  bootstrap_config_files
 
   printf '\nNext:\n'
   printf '  ./synapse setup\n'

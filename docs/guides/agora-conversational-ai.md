@@ -119,8 +119,7 @@ runtime env from `~/.synapse/.env`.
 For live Agora sessions, `SYNAPSE_GATEWAY_PUBLIC_BASE_URL` must be a public URL
 that can reach the gateway host.
 
-For this example, `gateways.agora-convoai.convoai_area: CN` is the recommended starting
-value. If live start still fails with connectivity errors, try `US`, `EU`, or `AP`.
+For this example, Synapse fixes `gateways.agora-convoai.convoai_area` to `US`.
 
 ## Ownership Note
 

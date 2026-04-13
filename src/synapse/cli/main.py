@@ -23,7 +23,6 @@ from synapse.yaml_support import load_yaml_file
 ROOT = Path(__file__).resolve().parents[3]
 FRONTEND = ROOT / "src" / "synapse" / "ui"
 VENV_DIR = ROOT / ".venv"
-ENV_EXAMPLE = ROOT / ".env.example"
 ENV_LOCAL = SYNAPSE_ENV_FILE
 ENV_LINE_RE = re.compile(r"^\s*(?P<comment>#\s*)?(?P<key>[A-Z0-9_]+)=(?P<value>.*)$")
 TRUTHY_VALUES = {"1", "true", "yes", "on", "y"}
@@ -38,6 +37,21 @@ GATEWAY_PORT_KEY = "SYNAPSE_GATEWAY_PORT"
 GATEWAY_PUBLIC_BASE_URL_KEY = "SYNAPSE_GATEWAY_PUBLIC_BASE_URL"
 GATEWAY_SYNAPSE_BASE_URL_KEY = "SYNAPSE_GATEWAY_SYNAPSE_BASE_URL"
 GATEWAY_MODULES_KEY = "SYNAPSE_GATEWAY_MODULES"
+DEFAULT_ENV_TEMPLATE_LINES = (
+    "OPENAI_API_KEY=your_openai_api_key_here",
+    "SYNAPSE_OPENAI_MODEL=gpt-4o-mini",
+    "SYNAPSE_OPENAI_TIMEOUT_SECONDS=30",
+    "# SYNAPSE_OPENAI_BASE_URL=",
+    "# Set to true only after the Codex CLI is installed and configured locally.",
+    "SYNAPSE_CODEX_EXECUTOR_ENABLED=false",
+    "# SYNAPSE_CODEX_COMMAND=codex",
+    "",
+    f"# Runtime and gateway credentials written by `synapse setup` to {format_user_path(ENV_LOCAL)}",
+    "# AGORA_APP_ID=",
+    "# AGORA_APP_CERTIFICATE=",
+    "# DEEPGRAM_API_KEY=",
+    "# ELEVENLABS_API_KEY=",
+)
 
 
 @dataclass(slots=True)
@@ -67,6 +81,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--non-interactive",
         action="store_true",
         help=f"Resolve values from {format_user_path(ENV_LOCAL)} and process env without prompting.",
+    )
+    setup_parser.add_argument(
+        "--bootstrap-defaults",
+        action="store_true",
+        help=argparse.SUPPRESS,
     )
 
     dev_parser = subparsers.add_parser("dev", help="Run backend and frontend together.")
@@ -130,12 +149,13 @@ def main(argv: list[str] | None = None) -> int:
 
 def cmd_setup(_args: argparse.Namespace) -> int:
     args = _args
-    if not ENV_EXAMPLE.exists():
-        raise CliError(f"Missing env template: {ENV_EXAMPLE}")
+    if args.bootstrap_defaults:
+        bootstrap_setup_files()
+        return 0
     if not args.non_interactive and not setup_can_prompt():
         raise CliError("synapse setup requires a TTY. Use --non-interactive for automation.")
 
-    template_lines = load_env_template(ENV_EXAMPLE)
+    template_lines = load_env_template()
     existing_values, existing_order = load_env_assignments(ENV_LOCAL)
     resolved_values = resolve_setup_values(
         template_lines=template_lines,
@@ -266,12 +286,10 @@ def cmd_gateway(args: argparse.Namespace) -> int:
 
 
 def cmd_gateway_setup(_args: argparse.Namespace) -> int:
-    if not ENV_EXAMPLE.exists():
-        raise CliError(f"Missing env template: {ENV_EXAMPLE}")
     if not setup_can_prompt():
         raise CliError("synapse gateway setup requires a TTY.")
 
-    template_lines = load_env_template(ENV_EXAMPLE)
+    template_lines = load_env_template()
     existing_values, existing_order = load_env_assignments(ENV_LOCAL)
     gateway_setup = resolve_gateway_setup_values(
         existing_values=existing_values,
@@ -477,9 +495,13 @@ def setup_can_prompt() -> bool:
     return sys.stdin.isatty()
 
 
-def load_env_template(path: Path) -> list[EnvTemplateLine]:
+def load_env_template() -> list[EnvTemplateLine]:
+    return _parse_env_template_lines(DEFAULT_ENV_TEMPLATE_LINES)
+
+
+def _parse_env_template_lines(raw_lines: tuple[str, ...]) -> list[EnvTemplateLine]:
     lines: list[EnvTemplateLine] = []
-    for raw_line in path.read_text(encoding="utf-8").splitlines():
+    for raw_line in raw_lines:
         match = ENV_LINE_RE.match(raw_line)
         if not match:
             lines.append(EnvTemplateLine(raw=raw_line))
@@ -493,6 +515,24 @@ def load_env_template(path: Path) -> list[EnvTemplateLine]:
             )
         )
     return lines
+
+
+def bootstrap_env_template() -> list[EnvTemplateLine]:
+    template_lines = load_env_template()
+    bootstrapped_lines: list[EnvTemplateLine] = []
+    for line in template_lines:
+        if line.key == OPENAI_KEY:
+            bootstrapped_lines.append(
+                EnvTemplateLine(
+                    raw=f"{OPENAI_KEY}=",
+                    key=OPENAI_KEY,
+                    value="",
+                    commented=False,
+                )
+            )
+            continue
+        bootstrapped_lines.append(line)
+    return bootstrapped_lines
 
 
 def load_env_assignments(path: Path) -> tuple[dict[str, str], list[str]]:
@@ -555,6 +595,45 @@ def resolve_setup_values(
             print(f"[warn] command '{codex_command}' is not currently available on PATH")
         resolved[CODEX_COMMAND_KEY] = codex_command
     elif codex_enabled:
+        resolved[CODEX_COMMAND_KEY] = default_codex_command
+    elif existing_codex_command:
+        resolved[CODEX_COMMAND_KEY] = existing_codex_command
+    else:
+        resolved[CODEX_COMMAND_KEY] = None
+
+    return resolved
+
+
+def resolve_bootstrap_values(
+    *,
+    template_lines: list[EnvTemplateLine],
+    existing_values: dict[str, str],
+) -> dict[str, str | None]:
+    template_values = {line.key: line.value for line in template_lines if line.key is not None}
+    resolved: dict[str, str | None] = {}
+
+    for line in template_lines:
+        if line.key is None or line.key in INTERACTIVE_SETUP_KEYS:
+            continue
+        current_value = existing_values.get(line.key)
+        if current_value is None and not line.commented:
+            current_value = line.value
+        resolved[line.key] = normalize_optional_value(current_value)
+
+    resolved[OPENAI_KEY] = normalize_optional_value(existing_values.get(OPENAI_KEY))
+
+    explicit_codex_enabled = existing_values.get(CODEX_ENABLED_KEY)
+    parsed_codex_enabled = (
+        parse_bool_value(explicit_codex_enabled)
+        if explicit_codex_enabled not in (None, "")
+        else None
+    )
+    codex_enabled = parsed_codex_enabled if parsed_codex_enabled is not None else False
+    resolved[CODEX_ENABLED_KEY] = format_bool(codex_enabled)
+
+    existing_codex_command = existing_values.get(CODEX_COMMAND_KEY)
+    default_codex_command = existing_codex_command or template_values.get(CODEX_COMMAND_KEY) or "codex"
+    if codex_enabled:
         resolved[CODEX_COMMAND_KEY] = default_codex_command
     elif existing_codex_command:
         resolved[CODEX_COMMAND_KEY] = existing_codex_command
@@ -660,6 +739,44 @@ def resolve_gateway_setup_values(
     )
 
 
+def bootstrap_setup_files() -> None:
+    existing_values, existing_order = load_env_assignments(ENV_LOCAL)
+    if not ENV_LOCAL.exists():
+        template_lines = bootstrap_env_template()
+        resolved_values = resolve_bootstrap_values(
+            template_lines=template_lines,
+            existing_values=existing_values,
+        )
+        write_env_file(
+            template_lines=template_lines,
+            resolved_values=resolved_values,
+            existing_values=existing_values,
+            existing_order=existing_order,
+            destination=ENV_LOCAL,
+        )
+        print(f"[write] configured {format_user_path(ENV_LOCAL)}")
+
+    config_path = gateway_config_path()
+    if not config_path.exists():
+        _write_gateway_config_if_needed(
+            GatewaySetupResult(
+                env_values={},
+                config_path=config_path,
+                config_text=render_gateway_config(
+                    host={
+                        "enabled": False,
+                        "host": "0.0.0.0",
+                        "port": 8010,
+                        "public_base_url": "http://127.0.0.1:8010",
+                        "synapse_base_url": "http://127.0.0.1:8000",
+                        "enabled_gateways": [],
+                    },
+                    gateways={},
+                ),
+            )
+        )
+
+
 def resolve_agora_gateway_setup_values(
     existing_values: dict[str, str],
     environ: os._Environ[str],
@@ -731,7 +848,10 @@ def resolve_agora_gateway_setup_values(
             "voice": normalize_optional_value(
                 prompt_text_value(
                     "TTS voice",
-                    default_value=_existing_nested_value(existing_gateway, "tts", "voice"),
+                    default_value=(
+                        _existing_nested_value(existing_gateway, "tts", "voice")
+                        or "English_magnetic_voiced_man"
+                    ),
                 )
             ),
             "sample_rate": None,
@@ -790,34 +910,11 @@ def resolve_agora_gateway_setup_values(
         {
             "app_id": "$AGORA_APP_ID",
             "app_certificate": "$AGORA_APP_CERTIFICATE",
-            "convoai_area": prompt_text_value(
-                "Agora ConvoAI area",
-                default_value=str(existing_gateway.get("convoai_area") or "CN"),
-                required=True,
-            ).upper(),
-            "client_token_ttl_seconds": int(
-                prompt_text_value(
-                    "Client token TTL seconds",
-                    default_value=str(existing_gateway.get("client_token_ttl_seconds") or "3600"),
-                    required=True,
-                )
-            ),
-            "speak_priority": prompt_text_value(
-                "Speak priority",
-                default_value=str(existing_gateway.get("speak_priority") or "APPEND"),
-                required=True,
-            ).upper(),
-            "speak_interruptable": prompt_bool_value(
-                "Speak interruptable",
-                default=bool(existing_gateway.get("speak_interruptable", True)),
-            ),
-            "request_timeout_seconds": float(
-                prompt_text_value(
-                    "Request timeout seconds",
-                    default_value=str(existing_gateway.get("request_timeout_seconds") or "10.0"),
-                    required=True,
-                )
-            ),
+            "convoai_area": "US",
+            "client_token_ttl_seconds": int(existing_gateway.get("client_token_ttl_seconds") or 3600),
+            "speak_priority": str(existing_gateway.get("speak_priority") or "APPEND").upper(),
+            "speak_interruptable": bool(existing_gateway.get("speak_interruptable", True)),
+            "request_timeout_seconds": float(existing_gateway.get("request_timeout_seconds") or 10.0),
             "asr": asr_block,
             "tts": tts_block,
         },

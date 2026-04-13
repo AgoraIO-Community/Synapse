@@ -36,6 +36,38 @@ if [[ "${1-}" == "-m" && "${2-}" == "venv" ]]; then
 #!/usr/bin/env bash
 set -euo pipefail
 echo "venv-python $*" >> "$FAKE_LOG"
+if [[ "${1-}" == "-m" && "${2-}" == "synapse" && "${3-}" == "setup" && "${4-}" == "--bootstrap-defaults" ]]; then
+  mkdir -p "$HOME/.synapse"
+  cat > "$HOME/.synapse/.env" <<'BOOTSTRAP_ENV'
+OPENAI_API_KEY=
+SYNAPSE_OPENAI_MODEL=gpt-4o-mini
+SYNAPSE_OPENAI_TIMEOUT_SECONDS=30
+# SYNAPSE_OPENAI_BASE_URL=
+# Set to true only after the Codex CLI is installed and configured locally.
+SYNAPSE_CODEX_EXECUTOR_ENABLED=false
+# SYNAPSE_CODEX_COMMAND=codex
+
+# Runtime and gateway credentials written by `synapse setup` to ~/.synapse/.env
+# AGORA_APP_ID=
+# AGORA_APP_CERTIFICATE=
+# DEEPGRAM_API_KEY=
+# ELEVENLABS_API_KEY=
+BOOTSTRAP_ENV
+  cat > "$HOME/.synapse/config.yaml" <<'BOOTSTRAP_CONFIG'
+version: 1
+
+host:
+  enabled: false
+  host: 0.0.0.0
+  port: 8010
+  public_base_url: "http://127.0.0.1:8010"
+  synapse_base_url: "http://127.0.0.1:8000"
+  enabled_gateways:
+
+gateways:
+  {}
+BOOTSTRAP_CONFIG
+fi
 exit 0
 INNER
   chmod +x "$target/bin/python"
@@ -72,6 +104,10 @@ echo "bun $*" >> "$FAKE_LOG"
             "FAKE_LOG": str(log_file),
             "HOME": str(home),
             "PATH": f"{fake_bin}:/usr/bin:/bin",
+            "OPENAI_API_KEY": "sk-shell-secret",
+            "AGORA_APP_ID": "agora-shell-app",
+            "SYNAPSE_CODEX_EXECUTOR_ENABLED": "not-a-bool",
+            "SYNAPSE_CODEX_COMMAND": "/shell/codex",
             "SYNAPSE_INSTALL_ROOT": str(repo_root),
             "SYNAPSE_INSTALL_TEST_UNAME": "Darwin",
         }
@@ -93,6 +129,14 @@ echo "bun $*" >> "$FAKE_LOG"
     assert "venv-python -m pip install --upgrade pip" in log_text
     assert "venv-python -m pip install -e .[dev]" in log_text
     assert "bun install" in log_text
+    assert "venv-python -m synapse setup --bootstrap-defaults" in log_text
+    assert (home / ".synapse" / ".env").exists()
+    assert (home / ".synapse" / "config.yaml").exists()
+    env_text = (home / ".synapse" / ".env").read_text(encoding="utf-8")
+    assert "sk-shell-secret" not in env_text
+    assert "agora-shell-app" not in env_text
+    assert "/shell/codex" not in env_text
+    assert "SYNAPSE_CODEX_EXECUTOR_ENABLED=false" in env_text
     assert "./synapse setup" in completed.stdout
 
 
@@ -150,6 +194,10 @@ INNER
             "FAKE_LOG": str(log_file),
             "HOME": str(home),
             "PATH": f"{fake_bin}:/usr/bin:/bin",
+            "OPENAI_API_KEY": "sk-shell-secret",
+            "AGORA_APP_ID": "agora-shell-app",
+            "SYNAPSE_CODEX_EXECUTOR_ENABLED": "not-a-bool",
+            "SYNAPSE_CODEX_COMMAND": "/shell/codex",
             "SYNAPSE_INSTALL_ROOT": str(repo_root),
             "SYNAPSE_INSTALL_TEST_UNAME": "Linux",
             "SYNAPSE_INSTALL_TEST_OS_RELEASE": str(os_release),
@@ -173,3 +221,11 @@ INNER
     assert f"python3.12 -m venv {repo_root / '.venv'}" in log_text
     assert "venv-python -m pip install --upgrade pip" in log_text
     assert "bun install" in log_text
+    assert "venv-python -m synapse setup --bootstrap-defaults" in log_text
+    assert (home / ".synapse" / ".env").exists()
+    assert (home / ".synapse" / "config.yaml").exists()
+    env_text = (home / ".synapse" / ".env").read_text(encoding="utf-8")
+    assert "sk-shell-secret" not in env_text
+    assert "agora-shell-app" not in env_text
+    assert "/shell/codex" not in env_text
+    assert "SYNAPSE_CODEX_EXECUTOR_ENABLED=false" in env_text

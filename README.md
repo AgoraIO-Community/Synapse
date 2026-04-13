@@ -24,9 +24,12 @@ For a fresh clone, use the repo bootstrap launcher:
 ```
 
 `./install.sh` installs supported local development dependencies, creates `.venv`,
-installs the project in editable mode, and installs frontend dependencies.
+installs the project in editable mode, installs frontend dependencies, and writes
+starter `~/.synapse/.env` plus `~/.synapse/config.yaml` files when they do not
+already exist.
 
-`./synapse setup` configures the repo-root `.env.local`. By default it prompts for
+`./synapse setup` fills in `~/.synapse/.env` with real runtime values. By
+default it prompts for
 required runtime values such as `OPENAI_API_KEY`, and it can also enter the
 gateway-host setup flow. For gateway-only reconfiguration, use:
 
@@ -48,9 +51,9 @@ python3 -m synapse --help
 .venv/bin/python -m synapse --help
 ```
 
-`.env.local` is auto-loaded by the backend at startup. You do not need to export
+`~/.synapse/.env` is auto-loaded by the backend at startup. You do not need to export
 variables manually. OpenAI is required for normal development and demo runtime,
-so set `OPENAI_API_KEY` in `.env.local` before starting the app.
+so set `OPENAI_API_KEY` in `~/.synapse/.env` before starting the app.
 
 ## Common Commands
 
@@ -97,8 +100,8 @@ To run only the headless gateway host:
 ./synapse gateway run
 ```
 
-When gateway modules are enabled in `.env.local`, `./synapse dev` and
-`./synapse start` also start the gateway host automatically.
+When gateway modules are enabled in `~/.synapse/config.yaml`, `./synapse dev`
+and `./synapse start` also start the gateway host automatically.
 
 `./synapse dev` is the reload-capable local iteration path. `./synapse start`
 does not reload Python code changes, so restart it after editing backend or
