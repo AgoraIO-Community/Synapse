@@ -32,6 +32,7 @@ def test_bootstrap_fails_when_codex_is_enabled_but_missing(monkeypatch):
         )
     except RuntimeError as exc:
         assert "missing-codex" in str(exc)
+        assert "Install Codex CLI" in str(exc)
     else:
         raise AssertionError("Expected bootstrap to fail for missing codex command.")
 
@@ -45,5 +46,6 @@ def test_bootstrap_fails_when_acpx_is_enabled_but_missing(monkeypatch):
         )
     except RuntimeError as exc:
         assert "missing-acpx" in str(exc)
+        assert "npm install -g acpx@latest" in str(exc)
     else:
         raise AssertionError("Expected bootstrap to fail for missing acpx command.")

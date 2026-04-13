@@ -15,6 +15,24 @@ Backend-first prototype for a communication-brain / execution-brain runtime.
 
 Synopse requires Python 3.12 or newer.
 
+For the recommended ACPX-backed executor path, also make sure these commands are
+available before you start:
+
+```bash
+npm install -g acpx@latest
+```
+
+- `acpx` must be on your `PATH`
+- `codex` must already be installed and authenticated if you want ACPX to use
+  Codex as the underlying agent
+
+Quick verification:
+
+```bash
+acpx --version
+codex --version
+```
+
 Create a virtual environment in the repo root:
 
 ```bash
@@ -50,6 +68,17 @@ OpenAI is required for normal development and demo runtime. Without a valid
 `OPENAI_API_KEY` in `.env.local` or your shell environment, the backend should
 fail to start.
 
+Minimal ACPX-backed setup:
+
+```env
+OPENAI_API_KEY=your_real_key
+SYNOPSE_ACPX_EXECUTOR_ENABLED=true
+```
+
+The other `SYNOPSE_ACPX_*` values in `.env.example` are optional overrides. They
+are only needed if you want to change the default command, agent, permission
+mode, or timeout.
+
 ## Run Backend
 
 ```bash
@@ -71,6 +100,13 @@ http://127.0.0.1:8000/docs
 If the frontend shows `error` and messages do not progress, first confirm the
 backend is running from the same virtual environment where dependencies were
 installed.
+
+If startup fails with an executor command error, install the missing command
+first. For ACPX-backed execution that usually means:
+
+```bash
+npm install -g acpx@latest
+```
 
 Frontend:
 

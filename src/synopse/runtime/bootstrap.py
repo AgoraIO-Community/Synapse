@@ -19,11 +19,14 @@ def build_runtime_container(
     settings = settings or load_settings()
     if settings.codex_executor_enabled and not _command_available(settings.codex_command):
         raise RuntimeError(
-            f"Codex executor is enabled but command '{settings.codex_command}' is not available."
+            f"Codex executor is enabled but command '{settings.codex_command}' is not available. "
+            "Install Codex CLI and make sure `codex` is available on PATH."
         )
     if settings.acpx_executor_enabled and not _command_available(settings.acpx_command):
         raise RuntimeError(
-            f"ACPX executor is enabled but command '{settings.acpx_command}' is not available."
+            f"ACPX executor is enabled but command '{settings.acpx_command}' is not available. "
+            "Install it with `npm install -g acpx@latest`, or set "
+            "`SYNOPSE_ACPX_COMMAND` to the correct executable path."
         )
 
     if settings.communication_backend != "scripted" and settings.openai_api_key:
