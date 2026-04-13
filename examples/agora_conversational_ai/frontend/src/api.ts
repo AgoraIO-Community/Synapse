@@ -23,7 +23,7 @@ export interface FrontendSessionActivateRequest {
 export interface FrontendSessionDiagnostics {
   convoai_area: string;
   selected_url: string;
-  runtime_agent_id: string | null;
+  runtime_session_id: string | null;
   agent_uid: string;
   agent_rtm_uid: string;
   rtc_uid: string | number | null;
@@ -54,9 +54,9 @@ export interface FrontendPrepareResponse {
 
 export interface FrontendActivateResponse {
   prepared_session_id: string;
-  bridge_session_id: string;
+  binding_id: string;
   synapse_session_id: string;
-  runtime_agent_id: string;
+  runtime_session_id: string;
   chat_completions_url: string;
   app_id: string;
   channel_name: string;
@@ -82,14 +82,14 @@ async function ensureOk(response: Response) {
 }
 
 export async function getFrontendConfig(): Promise<FrontendConfig> {
-  const response = await fetch("/frontend/config");
+  const response = await fetch("/gateway/agora-convoai/config");
   return (await ensureOk(response)).json();
 }
 
 export async function prepareFrontendSession(
   payload: FrontendSessionPrepareRequest,
 ): Promise<FrontendPrepareResponse> {
-  const response = await fetch("/frontend/session/prepare", {
+  const response = await fetch("/gateway/agora-convoai/sessions/prepare", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -100,7 +100,7 @@ export async function prepareFrontendSession(
 export async function activateFrontendSession(
   payload: FrontendSessionActivateRequest,
 ): Promise<FrontendActivateResponse> {
-  const response = await fetch("/frontend/session/activate", {
+  const response = await fetch("/gateway/agora-convoai/sessions/activate", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -108,11 +108,11 @@ export async function activateFrontendSession(
   return (await ensureOk(response)).json();
 }
 
-export async function stopFrontendSession(bridgeSessionId: string): Promise<void> {
-  const response = await fetch("/frontend/session/stop", {
+export async function stopFrontendSession(bindingId: string): Promise<void> {
+  const response = await fetch("/gateway/agora-convoai/sessions/stop", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ bridge_session_id: bridgeSessionId }),
+    body: JSON.stringify({ binding_id: bindingId }),
   });
   await ensureOk(response);
 }

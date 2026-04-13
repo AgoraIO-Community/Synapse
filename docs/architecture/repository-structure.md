@@ -34,6 +34,8 @@ Recommended repository structure:
       ├─ notification/
       ├─ runtime/
       ├─ api/
+      ├─ gateway_host/
+      ├─ gateways/
       ├─ cli/
       └─ infrastructure/
 ```
@@ -51,6 +53,8 @@ src/synapse/
 ├─ notification/
 ├─ runtime/
 ├─ api/
+├─ gateway_host/
+├─ gateways/
 ├─ cli/
 └─ infrastructure/
 ```
@@ -85,6 +89,7 @@ Additional repository-level guidance:
   - repository maintenance and dev helpers
 - `examples/`
   - minimal runnable demos and integration examples
+  - browser demos should stay here even when the backend gateway logic becomes first-party runtime code
 
 Migration rule:
 

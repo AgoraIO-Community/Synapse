@@ -28,7 +28,7 @@ type TranscriptTurn = {
 };
 
 type ActiveResources = {
-  bridgeSessionId: string;
+  bindingId: string;
   rtcClient: any;
   micTrack: any;
   rtmClient: any;
@@ -217,7 +217,7 @@ export default function App() {
       await teardown(resourcesRef.current, true);
       if (!resourcesRef.current && activated) {
         try {
-          await stopFrontendSession(activated.bridge_session_id);
+          await stopFrontendSession(activated.binding_id);
         } catch {}
       }
       resourcesRef.current = null;
@@ -444,7 +444,7 @@ export default function App() {
       });
 
       resourcesRef.current = {
-        bridgeSessionId: activated.bridge_session_id,
+        bindingId: activated.binding_id,
         rtcClient,
         micTrack,
         rtmClient,
@@ -455,7 +455,7 @@ export default function App() {
     } catch (error) {
       await teardown(
         {
-          bridgeSessionId: "",
+          bindingId: "",
           rtcClient,
           micTrack,
           rtmClient,
@@ -685,16 +685,16 @@ export default function App() {
 
           <div className="meta-grid">
             <div className="meta-card">
-              <p>Bridge session</p>
-              <strong>{activeSession?.bridge_session_id ?? "Not started"}</strong>
+              <p>Gateway binding</p>
+              <strong>{activeSession?.binding_id ?? "Not started"}</strong>
             </div>
             <div className="meta-card">
               <p>Synapse session</p>
               <strong>{activeSession?.synapse_session_id ?? "Not started"}</strong>
             </div>
             <div className="meta-card">
-              <p>Runtime agent</p>
-              <strong>{activeSession?.runtime_agent_id ?? "Not started"}</strong>
+              <p>Runtime session</p>
+              <strong>{activeSession?.runtime_session_id ?? "Not started"}</strong>
             </div>
             <div className="meta-card">
               <p>Agent RTC UID</p>
@@ -724,7 +724,7 @@ export default function App() {
               <div className="meta-grid">
                 <DiagnosticMetaCard label="Area" value={activeSession.diagnostics.convoai_area} />
                 <DiagnosticMetaCard label="Selected URL" value={activeSession.diagnostics.selected_url} />
-                <DiagnosticMetaCard label="Runtime Agent" value={activeSession.runtime_agent_id} />
+                <DiagnosticMetaCard label="Runtime Session" value={activeSession.runtime_session_id} />
                 <DiagnosticMetaCard label="Agent RTC UID" value={activeSession.diagnostics.agent_uid} />
                 <DiagnosticMetaCard label="Agent RTM UID" value={activeSession.diagnostics.agent_rtm_uid} />
                 <DiagnosticMetaCard label="RTC UID" value={String(activeSession.diagnostics.rtc_uid ?? "n/a")} />
@@ -864,7 +864,7 @@ async function teardown(resources: ActiveResources | null, notifyBackend: boolea
     await resources.rtcClient?.leave();
   } catch {}
 
-  if (notifyBackend && resources.bridgeSessionId) {
-    await stopFrontendSession(resources.bridgeSessionId);
+  if (notifyBackend && resources.bindingId) {
+    await stopFrontendSession(resources.bindingId);
   }
 }

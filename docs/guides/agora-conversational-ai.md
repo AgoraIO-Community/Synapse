@@ -1,35 +1,39 @@
 # Agora Conversational AI
 
-This guide documents the supported Synapse integration path for `examples/agora_conversational_ai`.
+This guide documents the supported Synapse integration path for the first-party
+`agora-convoai` gateway module.
 
 ## Example Shape
 
-This specific example uses one backend only:
+The supported backend path is now the headless gateway host plus the first-party
+Agora gateway module under:
 
-- `examples/agora_conversational_ai/app.py`
+- `src/synapse/gateway_host/`
+- `src/synapse/gateways/agora_convoai/`
 
-That backend owns:
+That gateway module owns:
 
 - Agora ConvoAI lifecycle via the Python SDK module `agora_agent`
-- browser RTC/RTM token generation
-- Synapse bridge binding
+- Synapse gateway binding
 - the public custom-LLM callback URL used by Agora
 - proactive notification speech through the local ConvoAI session
 
-The example bridge runs separately from the main Synapse API server:
+The browser demo remains outside the gateway host under:
+
+- `examples/agora_conversational_ai/frontend/`
+
+The gateway host runs separately from the main Synapse API server:
 
 - Synapse server: `8000`
-- Agora bridge: `8010`
+- Gateway host: `8010`
 
-It also exposes the browser-facing routes:
+The `agora-convoai` module exposes headless routes:
 
-- `GET /frontend/config`
-- `POST /frontend/session/prepare`
-- `POST /frontend/session/activate`
-- `POST /frontend/session/stop`
-- `POST /chat/completions`
-
-There is no separate sample-backend proxy in this example anymore.
+- `GET /gateway/agora-convoai/config`
+- `POST /gateway/agora-convoai/sessions/prepare`
+- `POST /gateway/agora-convoai/sessions/activate`
+- `POST /gateway/agora-convoai/sessions/stop`
+- `POST /gateway/agora-convoai/chat/completions`
 
 ## Behavior
 
@@ -37,39 +41,42 @@ There is no separate sample-backend proxy in this example anymore.
 - duplicate runtime-agent bindings are rejected
 - the bridge translates the latest Agora custom-LLM turn into a Synapse session on the external Synapse server
 - Synapse owns conversational replies behind the bridge callback
-- this example backend owns Agora auth and calls Agora APIs on behalf of this example
-- the browser prepares and subscribes RTC/RTM before agent activation, matching the official sample
+- the gateway module owns Agora auth and calls Agora APIs on behalf of the integration
 - proactive notification delivery is triggered only for Synapse notification events
 - normal chat replies are not replayed through `/speak`
-- the example frontend talks only to this repo's example backend
+- any browser demo is a client of the gateway host and is not part of the gateway boundary
 
 ## LLM Path
 
-For this example, Agora does not call OpenAI directly.
+For this module, Agora does not call OpenAI directly.
 
-Instead, `POST /frontend/session/activate` reserves a bridge session first, builds:
+Instead, `POST /gateway/agora-convoai/sessions/activate` reserves a gateway
+binding first and builds:
 
 ```text
-${AGORA_BRIDGE_SERVICE_BASE_URL}/chat/completions?bridge_session_id=...
+${SYNAPSE_GATEWAY_PUBLIC_BASE_URL}/gateway/agora-convoai/chat/completions?binding_id=...
 ```
 
 and passes that full URL into the Agora SDK as the OpenAI-compatible LLM endpoint.
 
 When Agora calls that URL:
 
-1. the bridge resolves `bridge_session_id`
+1. the gateway resolves `binding_id`
 2. the latest user turn is submitted into the bound external Synapse session on `8000`
 3. Synapse generates the reply through its configured OpenAI-compatible backend
-4. the bridge returns an OpenAI-compatible `chat.completions` response to Agora
+4. the gateway returns an OpenAI-compatible `chat.completions` response to Agora
 
 `OPENAI_API_KEY` and optional `SYNAPSE_OPENAI_BASE_URL` therefore belong to the
-separate Synapse server on `8000`, not the Agora bridge process on `8010`.
+separate Synapse server on `8000`, not the gateway host on `8010`.
 
 ## Notification Delivery
 
-The bridge subscribes to the Synapse session stream and watches for `conversation_appended` events with `source="notification"`.
+The gateway watches the Synapse session stream and forwards only notification-origin
+text to the live Agora session.
 
-When such an event arrives, the bridge calls the local ConvoAI service `say()` path for the started SDK session. This keeps Agora auth inside the example backend and out of the frontend while sourcing notification text from the external Synapse server.
+When such an event arrives, the gateway calls the local ConvoAI service `say()`
+path for the started SDK session. This keeps Agora auth inside the gateway host
+while sourcing notification text from the external Synapse server.
 
 ## Identity Model
 
@@ -84,18 +91,21 @@ The frontend uses the agent RTM uid for toolkit messaging calls and the agent RT
 
 ## Run
 
-Install Synapse in editable mode, then run:
+Configure the root `.env.local`, including gateway settings, then run:
 
 ```bash
-pip install -e '.[dev]'
-uvicorn synapse.api.app:app --reload --port 8000
-uvicorn examples.agora_conversational_ai.app:app --reload --port 8010
+./synapse setup
+./synapse gateway setup
+./synapse start
 ```
 
-The editable install should resolve the current SDK package `agora-agent-server-sdk`,
-which exports the `agora_agent` module used by the example backend.
+For development with frontend + gateway together:
 
-For the browser test client:
+```bash
+./synapse dev
+```
+
+For the example browser test client:
 
 ```bash
 cd examples/agora_conversational_ai/frontend
@@ -103,15 +113,14 @@ npm install
 npm run dev
 ```
 
-The example reads its env from `examples/agora_conversational_ai/.env.local`. Configure App Credentials, provider keys, and `AGORA_BRIDGE_SYNAPSE_BASE_URL` there before starting live sessions.
+The gateway host reads its config from the repo-root `.env.local`.
 
-For live Agora sessions, `AGORA_BRIDGE_SERVICE_BASE_URL` must be a public URL that can
-reach this backend.
+For live Agora sessions, `SYNAPSE_GATEWAY_PUBLIC_BASE_URL` must be a public URL
+that can reach the gateway host.
 
 For this example, `AGORA_CONVOAI_AREA=CN` is the recommended starting value. If live start still fails with connectivity errors, try `US`, `EU`, or `AP`.
 
 ## Ownership Note
 
-This “single backend” rule applies only to `examples/agora_conversational_ai`.
-
-Future examples in this repo may still use separate backend topologies when that better fits the example design.
+The browser demo under `examples/agora_conversational_ai/frontend/` is an example
+client only. It is not part of the gateway-host architecture boundary.

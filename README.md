@@ -18,6 +18,7 @@ For a fresh clone, use the repo bootstrap launcher:
 ```bash
 ./install.sh
 ./synapse setup
+./synapse gateway setup
 ./synapse doctor
 ./synapse dev
 ```
@@ -26,7 +27,14 @@ For a fresh clone, use the repo bootstrap launcher:
 installs the project in editable mode, and installs frontend dependencies.
 
 `./synapse setup` configures the repo-root `.env.local`. By default it prompts for
-required runtime values such as `OPENAI_API_KEY`. For automation, use:
+required runtime values such as `OPENAI_API_KEY`, and it can also enter the
+gateway-host setup flow. For gateway-only reconfiguration, use:
+
+```bash
+./synapse gateway setup
+```
+
+For automation, use:
 
 ```bash
 OPENAI_API_KEY=... ./synapse setup --non-interactive
@@ -49,11 +57,13 @@ so set `OPENAI_API_KEY` in `.env.local` before starting the app.
 ```bash
 ./install.sh
 ./synapse setup
+./synapse gateway setup
 ./synapse doctor
 ./synapse dev
 ./synapse backend
 ./synapse frontend
 ./synapse start
+./synapse gateway run
 ```
 
 The installed console script is also named `synapse`, so after setup you can run
@@ -80,6 +90,23 @@ To run only the frontend:
 ```bash
 ./synapse frontend
 ```
+
+To run only the headless gateway host:
+
+```bash
+./synapse gateway run
+```
+
+When gateway modules are enabled in `.env.local`, `./synapse dev` and
+`./synapse start` also start the gateway host automatically.
+
+`./synapse dev` is the reload-capable local iteration path. `./synapse start`
+does not reload Python code changes, so restart it after editing backend or
+gateway host code.
+
+The gateway host talks to the Synapse backend directly using the configured
+`SYNAPSE_GATEWAY_SYNAPSE_BASE_URL` and does not use proxy environment variables
+for its internal upstream traffic.
 
 ## Test
 

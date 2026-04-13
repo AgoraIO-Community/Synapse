@@ -202,7 +202,15 @@ def test_example_env_configuration_points_runtime_loader_at_example_env(tmp_path
 
 
 def test_real_agora_sdk_vendor_constructors_accept_current_option_names():
-    from agora_agent.agentkit import DeepgramSTT, ElevenLabsTTS, OpenAI
+    from agora_agent import Agent, Area, AsyncAgentSession, AsyncAgora
+    from agora_agent.agentkit import AdvancedFeatures, DeepgramSTT, ElevenLabsTTS, OpenAI, SessionParams
+
+    assert Agent is not None
+    assert AsyncAgentSession is not None
+    assert AsyncAgora is not None
+    assert Area is not None
+    assert AdvancedFeatures is not None
+    assert SessionParams is not None
 
     DeepgramSTT(api_key="deepgram-key", language="en-US")
     OpenAI(
@@ -215,6 +223,33 @@ def test_real_agora_sdk_vendor_constructors_accept_current_option_names():
         model_id="eleven_flash_v2_5",
         sample_rate=24000,
     )
+
+
+def test_real_agora_sdk_loader_matches_installed_package_shape():
+    settings = _build_settings()
+    service = AgoraSDKConvoAIService(settings)
+
+    (
+        AsyncAgora,
+        Area,
+        Agent,
+        AsyncAgentSession,
+        DeepgramSTT,
+        OpenAI,
+        ElevenLabsTTS,
+        AdvancedFeatures,
+        SessionParams,
+    ) = service._load_sdk_types()
+
+    assert AsyncAgora is not None
+    assert Area is not None
+    assert Agent is not None
+    assert AsyncAgentSession is not None
+    assert DeepgramSTT is not None
+    assert OpenAI is not None
+    assert ElevenLabsTTS is not None
+    assert AdvancedFeatures is not None
+    assert SessionParams is not None
 
 
 def test_convoai_area_defaults_to_cn():

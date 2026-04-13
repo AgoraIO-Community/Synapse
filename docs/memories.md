@@ -87,3 +87,4 @@ Short log of important design decisions and changes for Synapse.
 
 - Renamed the public package, CLI, docs, env prefixes, and example bridge surface from `synopse` to `synapse`, and added a repo-root `synapse` bootstrap launcher plus a first-class Python CLI for setup, doctor, and local app startup.
 - Split local bootstrap so `install.sh` now installs supported dev dependencies and repo packages, while `synapse setup` became an env-configuration wizard for the root `.env.local` with a non-interactive automation path.
+- Added a separate headless gateway host plus first-party `src/synapse/gateways/` modules, promoted Agora ConvoAI into the new gateway module structure, and extended the CLI so gateway config can be prompted from `synapse setup` or `synapse gateway setup` and auto-started from `synapse dev` / `synapse start`.

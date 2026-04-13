@@ -26,6 +26,12 @@ OPENAI_KEY = "OPENAI_API_KEY"
 CODEX_ENABLED_KEY = "SYNAPSE_CODEX_EXECUTOR_ENABLED"
 CODEX_COMMAND_KEY = "SYNAPSE_CODEX_COMMAND"
 INTERACTIVE_SETUP_KEYS = {OPENAI_KEY, CODEX_ENABLED_KEY, CODEX_COMMAND_KEY}
+GATEWAY_ENABLED_KEY = "SYNAPSE_GATEWAY_ENABLED"
+GATEWAY_HOST_KEY = "SYNAPSE_GATEWAY_HOST"
+GATEWAY_PORT_KEY = "SYNAPSE_GATEWAY_PORT"
+GATEWAY_PUBLIC_BASE_URL_KEY = "SYNAPSE_GATEWAY_PUBLIC_BASE_URL"
+GATEWAY_SYNAPSE_BASE_URL_KEY = "SYNAPSE_GATEWAY_SYNAPSE_BASE_URL"
+GATEWAY_MODULES_KEY = "SYNAPSE_GATEWAY_MODULES"
 
 
 @dataclass(slots=True)
@@ -64,6 +70,18 @@ def build_parser() -> argparse.ArgumentParser:
     start_parser = subparsers.add_parser("start", help="Run the FastAPI backend without reload.")
     _add_host_port(start_parser, backend_port=8000)
 
+    gateway_parser = subparsers.add_parser("gateway", help="Configure and run the gateway host.")
+    gateway_subparsers = gateway_parser.add_subparsers(dest="gateway_command", required=True)
+    gateway_subparsers.add_parser("setup", help="Interactively configure gateway modules.")
+    gateway_run_parser = gateway_subparsers.add_parser("run", help="Run the headless gateway host.")
+    gateway_run_parser.add_argument("--host")
+    gateway_run_parser.add_argument("--port", type=int)
+    gateway_run_parser.add_argument(
+        "--reload",
+        action="store_true",
+        help="Run the gateway host with reload enabled.",
+    )
+
     return parser
 
 
@@ -86,6 +104,7 @@ def main(argv: list[str] | None = None) -> int:
             "frontend": cmd_frontend,
             "doctor": cmd_doctor,
             "start": cmd_start,
+            "gateway": cmd_gateway,
         }
         return handlers[args.command](args)
     except CliError as exc:
@@ -108,6 +127,13 @@ def cmd_setup(_args: argparse.Namespace) -> int:
         environ=os.environ,
         interactive=not args.non_interactive,
     )
+    gateway_values = resolve_gateway_setup_values(
+        existing_values=existing_values,
+        environ=os.environ,
+        interactive=not args.non_interactive,
+        force_prompt=False,
+    )
+    resolved_values.update(gateway_values)
     write_env_file(
         template_lines=template_lines,
         resolved_values=resolved_values,
@@ -121,55 +147,32 @@ def cmd_setup(_args: argparse.Namespace) -> int:
 
 def cmd_dev(args: argparse.Namespace) -> int:
     venv_python = require_venv_python()
-    frontend_cmd = frontend_dev_command(args.host, args.frontend_port)
-    processes: list[tuple[str, subprocess.Popen[str]]] = []
-
-    def start_process(name: str, cmd: list[str], cwd: Path) -> subprocess.Popen[str]:
-        print(f"[start] {name}: {' '.join(cmd)}")
-        process = subprocess.Popen(cmd, cwd=cwd)
-        processes.append((name, process))
-        return process
-
-    def stop_all() -> None:
-        for name, process in reversed(processes):
-            if process.poll() is None:
-                print(f"[stop] {name}")
-                process.terminate()
-        deadline = time.time() + 5
-        for _, process in processes:
-            while process.poll() is None and time.time() < deadline:
-                time.sleep(0.1)
-        for name, process in processes:
-            if process.poll() is None:
-                print(f"[kill] {name}")
-                process.kill()
-
-    def handle_signal(_signum: int, _frame) -> None:
-        stop_all()
-        raise SystemExit(0)
-
-    signal.signal(signal.SIGINT, handle_signal)
-    signal.signal(signal.SIGTERM, handle_signal)
-
-    start_process("backend", backend_command(venv_python, args.host, args.port, reload=True), ROOT)
-    start_process("frontend", frontend_cmd, FRONTEND)
+    commands = [
+        ("backend", backend_command(venv_python, args.host, args.port, reload=True), ROOT),
+        ("frontend", frontend_dev_command(args.host, args.frontend_port), FRONTEND),
+    ]
+    gateway_settings = load_gateway_settings_if_enabled()
+    if gateway_settings is not None:
+        commands.append(
+            (
+                "gateway",
+                gateway_command(
+                    venv_python,
+                    gateway_settings.host,
+                    gateway_settings.port,
+                    reload=True,
+                ),
+                ROOT,
+            )
+        )
 
     print("\nSynapse dev is running")
     print(f"Frontend: http://localhost:{args.frontend_port}")
     print(f"Backend : http://localhost:{args.port}")
+    if gateway_settings is not None:
+        print(f"Gateway : {gateway_settings.public_base_url}")
     print("Press Ctrl+C to stop\n")
-
-    try:
-        while True:
-            for name, process in processes:
-                code = process.poll()
-                if code is not None:
-                    print(f"[exit] {name} exited with code {code}")
-                    stop_all()
-                    return code
-            time.sleep(1)
-    finally:
-        stop_all()
+    return run_managed_processes(commands)
 
 
 def cmd_backend(args: argparse.Namespace) -> int:
@@ -179,7 +182,22 @@ def cmd_backend(args: argparse.Namespace) -> int:
 
 def cmd_start(args: argparse.Namespace) -> int:
     venv_python = require_venv_python()
-    return run_checked(backend_command(venv_python, args.host, args.port, reload=False), cwd=ROOT)
+    commands = [("backend", backend_command(venv_python, args.host, args.port, reload=False), ROOT)]
+    gateway_settings = load_gateway_settings_if_enabled()
+    if gateway_settings is not None:
+        commands.append(
+            (
+                "gateway",
+                gateway_command(
+                    venv_python,
+                    gateway_settings.host,
+                    gateway_settings.port,
+                    reload=False,
+                ),
+                ROOT,
+            )
+        )
+    return run_managed_processes(commands)
 
 
 def cmd_frontend(args: argparse.Namespace) -> int:
@@ -217,7 +235,50 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         print("[missing] env: OPENAI_API_KEY (run ./synapse setup)")
         ok = False
 
+    ok &= report_gateway_status(args)
+
     return 0 if ok else 1
+
+
+def cmd_gateway(args: argparse.Namespace) -> int:
+    if args.gateway_command == "setup":
+        return cmd_gateway_setup(args)
+    if args.gateway_command == "run":
+        return cmd_gateway_run(args)
+    raise CliError(f"Unknown gateway command: {args.gateway_command}")
+
+
+def cmd_gateway_setup(_args: argparse.Namespace) -> int:
+    if not ENV_EXAMPLE.exists():
+        raise CliError(f"Missing env template: {ENV_EXAMPLE}")
+    if not setup_can_prompt():
+        raise CliError("synapse gateway setup requires a TTY.")
+
+    template_lines = load_env_template(ENV_EXAMPLE)
+    existing_values, existing_order = load_env_assignments(ENV_LOCAL)
+    resolved_values = resolve_gateway_setup_values(
+        existing_values=existing_values,
+        environ=os.environ,
+        interactive=True,
+        force_prompt=True,
+    )
+    write_env_file(
+        template_lines=template_lines,
+        resolved_values={**existing_values, **resolved_values},
+        existing_values=existing_values,
+        existing_order=existing_order,
+        destination=ENV_LOCAL,
+    )
+    print(f"[write] configured {ENV_LOCAL.relative_to(ROOT)}")
+    return 0
+
+
+def cmd_gateway_run(args: argparse.Namespace) -> int:
+    venv_python = require_venv_python()
+    settings = load_gateway_settings()
+    host = args.host or settings.host
+    port = args.port or settings.port
+    return run_checked(gateway_command(venv_python, host, port, reload=args.reload), cwd=ROOT)
 
 
 def backend_command(venv_python: Path, host: str, port: int, *, reload: bool) -> list[str]:
@@ -226,6 +287,22 @@ def backend_command(venv_python: Path, host: str, port: int, *, reload: bool) ->
         "-m",
         "uvicorn",
         "synapse.api.app:app",
+        "--host",
+        host,
+        "--port",
+        str(port),
+    ]
+    if reload:
+        command.append("--reload")
+    return command
+
+
+def gateway_command(venv_python: Path, host: str, port: int, *, reload: bool) -> list[str]:
+    command = [
+        str(venv_python),
+        "-m",
+        "uvicorn",
+        "synapse.gateway_host.app:app",
         "--host",
         host,
         "--port",
@@ -279,6 +356,52 @@ def run_checked(cmd: list[str], cwd: Path) -> int:
     if completed.returncode != 0:
         raise SystemExit(completed.returncode)
     return completed.returncode
+
+
+def run_managed_processes(commands: list[tuple[str, list[str], Path]]) -> int:
+    processes: list[tuple[str, subprocess.Popen[str]]] = []
+
+    def start_process(name: str, cmd: list[str], cwd: Path) -> subprocess.Popen[str]:
+        print(f"[start] {name}: {' '.join(cmd)}")
+        process = subprocess.Popen(cmd, cwd=cwd)
+        processes.append((name, process))
+        return process
+
+    def stop_all() -> None:
+        for name, process in reversed(processes):
+            if process.poll() is None:
+                print(f"[stop] {name}")
+                process.terminate()
+        deadline = time.time() + 5
+        for _, process in processes:
+            while process.poll() is None and time.time() < deadline:
+                time.sleep(0.1)
+        for name, process in processes:
+            if process.poll() is None:
+                print(f"[kill] {name}")
+                process.kill()
+
+    def handle_signal(_signum: int, _frame) -> None:
+        stop_all()
+        raise SystemExit(0)
+
+    signal.signal(signal.SIGINT, handle_signal)
+    signal.signal(signal.SIGTERM, handle_signal)
+
+    for name, cmd, cwd in commands:
+        start_process(name, cmd, cwd)
+
+    try:
+        while True:
+            for name, process in processes:
+                code = process.poll()
+                if code is not None:
+                    print(f"[exit] {name} exited with code {code}")
+                    stop_all()
+                    return code
+            time.sleep(1)
+    finally:
+        stop_all()
 
 
 def report_command(name: str, *, required: bool = True) -> bool:
@@ -423,6 +546,145 @@ def resolve_setup_values(
     return resolved
 
 
+def resolve_gateway_setup_values(
+    *,
+    existing_values: dict[str, str],
+    environ: os._Environ[str],
+    interactive: bool,
+    force_prompt: bool,
+) -> dict[str, str | None]:
+    if not interactive:
+        return {}
+
+    existing_enabled = pick_env_value(GATEWAY_ENABLED_KEY, existing_values, environ)
+    default_enabled = parse_bool_value(existing_enabled) if existing_enabled is not None else False
+    should_configure = prompt_bool_value("Configure gateway host", default=bool(default_enabled or force_prompt))
+    if not should_configure:
+        if not force_prompt:
+            return {}
+        return {
+            GATEWAY_ENABLED_KEY: "false",
+            GATEWAY_MODULES_KEY: None,
+        }
+
+    modules = prompt_gateway_module_selection()
+    host = prompt_text_value(
+        "Gateway host",
+        default_value=pick_env_value(GATEWAY_HOST_KEY, existing_values, environ) or "0.0.0.0",
+        required=True,
+    )
+    port = prompt_text_value(
+        "Gateway port",
+        default_value=pick_env_value(GATEWAY_PORT_KEY, existing_values, environ) or "8010",
+        required=True,
+    )
+    public_base_url = prompt_text_value(
+        "Gateway public base URL",
+        default_value=pick_env_value(GATEWAY_PUBLIC_BASE_URL_KEY, existing_values, environ)
+        or f"http://127.0.0.1:{port}",
+        required=True,
+    )
+    synapse_base_url = prompt_text_value(
+        "Synapse API base URL for gateway callbacks",
+        default_value=pick_env_value(GATEWAY_SYNAPSE_BASE_URL_KEY, existing_values, environ)
+        or "http://127.0.0.1:8000",
+        required=True,
+    )
+
+    resolved: dict[str, str | None] = {
+        GATEWAY_ENABLED_KEY: "true",
+        GATEWAY_HOST_KEY: host,
+        GATEWAY_PORT_KEY: port,
+        GATEWAY_PUBLIC_BASE_URL_KEY: public_base_url,
+        GATEWAY_SYNAPSE_BASE_URL_KEY: synapse_base_url,
+        GATEWAY_MODULES_KEY: ",".join(modules),
+    }
+    for module in modules:
+        if module == "agora-convoai":
+            resolved.update(resolve_agora_gateway_setup_values(existing_values, environ))
+    return resolved
+
+
+def resolve_agora_gateway_setup_values(
+    existing_values: dict[str, str],
+    environ: os._Environ[str],
+) -> dict[str, str | None]:
+    return {
+        "SYNAPSE_GATEWAY_AGORA_CONVOAI_APP_ID": prompt_text_value(
+            "Agora App ID",
+            default_value=pick_env_value("SYNAPSE_GATEWAY_AGORA_CONVOAI_APP_ID", existing_values, environ)
+            or pick_env_value("AGORA_APP_ID", existing_values, environ),
+            required=True,
+        ),
+        "SYNAPSE_GATEWAY_AGORA_CONVOAI_APP_CERTIFICATE": prompt_secret_value(
+            "Agora App Certificate",
+            default_value=pick_env_value(
+                "SYNAPSE_GATEWAY_AGORA_CONVOAI_APP_CERTIFICATE",
+                existing_values,
+                environ,
+            )
+            or pick_env_value("AGORA_APP_CERTIFICATE", existing_values, environ),
+        ),
+        "SYNAPSE_GATEWAY_AGORA_CONVOAI_AREA": prompt_text_value(
+            "Agora ConvoAI area",
+            default_value=pick_env_value("SYNAPSE_GATEWAY_AGORA_CONVOAI_AREA", existing_values, environ)
+            or pick_env_value("AGORA_CONVOAI_AREA", existing_values, environ)
+            or "CN",
+            required=True,
+        ),
+        "SYNAPSE_GATEWAY_AGORA_CONVOAI_DEEPGRAM_API_KEY": prompt_secret_value(
+            "Deepgram API Key",
+            default_value=pick_env_value(
+                "SYNAPSE_GATEWAY_AGORA_CONVOAI_DEEPGRAM_API_KEY",
+                existing_values,
+                environ,
+            )
+            or pick_env_value("DEEPGRAM_API_KEY", existing_values, environ),
+        ),
+        "SYNAPSE_GATEWAY_AGORA_CONVOAI_DEEPGRAM_LANGUAGE": prompt_text_value(
+            "Deepgram language",
+            default_value=pick_env_value(
+                "SYNAPSE_GATEWAY_AGORA_CONVOAI_DEEPGRAM_LANGUAGE",
+                existing_values,
+                environ,
+            )
+            or pick_env_value("AGORA_DEEPGRAM_LANGUAGE", existing_values, environ)
+            or "en-US",
+            required=True,
+        ),
+        "SYNAPSE_GATEWAY_AGORA_CONVOAI_ELEVENLABS_API_KEY": prompt_secret_value(
+            "ElevenLabs API Key",
+            default_value=pick_env_value(
+                "SYNAPSE_GATEWAY_AGORA_CONVOAI_ELEVENLABS_API_KEY",
+                existing_values,
+                environ,
+            )
+            or pick_env_value("ELEVENLABS_API_KEY", existing_values, environ),
+        ),
+        "SYNAPSE_GATEWAY_AGORA_CONVOAI_ELEVENLABS_VOICE_ID": prompt_text_value(
+            "ElevenLabs Voice ID",
+            default_value=pick_env_value(
+                "SYNAPSE_GATEWAY_AGORA_CONVOAI_ELEVENLABS_VOICE_ID",
+                existing_values,
+                environ,
+            )
+            or pick_env_value("ELEVENLABS_VOICE_ID", existing_values, environ),
+            required=True,
+        ),
+        "SYNAPSE_GATEWAY_AGORA_CONVOAI_MODEL": prompt_text_value(
+            "Gateway model label",
+            default_value=pick_env_value(
+                "SYNAPSE_GATEWAY_AGORA_CONVOAI_MODEL",
+                existing_values,
+                environ,
+            )
+            or pick_env_value("AGORA_BRIDGE_MODEL", existing_values, environ)
+            or "synapse-agora-bridge",
+            required=True,
+        ),
+    }
+
+
 def write_env_file(
     *,
     template_lines: list[EnvTemplateLine],
@@ -452,11 +714,21 @@ def write_env_file(
         rendered_lines.append(f"{line.key}={resolved_value}")
 
     unknown_keys = [key for key in existing_order if key not in known_keys]
+    additional_resolved_keys = [
+        key
+        for key, value in resolved_values.items()
+        if key not in known_keys and key not in unknown_keys and value not in (None, "")
+    ]
     if unknown_keys:
         if rendered_lines and rendered_lines[-1] != "":
             rendered_lines.append("")
         for key in unknown_keys:
             rendered_lines.append(f"{key}={existing_values[key]}")
+    if additional_resolved_keys:
+        if rendered_lines and rendered_lines[-1] != "":
+            rendered_lines.append("")
+        for key in additional_resolved_keys:
+            rendered_lines.append(f"{key}={resolved_values[key]}")
 
     destination.write_text("\n".join(rendered_lines) + "\n", encoding="utf-8")
 
@@ -537,6 +809,34 @@ def prompt_bool_value(label: str, *, default: bool) -> bool:
         print("Please answer yes or no.")
 
 
+def prompt_gateway_module_selection() -> list[str]:
+    modules = list_available_gateway_modules()
+    if not modules:
+        raise CliError("No gateway modules are currently registered.")
+
+    print("Available gateway modules:")
+    for index, module in enumerate(modules, start=1):
+        print(f"  {index}. {module}")
+
+    while True:
+        entered = input("Select gateway modules [1]: ").strip()
+        if not entered:
+            return [modules[0]]
+        selected: list[str] = []
+        try:
+            for part in entered.split(","):
+                index = int(part.strip())
+                selected.append(modules[index - 1])
+        except (ValueError, IndexError):
+            print("Enter one or more numeric choices separated by commas.")
+            continue
+        deduped: list[str] = []
+        for module in selected:
+            if module not in deduped:
+                deduped.append(module)
+        return deduped
+
+
 def prompt_text_value(label: str, *, default_value: str | None, required: bool = False) -> str:
     while True:
         suffix = f" [{default_value}]" if default_value else ""
@@ -548,6 +848,64 @@ def prompt_text_value(label: str, *, default_value: str | None, required: bool =
         if not required:
             return ""
         print(f"{label} is required.")
+
+
+def list_available_gateway_modules() -> list[str]:
+    from synapse.gateway_host.catalog import list_gateway_module_specs
+
+    return [spec.slug for spec in list_gateway_module_specs()]
+
+
+def load_gateway_settings():
+    import importlib
+    gateway_config_module = importlib.import_module("synapse.gateway_host.config")
+    return gateway_config_module.load_gateway_host_settings(env_file=ENV_LOCAL)
+
+
+def load_gateway_settings_if_enabled():
+    settings = load_gateway_settings()
+    if not settings.enabled or not settings.enabled_modules:
+        return None
+    return settings
+
+
+def report_gateway_status(args: argparse.Namespace) -> bool:
+    settings = load_gateway_settings()
+    if not settings.enabled:
+        print("[ok] gateway: disabled")
+        return True
+
+    ok = True
+    modules = ", ".join(settings.enabled_modules) or "(none)"
+    print(f"[ok] gateway: enabled -> {modules}")
+    print(f"[ok] gateway public URL: {settings.public_base_url}")
+    ok &= report_port(settings.port)
+
+    for module in settings.enabled_modules:
+        if module == "agora-convoai":
+            ok &= report_required_env_keys(
+                [
+                    "SYNAPSE_GATEWAY_AGORA_CONVOAI_APP_ID",
+                    "SYNAPSE_GATEWAY_AGORA_CONVOAI_APP_CERTIFICATE",
+                    "SYNAPSE_GATEWAY_AGORA_CONVOAI_DEEPGRAM_API_KEY",
+                    "SYNAPSE_GATEWAY_AGORA_CONVOAI_ELEVENLABS_API_KEY",
+                    "SYNAPSE_GATEWAY_AGORA_CONVOAI_ELEVENLABS_VOICE_ID",
+                ]
+            )
+    return ok
+
+
+def report_required_env_keys(keys: list[str]) -> bool:
+    ok = True
+    existing_values, _ = load_env_assignments(ENV_LOCAL)
+    for key in keys:
+        value = pick_env_value(key, existing_values, os.environ)
+        if value:
+            print(f"[ok] env: {key}")
+        else:
+            print(f"[missing] env: {key} (run ./synapse gateway setup)")
+            ok = False
+    return ok
 
 
 class CliError(Exception):

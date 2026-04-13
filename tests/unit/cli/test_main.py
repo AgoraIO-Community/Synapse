@@ -1,10 +1,8 @@
 from __future__ import annotations
 
+import builtins
 import importlib
 from pathlib import Path
-import sys
-
-import pytest
 
 cli_main = importlib.import_module("synapse.cli.main")
 
@@ -63,7 +61,7 @@ def test_setup_interactive_updates_env_file(monkeypatch, tmp_path: Path):
     configure_repo_paths(monkeypatch, root)
     monkeypatch.setattr(cli_main, "setup_can_prompt", lambda: True)
     monkeypatch.setattr(cli_main.getpass, "getpass", lambda _prompt: "sk-test")
-    responses = iter(["yes", "/custom/codex"])
+    responses = iter(["yes", "/custom/codex", ""])
     monkeypatch.setattr("builtins.input", lambda _prompt: next(responses))
     monkeypatch.setattr(cli_main, "_codex_command_available", lambda command: command == "/custom/codex")
 
@@ -75,6 +73,79 @@ def test_setup_interactive_updates_env_file(monkeypatch, tmp_path: Path):
     assert "SYNAPSE_CODEX_EXECUTOR_ENABLED=true" in configured
     assert "SYNAPSE_CODEX_COMMAND=/custom/codex" in configured
     assert configured.strip().endswith("EXTRA_FLAG=keep-me")
+
+
+def test_gateway_setup_writes_gateway_module_env(monkeypatch, tmp_path: Path):
+    root = tmp_path
+    (root / "frontend").mkdir()
+    write_template(root / ".env.example")
+
+    configure_repo_paths(monkeypatch, root)
+    monkeypatch.setattr(cli_main, "setup_can_prompt", lambda: True)
+    monkeypatch.setattr(cli_main, "list_available_gateway_modules", lambda: ["agora-convoai"])
+    secret_responses = iter(["app-cert", "deepgram-key", "elevenlabs-key"])
+    monkeypatch.setattr(cli_main.getpass, "getpass", lambda _prompt: next(secret_responses))
+    text_responses = iter(
+        [
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "agora-app",
+            "",
+            "",
+            "voice-id",
+            "",
+        ]
+    )
+    monkeypatch.setattr("builtins.input", lambda _prompt: next(text_responses))
+
+    assert cli_main.main(["gateway", "setup"]) == 0
+
+    configured = (root / ".env.local").read_text(encoding="utf-8")
+    assert "SYNAPSE_GATEWAY_ENABLED=true" in configured
+    assert "SYNAPSE_GATEWAY_MODULES=agora-convoai" in configured
+    assert "SYNAPSE_GATEWAY_PORT=8010" in configured
+    assert "SYNAPSE_GATEWAY_AGORA_CONVOAI_APP_ID=agora-app" in configured
+    assert "SYNAPSE_GATEWAY_AGORA_CONVOAI_APP_CERTIFICATE=app-cert" in configured
+    assert "SYNAPSE_GATEWAY_AGORA_CONVOAI_DEEPGRAM_API_KEY=deepgram-key" in configured
+    assert "SYNAPSE_GATEWAY_AGORA_CONVOAI_ELEVENLABS_API_KEY=elevenlabs-key" in configured
+    assert "SYNAPSE_GATEWAY_AGORA_CONVOAI_ELEVENLABS_VOICE_ID=voice-id" in configured
+
+
+def test_gateway_listing_and_settings_do_not_require_fastapi(monkeypatch, tmp_path: Path):
+    root = tmp_path
+    (root / "frontend").mkdir()
+    write_template(root / ".env.example")
+    (root / ".env.local").write_text(
+        "\n".join(
+            [
+                "SYNAPSE_GATEWAY_ENABLED=true",
+                "SYNAPSE_GATEWAY_MODULES=agora-convoai",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    configure_repo_paths(monkeypatch, root)
+
+    original_import = builtins.__import__
+
+    def guarded_import(name, globals=None, locals=None, fromlist=(), level=0):
+        if name.startswith("fastapi"):
+            raise ModuleNotFoundError("No module named 'fastapi'")
+        if name.startswith("dotenv"):
+            raise ModuleNotFoundError("No module named 'dotenv'")
+        return original_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr(builtins, "__import__", guarded_import)
+
+    assert cli_main.list_available_gateway_modules() == ["agora-convoai"]
+    settings = cli_main.load_gateway_settings()
+    assert settings.enabled is True
+    assert settings.enabled_modules == ["agora-convoai"]
 
 
 def test_setup_non_interactive_uses_existing_and_env(monkeypatch, tmp_path: Path):
@@ -169,13 +240,25 @@ def test_dev_uses_repo_venv_and_frontend_command(monkeypatch, tmp_path: Path):
             self._returncode = -9
 
     spawned: list[tuple[list[str], Path]] = []
-    processes = [FakeProcess(0), FakeProcess(None)]
+    processes = [FakeProcess(0), FakeProcess(None), FakeProcess(None)]
 
     def fake_popen(cmd: list[str], cwd: Path):
         spawned.append((cmd, cwd))
         return processes[len(spawned) - 1]
 
     configure_repo_paths(monkeypatch, tmp_path)
+    (tmp_path / ".env.local").write_text(
+        "\n".join(
+            [
+                "SYNAPSE_GATEWAY_ENABLED=true",
+                "SYNAPSE_GATEWAY_PORT=8010",
+                "SYNAPSE_GATEWAY_PUBLIC_BASE_URL=http://127.0.0.1:8010",
+                "SYNAPSE_GATEWAY_MODULES=agora-convoai",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
     monkeypatch.setattr(cli_main.subprocess, "Popen", fake_popen)
     monkeypatch.setattr(cli_main.time, "sleep", lambda _seconds: None)
     monkeypatch.setattr(cli_main.signal, "signal", lambda *_args, **_kwargs: None)
@@ -184,3 +267,4 @@ def test_dev_uses_repo_venv_and_frontend_command(monkeypatch, tmp_path: Path):
     assert cli_main.main(["dev"]) == 0
     assert spawned[0][0][:4] == [str(venv_python), "-m", "uvicorn", "synapse.api.app:app"]
     assert spawned[1][0] == ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "5173"]
+    assert spawned[2][0][:4] == [str(venv_python), "-m", "uvicorn", "synapse.gateway_host.app:app"]

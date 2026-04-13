@@ -36,6 +36,7 @@
 - [Add Executor Adapter](./guides/add-executor-adapter.md)
 - [Add Blackboard Backend](./guides/add-blackboard-backend.md)
 - [Frontend Contracts](./guides/frontend-contracts.md)
+- [Gateway Host](./guides/gateway-host.md)
 - [Agora Conversational AI](./guides/agora-conversational-ai.md)
 
 ## Roadmap
@@ -59,3 +60,4 @@
 - [0001 Design V2](./rfcs/0001-design-v2.md)
 - [0002 Execution Sessions and Runs](./rfcs/0002-execution-sessions-and-runs.md)
 - [0003 Communication Prompt Modularization](./rfcs/0003-communication-prompt-modularization.md)
+- [0004 Headless Gateway Host and CLI Setup](./rfcs/0004-headless-gateway-host-and-cli-setup.md)

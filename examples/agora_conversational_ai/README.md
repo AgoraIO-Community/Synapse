@@ -1,6 +1,16 @@
 # Agora Conversational AI Example
 
-This example makes `examples/agora_conversational_ai/app.py` the only backend for this example.
+This example is now primarily a browser demo client for the first-party
+`agora-convoai` gateway module.
+
+The reusable gateway backend logic lives under:
+
+```text
+src/synapse/gateways/agora_convoai/
+```
+
+The legacy example backend remains available for compatibility and local
+experimentation, but it is no longer the preferred integration path.
 
 It does three jobs:
 
@@ -17,9 +27,9 @@ port `8000`, and run this Agora bridge on port `8010`.
 2. Configure this example backend with Agora App Credentials plus the provider keys it needs.
 3. Start the example backend on `8010`.
 4. Start the example-local voice frontend.
-5. The frontend calls `POST /frontend/session/prepare`.
-6. The browser initializes RTC and RTM, subscribes to the channel, and then calls `POST /frontend/session/activate`.
-7. This backend creates a Synapse session on `8000`, reserves a `bridge_session_id`, starts the ConvoAI agent locally with that public `/chat/completions` URL as its LLM endpoint, and forwards those callback turns into the bound external Synapse session.
+5. The frontend calls `POST /gateway/agora-convoai/sessions/prepare`.
+6. The browser initializes RTC and RTM, subscribes to the channel, and then calls `POST /gateway/agora-convoai/sessions/activate`.
+7. The gateway host creates a Synapse session on `8000`, reserves a `binding_id`, starts the ConvoAI agent locally with that public `/gateway/agora-convoai/chat/completions` URL as its LLM endpoint, and forwards those callback turns into the bound external Synapse session.
 
 ## Run
 
@@ -38,16 +48,12 @@ Create the example-local env file:
 cp examples/agora_conversational_ai/.env.example examples/agora_conversational_ai/.env.local
 ```
 
-Run Synapse itself first:
+Run Synapse with the gateway host first:
 
 ```bash
-./synapse backend --port 8000
-```
-
-Run the Agora bridge backend:
-
-```bash
-uvicorn examples.agora_conversational_ai.app:app --reload --port 8010
+./synapse setup
+./synapse gateway setup
+./synapse start
 ```
 
 Run the example frontend:
@@ -58,7 +64,7 @@ npm install
 npm run dev
 ```
 
-The frontend dev server runs on `http://127.0.0.1:5174` and proxies `/frontend/*` to the local backend on port `8010`.
+The frontend dev server runs on `http://127.0.0.1:5174`.
 
 If you have older notes that mention installing `agora-agent`, treat that package name as stale.
 The supported package name is `agora-agent-server-sdk`.
@@ -71,7 +77,7 @@ This example reads:
 examples/agora_conversational_ai/.env.local
 ```
 
-Required for the bridge on `8010`:
+Required for the gateway host:
 
 ```bash
 AGORA_APP_ID=...
@@ -79,7 +85,8 @@ AGORA_APP_CERTIFICATE=...
 DEEPGRAM_API_KEY=...
 ELEVENLABS_API_KEY=...
 ELEVENLABS_VOICE_ID=...
-AGORA_BRIDGE_SYNAPSE_BASE_URL=http://127.0.0.1:8000
+SYNAPSE_GATEWAY_PUBLIC_BASE_URL=http://127.0.0.1:8010
+SYNAPSE_GATEWAY_SYNAPSE_BASE_URL=http://127.0.0.1:8000
 ```
 
 The Synapse server on `8000` keeps its own runtime env in the repo-root `.env.local`.
@@ -115,24 +122,23 @@ AGORA_FRONTEND_DEFAULT_PROFILE=VOICE
 AGORA_FRONTEND_DEFAULT_CHANNEL_NAME=synapse-voice-demo
 AGORA_FRONTEND_DEFAULT_DISPLAY_NAME=Synapse Tester
 
-AGORA_BRIDGE_SYNAPSE_BASE_URL=http://127.0.0.1:8000
-AGORA_BRIDGE_SERVICE_BASE_URL=http://127.0.0.1:8010
-AGORA_BRIDGE_MODEL=synapse-agora-bridge
-AGORA_BRIDGE_SPEAK_PRIORITY=APPEND
-AGORA_BRIDGE_SPEAK_INTERRUPTABLE=true
-AGORA_BRIDGE_REQUEST_TIMEOUT_SECONDS=10
+SYNAPSE_GATEWAY_ENABLED=true
+SYNAPSE_GATEWAY_MODULES=agora-convoai
+SYNAPSE_GATEWAY_PUBLIC_BASE_URL=http://127.0.0.1:8010
+SYNAPSE_GATEWAY_SYNAPSE_BASE_URL=http://127.0.0.1:8000
+SYNAPSE_GATEWAY_AGORA_CONVOAI_MODEL=synapse-agora-bridge
 ```
 
-For live Agora sessions, `AGORA_BRIDGE_SERVICE_BASE_URL` must be a public URL that
-reaches this backend. The Agora SDK uses:
+For live Agora sessions, `SYNAPSE_GATEWAY_PUBLIC_BASE_URL` must be a public URL
+that reaches the gateway host. The Agora SDK uses:
 
 ```text
-${AGORA_BRIDGE_SERVICE_BASE_URL}/chat/completions?bridge_session_id=...
+${SYNAPSE_GATEWAY_PUBLIC_BASE_URL}/gateway/agora-convoai/chat/completions?binding_id=...
 ```
 
 as the custom-LLM callback URL.
 
-`AGORA_BRIDGE_SYNAPSE_BASE_URL` is the separate Synapse server this bridge calls for:
+`SYNAPSE_GATEWAY_SYNAPSE_BASE_URL` is the separate Synapse server this gateway calls for:
 
 - `POST /sessions`
 - `POST /sessions/{session_id}/messages`
@@ -140,11 +146,11 @@ as the custom-LLM callback URL.
 
 ## API
 
-### `GET /frontend/config`
+### `GET /gateway/agora-convoai/config`
 
 Returns frontend bootstrap config and reports whether this backend has the env it needs.
 
-### `POST /frontend/session/prepare`
+### `POST /gateway/agora-convoai/sessions/prepare`
 
 Prepares browser bootstrap data before the agent is started.
 
@@ -159,7 +165,7 @@ Returns:
 - `agent_rtm_uid`
 - diagnostics
 
-### `POST /frontend/session/activate`
+### `POST /gateway/agora-convoai/sessions/activate`
 
 Activates the local Agora agent only after the browser has:
 
@@ -171,27 +177,27 @@ Activates the local Agora agent only after the browser has:
 
 Returns:
 
-- `bridge_session_id`
+- `binding_id`
 - `synapse_session_id`
 - runtime `agent_id`
 - `chat_completions_url`
 - diagnostics
 
-### `POST /frontend/session/stop`
+### `POST /gateway/agora-convoai/sessions/stop`
 
 Stops the local Agora session and unregisters the bridge binding.
 
 ### `POST /chat/completions`
 
 This is the OpenAI-compatible custom-LLM endpoint the locally started ConvoAI agent uses.
-The bridge resolves `bridge_session_id`, submits the latest user turn into the bound
+The gateway resolves `binding_id`, submits the latest user turn into the bound
 Synapse session on `8000`, and returns the Synapse reply in OpenAI-compatible format.
 
 Example:
 
 ```bash
 curl -X POST \
-  'http://127.0.0.1:8010/chat/completions?bridge_session_id=bridge-ab12cd34' \
+  'http://127.0.0.1:8010/gateway/agora-convoai/chat/completions?binding_id=binding-ab12cd34' \
   -H 'Content-Type: application/json' \
   --data '{
     "model": "synapse-agora-bridge",
@@ -213,7 +219,7 @@ It is a small real voice client that mirrors the official Agora sample startup o
 - join RTC with a numeric uid
 - publish the microphone
 - subscribe toolkit messages
-- activate the backend agent
+- activate the gateway-host session
 - send text to `agent_rtm_uid`
 
 The browser only talks to this repo's example backend routes.
@@ -224,7 +230,7 @@ For a live user turn, the call chain is:
 
 1. browser audio/text enters Agora RTC/RTM
 2. Agora ConvoAI calls this backend's public `chat_completions_url`
-3. `/chat/completions` resolves `bridge_session_id`
+3. `/gateway/agora-convoai/chat/completions` resolves `binding_id`
 4. the bridge submits the latest user text into the Synapse server on `8000`
 5. Synapse calls its configured upstream OpenAI-compatible backend
 6. `/chat/completions` returns the reply back to Agora
@@ -233,7 +239,7 @@ For a live user turn, the call chain is:
 
 This backend uses the Agora Python SDK's regional endpoint pool. For this example, `AGORA_CONVOAI_AREA=CN` is the recommended default.
 
-If `POST /frontend/session/activate` still fails with a connectivity error, try overriding:
+If `POST /gateway/agora-convoai/sessions/activate` still fails with a connectivity error, try overriding:
 
 ```bash
 AGORA_CONVOAI_AREA=US
