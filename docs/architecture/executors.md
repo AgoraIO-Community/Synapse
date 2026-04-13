@@ -1,6 +1,6 @@
 # Executors
 
-Synopse should expose a clean separation between:
+Synapse should expose a clean separation between:
 
 - executor core abstractions
 - concrete executor adapters
@@ -21,7 +21,7 @@ Important capability directions:
 
 Codex note:
 
-- when enabled, Synopse can register a real Codex app-server executor beside the mock adapter
+- when enabled, Synapse can register a real Codex app-server executor beside the mock adapter
 - Codex follow-ups should reuse durable runtime session lineage plus executor-native thread handles when available
 - executor-native continuity still remains optional across executor families
 

@@ -1,7 +1,7 @@
 from datetime import UTC, datetime
 
-from synopse.notification import NotificationCandidateBuilder
-from synopse.protocol import (
+from synapse.notification import NotificationCandidateBuilder
+from synapse.protocol import (
     ExecutionRun,
     NotificationCandidate,
     NotificationCandidateType,

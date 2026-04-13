@@ -1,4 +1,4 @@
-# RFC 0001: Synopse Design V2
+# RFC 0001: Synapse Design V2
 
 This RFC preserves the original long-form `design-v2` proposal.
 
@@ -11,11 +11,11 @@ Its content has been split into the stable docs under:
 
 When this RFC conflicts with the stable docs, treat the stable docs as authoritative.
 
-# Synopse Design V2
+# Synapse Design V2
 
 ## Overview
 
-This document describes a proposed `v2` runtime architecture for Synopse.
+This document describes a proposed `v2` runtime architecture for Synapse.
 
 The key design change is:
 
@@ -1183,7 +1183,7 @@ The execution model in `v2` is:
 - `ExecutionRun`
   - one concrete run inside that lineage
 
-This gives Synopse a stable answer to three different questions:
+This gives Synapse a stable answer to three different questions:
 
 - what is the task?
 - which session lineage currently owns execution for it?
@@ -1443,7 +1443,7 @@ These may still exist temporarily during transition, but they are no longer the 
 
 ## Executor and Agent Session Integration
 
-The current executor interfaces in Synopse are still task-start oriented.
+The current executor interfaces in Synapse are still task-start oriented.
 
 For example, the current executor contracts are closer to:
 
@@ -1474,7 +1474,7 @@ These should be treated as design targets for the future executor contract, not 
 
 ### Codex Execution Today
 
-The current Synopse Codex path is still closer to:
+The current Synapse Codex path is still closer to:
 
 - one non-interactive CLI subprocess
 - one prompt
@@ -1678,7 +1678,7 @@ The design is successful if:
 
 ## Open-Source Project Structure
 
-If Synopse is prepared for open source, the repository should evolve from the current prototype-style `runtime/` package into a clearer `src` layout organized by domain boundaries.
+If Synapse is prepared for open source, the repository should evolve from the current prototype-style `runtime/` package into a clearer `src` layout organized by domain boundaries.
 
 The guiding rule is:
 
@@ -1708,7 +1708,7 @@ That means:
 ├─ tests/
 ├─ frontend/
 └─ src/
-   └─ synopse/
+   └─ synapse/
       ├─ __init__.py
       ├─ protocol/
       ├─ blackboard/
@@ -1723,15 +1723,15 @@ That means:
       └─ infrastructure/
 ```
 
-The Python package should remain `synopse`, so the project name and package identity stay aligned.
+The Python package should remain `synapse`, so the project name and package identity stay aligned.
 
 ### Stable Core Boundaries
 
 The three most important stable boundaries for contributors and integrators are:
 
-- `synopse.protocol`
-- `synopse.blackboard.interfaces`
-- `synopse.executor_core`
+- `synapse.protocol`
+- `synapse.blackboard.interfaces`
+- `synapse.executor_core`
 
 These are the parts most likely to matter to:
 
@@ -1928,7 +1928,7 @@ Recommended structure:
 
 The startup entrypoint should move to:
 
-- `uvicorn synopse.api.app:app --reload`
+- `uvicorn synapse.api.app:app --reload`
 
 Business logic should not live in route handlers.
 
@@ -1967,15 +1967,15 @@ Current provider-oriented code such as OpenAI client wrappers should live here r
 
 The current package structure is already moving in the right direction, but the open-source-ready version should remap it more explicitly:
 
-- `runtime/protocols` -> `src/synopse/protocol`
-- `runtime/shared_blackboard` -> `src/synopse/blackboard`
-- `runtime/communication_brain` -> `src/synopse/communication`
-- `runtime/execution_brain` -> `src/synopse/execution`
-- `runtime/executors/base|external|external_backend|registry` -> `src/synopse/executor_core`
-- `runtime/executors/codex|mock` -> `src/synopse/executor_adapters`
-- `runtime/api` -> `src/synopse/api`
-- `runtime/infrastructure` -> `src/synopse/infrastructure`
-- `runtime/main.py` -> `src/synopse/api/app.py` plus `src/synopse/runtime/bootstrap.py`
+- `runtime/protocols` -> `src/synapse/protocol`
+- `runtime/shared_blackboard` -> `src/synapse/blackboard`
+- `runtime/communication_brain` -> `src/synapse/communication`
+- `runtime/execution_brain` -> `src/synapse/execution`
+- `runtime/executors/base|external|external_backend|registry` -> `src/synapse/executor_core`
+- `runtime/executors/codex|mock` -> `src/synapse/executor_adapters`
+- `runtime/api` -> `src/synapse/api`
+- `runtime/infrastructure` -> `src/synapse/infrastructure`
+- `runtime/main.py` -> `src/synapse/api/app.py` plus `src/synapse/runtime/bootstrap.py`
 
 The old `runtime/` package should not remain the long-term public structure.
 

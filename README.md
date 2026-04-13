@@ -1,4 +1,4 @@
-# Synopse
+# Synapse
 
 Backend-first prototype for a communication-brain / execution-brain runtime.
 
@@ -9,57 +9,73 @@ Backend-first prototype for a communication-brain / execution-brain runtime.
 - `Shared Blackboard`: the session-level state synchronization layer.
 - `Protocols`: explicit schemas for messages, tasks, execution events, and stream events.
 
-## Run
+## CLI
 
-## Backend Setup
+Synapse requires Python 3.12 or newer.
 
-Synopse requires Python 3.12 or newer.
-
-Create a virtual environment in the repo root:
+For a fresh clone, use the repo bootstrap launcher:
 
 ```bash
-python3.12 -m venv .venv
+./install.sh
+./synapse setup
+./synapse gateway setup
+./synapse doctor
+./synapse dev
 ```
 
-If `python3.12` is not available on your machine, use another Python 3.12+
-interpreter path that resolves to the same version.
+`./install.sh` installs supported local development dependencies, creates `.venv`,
+installs the project in editable mode, installs frontend dependencies, and writes
+starter `~/.synapse/.env` plus `~/.synapse/config.yaml` files when they do not
+already exist.
 
-Activate the virtual environment:
+`./synapse setup` fills in `~/.synapse/.env` with real runtime values. By
+default it prompts for
+required runtime values such as `OPENAI_API_KEY`, and it can also enter the
+gateway-host setup flow. For gateway-only reconfiguration, use:
 
 ```bash
-source .venv/bin/activate
+./synapse gateway setup
 ```
 
-Install backend dependencies:
+For automation, use:
 
 ```bash
-pip install -e '.[dev]'
+OPENAI_API_KEY=... ./synapse setup --non-interactive
 ```
 
-Configure environment variables:
+If you prefer the module entrypoint, it is available from the repo root and after
+editable install:
 
 ```bash
-cp .env.example .env.local
-# then fill in OPENAI_API_KEY in .env.local
+python3 -m synapse --help
+.venv/bin/python -m synapse --help
 ```
 
-`.env.local` is auto-loaded by the backend at startup. You do not need to export
-variables manually.
+`~/.synapse/.env` is auto-loaded by the backend at startup. You do not need to export
+variables manually. OpenAI is required for normal development and demo runtime,
+so set `OPENAI_API_KEY` in `~/.synapse/.env` before starting the app.
 
-OpenAI is required for normal development and demo runtime. Without a valid
-`OPENAI_API_KEY` in `.env.local` or your shell environment, the backend should
-fail to start.
+## Common Commands
+
+```bash
+./install.sh
+./synapse setup
+./synapse gateway setup
+./synapse doctor
+./synapse dev
+./synapse backend
+./synapse frontend
+./synapse start
+./synapse gateway run
+```
+
+The installed console script is also named `synapse`, so after setup you can run
+`.venv/bin/synapse dev` or activate the virtual environment and use `synapse dev`.
 
 ## Run Backend
 
 ```bash
-uvicorn synopse.api.app:app --reload
-```
-
-If you prefer not to activate the virtual environment first:
-
-```bash
-.venv/bin/uvicorn synopse.api.app:app --reload
+./synapse backend
 ```
 
 FastAPI docs will be available at:
@@ -72,21 +88,30 @@ If the frontend shows `error` and messages do not progress, first confirm the
 backend is running from the same virtual environment where dependencies were
 installed.
 
-Frontend:
+To run only the frontend:
 
 ```bash
-cd frontend
-bun install
-bun run dev
+./synapse frontend
 ```
+
+To run only the headless gateway host:
+
+```bash
+./synapse gateway run
+```
+
+When gateway modules are enabled in `~/.synapse/config.yaml`, `./synapse dev`
+and `./synapse start` also start the gateway host automatically.
+
+`./synapse dev` is the reload-capable local iteration path. `./synapse start`
+does not reload Python code changes, so restart it after editing backend or
+gateway host code.
+
+The gateway host talks to the Synapse backend directly using the configured
+`SYNAPSE_GATEWAY_SYNAPSE_BASE_URL` and does not use proxy environment variables
+for its internal upstream traffic.
 
 ## Test
-
-```bash
-pytest
-```
-
-Or without activating the virtual environment:
 
 ```bash
 .venv/bin/python -m pytest
@@ -95,6 +120,6 @@ Or without activating the virtual environment:
 Frontend build check:
 
 ```bash
-cd frontend
+cd src/synapse/ui
 npm run build
 ```

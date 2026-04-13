@@ -3,14 +3,14 @@ import asyncio
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from synopse.api.app import create_app
-from synopse.communication.model import ToolCall
-from synopse.communication.models import ScriptedCommunicationModel
-from synopse.communication.models.scripted import ScriptedPlan
-from synopse.executor_core import ExecutorCapabilities, ExecutorEvent, ExecutorEventType, ExecutorSession
-from synopse.runtime.container import RuntimeContainer
-from synopse.runtime import Settings
-from synopse.protocol import Task, TaskStatus
+from synapse.api.app import create_app
+from synapse.communication.model import ToolCall
+from synapse.communication.models import ScriptedCommunicationModel
+from synapse.communication.models.scripted import ScriptedPlan
+from synapse.executor_core import ExecutorCapabilities, ExecutorEvent, ExecutorEventType, ExecutorSession
+from synapse.runtime.container import RuntimeContainer
+from synapse.runtime import Settings
+from synapse.protocol import Task, TaskStatus
 
 
 class SlowExecutor:

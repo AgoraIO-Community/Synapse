@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from synopse.blackboard.store import BlackboardWriteEvent, BlackboardWriteKind
-from synopse.blackboard.subscriptions import SubscriptionManager
+from synapse.blackboard.store import BlackboardWriteEvent, BlackboardWriteKind
+from synapse.blackboard.subscriptions import SubscriptionManager
 
 
 @pytest.mark.anyio

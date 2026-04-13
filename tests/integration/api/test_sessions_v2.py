@@ -1,7 +1,7 @@
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from synopse.api.app import create_app
+from synapse.api.app import create_app
 
 
 @pytest.mark.anyio

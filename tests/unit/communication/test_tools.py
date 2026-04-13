@@ -1,9 +1,9 @@
 import pytest
 
-from synopse.blackboard import InMemoryBlackboard
-from synopse.communication.tools import build_default_tool_registry
-from synopse.communication.tools.base import ToolInputError
-from synopse.protocol import MutationType, TaskCommandType
+from synapse.blackboard import InMemoryBlackboard
+from synapse.communication.tools import build_default_tool_registry
+from synapse.communication.tools.base import ToolInputError
+from synapse.protocol import MutationType, TaskCommandType
 
 
 @pytest.mark.anyio

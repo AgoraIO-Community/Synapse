@@ -1,6 +1,6 @@
-from synopse.communication.models import OpenAICommunicationModel, ScriptedCommunicationModel
-from synopse.runtime import Settings, build_runtime_container
-from synopse.runtime import bootstrap as bootstrap_module
+from synapse.communication.models import OpenAICommunicationModel, ScriptedCommunicationModel
+from synapse.runtime import Settings, build_runtime_container
+from synapse.runtime import bootstrap as bootstrap_module
 
 
 class FakeProvider:

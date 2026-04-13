@@ -1,8 +1,8 @@
 import pytest
 
-from synopse.blackboard import InMemoryBlackboard
-from synopse.execution import ExecutionModeManager
-from synopse.protocol import ExecutionMode, RunStatus
+from synapse.blackboard import InMemoryBlackboard
+from synapse.execution import ExecutionModeManager
+from synapse.protocol import ExecutionMode, RunStatus
 
 
 @pytest.mark.anyio

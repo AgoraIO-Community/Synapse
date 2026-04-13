@@ -1,6 +1,6 @@
 # Mutation and Command Protocol
 
-Synopse separates:
+Synapse separates:
 
 - `TaskMutation`
 - `TaskCommand`

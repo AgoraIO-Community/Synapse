@@ -6,6 +6,8 @@ This directory contains contributor-oriented operational guides.
 - [Add Executor Adapter](./add-executor-adapter.md)
 - [Add Blackboard Backend](./add-blackboard-backend.md)
 - [Frontend Contracts](./frontend-contracts.md)
+- [Gateway Host](./gateway-host.md)
+- [Agora Conversational AI](./agora-conversational-ai.md)
 
 Related planning material:
 

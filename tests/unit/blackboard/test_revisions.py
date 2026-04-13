@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
-from synopse.blackboard.revisions import bump_task_revision, claim_is_active
-from synopse.protocol import SessionBinding, Task
+from synapse.blackboard.revisions import bump_task_revision, claim_is_active
+from synapse.protocol import SessionBinding, Task
 
 
 def test_bump_task_revision_increments_in_place():

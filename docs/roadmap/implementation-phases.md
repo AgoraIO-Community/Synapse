@@ -1,6 +1,6 @@
 # Implementation Phases
 
-This document is the canonical phased implementation roadmap for Synopse.
+This document is the canonical phased implementation roadmap for Synapse.
 
 The build order is deliberately separated from the final architecture description.
 
@@ -12,13 +12,11 @@ Freeze the package layout, tooling, and contributor-facing repository skeleton b
 
 ### What Gets Built
 
-- `src/synopse/` target layout is fixed in docs
+- `src/synapse/` target layout is fixed in docs
 - package skeletons are created
 - top-level repo structure is fixed:
   - `tests/`
   - `evals/`
-  - `fixtures/`
-  - `replays/`
   - `scripts/`
   - `examples/`
 - docs explain the intended module boundaries

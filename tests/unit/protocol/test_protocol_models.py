@@ -1,4 +1,4 @@
-from synopse.protocol import (
+from synapse.protocol import (
     AssignmentLease,
     ConversationEffect,
     ExecutionMode,

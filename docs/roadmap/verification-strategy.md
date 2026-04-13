@@ -94,17 +94,6 @@ Verify quality of behavior and interaction rather than strict deterministic corr
 - not required in the fast path
 - may run manually, in extended CI, or nightly
 
-## Shared Fixtures
-
-Recommended shared material:
-
-- `fixtures/blackboard/`
-- `fixtures/conversations/`
-- `fixtures/executors/`
-- `fixtures/scenarios/`
-
-Use these for both tests and evals when possible.
-
 ## Fake Components
 
 Two fake components are recommended early:
@@ -141,14 +130,6 @@ evals/
 ├─ interruption/
 ├─ scenarios/
 └─ run.py
-
-fixtures/
-├─ blackboard/
-├─ conversations/
-├─ executors/
-└─ scenarios/
-
-replays/
 ```
 
 Interpretation:
@@ -157,10 +138,6 @@ Interpretation:
   - deterministic correctness
 - `evals/`
   - quality and interaction behavior
-- `fixtures/`
-  - reusable scenario inputs
-- `replays/`
-  - optional captured traces for replay-based validation
 
 ## CI Layers
 

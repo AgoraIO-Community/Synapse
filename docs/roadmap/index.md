@@ -1,6 +1,6 @@
 # Roadmap
 
-This directory contains the maintained implementation roadmap for Synopse.
+This directory contains the maintained implementation roadmap for Synapse.
 
 Use these docs when you want to know:
 

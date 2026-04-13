@@ -3,12 +3,12 @@ import asyncio
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from synopse.api.app import create_app
-from synopse.communication.models import ScriptedCommunicationModel
-from synopse.communication.models.scripted import ScriptedPlan
-from synopse.protocol import Task, TaskStatus, TaskSummary
-from synopse.runtime import Settings
-from synopse.runtime.container import RuntimeContainer
+from synapse.api.app import create_app
+from synapse.communication.models import ScriptedCommunicationModel
+from synapse.communication.models.scripted import ScriptedPlan
+from synapse.protocol import Task, TaskStatus, TaskSummary
+from synapse.runtime import Settings
+from synapse.runtime.container import RuntimeContainer
 
 
 async def _wait_for_snapshot(client: AsyncClient, session_id: str, predicate, timeout: float = 4.0):

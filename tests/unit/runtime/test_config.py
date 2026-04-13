@@ -2,17 +2,17 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from synopse.runtime import config as config_module
+from synapse.runtime import config as config_module
 
 
 def test_load_settings_reads_openai_config(monkeypatch, tmp_path: Path):
-    env_file = tmp_path / ".env.local"
+    env_file = tmp_path / ".env"
     env_file.write_text(
         "\n".join(
             [
                 "OPENAI_API_KEY=test-key",
-                "SYNOPSE_OPENAI_MODEL=gpt-4.1-mini",
-                "SYNOPSE_OPENAI_TIMEOUT_SECONDS=45",
+                "SYNAPSE_OPENAI_MODEL=gpt-4.1-mini",
+                "SYNAPSE_OPENAI_TIMEOUT_SECONDS=45",
             ]
         )
     )
@@ -26,14 +26,14 @@ def test_load_settings_reads_openai_config(monkeypatch, tmp_path: Path):
 
 
 def test_load_settings_reads_log_output_config(monkeypatch, tmp_path: Path):
-    env_file = tmp_path / ".env.local"
+    env_file = tmp_path / ".env"
     env_file.write_text(
         "\n".join(
             [
-                "SYNOPSE_LOG_FORMAT=pretty",
-                "SYNOPSE_LOG_COLOR=never",
-                "SYNOPSE_QUIET_DIAGNOSTICS_ACCESS_LOGS=false",
-                "SYNOPSE_LOG_LLM_DETAILS=true",
+                "SYNAPSE_LOG_FORMAT=pretty",
+                "SYNAPSE_LOG_COLOR=never",
+                "SYNAPSE_QUIET_DIAGNOSTICS_ACCESS_LOGS=false",
+                "SYNAPSE_LOG_LLM_DETAILS=true",
             ]
         )
     )
