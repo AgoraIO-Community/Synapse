@@ -1395,11 +1395,11 @@ def render_gateway_config(*, host: dict[str, object], gateways: dict[str, dict[s
     lines = ["version: 1", "", "host:"]
     lines.extend(_render_yaml_mapping(host, indent=2))
     lines.append("")
-    lines.append("gateways:")
     if gateways:
+        lines.append("gateways:")
         lines.extend(_render_yaml_mapping(gateways, indent=2))
     else:
-        lines.append("  {}")
+        lines.append("gateways: {}")
     return "\n".join(lines) + "\n"
 
 
@@ -1408,10 +1408,16 @@ def _render_yaml_mapping(mapping: dict[str, object], *, indent: int) -> list[str
     prefix = " " * indent
     for key, value in mapping.items():
         if isinstance(value, dict):
+            if not value:
+                lines.append(f"{prefix}{key}: {{}}")
+                continue
             lines.append(f"{prefix}{key}:")
             lines.extend(_render_yaml_mapping(value, indent=indent + 2))
             continue
         if isinstance(value, list):
+            if not value:
+                lines.append(f"{prefix}{key}: []")
+                continue
             lines.append(f"{prefix}{key}:")
             for item in value:
                 lines.append(f"{prefix}  - {_render_yaml_scalar(item)}")

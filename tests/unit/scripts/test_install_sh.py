@@ -62,10 +62,9 @@ host:
   port: 8010
   public_base_url: "http://127.0.0.1:8010"
   synapse_base_url: "http://127.0.0.1:8000"
-  enabled_gateways:
+  enabled_gateways: []
 
-gateways:
-  {}
+gateways: {}
 BOOTSTRAP_CONFIG
 fi
 exit 0

@@ -52,6 +52,8 @@ def _parse_block(lines: list[_SimpleYAMLLine], index: int, indent: int) -> tuple
         raise YAMLParseError("unexpected end of YAML input")
     if lines[index].content.startswith("- "):
         return _parse_list(lines, index, indent)
+    if lines[index].content in {"{}", "[]"}:
+        return _parse_scalar(lines[index].content), index + 1
     return _parse_mapping(lines, index, indent)
 
 
@@ -119,6 +121,10 @@ def _parse_scalar(value: str) -> Any:
         return value[1:-1].replace('\\"', '"')
     if value.startswith("'") and value.endswith("'") and len(value) >= 2:
         return value[1:-1].replace("\\'", "'")
+    if value == "{}":
+        return {}
+    if value == "[]":
+        return []
     try:
         return int(value)
     except ValueError:

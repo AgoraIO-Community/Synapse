@@ -31,6 +31,17 @@ def configure_repo_paths(monkeypatch, root: Path) -> None:
     monkeypatch.setattr(cli_main, "ENV_LOCAL", root / ".synapse" / ".env")
 
 
+def force_yaml_fallback(monkeypatch) -> None:
+    original_import = builtins.__import__
+
+    def guarded_import(name, globals=None, locals=None, fromlist=(), level=0):
+        if name == "yaml":
+            raise ModuleNotFoundError("No module named 'yaml'")
+        return original_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr(builtins, "__import__", guarded_import)
+
+
 def test_setup_interactive_updates_env_file(monkeypatch, tmp_path: Path):
     root = tmp_path
     (root / "src" / "synapse" / "ui").mkdir(parents=True)
@@ -138,6 +149,73 @@ def test_gateway_setup_decline_disables_existing_gateway_config(monkeypatch, tmp
     assert "enabled_gateways:" in configured
 
 
+def test_gateway_setup_reads_existing_legacy_empty_gateways_config_with_yaml_fallback(
+    monkeypatch,
+    tmp_path: Path,
+):
+    root = tmp_path
+    (root / "src" / "synapse" / "ui").mkdir(parents=True)
+    (root / ".synapse").mkdir(parents=True, exist_ok=True)
+    (root / ".synapse" / "config.yaml").write_text(
+        "\n".join(
+            [
+                "version: 1",
+                "host:",
+                "  enabled: false",
+                "  host: 0.0.0.0",
+                "  port: 8010",
+                '  public_base_url: "http://127.0.0.1:8010"',
+                '  synapse_base_url: "http://127.0.0.1:8000"',
+                "  enabled_gateways:",
+                "gateways:",
+                "  {}",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    configure_repo_paths(monkeypatch, root)
+    monkeypatch.setattr(cli_main, "setup_can_prompt", lambda: True)
+    monkeypatch.setattr(cli_main, "list_available_gateway_modules", lambda: ["agora-convoai"])
+    force_yaml_fallback(monkeypatch)
+
+    secret_responses = iter(["app-cert"])
+    monkeypatch.setattr(cli_main.getpass, "getpass", lambda _prompt: next(secret_responses))
+
+    allowed_empty_prompts = {
+        "Select gateways [1]: ",
+        "Gateway host [0.0.0.0]: ",
+        "Gateway port [8010]: ",
+        "Gateway public base URL [http://127.0.0.1:8010]: ",
+        "Synapse API base URL for gateway callbacks [http://127.0.0.1:8000]: ",
+        "ASR credential mode [managed]: ",
+        "ASR model [nova-3]: ",
+        "ASR language [en-US]: ",
+        "TTS vendor [minimax]: ",
+        "TTS model [speech_2_6_turbo]: ",
+        "TTS voice [English_magnetic_voiced_man]: ",
+    }
+
+    def fake_input(prompt: str) -> str:
+        if prompt in {"Configure gateway host [y/N]: ", "Configure gateway host [Y/n]: "}:
+            return "y"
+        if prompt.startswith("Agora App ID"):
+            return "agora-app"
+        if prompt in allowed_empty_prompts:
+            return ""
+        raise AssertionError(f"Unexpected prompt: {prompt}")
+
+    monkeypatch.setattr("builtins.input", fake_input)
+
+    assert cli_main.main(["gateway", "setup"]) == 0
+
+    configured = (root / ".synapse" / "config.yaml").read_text(encoding="utf-8")
+    assert "gateways:\n  {}" not in configured
+    assert "gateways:" in configured
+    assert "app_id: $AGORA_APP_ID" in configured
+
+
 def test_gateway_listing_and_settings_do_not_require_fastapi(monkeypatch, tmp_path: Path):
     root = tmp_path
     (root / "src" / "synapse" / "ui").mkdir(parents=True)
@@ -231,7 +309,9 @@ def test_setup_bootstrap_defaults_creates_env_and_gateway_config(monkeypatch, tm
     configured_gateway = (root / ".synapse" / "config.yaml").read_text(encoding="utf-8")
     assert "enabled: false" in configured_gateway
     assert 'public_base_url: "http://127.0.0.1:8010"' in configured_gateway
-    assert "enabled_gateways:" in configured_gateway
+    assert "enabled_gateways: []" in configured_gateway
+    assert "gateways: {}" in configured_gateway
+    assert "gateways:\n  {}" not in configured_gateway
 
 
 def test_setup_bootstrap_defaults_preserves_existing_files(monkeypatch, tmp_path: Path):
