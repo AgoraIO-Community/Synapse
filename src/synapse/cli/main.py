@@ -11,6 +11,7 @@ import signal
 import socket
 import subprocess
 import sys
+import tempfile
 import time
 
 from synapse.config_home import (
@@ -37,6 +38,8 @@ GATEWAY_PORT_KEY = "SYNAPSE_GATEWAY_PORT"
 GATEWAY_PUBLIC_BASE_URL_KEY = "SYNAPSE_GATEWAY_PUBLIC_BASE_URL"
 GATEWAY_SYNAPSE_BASE_URL_KEY = "SYNAPSE_GATEWAY_SYNAPSE_BASE_URL"
 GATEWAY_MODULES_KEY = "SYNAPSE_GATEWAY_MODULES"
+SYSTEMD_UNIT_NAME = "synapse.service"
+SYSTEMD_SERVICE_DIR = Path("/etc/systemd/system")
 DEFAULT_ENV_TEMPLATE_LINES = (
     "OPENAI_API_KEY=your_openai_api_key_here",
     "SYNAPSE_OPENAI_MODEL=gpt-4o-mini",
@@ -117,6 +120,17 @@ def build_parser() -> argparse.ArgumentParser:
         help="Run the gateway host with reload enabled.",
     )
 
+    service_parser = subparsers.add_parser("service", help="Install and control the Ubuntu systemd service.")
+    service_subparsers = service_parser.add_subparsers(dest="service_command", required=True)
+    service_install_parser = service_subparsers.add_parser(
+        "install",
+        help="Install or update the systemd unit for this repo checkout.",
+    )
+    _add_host_port(service_install_parser, backend_port=8000)
+    service_subparsers.add_parser("start", help="Start the installed systemd service.")
+    service_subparsers.add_parser("stop", help="Stop the installed systemd service.")
+    service_subparsers.add_parser("restart", help="Restart the installed systemd service.")
+
     return parser
 
 
@@ -140,6 +154,7 @@ def main(argv: list[str] | None = None) -> int:
             "doctor": cmd_doctor,
             "start": cmd_start,
             "gateway": cmd_gateway,
+            "service": cmd_service,
         }
         return handlers[args.command](args)
     except CliError as exc:
@@ -285,6 +300,14 @@ def cmd_gateway(args: argparse.Namespace) -> int:
     raise CliError(f"Unknown gateway command: {args.gateway_command}")
 
 
+def cmd_service(args: argparse.Namespace) -> int:
+    if args.service_command == "install":
+        return cmd_service_install(args)
+    if args.service_command in {"start", "stop", "restart"}:
+        return cmd_service_lifecycle(args.service_command)
+    raise CliError(f"Unknown service command: {args.service_command}")
+
+
 def cmd_gateway_setup(_args: argparse.Namespace) -> int:
     if not setup_can_prompt():
         raise CliError("synapse gateway setup requires a TTY.")
@@ -315,6 +338,31 @@ def cmd_gateway_run(args: argparse.Namespace) -> int:
     host = args.host or settings.host
     port = args.port or settings.port
     return run_checked(gateway_command(venv_python, host, port, reload=args.reload), cwd=ROOT)
+
+
+def cmd_service_install(args: argparse.Namespace) -> int:
+    ensure_service_install_supported()
+    ensure_service_manager_available()
+    user = current_service_user()
+    home = service_user_home()
+    venv_python = ensure_service_runtime_ready()
+    unit_text = render_service_unit(
+        user=user,
+        home=home,
+        workdir=ROOT,
+        venv_python=venv_python,
+        host=args.host,
+        port=args.port,
+    )
+    install_service_unit(unit_text)
+    print(f"[ok] installed {service_unit_path()}")
+    print(f"[hint] start with: ./synapse service start")
+    return 0
+
+
+def cmd_service_lifecycle(action: str) -> int:
+    ensure_service_manager_available()
+    return run_privileged_checked(["systemctl", action, SYSTEMD_UNIT_NAME], cwd=ROOT)
 
 
 def backend_command(venv_python: Path, host: str, port: int, *, reload: bool) -> list[str]:
@@ -369,6 +417,147 @@ def preferred_frontend_tool() -> str:
     if shutil.which("npm"):
         return "npm"
     raise CliError("Missing frontend package manager: install Bun or npm.")
+
+
+def ensure_service_install_supported() -> None:
+    if not sys.platform.startswith("linux"):
+        raise CliError("synapse service install currently supports Linux/systemd hosts only.")
+    if os.geteuid() == 0:
+        raise CliError("synapse service install must be run as the deploy user, not root.")
+
+
+def ensure_service_manager_available() -> None:
+    if not sys.platform.startswith("linux"):
+        raise CliError("systemd service management currently supports Linux hosts only.")
+    if shutil.which("systemctl") is None:
+        raise CliError("systemctl is required for synapse service commands.")
+    if os.geteuid() != 0 and shutil.which("sudo") is None:
+        raise CliError("sudo is required for synapse service commands.")
+
+
+def current_service_user() -> str:
+    return getpass.getuser()
+
+
+def service_user_home() -> Path:
+    return ENV_LOCAL.parent.parent
+
+
+def service_unit_path() -> Path:
+    return SYSTEMD_SERVICE_DIR / SYSTEMD_UNIT_NAME
+
+
+def ensure_service_runtime_ready() -> Path:
+    venv_python = require_venv_python(allow_missing=True)
+    if not venv_python.exists():
+        run_checked([sys.executable, "-m", "venv", str(VENV_DIR)], cwd=ROOT)
+
+    venv_python = require_venv_python()
+    run_checked([str(venv_python), "-m", "pip", "install", "--upgrade", "pip"], cwd=ROOT)
+    run_checked([str(venv_python), "-m", "pip", "install", "-e", "."], cwd=ROOT)
+
+    bootstrap_setup_files()
+    if not openai_api_key_present():
+        print(
+            f"[warn] env: OPENAI_API_KEY is not configured in {format_user_path(ENV_LOCAL)}"
+        )
+
+    return venv_python
+
+
+def render_service_unit(
+    *,
+    user: str,
+    home: Path,
+    workdir: Path,
+    venv_python: Path,
+    host: str,
+    port: int,
+) -> str:
+    path_entries = [
+        str(workdir / ".venv" / "bin"),
+        str(home / ".local" / "bin"),
+        str(home / ".bun" / "bin"),
+        "/usr/local/sbin",
+        "/usr/local/bin",
+        "/usr/sbin",
+        "/usr/bin",
+        "/sbin",
+        "/bin",
+    ]
+    exec_start = _render_systemd_exec_start(
+        [str(venv_python), "-m", "synapse", "start", "--host", host, "--port", str(port)]
+    )
+    lines = [
+        "[Unit]",
+        "Description=Synapse service",
+        "After=network-online.target",
+        "Wants=network-online.target",
+        "",
+        "[Service]",
+        "Type=simple",
+        f"User={user}",
+        f"WorkingDirectory={workdir}",
+        _render_systemd_env("HOME", str(home)),
+        _render_systemd_env("PATH", ":".join(path_entries)),
+        f"ExecStart={exec_start}",
+        "Restart=on-failure",
+        "RestartSec=5",
+        "",
+        "[Install]",
+        "WantedBy=multi-user.target",
+        "",
+    ]
+    return "\n".join(lines)
+
+
+def _render_systemd_env(name: str, value: str) -> str:
+    escaped = value.replace("\\", "\\\\").replace('"', '\\"')
+    return f'Environment="{name}={escaped}"'
+
+
+def _render_systemd_exec_start(args: list[str]) -> str:
+    rendered: list[str] = []
+    for arg in args:
+        if not arg or any(char.isspace() for char in arg):
+            escaped = arg.replace("\\", "\\\\").replace('"', '\\"')
+            rendered.append(f'"{escaped}"')
+            continue
+        rendered.append(arg)
+    return " ".join(rendered)
+
+
+def install_service_unit(unit_text: str) -> None:
+    temp_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=False) as handle:
+            handle.write(unit_text)
+            temp_path = Path(handle.name)
+        run_privileged_checked(
+            [
+                "install",
+                "-o",
+                "root",
+                "-g",
+                "root",
+                "-m",
+                "0644",
+                str(temp_path),
+                str(service_unit_path()),
+            ],
+            cwd=ROOT,
+        )
+        run_privileged_checked(["systemctl", "daemon-reload"], cwd=ROOT)
+        run_privileged_checked(["systemctl", "enable", SYSTEMD_UNIT_NAME], cwd=ROOT)
+    finally:
+        if temp_path is not None:
+            temp_path.unlink(missing_ok=True)
+
+
+def run_privileged_checked(cmd: list[str], *, cwd: Path) -> int:
+    if os.geteuid() == 0:
+        return run_checked(cmd, cwd=cwd)
+    return run_checked(["sudo", *cmd], cwd=cwd)
 
 
 def require_venv_python(*, allow_missing: bool = False) -> Path:
