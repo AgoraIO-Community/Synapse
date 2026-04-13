@@ -53,7 +53,7 @@ Run Synapse with the gateway host first:
 Run the example frontend:
 
 ```bash
-cd examples/agora_conversational_ai/frontend
+cd exmaple-ui
 npm install
 npm run dev
 ```
@@ -199,7 +199,7 @@ curl -X POST \
 
 ## Example Frontend
 
-The example frontend is in `examples/agora_conversational_ai/frontend/`.
+The example frontend is in the repo-root `exmaple-ui/`.
 
 It is a small real voice client that mirrors the official Agora sample startup order:
 

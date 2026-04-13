@@ -20,7 +20,7 @@ That gateway module owns:
 
 The browser demo remains outside the gateway host under:
 
-- `examples/agora_conversational_ai/frontend/`
+- `exmaple-ui/`
 
 The gateway host runs separately from the main Synapse API server:
 
@@ -108,7 +108,7 @@ For development with frontend + gateway together:
 For the example browser test client:
 
 ```bash
-cd examples/agora_conversational_ai/frontend
+cd exmaple-ui
 npm install
 npm run dev
 ```
@@ -124,5 +124,5 @@ value. If live start still fails with connectivity errors, try `US`, `EU`, or `A
 
 ## Ownership Note
 
-The browser demo under `examples/agora_conversational_ai/frontend/` is an example
+The browser demo under `exmaple-ui/` is an example
 client only. It is not part of the gateway-host architecture boundary.

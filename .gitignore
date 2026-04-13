@@ -13,6 +13,13 @@ src/synapse/ui/dist/
 src/synapse/ui/*.tsbuildinfo
 src/synapse/ui/*.d.ts
 src/synapse/ui/vite.config.js
+exmaple-ui/node_modules/
+exmaple-ui/.vite/
+exmaple-ui/dist/
+exmaple-ui/*.tsbuildinfo
+exmaple-ui/*.d.ts
+exmaple-ui/vite.config.js
+examples/agora_conversational_ai/frontend/.vite/
 examples/agora_conversational_ai/frontend/node_modules/
 examples/agora_conversational_ai/frontend/dist/
 examples/agora_conversational_ai/frontend/*.tsbuildinfo

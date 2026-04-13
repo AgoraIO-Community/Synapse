@@ -15,6 +15,7 @@ Recommended repository structure:
 ├─ .env.example
 ├─ docs/
 ├─ examples/
+├─ exmaple-ui/
 ├─ schemas/
 ├─ tests/
 ├─ evals/
@@ -84,7 +85,9 @@ Additional repository-level guidance:
   - repository maintenance and dev helpers
 - `examples/`
   - minimal runnable demos and integration examples
-  - browser demos should stay here even when the backend gateway logic becomes first-party runtime code
+- `exmaple-ui/`
+  - repo-root example browser clients and first-party demo frontends
+  - keep reusable backend and gateway logic out of this directory
 
 Migration rule:
 

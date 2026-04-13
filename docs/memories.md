@@ -95,3 +95,4 @@ Short log of important design decisions and changes for Synapse.
 - Updated the Agora gateway prepare flow so frontend requests can override `agent_instructions`, `agent_greeting`, `agent_uid`, and `user_uid` per session while keeping the Synapse bridge-backed LLM path internal.
 - Moved the live runtime env and gateway YAML out of the repo and into `~/.synapse/.env` plus `~/.synapse/config.yaml`, keeping repo files as setup templates only.
 - Moved the main React/Vite frontend workspace from repo-root `frontend/` to `src/synapse/ui/`, while keeping `synapse frontend`, `synapse dev`, and `install.sh` wired to the new location.
+- Moved the Agora example browser client from `examples/agora_conversational_ai/frontend/` to repo-root `exmaple-ui/` while keeping `src/synapse/ui/` as the main CLI-managed frontend workspace.
