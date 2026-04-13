@@ -18,10 +18,7 @@ Recommended repository structure:
 ├─ schemas/
 ├─ tests/
 ├─ evals/
-├─ fixtures/
-├─ replays/
 ├─ scripts/
-├─ frontend/
 └─ src/
    └─ synapse/
       ├─ __init__.py
@@ -37,6 +34,7 @@ Recommended repository structure:
       ├─ gateway_host/
       ├─ gateways/
       ├─ cli/
+      ├─ ui/
       └─ infrastructure/
 ```
 
@@ -56,6 +54,7 @@ src/synapse/
 ├─ gateway_host/
 ├─ gateways/
 ├─ cli/
+├─ ui/
 └─ infrastructure/
 ```
 
@@ -81,10 +80,6 @@ Additional repository-level guidance:
   - deterministic correctness
 - `evals/`
   - behavior-quality validation
-- `fixtures/`
-  - shared deterministic scenario inputs
-- `replays/`
-  - optional captured traces for replay-based inspection
 - `scripts/`
   - repository maintenance and dev helpers
 - `examples/`

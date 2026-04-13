@@ -94,3 +94,4 @@ Short log of important design decisions and changes for Synapse.
 - Switched gateway host configuration to a shared `config/gateway.yaml` contract referenced by `SYNAPSE_GATEWAY_CONFIG_FILE`, renamed public gateway config naming from `modules` to `gateways`, and moved Agora ConvoAI ASR/TTS selection to YAML-backed managed or BYOK settings.
 - Updated the Agora gateway prepare flow so frontend requests can override `agent_instructions`, `agent_greeting`, `agent_uid`, and `user_uid` per session while keeping the Synapse bridge-backed LLM path internal.
 - Moved the live runtime env and gateway YAML out of the repo and into `~/.synapse/.env` plus `~/.synapse/config.yaml`, keeping repo files as setup templates only.
+- Moved the main React/Vite frontend workspace from repo-root `frontend/` to `src/synapse/ui/`, while keeping `synapse frontend`, `synapse dev`, and `install.sh` wired to the new location.

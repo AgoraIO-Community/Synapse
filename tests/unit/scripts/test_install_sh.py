@@ -17,9 +17,12 @@ def write_executable(path: Path, content: str) -> None:
 
 
 def prepare_repo_root(root: Path) -> None:
-    (root / "frontend").mkdir(parents=True)
+    (root / "src" / "synapse" / "ui").mkdir(parents=True)
     (root / "pyproject.toml").write_text("[project]\nname='synapse'\n", encoding="utf-8")
-    (root / "frontend" / "package.json").write_text('{"name":"synapse-frontend"}\n', encoding="utf-8")
+    (root / "src" / "synapse" / "ui" / "package.json").write_text(
+        '{"name":"synapse-frontend"}\n',
+        encoding="utf-8",
+    )
 
 
 def fake_python_script() -> str:

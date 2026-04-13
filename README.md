@@ -117,6 +117,6 @@ for its internal upstream traffic.
 Frontend build check:
 
 ```bash
-cd frontend
+cd src/synapse/ui
 npm run build
 ```

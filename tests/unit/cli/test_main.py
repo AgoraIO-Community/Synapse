@@ -43,7 +43,7 @@ def write_template(path: Path) -> None:
 
 def configure_repo_paths(monkeypatch, root: Path) -> None:
     monkeypatch.setattr(cli_main, "ROOT", root)
-    monkeypatch.setattr(cli_main, "FRONTEND", root / "frontend")
+    monkeypatch.setattr(cli_main, "FRONTEND", root / "src" / "synapse" / "ui")
     monkeypatch.setattr(cli_main, "VENV_DIR", root / ".venv")
     monkeypatch.setattr(cli_main, "ENV_EXAMPLE", root / ".env.example")
     monkeypatch.setattr(cli_main, "ENV_LOCAL", root / ".synapse" / ".env")
@@ -51,7 +51,7 @@ def configure_repo_paths(monkeypatch, root: Path) -> None:
 
 def test_setup_interactive_updates_env_file(monkeypatch, tmp_path: Path):
     root = tmp_path
-    (root / "frontend").mkdir()
+    (root / "src" / "synapse" / "ui").mkdir(parents=True)
     write_template(root / ".env.example")
     (root / ".synapse").mkdir(parents=True, exist_ok=True)
     (root / ".synapse" / ".env").write_text(
@@ -78,7 +78,7 @@ def test_setup_interactive_updates_env_file(monkeypatch, tmp_path: Path):
 
 def test_gateway_setup_writes_gateway_module_env(monkeypatch, tmp_path: Path):
     root = tmp_path
-    (root / "frontend").mkdir()
+    (root / "src" / "synapse" / "ui").mkdir(parents=True)
     write_template(root / ".env.example")
 
     configure_repo_paths(monkeypatch, root)
@@ -110,7 +110,7 @@ def test_gateway_setup_writes_gateway_module_env(monkeypatch, tmp_path: Path):
 
 def test_gateway_setup_decline_disables_existing_gateway_config(monkeypatch, tmp_path: Path):
     root = tmp_path
-    (root / "frontend").mkdir()
+    (root / "src" / "synapse" / "ui").mkdir(parents=True)
     write_template(root / ".env.example")
     configure_repo_paths(monkeypatch, root)
     monkeypatch.setattr(cli_main, "setup_can_prompt", lambda: True)
@@ -142,7 +142,7 @@ def test_gateway_setup_decline_disables_existing_gateway_config(monkeypatch, tmp
 
 def test_gateway_listing_and_settings_do_not_require_fastapi(monkeypatch, tmp_path: Path):
     root = tmp_path
-    (root / "frontend").mkdir()
+    (root / "src" / "synapse" / "ui").mkdir(parents=True)
     write_template(root / ".env.example")
     (root / ".synapse").mkdir(parents=True, exist_ok=True)
     (root / ".synapse" / ".env").write_text(
@@ -188,7 +188,7 @@ def test_gateway_listing_and_settings_do_not_require_fastapi(monkeypatch, tmp_pa
 
 def test_setup_non_interactive_uses_existing_and_env(monkeypatch, tmp_path: Path):
     root = tmp_path
-    (root / "frontend").mkdir()
+    (root / "src" / "synapse" / "ui").mkdir(parents=True)
     write_template(root / ".env.example")
 
     configure_repo_paths(monkeypatch, root)
@@ -204,7 +204,7 @@ def test_setup_non_interactive_uses_existing_and_env(monkeypatch, tmp_path: Path
 
 def test_setup_non_interactive_requires_openai(monkeypatch, tmp_path: Path, capsys):
     root = tmp_path
-    (root / "frontend").mkdir()
+    (root / "src" / "synapse" / "ui").mkdir(parents=True)
     write_template(root / ".env.example")
 
     configure_repo_paths(monkeypatch, root)

@@ -17,8 +17,6 @@ Freeze the package layout, tooling, and contributor-facing repository skeleton b
 - top-level repo structure is fixed:
   - `tests/`
   - `evals/`
-  - `fixtures/`
-  - `replays/`
   - `scripts/`
   - `examples/`
 - docs explain the intended module boundaries

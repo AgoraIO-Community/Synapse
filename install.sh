@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT="${SYNAPSE_INSTALL_ROOT:-$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)}"
-FRONTEND_DIR="$ROOT/frontend"
+FRONTEND_DIR="$ROOT/src/synapse/ui"
 
 log() {
   printf '[install] %s\n' "$*"

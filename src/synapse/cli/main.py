@@ -21,7 +21,7 @@ from synapse.yaml_support import load_yaml_file
 
 
 ROOT = Path(__file__).resolve().parents[3]
-FRONTEND = ROOT / "frontend"
+FRONTEND = ROOT / "src" / "synapse" / "ui"
 VENV_DIR = ROOT / ".venv"
 ENV_EXAMPLE = ROOT / ".env.example"
 ENV_LOCAL = SYNAPSE_ENV_FILE
