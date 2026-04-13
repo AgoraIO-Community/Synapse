@@ -9,6 +9,7 @@ from synopse.communication import CommunicationBrain, InMemoryConversationHistor
 from synopse.communication.model import CommunicationModel, LlmTraceRecord, ToolCallRecord
 from synopse.communication.tools import build_default_tool_registry
 from synopse.communication.types import CommunicationTurnResult
+from synopse.executor_adapters.acpx import AcpxExecutor
 from synopse.execution import ExecutionBrain
 from synopse.executor_adapters.codex import CodexExecutor
 from synopse.executor_adapters.mock import MockExecutor
@@ -538,9 +539,23 @@ def create_session_runtime(
     registry = ExecutorRegistry()
     observability = build_session_observability(settings)
     registry.register(MockExecutor())
+    if settings.acpx_executor_enabled:
+        registry.register(
+            AcpxExecutor(
+                command=settings.acpx_command,
+                agent=settings.acpx_agent,
+                permission_mode=settings.acpx_permission_mode,
+                non_interactive_permissions=settings.acpx_non_interactive_permissions,
+                timeout_seconds=settings.acpx_timeout_seconds,
+            )
+        )
     if settings.codex_executor_enabled:
         registry.register(CodexExecutor(command=settings.codex_command))
-    default_executor_type = "codex" if settings.codex_executor_enabled else "mock"
+    default_executor_type = (
+        "acpx"
+        if settings.acpx_executor_enabled
+        else "codex" if settings.codex_executor_enabled else "mock"
+    )
     communication_brain = CommunicationBrain(
         blackboard,
         model,

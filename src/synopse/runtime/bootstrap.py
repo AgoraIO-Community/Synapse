@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import shlex
 import shutil
 
 from synopse.communication.models import OpenAICommunicationModel, ScriptedCommunicationModel
@@ -16,9 +17,13 @@ def build_runtime_container(
     provider: OpenAIProvider | None = None,
 ) -> RuntimeContainer:
     settings = settings or load_settings()
-    if settings.codex_executor_enabled and not _codex_command_available(settings.codex_command):
+    if settings.codex_executor_enabled and not _command_available(settings.codex_command):
         raise RuntimeError(
             f"Codex executor is enabled but command '{settings.codex_command}' is not available."
+        )
+    if settings.acpx_executor_enabled and not _command_available(settings.acpx_command):
+        raise RuntimeError(
+            f"ACPX executor is enabled but command '{settings.acpx_command}' is not available."
         )
 
     if settings.communication_backend != "scripted" and settings.openai_api_key:
@@ -36,5 +41,8 @@ def build_runtime_container(
     return RuntimeContainer(communication_model=default_model, settings=settings)
 
 
-def _codex_command_available(command: str) -> bool:
-    return shutil.which(command) is not None
+def _command_available(command: str) -> bool:
+    parts = shlex.split(command)
+    if not parts:
+        return False
+    return shutil.which(parts[0]) is not None

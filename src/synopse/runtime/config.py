@@ -30,6 +30,12 @@ class Settings:
     openai_model: str = "gpt-4o-mini"
     openai_timeout_seconds: float = 30.0
     openai_base_url: str | None = None
+    acpx_executor_enabled: bool = False
+    acpx_command: str = "acpx"
+    acpx_agent: str = "codex"
+    acpx_permission_mode: str = "approve-all"
+    acpx_non_interactive_permissions: str = "deny"
+    acpx_timeout_seconds: float | None = None
     codex_executor_enabled: bool = False
     codex_command: str = "codex"
     log_level: str = "INFO"
@@ -52,6 +58,19 @@ def load_settings() -> Settings:
         openai_base_url=os.getenv("SYNOPSE_OPENAI_BASE_URL")
         or os.getenv("OPENAI_BASE_URL")
         or None,
+        acpx_executor_enabled=_get_bool("SYNOPSE_ACPX_EXECUTOR_ENABLED", False),
+        acpx_command=os.getenv("SYNOPSE_ACPX_COMMAND", "acpx"),
+        acpx_agent=os.getenv("SYNOPSE_ACPX_AGENT", "codex"),
+        acpx_permission_mode=os.getenv("SYNOPSE_ACPX_PERMISSION_MODE", "approve-all"),
+        acpx_non_interactive_permissions=os.getenv(
+            "SYNOPSE_ACPX_NON_INTERACTIVE_PERMISSIONS",
+            "deny",
+        ),
+        acpx_timeout_seconds=(
+            float(os.getenv("SYNOPSE_ACPX_TIMEOUT_SECONDS"))
+            if os.getenv("SYNOPSE_ACPX_TIMEOUT_SECONDS")
+            else None
+        ),
         codex_executor_enabled=_get_bool("SYNOPSE_CODEX_EXECUTOR_ENABLED", False),
         codex_command=os.getenv("SYNOPSE_CODEX_COMMAND", "codex"),
         log_level=os.getenv("SYNOPSE_LOG_LEVEL", "INFO").upper(),
