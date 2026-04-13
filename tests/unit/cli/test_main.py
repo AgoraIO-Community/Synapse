@@ -368,3 +368,124 @@ def test_dev_uses_repo_venv_and_frontend_command(monkeypatch, tmp_path: Path):
     assert spawned[0][0][:4] == [str(venv_python), "-m", "uvicorn", "synapse.api.app:app"]
     assert spawned[1][0] == ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "5173"]
     assert spawned[2][0][:4] == [str(venv_python), "-m", "uvicorn", "synapse.gateway_host.app:app"]
+
+
+def configure_service_environment(monkeypatch, tmp_path: Path) -> None:
+    configure_repo_paths(monkeypatch, tmp_path)
+    monkeypatch.setattr(cli_main.sys, "platform", "linux")
+    monkeypatch.setattr(cli_main.os, "geteuid", lambda: 1000)
+    monkeypatch.setattr(cli_main.getpass, "getuser", lambda: "deploy")
+    monkeypatch.setattr(
+        cli_main.shutil,
+        "which",
+        lambda name: f"/usr/bin/{name}" if name in {"sudo", "systemctl"} else None,
+    )
+
+
+def test_service_install_bootstraps_runtime_and_enables_unit(monkeypatch, tmp_path: Path, capsys):
+    configure_service_environment(monkeypatch, tmp_path)
+
+    commands: list[tuple[list[str], Path]] = []
+
+    def fake_run_checked(cmd: list[str], cwd: Path) -> int:
+        commands.append((cmd, cwd))
+        if len(cmd) >= 3 and cmd[1:3] == ["-m", "venv"]:
+            venv_python = tmp_path / ".venv" / "bin" / "python"
+            venv_python.parent.mkdir(parents=True, exist_ok=True)
+            venv_python.write_text("", encoding="utf-8")
+        return 0
+
+    monkeypatch.setattr(cli_main, "run_checked", fake_run_checked)
+
+    assert cli_main.main(["service", "install", "--host", "0.0.0.0", "--port", "9000"]) == 0
+
+    venv_python = tmp_path / ".venv" / "bin" / "python"
+    assert commands[0] == ([cli_main.sys.executable, "-m", "venv", str(tmp_path / ".venv")], tmp_path)
+    assert commands[1] == ([str(venv_python), "-m", "pip", "install", "--upgrade", "pip"], tmp_path)
+    assert commands[2] == ([str(venv_python), "-m", "pip", "install", "-e", "."], tmp_path)
+    assert commands[3][0][0:8] == ["sudo", "install", "-o", "root", "-g", "root", "-m", "0644"]
+    assert commands[3][0][-1] == str(cli_main.service_unit_path())
+    assert commands[4] == (["sudo", "systemctl", "daemon-reload"], tmp_path)
+    assert commands[5] == (["sudo", "systemctl", "enable", "synapse.service"], tmp_path)
+    assert (tmp_path / ".synapse" / ".env").exists()
+    assert (tmp_path / ".synapse" / "config.yaml").exists()
+    assert "[warn] env: OPENAI_API_KEY is not configured" in capsys.readouterr().out
+
+
+def test_service_install_skips_venv_creation_when_existing(monkeypatch, tmp_path: Path):
+    configure_service_environment(monkeypatch, tmp_path)
+    venv_python = tmp_path / ".venv" / "bin" / "python"
+    venv_python.parent.mkdir(parents=True, exist_ok=True)
+    venv_python.write_text("", encoding="utf-8")
+    (tmp_path / ".synapse").mkdir(parents=True, exist_ok=True)
+    (tmp_path / ".synapse" / ".env").write_text("OPENAI_API_KEY=test-key\n", encoding="utf-8")
+
+    commands: list[list[str]] = []
+    monkeypatch.setattr(cli_main, "run_checked", lambda cmd, cwd: commands.append(cmd) or 0)
+
+    assert cli_main.main(["service", "install"]) == 0
+    assert all(cmd[1:3] != ["-m", "venv"] for cmd in commands if len(cmd) >= 3)
+    assert commands[0] == [str(venv_python), "-m", "pip", "install", "--upgrade", "pip"]
+
+
+def test_service_install_rejects_root(monkeypatch, tmp_path: Path, capsys):
+    configure_repo_paths(monkeypatch, tmp_path)
+    monkeypatch.setattr(cli_main.sys, "platform", "linux")
+    monkeypatch.setattr(cli_main.os, "geteuid", lambda: 0)
+
+    assert cli_main.main(["service", "install"]) == 1
+    assert "must be run as the deploy user, not root" in capsys.readouterr().err
+
+
+def test_service_install_requires_systemctl(monkeypatch, tmp_path: Path, capsys):
+    configure_repo_paths(monkeypatch, tmp_path)
+    monkeypatch.setattr(cli_main.sys, "platform", "linux")
+    monkeypatch.setattr(cli_main.os, "geteuid", lambda: 1000)
+    monkeypatch.setattr(cli_main.shutil, "which", lambda _name: None)
+
+    assert cli_main.main(["service", "install"]) == 1
+    assert "systemctl is required" in capsys.readouterr().err
+
+
+def test_service_install_rejects_non_linux(monkeypatch, tmp_path: Path, capsys):
+    configure_repo_paths(monkeypatch, tmp_path)
+    monkeypatch.setattr(cli_main.sys, "platform", "darwin")
+    monkeypatch.setattr(cli_main.os, "geteuid", lambda: 1000)
+
+    assert cli_main.main(["service", "install"]) == 1
+    assert "supports Linux/systemd hosts only" in capsys.readouterr().err
+
+
+def test_render_service_unit_includes_expected_values():
+    unit = cli_main.render_service_unit(
+        user="deploy",
+        home=Path("/home/deploy"),
+        workdir=Path("/srv/synapse"),
+        venv_python=Path("/srv/synapse/.venv/bin/python"),
+        host="0.0.0.0",
+        port=8000,
+    )
+
+    assert "User=deploy" in unit
+    assert "WorkingDirectory=/srv/synapse" in unit
+    assert 'Environment="HOME=/home/deploy"' in unit
+    assert 'Environment="PATH=/srv/synapse/.venv/bin:/home/deploy/.local/bin:/home/deploy/.bun/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"' in unit
+    assert "ExecStart=/srv/synapse/.venv/bin/python -m synapse start --host 0.0.0.0 --port 8000" in unit
+    assert "Restart=on-failure" in unit
+    assert "WantedBy=multi-user.target" in unit
+
+
+def test_service_lifecycle_commands_use_sudo(monkeypatch, tmp_path: Path):
+    configure_service_environment(monkeypatch, tmp_path)
+    commands: list[list[str]] = []
+    monkeypatch.setattr(cli_main, "run_checked", lambda cmd, cwd: commands.append(cmd) or 0)
+
+    assert cli_main.main(["service", "start"]) == 0
+    assert cli_main.main(["service", "stop"]) == 0
+    assert cli_main.main(["service", "restart"]) == 0
+
+    assert commands == [
+        ["sudo", "systemctl", "start", "synapse.service"],
+        ["sudo", "systemctl", "stop", "synapse.service"],
+        ["sudo", "systemctl", "restart", "synapse.service"],
+    ]

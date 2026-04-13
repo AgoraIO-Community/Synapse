@@ -3,6 +3,7 @@
 This directory contains contributor-oriented operational guides.
 
 - [Local Development](./local-dev.md)
+- [Ubuntu Systemd](./ubuntu-systemd.md)
 - [Add Executor Adapter](./add-executor-adapter.md)
 - [Add Blackboard Backend](./add-blackboard-backend.md)
 - [Frontend Contracts](./frontend-contracts.md)

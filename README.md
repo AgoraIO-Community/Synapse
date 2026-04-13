@@ -67,6 +67,10 @@ so set `OPENAI_API_KEY` in `~/.synapse/.env` before starting the app.
 ./synapse frontend
 ./synapse start
 ./synapse gateway run
+./synapse service install
+./synapse service start
+./synapse service stop
+./synapse service restart
 ```
 
 The installed console script is also named `synapse`, so after setup you can run
@@ -99,6 +103,34 @@ To run only the headless gateway host:
 ```bash
 ./synapse gateway run
 ```
+
+## Ubuntu Systemd
+
+For an Ubuntu server deployment from a repo checkout, install the combined
+system service with:
+
+```bash
+./synapse service install
+./synapse service start
+```
+
+The installed `synapse.service` unit runs `synapse start`, so it starts the
+main backend and also starts the gateway host when `~/.synapse/config.yaml`
+enables gateways.
+
+This server path does not install or serve the Vite frontend. Use a separate
+frontend deployment or reverse proxy if you need the browser UI.
+
+The systemd unit runs as the deploying user and reads runtime config from:
+
+```text
+~/.synapse/.env
+~/.synapse/config.yaml
+```
+
+If the Codex executor is enabled, prefer an absolute
+`SYNAPSE_CODEX_COMMAND=/absolute/path/to/codex` in `~/.synapse/.env` so the
+service does not depend on an interactive shell PATH.
 
 When gateway modules are enabled in `~/.synapse/config.yaml`, `./synapse dev`
 and `./synapse start` also start the gateway host automatically.
