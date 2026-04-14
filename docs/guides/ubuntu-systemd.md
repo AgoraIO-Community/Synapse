@@ -32,20 +32,30 @@ That means:
 
 ## Deployment Notes
 
-- Run `./synapse service install` as the non-root deploy user, not with
-  `sudo`. The CLI uses `sudo` only for writing the unit and calling `systemctl`.
-- The systemd unit uses that deploy user as `User=` and reads config from that
-  user’s home directory.
+- You can run `./synapse service install` either as a non-root deploy user or
+  directly as `root`.
+- When a non-root user runs the install, the CLI uses `sudo` only for writing
+  the unit and calling `systemctl`.
+- The installed systemd unit always runs as the user who ran
+  `./synapse service install`, and it reads the shared runtime-plus-gateway
+  config from that user’s home directory.
 - This path is backend/gateway only. It does not install or serve the Vite
   frontend.
-- If the Codex executor is enabled, prefer an absolute
-  `SYNAPSE_CODEX_COMMAND=/absolute/path/to/codex` in `~/.synapse/.env`.
+- If the Codex executor is enabled, set an absolute `runtime.codex_command` in
+  `~/.synapse/config.yaml`.
 
 Runtime config lives in:
 
 ```text
 ~/.synapse/.env
 ~/.synapse/config.yaml
+```
+
+If you install as `root`, that means:
+
+```text
+/root/.synapse/.env
+/root/.synapse/config.yaml
 ```
 
 ## Health Checks

@@ -45,6 +45,7 @@ SYNAPSE_OPENAI_TIMEOUT_SECONDS=30
 # SYNAPSE_OPENAI_BASE_URL=
 # Set to true only after the Codex CLI is installed and configured locally.
 SYNAPSE_CODEX_EXECUTOR_ENABLED=false
+# Legacy fallback only; prefer runtime.codex_command in ~/.synapse/config.yaml.
 # SYNAPSE_CODEX_COMMAND=codex
 
 # Runtime and gateway credentials written by `synapse setup` to ~/.synapse/.env
@@ -55,6 +56,8 @@ SYNAPSE_CODEX_EXECUTOR_ENABLED=false
 BOOTSTRAP_ENV
   cat > "$HOME/.synapse/config.yaml" <<'BOOTSTRAP_CONFIG'
 version: 1
+
+runtime: {}
 
 host:
   enabled: false

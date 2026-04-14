@@ -101,3 +101,5 @@ Short log of important design decisions and changes for Synapse.
 - Pinned Agora ConvoAI gateway setup to the `US` region, removed interactive prompts for token TTL and speak/request tuning, and changed the managed Minimax default voice to `English_magnetic_voiced_man`.
 - Removed the legacy `examples/agora_conversational_ai` bridge package and its dedicated integration tests, leaving the first-party `src/synapse/gateways/agora_convoai/` gateway module plus repo-root `exmaple-ui/` as the supported Agora path.
 - Added a first-class `synapse service` CLI for Ubuntu/systemd deployment from a repo checkout, installing one combined `synapse.service` unit that runs `synapse start` as the deploy user and keeps runtime config in `~/.synapse`.
+- Allowed `synapse service install` to run as `root`, with the installed systemd unit now running as the invoking user and reading runtime config from that user’s `~/.synapse` home.
+- Moved the Codex executor command path out of `SYNAPSE_CODEX_COMMAND` env and into `~/.synapse/config.yaml` under `runtime.codex_command`, while keeping `synapse setup` responsible for prompting and migrating the effective path.

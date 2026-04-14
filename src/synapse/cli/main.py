@@ -18,7 +18,7 @@ from synapse.config_home import (
     SYNAPSE_ENV_FILE,
     format_user_path,
 )
-from synapse.yaml_support import load_yaml_file
+from synapse.yaml_support import YAMLParseError, load_yaml_file
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -47,6 +47,7 @@ DEFAULT_ENV_TEMPLATE_LINES = (
     "# SYNAPSE_OPENAI_BASE_URL=",
     "# Set to true only after the Codex CLI is installed and configured locally.",
     "SYNAPSE_CODEX_EXECUTOR_ENABLED=false",
+    "# Legacy fallback only; prefer runtime.codex_command in ~/.synapse/config.yaml.",
     "# SYNAPSE_CODEX_COMMAND=codex",
     "",
     f"# Runtime and gateway credentials written by `synapse setup` to {format_user_path(ENV_LOCAL)}",
@@ -70,6 +71,12 @@ class GatewaySetupResult:
     env_values: dict[str, str | None]
     config_path: Path | None = None
     config_text: str | None = None
+
+
+@dataclass(slots=True)
+class SetupValuesResult:
+    env_values: dict[str, str | None]
+    runtime_values: dict[str, object]
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -172,17 +179,27 @@ def cmd_setup(_args: argparse.Namespace) -> int:
 
     template_lines = load_env_template()
     existing_values, existing_order = load_env_assignments(ENV_LOCAL)
-    resolved_values = resolve_setup_values(
+    config_path = gateway_config_path()
+    existing_config_yaml, config_load_error = _load_existing_gateway_yaml_for_setup(config_path)
+    if config_load_error is not None:
+        print(
+            f"[warn] ignoring invalid existing config at {format_user_path(config_path)}: {config_load_error}"
+        )
+    setup_values = resolve_setup_values(
         template_lines=template_lines,
         existing_values=existing_values,
         environ=os.environ,
         interactive=not args.non_interactive,
+        existing_config_yaml=existing_config_yaml,
     )
+    resolved_values = setup_values.env_values
     gateway_setup = resolve_gateway_setup_values(
         existing_values=existing_values,
         environ=os.environ,
         interactive=not args.non_interactive,
         force_prompt=False,
+        existing_config_yaml=existing_config_yaml,
+        runtime_values=setup_values.runtime_values,
     )
     resolved_values.update(gateway_setup.env_values)
     write_env_file(
@@ -192,7 +209,20 @@ def cmd_setup(_args: argparse.Namespace) -> int:
         existing_order=existing_order,
         destination=ENV_LOCAL,
     )
-    _write_gateway_config_if_needed(gateway_setup)
+    config_setup = gateway_setup
+    if config_setup.config_text is None and (
+        setup_values.runtime_values or not config_path.exists()
+    ):
+        config_setup = GatewaySetupResult(
+            env_values=gateway_setup.env_values,
+            config_path=config_path,
+            config_text=render_gateway_config(
+                runtime=_resolved_runtime_config(existing_config_yaml, setup_values.runtime_values),
+                host=_existing_host_config(existing_config_yaml),
+                gateways=_existing_gateways_config(existing_config_yaml),
+            ),
+        )
+    _write_gateway_config_if_needed(config_setup)
     print(f"[write] configured {format_user_path(ENV_LOCAL)}")
     return 0
 
@@ -314,11 +344,14 @@ def cmd_gateway_setup(_args: argparse.Namespace) -> int:
 
     template_lines = load_env_template()
     existing_values, existing_order = load_env_assignments(ENV_LOCAL)
+    existing_config_yaml = _load_existing_gateway_yaml(gateway_config_path())
     gateway_setup = resolve_gateway_setup_values(
         existing_values=existing_values,
         environ=os.environ,
         interactive=True,
         force_prompt=True,
+        existing_config_yaml=existing_config_yaml,
+        runtime_values=None,
     )
     write_env_file(
         template_lines=template_lines,
@@ -422,8 +455,6 @@ def preferred_frontend_tool() -> str:
 def ensure_service_install_supported() -> None:
     if not sys.platform.startswith("linux"):
         raise CliError("synapse service install currently supports Linux/systemd hosts only.")
-    if os.geteuid() == 0:
-        raise CliError("synapse service install must be run as the deploy user, not root.")
 
 
 def ensure_service_manager_available() -> None:
@@ -747,7 +778,8 @@ def resolve_setup_values(
     existing_values: dict[str, str],
     environ: os._Environ[str],
     interactive: bool,
-) -> dict[str, str | None]:
+    existing_config_yaml: dict[str, object],
+) -> SetupValuesResult:
     template_values = {line.key: line.value for line in template_lines if line.key is not None}
     resolved: dict[str, str | None] = {}
 
@@ -776,21 +808,45 @@ def resolve_setup_values(
     codex_enabled = resolve_codex_enabled(explicit_codex_enabled, interactive=interactive)
     resolved[CODEX_ENABLED_KEY] = format_bool(codex_enabled)
 
-    existing_codex_command = pick_env_value(CODEX_COMMAND_KEY, existing_values, environ)
-    default_codex_command = existing_codex_command or template_values.get(CODEX_COMMAND_KEY) or "codex"
-    if interactive and codex_enabled and not _codex_command_available(default_codex_command):
-        codex_command = prompt_text_value("Codex command", default_value=default_codex_command, required=True)
+    existing_yaml_codex_command = _existing_yaml_value(
+        existing_config_yaml,
+        "runtime",
+        "codex_command",
+    )
+    legacy_codex_command = pick_env_value(CODEX_COMMAND_KEY, existing_values, environ)
+    discovered_codex_command = _detected_codex_command()
+    prompt_default_codex_command = (
+        existing_yaml_codex_command
+        or legacy_codex_command
+        or discovered_codex_command
+        or template_values.get(CODEX_COMMAND_KEY)
+        or "codex"
+    )
+    resolved_codex_command = (
+        existing_yaml_codex_command
+        or legacy_codex_command
+        or discovered_codex_command
+        or template_values.get(CODEX_COMMAND_KEY)
+        or "codex"
+    )
+    runtime_values: dict[str, object] = {}
+    if interactive and codex_enabled:
+        codex_command = prompt_text_value(
+            "Codex command",
+            default_value=prompt_default_codex_command,
+            required=True,
+        )
         if not _codex_command_available(codex_command):
             print(f"[warn] command '{codex_command}' is not currently available on PATH")
-        resolved[CODEX_COMMAND_KEY] = codex_command
+        runtime_values["codex_command"] = codex_command
     elif codex_enabled:
-        resolved[CODEX_COMMAND_KEY] = default_codex_command
-    elif existing_codex_command:
-        resolved[CODEX_COMMAND_KEY] = existing_codex_command
-    else:
-        resolved[CODEX_COMMAND_KEY] = None
+        runtime_values["codex_command"] = resolved_codex_command
+    elif existing_yaml_codex_command:
+        runtime_values["codex_command"] = existing_yaml_codex_command
+    elif legacy_codex_command:
+        runtime_values["codex_command"] = legacy_codex_command
 
-    return resolved
+    return SetupValuesResult(env_values=resolved, runtime_values=runtime_values)
 
 
 def resolve_bootstrap_values(
@@ -820,15 +876,6 @@ def resolve_bootstrap_values(
     codex_enabled = parsed_codex_enabled if parsed_codex_enabled is not None else False
     resolved[CODEX_ENABLED_KEY] = format_bool(codex_enabled)
 
-    existing_codex_command = existing_values.get(CODEX_COMMAND_KEY)
-    default_codex_command = existing_codex_command or template_values.get(CODEX_COMMAND_KEY) or "codex"
-    if codex_enabled:
-        resolved[CODEX_COMMAND_KEY] = default_codex_command
-    elif existing_codex_command:
-        resolved[CODEX_COMMAND_KEY] = existing_codex_command
-    else:
-        resolved[CODEX_COMMAND_KEY] = None
-
     return resolved
 
 
@@ -838,6 +885,8 @@ def resolve_gateway_setup_values(
     environ: os._Environ[str],
     interactive: bool,
     force_prompt: bool,
+    existing_config_yaml: dict[str, object],
+    runtime_values: dict[str, object] | None,
 ) -> GatewaySetupResult:
     if not interactive:
         return GatewaySetupResult(env_values={})
@@ -852,25 +901,18 @@ def resolve_gateway_setup_values(
             env_values={},
             config_path=gateway_config_path(),
             config_text=render_gateway_config(
-                host={
-                    "enabled": False,
-                    "host": "0.0.0.0",
-                    "port": 8010,
-                    "public_base_url": "http://127.0.0.1:8010",
-                    "synapse_base_url": "http://127.0.0.1:8000",
-                    "enabled_gateways": [],
-                },
+                runtime=_resolved_runtime_config(existing_config_yaml, runtime_values),
+                host=_default_host_config(),
                 gateways={},
             ),
         )
 
     config_path = gateway_config_path()
-    existing_gateway_yaml = _load_existing_gateway_yaml(config_path)
 
     gateways = prompt_gateway_selection()
     host = prompt_text_value(
         "Gateway host",
-        default_value=_existing_yaml_value(existing_gateway_yaml, "host", "host")
+        default_value=_existing_yaml_value(existing_config_yaml, "host", "host")
         or pick_env_value(GATEWAY_HOST_KEY, existing_values, environ)
         or "0.0.0.0",
         required=True,
@@ -878,7 +920,7 @@ def resolve_gateway_setup_values(
     port = prompt_text_value(
         "Gateway port",
         default_value=str(
-            _existing_yaml_value(existing_gateway_yaml, "host", "port")
+            _existing_yaml_value(existing_config_yaml, "host", "port")
             or pick_env_value(GATEWAY_PORT_KEY, existing_values, environ)
             or "8010"
         ),
@@ -886,14 +928,14 @@ def resolve_gateway_setup_values(
     )
     public_base_url = prompt_text_value(
         "Gateway public base URL",
-        default_value=_existing_yaml_value(existing_gateway_yaml, "host", "public_base_url")
+        default_value=_existing_yaml_value(existing_config_yaml, "host", "public_base_url")
         or pick_env_value(GATEWAY_PUBLIC_BASE_URL_KEY, existing_values, environ)
         or f"http://127.0.0.1:{port}",
         required=True,
     )
     synapse_base_url = prompt_text_value(
         "Synapse API base URL for gateway callbacks",
-        default_value=_existing_yaml_value(existing_gateway_yaml, "host", "synapse_base_url")
+        default_value=_existing_yaml_value(existing_config_yaml, "host", "synapse_base_url")
         or pick_env_value(GATEWAY_SYNAPSE_BASE_URL_KEY, existing_values, environ)
         or "http://127.0.0.1:8000",
         required=True,
@@ -906,11 +948,12 @@ def resolve_gateway_setup_values(
             block, env_updates = resolve_agora_gateway_setup_values(
                 existing_values,
                 environ,
-                existing_gateway_yaml,
+                existing_config_yaml,
             )
             gateway_blocks[gateway] = block
             resolved_env.update(env_updates)
     config_text = render_gateway_config(
+        runtime=_resolved_runtime_config(existing_config_yaml, runtime_values),
         host={
             "enabled": True,
             "host": host,
@@ -952,14 +995,8 @@ def bootstrap_setup_files() -> None:
                 env_values={},
                 config_path=config_path,
                 config_text=render_gateway_config(
-                    host={
-                        "enabled": False,
-                        "host": "0.0.0.0",
-                        "port": 8010,
-                        "public_base_url": "http://127.0.0.1:8010",
-                        "synapse_base_url": "http://127.0.0.1:8000",
-                        "enabled_gateways": [],
-                    },
+                    runtime=resolve_bootstrap_runtime_values(existing_values),
+                    host=_default_host_config(),
                     gateways={},
                 ),
             )
@@ -1178,6 +1215,10 @@ def normalize_required_value(value: str | None, *, placeholder: str | None) -> s
     return value
 
 
+def _detected_codex_command() -> str | None:
+    return shutil.which("codex")
+
+
 def _codex_command_available(command: str) -> bool:
     return shutil.which(command) is not None
 
@@ -1359,6 +1400,13 @@ def _load_existing_gateway_yaml(path: Path) -> dict[str, object]:
     return {}
 
 
+def _load_existing_gateway_yaml_for_setup(path: Path) -> tuple[dict[str, object], str | None]:
+    try:
+        return _load_existing_gateway_yaml(path), None
+    except Exception as exc:
+        return {}, str(exc)
+
+
 def _existing_yaml_value(raw_gateway_yaml: dict[str, object], *path: str) -> str | None:
     value: object = raw_gateway_yaml
     for part in path:
@@ -1391,8 +1439,86 @@ def _existing_nested_value(raw_gateway: dict[str, object], *path: str) -> str | 
     return str(value)
 
 
-def render_gateway_config(*, host: dict[str, object], gateways: dict[str, dict[str, object]]) -> str:
-    lines = ["version: 1", "", "host:"]
+def _existing_runtime_config(raw_gateway_yaml: dict[str, object]) -> dict[str, object]:
+    raw_runtime = raw_gateway_yaml.get("runtime")
+    if not isinstance(raw_runtime, dict):
+        return {}
+    return dict(raw_runtime)
+
+
+def _existing_host_config(raw_gateway_yaml: dict[str, object]) -> dict[str, object]:
+    raw_host = raw_gateway_yaml.get("host")
+    if isinstance(raw_host, dict):
+        return dict(raw_host)
+    return _default_host_config()
+
+
+def _existing_gateways_config(raw_gateway_yaml: dict[str, object]) -> dict[str, dict[str, object]]:
+    raw_gateways = raw_gateway_yaml.get("gateways")
+    if not isinstance(raw_gateways, dict):
+        return {}
+    return {
+        key: value
+        for key, value in raw_gateways.items()
+        if isinstance(key, str) and isinstance(value, dict)
+    }
+
+
+def _resolved_runtime_config(
+    raw_gateway_yaml: dict[str, object],
+    runtime_values: dict[str, object] | None,
+) -> dict[str, object]:
+    resolved = _existing_runtime_config(raw_gateway_yaml)
+    for key, value in (runtime_values or {}).items():
+        if value in (None, ""):
+            resolved.pop(key, None)
+            continue
+        resolved[key] = value
+    return resolved
+
+
+def _default_host_config() -> dict[str, object]:
+    return {
+        "enabled": False,
+        "host": "0.0.0.0",
+        "port": 8010,
+        "public_base_url": "http://127.0.0.1:8010",
+        "synapse_base_url": "http://127.0.0.1:8000",
+        "enabled_gateways": [],
+    }
+
+
+def resolve_bootstrap_runtime_values(existing_values: dict[str, str]) -> dict[str, object]:
+    explicit_codex_enabled = existing_values.get(CODEX_ENABLED_KEY)
+    parsed_codex_enabled = (
+        parse_bool_value(explicit_codex_enabled)
+        if explicit_codex_enabled not in (None, "")
+        else None
+    )
+    codex_enabled = parsed_codex_enabled if parsed_codex_enabled is not None else False
+    existing_codex_command = existing_values.get(CODEX_COMMAND_KEY)
+    if codex_enabled:
+        return {
+            "codex_command": existing_codex_command or _detected_codex_command() or "codex"
+        }
+    if existing_codex_command:
+        return {"codex_command": existing_codex_command}
+    return {}
+
+
+def render_gateway_config(
+    *,
+    runtime: dict[str, object],
+    host: dict[str, object],
+    gateways: dict[str, dict[str, object]],
+) -> str:
+    lines = ["version: 1", ""]
+    if runtime:
+        lines.append("runtime:")
+        lines.extend(_render_yaml_mapping(runtime, indent=2))
+    else:
+        lines.append("runtime: {}")
+    lines.extend(["", "host:"])
     lines.extend(_render_yaml_mapping(host, indent=2))
     lines.append("")
     if gateways:

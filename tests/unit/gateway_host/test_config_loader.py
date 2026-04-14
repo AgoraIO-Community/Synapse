@@ -34,6 +34,8 @@ def test_load_gateway_config_skips_disabled_gateway_env_resolution(tmp_path: Pat
         "\n".join(
             [
                 "version: 1",
+                "runtime:",
+                "  codex_command: /opt/codex",
                 "host:",
                 "  enabled: true",
                 "  enabled_gateways:",

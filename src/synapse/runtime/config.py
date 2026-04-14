@@ -2,13 +2,18 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
 
 from dotenv import load_dotenv
 
-from synapse.config_home import SYNAPSE_ENV_FILE
+from synapse.config_home import SYNAPSE_ENV_FILE, SYNAPSE_GATEWAY_CONFIG_FILE
+from synapse.yaml_support import YAMLParseError, load_yaml_file
 
 
 LOCAL_ENV_FILE = SYNAPSE_ENV_FILE
+LOCAL_CONFIG_FILE = SYNAPSE_GATEWAY_CONFIG_FILE
+LEGACY_CODEX_COMMAND_KEY = "SYNAPSE_CODEX_COMMAND"
 
 
 def load_local_env() -> None:
@@ -41,8 +46,52 @@ class Settings:
     git_sha: str | None = None
 
 
+def _load_shared_config() -> dict[str, Any]:
+    if not LOCAL_CONFIG_FILE.exists():
+        return {}
+    try:
+        loaded = load_yaml_file(LOCAL_CONFIG_FILE)
+    except YAMLParseError as exc:
+        raise RuntimeError(f"Invalid shared config YAML at {LOCAL_CONFIG_FILE}: {exc}") from exc
+    if loaded is None:
+        return {}
+    if not isinstance(loaded, dict):
+        raise RuntimeError(f"Shared config root must be a mapping: {LOCAL_CONFIG_FILE}")
+    return loaded
+
+
+def _resolve_config_scalar(value: Any, *, config_path: Path) -> Any:
+    if isinstance(value, str) and value.startswith("$") and value.count("$") == 1:
+        env_name = value[1:]
+        env_value = os.getenv(env_name)
+        if env_value in (None, ""):
+            raise RuntimeError(
+                f"Missing environment variable {env_name} referenced by {config_path}"
+            )
+        return env_value
+    return value
+
+
+def _load_runtime_config() -> dict[str, Any]:
+    raw_config = _load_shared_config()
+    raw_runtime = raw_config.get("runtime") or {}
+    if not isinstance(raw_runtime, dict):
+        raise RuntimeError(f"'runtime' must be a mapping in {LOCAL_CONFIG_FILE}")
+    return {
+        key: _resolve_config_scalar(value, config_path=LOCAL_CONFIG_FILE)
+        for key, value in raw_runtime.items()
+    }
+
+
 def load_settings() -> Settings:
     load_local_env()
+    runtime_config = _load_runtime_config()
+    yaml_codex_command = runtime_config.get("codex_command")
+    codex_command = (
+        str(yaml_codex_command)
+        if yaml_codex_command not in (None, "")
+        else os.getenv(LEGACY_CODEX_COMMAND_KEY, "codex")
+    )
     return Settings(
         app_name=os.getenv("SYNAPSE_APP_NAME", "Synapse v2"),
         communication_backend=os.getenv("SYNAPSE_COMMUNICATION_BACKEND", "auto"),
@@ -53,7 +102,7 @@ def load_settings() -> Settings:
         or os.getenv("OPENAI_BASE_URL")
         or None,
         codex_executor_enabled=_get_bool("SYNAPSE_CODEX_EXECUTOR_ENABLED", False),
-        codex_command=os.getenv("SYNAPSE_CODEX_COMMAND", "codex"),
+        codex_command=codex_command,
         log_level=os.getenv("SYNAPSE_LOG_LEVEL", "INFO").upper(),
         log_format=os.getenv("SYNAPSE_LOG_FORMAT", "auto").lower(),
         log_color=os.getenv("SYNAPSE_LOG_COLOR", "auto").lower(),

@@ -1,5 +1,8 @@
 version: 1
 
+runtime:
+  codex_command: /absolute/path/to/codex
+
 host:
   enabled: true
   host: 0.0.0.0

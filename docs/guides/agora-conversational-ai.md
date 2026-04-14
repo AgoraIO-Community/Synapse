@@ -113,8 +113,8 @@ npm install
 npm run dev
 ```
 
-The gateway host reads its live config from `~/.synapse/config.yaml` and the shared
-runtime env from `~/.synapse/.env`.
+The gateway host reads its live config from the shared `~/.synapse/config.yaml`
+file and shared runtime env from `~/.synapse/.env`.
 
 For live Agora sessions, `SYNAPSE_GATEWAY_PUBLIC_BASE_URL` must be a public URL
 that can reach the gateway host.

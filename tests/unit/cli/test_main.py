@@ -64,8 +64,73 @@ def test_setup_interactive_updates_env_file(monkeypatch, tmp_path: Path):
     assert "OPENAI_API_KEY=sk-test" in configured
     assert "SYNAPSE_OPENAI_MODEL=gpt-4.1-mini" in configured
     assert "SYNAPSE_CODEX_EXECUTOR_ENABLED=true" in configured
-    assert "SYNAPSE_CODEX_COMMAND=/custom/codex" in configured
+    assert "SYNAPSE_CODEX_COMMAND=/custom/codex" not in configured
     assert configured.strip().endswith("EXTRA_FLAG=keep-me")
+
+    configured_runtime = (root / ".synapse" / "config.yaml").read_text(encoding="utf-8")
+    assert "runtime:" in configured_runtime
+    assert "codex_command: /custom/codex" in configured_runtime
+
+
+def test_setup_interactive_uses_detected_codex_command_default(monkeypatch, tmp_path: Path):
+    root = tmp_path
+    (root / "src" / "synapse" / "ui").mkdir(parents=True)
+    (root / ".synapse").mkdir(parents=True, exist_ok=True)
+
+    configure_repo_paths(monkeypatch, root)
+    monkeypatch.setattr(cli_main, "setup_can_prompt", lambda: True)
+    monkeypatch.setattr(cli_main.getpass, "getpass", lambda _prompt: "sk-test")
+    monkeypatch.setattr(cli_main, "_detected_codex_command", lambda: "/detected/codex")
+    monkeypatch.setattr(
+        cli_main,
+        "_codex_command_available",
+        lambda command: command == "/detected/codex",
+    )
+    responses = iter(["yes", "", ""])
+    monkeypatch.setattr("builtins.input", lambda _prompt: next(responses))
+
+    assert cli_main.main(["setup"]) == 0
+
+    configured_runtime = (root / ".synapse" / "config.yaml").read_text(encoding="utf-8")
+    assert "codex_command: /detected/codex" in configured_runtime
+
+
+def test_setup_interactive_preserves_legacy_codex_command_over_detected_default(
+    monkeypatch,
+    tmp_path: Path,
+):
+    root = tmp_path
+    (root / "src" / "synapse" / "ui").mkdir(parents=True)
+    (root / ".synapse").mkdir(parents=True, exist_ok=True)
+    (root / ".synapse" / ".env").write_text(
+        "\n".join(
+            [
+                "OPENAI_API_KEY=sk-existing",
+                "SYNAPSE_CODEX_EXECUTOR_ENABLED=true",
+                "SYNAPSE_CODEX_COMMAND=/legacy/codex",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    configure_repo_paths(monkeypatch, root)
+    monkeypatch.setattr(cli_main, "setup_can_prompt", lambda: True)
+    monkeypatch.setattr(cli_main.getpass, "getpass", lambda _prompt: "")
+    monkeypatch.setattr(cli_main, "_detected_codex_command", lambda: "/detected/codex")
+    monkeypatch.setattr(
+        cli_main,
+        "_codex_command_available",
+        lambda command: command in {"/legacy/codex", "/detected/codex"},
+    )
+    responses = iter(["", "", ""])
+    monkeypatch.setattr("builtins.input", lambda _prompt: next(responses))
+
+    assert cli_main.main(["setup"]) == 0
+
+    configured_runtime = (root / ".synapse" / "config.yaml").read_text(encoding="utf-8")
+    assert "codex_command: /legacy/codex" in configured_runtime
+    assert "codex_command: /detected/codex" not in configured_runtime
 
 
 def test_gateway_setup_writes_gateway_module_env(monkeypatch, tmp_path: Path):
@@ -109,6 +174,7 @@ def test_gateway_setup_writes_gateway_module_env(monkeypatch, tmp_path: Path):
     assert "AGORA_APP_CERTIFICATE=app-cert" in configured
 
     gateway_config = (root / ".synapse" / "config.yaml").read_text(encoding="utf-8")
+    assert "runtime: {}" in gateway_config
     assert "enabled_gateways:" in gateway_config
     assert "- agora-convoai" in gateway_config
     assert "app_id: $AGORA_APP_ID" in gateway_config
@@ -128,6 +194,8 @@ def test_gateway_setup_decline_disables_existing_gateway_config(monkeypatch, tmp
         "\n".join(
             [
                 "version: 1",
+                "runtime:",
+                "  codex_command: /existing/codex",
                 "host:",
                 "  enabled: true",
                 "  enabled_gateways:",
@@ -145,6 +213,7 @@ def test_gateway_setup_decline_disables_existing_gateway_config(monkeypatch, tmp
     assert cli_main.main(["gateway", "setup"]) == 0
 
     configured = (root / ".synapse" / "config.yaml").read_text(encoding="utf-8")
+    assert "codex_command: /existing/codex" in configured
     assert "enabled: false" in configured
     assert "enabled_gateways:" in configured
 
@@ -276,6 +345,63 @@ def test_setup_non_interactive_uses_existing_and_env(monkeypatch, tmp_path: Path
     assert "# SYNAPSE_CODEX_COMMAND=codex" in configured
 
 
+def test_setup_non_interactive_migrates_legacy_codex_command_to_config(monkeypatch, tmp_path: Path):
+    root = tmp_path
+    (root / "src" / "synapse" / "ui").mkdir(parents=True)
+    (root / ".synapse").mkdir(parents=True, exist_ok=True)
+    (root / ".synapse" / ".env").write_text(
+        "\n".join(
+            [
+                "OPENAI_API_KEY=test-key",
+                "SYNAPSE_CODEX_EXECUTOR_ENABLED=true",
+                "SYNAPSE_CODEX_COMMAND=/legacy/codex",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    configure_repo_paths(monkeypatch, root)
+
+    assert cli_main.main(["setup", "--non-interactive"]) == 0
+
+    configured_env = (root / ".synapse" / ".env").read_text(encoding="utf-8")
+    assert "SYNAPSE_CODEX_EXECUTOR_ENABLED=true" in configured_env
+    assert "SYNAPSE_CODEX_COMMAND=/legacy/codex" not in configured_env
+
+    configured_runtime = (root / ".synapse" / "config.yaml").read_text(encoding="utf-8")
+    assert "codex_command: /legacy/codex" in configured_runtime
+
+
+def test_setup_non_interactive_tolerates_malformed_existing_config(monkeypatch, tmp_path: Path, capsys):
+    root = tmp_path
+    (root / "src" / "synapse" / "ui").mkdir(parents=True)
+    (root / ".synapse").mkdir(parents=True, exist_ok=True)
+    (root / ".synapse" / ".env").write_text(
+        "\n".join(
+            [
+                "OPENAI_API_KEY=test-key",
+                "SYNAPSE_CODEX_EXECUTOR_ENABLED=true",
+                "SYNAPSE_CODEX_COMMAND=/legacy/codex",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (root / ".synapse" / "config.yaml").write_text("version: [\n", encoding="utf-8")
+
+    configure_repo_paths(monkeypatch, root)
+
+    assert cli_main.main(["setup", "--non-interactive"]) == 0
+
+    output = capsys.readouterr().out
+    assert "ignoring invalid existing config" in output
+
+    configured_runtime = (root / ".synapse" / "config.yaml").read_text(encoding="utf-8")
+    assert "runtime:" in configured_runtime
+    assert "codex_command: /legacy/codex" in configured_runtime
+
+
 def test_setup_non_interactive_requires_openai(monkeypatch, tmp_path: Path, capsys):
     root = tmp_path
     (root / "src" / "synapse" / "ui").mkdir(parents=True)
@@ -307,6 +433,7 @@ def test_setup_bootstrap_defaults_creates_env_and_gateway_config(monkeypatch, tm
     assert "/shell/codex" not in configured_env
 
     configured_gateway = (root / ".synapse" / "config.yaml").read_text(encoding="utf-8")
+    assert "runtime: {}" in configured_gateway
     assert "enabled: false" in configured_gateway
     assert 'public_base_url: "http://127.0.0.1:8010"' in configured_gateway
     assert "enabled_gateways: []" in configured_gateway
@@ -462,6 +589,18 @@ def configure_service_environment(monkeypatch, tmp_path: Path) -> None:
     )
 
 
+def configure_root_service_environment(monkeypatch, tmp_path: Path) -> None:
+    configure_repo_paths(monkeypatch, tmp_path)
+    monkeypatch.setattr(cli_main.sys, "platform", "linux")
+    monkeypatch.setattr(cli_main.os, "geteuid", lambda: 0)
+    monkeypatch.setattr(cli_main.getpass, "getuser", lambda: "root")
+    monkeypatch.setattr(
+        cli_main.shutil,
+        "which",
+        lambda name: f"/usr/bin/{name}" if name == "systemctl" else None,
+    )
+
+
 def test_service_install_bootstraps_runtime_and_enables_unit(monkeypatch, tmp_path: Path, capsys):
     configure_service_environment(monkeypatch, tmp_path)
 
@@ -508,13 +647,34 @@ def test_service_install_skips_venv_creation_when_existing(monkeypatch, tmp_path
     assert commands[0] == [str(venv_python), "-m", "pip", "install", "--upgrade", "pip"]
 
 
-def test_service_install_rejects_root(monkeypatch, tmp_path: Path, capsys):
-    configure_repo_paths(monkeypatch, tmp_path)
-    monkeypatch.setattr(cli_main.sys, "platform", "linux")
-    monkeypatch.setattr(cli_main.os, "geteuid", lambda: 0)
+def test_service_install_allows_root_and_uses_direct_systemctl(monkeypatch, tmp_path: Path, capsys):
+    configure_root_service_environment(monkeypatch, tmp_path)
 
-    assert cli_main.main(["service", "install"]) == 1
-    assert "must be run as the deploy user, not root" in capsys.readouterr().err
+    commands: list[tuple[list[str], Path]] = []
+
+    def fake_run_checked(cmd: list[str], cwd: Path) -> int:
+        commands.append((cmd, cwd))
+        if len(cmd) >= 3 and cmd[1:3] == ["-m", "venv"]:
+            venv_python = tmp_path / ".venv" / "bin" / "python"
+            venv_python.parent.mkdir(parents=True, exist_ok=True)
+            venv_python.write_text("", encoding="utf-8")
+        return 0
+
+    monkeypatch.setattr(cli_main, "run_checked", fake_run_checked)
+
+    assert cli_main.main(["service", "install", "--host", "0.0.0.0", "--port", "9000"]) == 0
+
+    venv_python = tmp_path / ".venv" / "bin" / "python"
+    assert commands[0] == ([cli_main.sys.executable, "-m", "venv", str(tmp_path / ".venv")], tmp_path)
+    assert commands[1] == ([str(venv_python), "-m", "pip", "install", "--upgrade", "pip"], tmp_path)
+    assert commands[2] == ([str(venv_python), "-m", "pip", "install", "-e", "."], tmp_path)
+    assert commands[3][0][0:7] == ["install", "-o", "root", "-g", "root", "-m", "0644"]
+    assert commands[3][0][-1] == str(cli_main.service_unit_path())
+    assert commands[4] == (["systemctl", "daemon-reload"], tmp_path)
+    assert commands[5] == (["systemctl", "enable", "synapse.service"], tmp_path)
+    assert (tmp_path / ".synapse" / ".env").exists()
+    assert (tmp_path / ".synapse" / "config.yaml").exists()
+    assert "[warn] env: OPENAI_API_KEY is not configured" in capsys.readouterr().out
 
 
 def test_service_install_requires_systemctl(monkeypatch, tmp_path: Path, capsys):
@@ -553,6 +713,21 @@ def test_render_service_unit_includes_expected_values():
     assert "ExecStart=/srv/synapse/.venv/bin/python -m synapse start --host 0.0.0.0 --port 8000" in unit
     assert "Restart=on-failure" in unit
     assert "WantedBy=multi-user.target" in unit
+
+
+def test_render_service_unit_supports_root_values():
+    unit = cli_main.render_service_unit(
+        user="root",
+        home=Path("/root"),
+        workdir=Path("/srv/synapse"),
+        venv_python=Path("/srv/synapse/.venv/bin/python"),
+        host="0.0.0.0",
+        port=8000,
+    )
+
+    assert "User=root" in unit
+    assert 'Environment="HOME=/root"' in unit
+    assert 'Environment="PATH=/srv/synapse/.venv/bin:/root/.local/bin:/root/.bun/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"' in unit
 
 
 def test_service_lifecycle_commands_use_sudo(monkeypatch, tmp_path: Path):

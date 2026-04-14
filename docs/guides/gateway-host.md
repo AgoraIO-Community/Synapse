@@ -74,15 +74,24 @@ from the same machine running the gateway host.
 
 ## Config
 
-Gateway host config now uses a shared YAML file in the user config home:
+Gateway host config now uses the shared runtime-plus-gateway YAML file in the
+user config home:
 
 ```text
 ~/.synapse/config.yaml
 ```
 
-The YAML file contains the `host` block plus per-gateway config under `gateways`.
-Scalar values written as `$VAR_NAME` are resolved from environment variables after
-`~/.synapse/.env` is loaded.
+The YAML file contains:
+
+- `runtime` for shared runtime settings such as `codex_command`
+- `host` for gateway-host listener settings
+- `gateways` for per-gateway module config
+
+Scalar values written as `$VAR_NAME` are resolved from environment variables
+after `~/.synapse/.env` is loaded.
+
+The gateway host only consumes the `host` and `gateways` sections. The main
+Synapse runtime also reads the shared `runtime` section.
 
 The tracked template is:
 

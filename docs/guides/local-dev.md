@@ -11,8 +11,8 @@ Preferred local bootstrap and run flow:
 
 `./install.sh` owns local dependency bootstrap and creates starter
 `~/.synapse/.env` plus `~/.synapse/config.yaml` files when they do not already
-exist. `./synapse setup` owns interactive runtime env configuration for
-`~/.synapse/.env`.
+exist. `./synapse setup` owns interactive runtime configuration for
+`~/.synapse/.env` plus the shared `~/.synapse/config.yaml`.
 
 By default, diagnostics timeline polling requests from the frontend inspector are
 filtered out of `uvicorn.access` output so local access logs are less noisy. Set
@@ -25,9 +25,11 @@ Current test command:
 .venv/bin/python -m pytest
 ```
 
-To use the Codex executor locally, make sure the `codex` CLI is installed and keep
-`SYNAPSE_CODEX_EXECUTOR_ENABLED=true` in `~/.synapse/.env`. Set `SYNAPSE_CODEX_COMMAND`
-only if Synapse should launch a non-default Codex binary path.
+To use the Codex executor locally, make sure the `codex` CLI is installed, keep
+`SYNAPSE_CODEX_EXECUTOR_ENABLED=true` in `~/.synapse/.env`, and set
+`runtime.codex_command` in `~/.synapse/config.yaml`. `./synapse setup` will
+prompt for the Codex command path and default it to the current `which codex`
+result when available.
 
 Backend-only and frontend-only commands:
 

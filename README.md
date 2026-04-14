@@ -28,8 +28,8 @@ installs the project in editable mode, installs frontend dependencies, and write
 starter `~/.synapse/.env` plus `~/.synapse/config.yaml` files when they do not
 already exist.
 
-`./synapse setup` fills in `~/.synapse/.env` with real runtime values. By
-default it prompts for
+`./synapse setup` fills in `~/.synapse/.env` plus the shared
+`~/.synapse/config.yaml` runtime/gateway config. By default it prompts for
 required runtime values such as `OPENAI_API_KEY`, and it can also enter the
 gateway-host setup flow. For gateway-only reconfiguration, use:
 
@@ -121,16 +121,24 @@ enables gateways.
 This server path does not install or serve the Vite frontend. Use a separate
 frontend deployment or reverse proxy if you need the browser UI.
 
-The systemd unit runs as the deploying user and reads runtime config from:
+The systemd unit runs as the user who invoked `./synapse service install` and
+reads shared runtime-plus-gateway config from that user’s home directory:
 
 ```text
 ~/.synapse/.env
 ~/.synapse/config.yaml
 ```
 
-If the Codex executor is enabled, prefer an absolute
-`SYNAPSE_CODEX_COMMAND=/absolute/path/to/codex` in `~/.synapse/.env` so the
-service does not depend on an interactive shell PATH.
+If you install the service as `root`, it will run as `root` and use:
+
+```text
+/root/.synapse/.env
+/root/.synapse/config.yaml
+```
+
+If the Codex executor is enabled, set an absolute
+`runtime.codex_command` in `~/.synapse/config.yaml` so the service does not
+depend on an interactive shell PATH.
 
 When gateway modules are enabled in `~/.synapse/config.yaml`, `./synapse dev`
 and `./synapse start` also start the gateway host automatically.
