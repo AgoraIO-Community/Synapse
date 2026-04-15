@@ -14,6 +14,8 @@ from synapse.yaml_support import YAMLParseError, load_yaml_file
 LOCAL_ENV_FILE = SYNAPSE_ENV_FILE
 LOCAL_CONFIG_FILE = SYNAPSE_GATEWAY_CONFIG_FILE
 LEGACY_CODEX_COMMAND_KEY = "SYNAPSE_CODEX_COMMAND"
+LEGACY_ACPX_COMMAND_KEY = "SYNAPSE_ACPX_COMMAND"
+LEGACY_ACPX_AGENT_KEY = "SYNAPSE_ACPX_AGENT"
 
 
 def load_local_env() -> None:
@@ -35,6 +37,12 @@ class Settings:
     openai_model: str = "gpt-4o-mini"
     openai_timeout_seconds: float = 30.0
     openai_base_url: str | None = None
+    acpx_executor_enabled: bool = False
+    acpx_command: str = "acpx"
+    acpx_agent: str = "codex"
+    acpx_permission_mode: str = "approve-all"
+    acpx_non_interactive_permissions: str = "deny"
+    acpx_timeout_seconds: float | None = None
     codex_executor_enabled: bool = False
     codex_command: str = "codex"
     log_level: str = "INFO"
@@ -87,10 +95,44 @@ def load_settings() -> Settings:
     load_local_env()
     runtime_config = _load_runtime_config()
     yaml_codex_command = runtime_config.get("codex_command")
+    yaml_acpx_command = runtime_config.get("acpx_command")
+    yaml_acpx_agent = runtime_config.get("acpx_agent")
+    yaml_acpx_permission_mode = runtime_config.get("acpx_permission_mode")
+    yaml_acpx_non_interactive_permissions = runtime_config.get(
+        "acpx_non_interactive_permissions"
+    )
+    yaml_acpx_timeout_seconds = runtime_config.get("acpx_timeout_seconds")
     codex_command = (
         str(yaml_codex_command)
         if yaml_codex_command not in (None, "")
         else os.getenv(LEGACY_CODEX_COMMAND_KEY, "codex")
+    )
+    acpx_command = (
+        str(yaml_acpx_command)
+        if yaml_acpx_command not in (None, "")
+        else os.getenv(LEGACY_ACPX_COMMAND_KEY, "acpx")
+    )
+    acpx_agent = (
+        str(yaml_acpx_agent)
+        if yaml_acpx_agent not in (None, "")
+        else os.getenv(LEGACY_ACPX_AGENT_KEY, "codex")
+    )
+    acpx_permission_mode = (
+        str(yaml_acpx_permission_mode)
+        if yaml_acpx_permission_mode not in (None, "")
+        else os.getenv("SYNAPSE_ACPX_PERMISSION_MODE", "approve-all")
+    )
+    acpx_non_interactive_permissions = (
+        str(yaml_acpx_non_interactive_permissions)
+        if yaml_acpx_non_interactive_permissions not in (None, "")
+        else os.getenv("SYNAPSE_ACPX_NON_INTERACTIVE_PERMISSIONS", "deny")
+    )
+    acpx_timeout_seconds = (
+        float(yaml_acpx_timeout_seconds)
+        if yaml_acpx_timeout_seconds not in (None, "")
+        else float(os.getenv("SYNAPSE_ACPX_TIMEOUT_SECONDS"))
+        if os.getenv("SYNAPSE_ACPX_TIMEOUT_SECONDS")
+        else None
     )
     return Settings(
         app_name=os.getenv("SYNAPSE_APP_NAME", "Synapse v2"),
@@ -101,6 +143,12 @@ def load_settings() -> Settings:
         openai_base_url=os.getenv("SYNAPSE_OPENAI_BASE_URL")
         or os.getenv("OPENAI_BASE_URL")
         or None,
+        acpx_executor_enabled=_get_bool("SYNAPSE_ACPX_EXECUTOR_ENABLED", False),
+        acpx_command=acpx_command,
+        acpx_agent=acpx_agent,
+        acpx_permission_mode=acpx_permission_mode,
+        acpx_non_interactive_permissions=acpx_non_interactive_permissions,
+        acpx_timeout_seconds=acpx_timeout_seconds,
         codex_executor_enabled=_get_bool("SYNAPSE_CODEX_EXECUTOR_ENABLED", False),
         codex_command=codex_command,
         log_level=os.getenv("SYNAPSE_LOG_LEVEL", "INFO").upper(),

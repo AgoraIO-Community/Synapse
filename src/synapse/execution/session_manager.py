@@ -3,6 +3,7 @@ from __future__ import annotations
 from uuid import uuid4
 
 from synapse.blackboard import BlackboardStore
+from synapse.executor_adapters.acpx import AcpxExecutorSession
 from synapse.executor_adapters.codex import CodexExecutorSession
 from synapse.executor_core import Executor, ExecutorSession
 from synapse.observability.emitters import ExecutionDiagnosticEmitter
@@ -94,6 +95,8 @@ class SessionManager:
 
 
 def _session_is_alive(session: ExecutorSession) -> bool:
+    if isinstance(session, AcpxExecutorSession):
+        return True
     if isinstance(session, CodexExecutorSession):
         return session.is_alive()
     return True
@@ -103,6 +106,29 @@ def _hydrate_resume_handle(
     session: ExecutorSession,
     resume_handle: AgentResumeHandle | None,
 ) -> None:
+    if (
+        isinstance(session, AcpxExecutorSession)
+        and resume_handle is not None
+        and resume_handle.executor_id == "acpx"
+    ):
+        opaque = resume_handle.opaque
+        session.hydrate_resume_handle(
+            cwd=str(opaque.get("cwd")) if opaque.get("cwd") is not None else None,
+            session_name=(
+                str(opaque.get("sessionName")) if opaque.get("sessionName") is not None else None
+            ),
+            agent=str(opaque.get("agent")) if opaque.get("agent") is not None else None,
+            acpx_record_id=resume_handle.session_handle,
+            acp_session_id=(
+                str(opaque.get("acpSessionId")) if opaque.get("acpSessionId") is not None else None
+            ),
+            agent_session_id=(
+                str(opaque.get("agentSessionId"))
+                if opaque.get("agentSessionId") is not None
+                else None
+            ),
+        )
+        return
     if (
         isinstance(session, CodexExecutorSession)
         and resume_handle is not None

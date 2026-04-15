@@ -55,6 +55,40 @@ python3 -m synapse --help
 variables manually. OpenAI is required for normal development and demo runtime,
 so set `OPENAI_API_KEY` in `~/.synapse/.env` before starting the app.
 
+## Optional ACPX Executor
+
+If you want Synapse to delegate execution through `acpx` instead of the direct
+Codex executor, install ACPX first:
+
+```bash
+npm install -g acpx@latest
+```
+
+Quick verification:
+
+```bash
+acpx --version
+codex --version
+```
+
+Then add at least this to `~/.synapse/.env`:
+
+```env
+SYNAPSE_ACPX_EXECUTOR_ENABLED=true
+```
+
+Optional overrides:
+
+```env
+# SYNAPSE_ACPX_COMMAND=acpx
+# SYNAPSE_ACPX_AGENT=codex
+# SYNAPSE_ACPX_PERMISSION_MODE=approve-all
+# SYNAPSE_ACPX_NON_INTERACTIVE_PERMISSIONS=deny
+# SYNAPSE_ACPX_TIMEOUT_SECONDS=300
+```
+
+If both ACPX and the direct Codex executor are enabled, Synapse prefers ACPX.
+
 ## Common Commands
 
 ```bash

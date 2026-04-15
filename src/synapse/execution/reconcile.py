@@ -3,6 +3,7 @@ from __future__ import annotations
 import time
 
 from synapse.blackboard import BlackboardQueryService, BlackboardStore
+from synapse.executor_adapters.acpx import AcpxExecutor, AcpxExecutorSession
 from synapse.executor_adapters.codex import CodexExecutor, CodexExecutorSession
 from synapse.executor_core import ExecutorRegistry, UnknownExecutorError
 from synapse.observability.emitters import ExecutionDiagnosticEmitter
@@ -93,6 +94,10 @@ class ReconcileLoop:
         session,
         executor_session,
     ) -> None:
+        if isinstance(executor, AcpxExecutor) and isinstance(executor_session, AcpxExecutorSession):
+            session.latest_resume_handle = executor.build_resume_handle(executor_session)
+            await self._store.put_session(session)
+            return
         if isinstance(executor, CodexExecutor) and isinstance(executor_session, CodexExecutorSession):
             session.latest_resume_handle = executor.build_resume_handle(executor_session)
             await self._store.put_session(session)

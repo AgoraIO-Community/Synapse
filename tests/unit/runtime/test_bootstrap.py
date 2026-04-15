@@ -24,7 +24,7 @@ def test_bootstrap_uses_openai_model_when_key_present():
 
 
 def test_bootstrap_fails_when_codex_is_enabled_but_missing(monkeypatch):
-    monkeypatch.setattr(bootstrap_module, "_codex_command_available", lambda command: False)
+    monkeypatch.setattr(bootstrap_module, "_command_available", lambda command: False)
 
     try:
         build_runtime_container(
@@ -32,5 +32,20 @@ def test_bootstrap_fails_when_codex_is_enabled_but_missing(monkeypatch):
         )
     except RuntimeError as exc:
         assert "missing-codex" in str(exc)
+        assert "Install Codex CLI" in str(exc)
     else:
         raise AssertionError("Expected bootstrap to fail for missing codex command.")
+
+
+def test_bootstrap_fails_when_acpx_is_enabled_but_missing(monkeypatch):
+    monkeypatch.setattr(bootstrap_module, "_command_available", lambda command: False)
+
+    try:
+        build_runtime_container(
+            settings=Settings(acpx_executor_enabled=True, acpx_command="missing-acpx"),
+        )
+    except RuntimeError as exc:
+        assert "missing-acpx" in str(exc)
+        assert "npm install -g acpx@latest" in str(exc)
+    else:
+        raise AssertionError("Expected bootstrap to fail for missing acpx command.")
