@@ -1,5 +1,5 @@
-from synopse.communication.policies.reply_style import render_reply
-from synopse.protocol import TaskSummary
+from synapse.communication.policies.reply_style import render_reply
+from synapse.protocol import TaskSummary
 
 
 def test_reply_style_avoids_mechanical_success_text():

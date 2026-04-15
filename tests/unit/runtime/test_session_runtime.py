@@ -2,9 +2,9 @@ import asyncio
 
 import pytest
 
-from synopse.communication.models import ScriptedCommunicationModel
-from synopse.communication.models.scripted import ScriptedPlan
-from synopse.protocol import (
+from synapse.communication.models import ScriptedCommunicationModel
+from synapse.communication.models.scripted import ScriptedPlan
+from synapse.protocol import (
     ExecutionMode,
     NotificationCandidate,
     NotificationCandidateType,
@@ -12,10 +12,10 @@ from synopse.protocol import (
     NotificationPriority,
     TaskExecutionMode,
 )
-from synopse.executor_core import ExecutorCapabilities, ExecutorEvent, ExecutorEventType, ExecutorSession
-from synopse.protocol import Task, TaskStatus
-from synopse.runtime import Settings
-from synopse.runtime.session import create_session_runtime
+from synapse.executor_core import ExecutorCapabilities, ExecutorEvent, ExecutorEventType, ExecutorSession
+from synapse.protocol import Task, TaskStatus
+from synapse.runtime import Settings
+from synapse.runtime.session import create_session_runtime
 
 
 @pytest.mark.anyio

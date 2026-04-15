@@ -1,0 +1,96 @@
+from fastapi import APIRouter, HTTPException, Request
+
+from synapse.api.models import DiagnosticTimelineResponse, SessionResponse
+from synapse.observability.schema import LEVEL_PRIORITY
+
+router = APIRouter()
+
+
+@router.post("/sessions", response_model=SessionResponse)
+async def create_session(
+    request: Request,
+) -> SessionResponse:
+    container = request.app.state.runtime_container
+    session = container.create_session()
+    session.observability.api.session_created(conversation_id=session.session_id)
+    return SessionResponse(session_id=session.session_id)
+
+
+@router.get("/sessions/{session_id}")
+async def get_session(
+    session_id: str,
+    request: Request,
+):
+    container = request.app.state.runtime_container
+    try:
+        session = container.get_session(session_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return await session.snapshot()
+
+
+@router.get("/sessions/{session_id}/conversation")
+async def get_session_conversation(
+    session_id: str,
+    request: Request,
+):
+    container = request.app.state.runtime_container
+    try:
+        session = container.get_session(session_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return await session.conversation_snapshot()
+
+
+@router.get("/sessions/{session_id}/tasks")
+async def list_tasks(
+    session_id: str,
+    request: Request,
+):
+    container = request.app.state.runtime_container
+    try:
+        session = container.get_session(session_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return await session.blackboard.list_tasks()
+
+
+@router.get(
+    "/sessions/{session_id}/diagnostics/timeline",
+    response_model=DiagnosticTimelineResponse,
+)
+async def get_session_diagnostic_timeline(
+    session_id: str,
+    request: Request,
+    after_sequence: int | None = None,
+    task_id: str | None = None,
+    run_id: str | None = None,
+    execution_session_id: str | None = None,
+    notification_id: str | None = None,
+    request_id: str | None = None,
+    event_prefix: str | None = None,
+    min_level: str | None = None,
+    limit: int = 200,
+) -> DiagnosticTimelineResponse:
+    container = request.app.state.runtime_container
+    try:
+        session = container.get_session(session_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    if min_level is not None:
+        min_level = min_level.upper()
+        if min_level not in LEVEL_PRIORITY:
+            raise HTTPException(status_code=400, detail="Invalid min_level.")
+    return DiagnosticTimelineResponse(
+        events=session.diagnostic_timeline(
+            after_sequence=after_sequence,
+            task_id=task_id,
+            run_id=run_id,
+            execution_session_id=execution_session_id,
+            notification_id=notification_id,
+            request_id=request_id,
+            event_prefix=event_prefix,
+            min_level=min_level,
+            limit=limit,
+        )
+    )

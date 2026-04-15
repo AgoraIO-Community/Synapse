@@ -14,24 +14,24 @@ When this RFC conflicts with the stable docs, treat the stable docs as authorita
 
 ## Context
 
-This design gives Synopse a durable-task, explicit execution-lineage model: keep the work item durable, and make concrete coding-agent attempts disposable, traceable, and executor-aware.
+This design gives Synapse a durable-task, explicit execution-lineage model: keep the work item durable, and make concrete coding-agent attempts disposable, traceable, and executor-aware.
 
 The key lesson is not the kanban UI, Git worktree model, or PR workflow. The key lesson is the separation between:
 
 - the durable thing humans care about
 - the executor/session lineage used to get work done
 
-For Synopse, that means:
+For Synapse, that means:
 
 - keep `Task` as the durable user-visible work item
 - add explicit execution lineage below it
 - keep agent/session/resume state inside the `Execution Brain`
 
-Synopse should not import kanban-product concepts into the core runtime. The existing Synopse runtime session already serves as the top-level collaboration container.
+Synapse should not import kanban-product concepts into the core runtime. The existing Synapse runtime session already serves as the top-level collaboration container.
 
 ## Current State
 
-Today, Synopse already has the right high-level architecture split:
+Today, Synapse already has the right high-level architecture split:
 
 - `Communication Brain`
   - owns acknowledgement, clarification, and user-facing response behavior
@@ -49,7 +49,7 @@ The current runtime behavior is still flatter than the target design:
 - follow-up behavior is task-centric rather than run-centric
 - a follow-up against a `done` task currently falls back to creating a new task
 
-That flattening is acceptable for a prototype, but it will become limiting once Synopse supports:
+That flattening is acceptable for a prototype, but it will become limiting once Synapse supports:
 
 - multiple coding-agent families
 - retries with clear lineage
@@ -72,7 +72,7 @@ That flattening is acceptable for a prototype, but it will become limiting once 
 
 ## Non-Goals
 
-- No kanban board or issue-management model in Synopse core runtime.
+- No kanban board or issue-management model in Synapse core runtime.
 - No Git workspace, worktree, or PR-management abstraction.
 - No shared mutable multi-agent editing model for the same task in V1.
 - No persistence/database design in this iteration beyond the current in-memory blackboard model.
@@ -108,7 +108,7 @@ It groups related runs that share:
 - the same base executor family
 - optional executor-native resume continuity
 
-An execution session is the Synopse analogue of “stay on the same agent family and continue the work” without turning every follow-up into a new task.
+An execution session is the Synapse analogue of “stay on the same agent family and continue the work” without turning every follow-up into a new task.
 
 ### `ExecutionRun`
 
@@ -334,7 +334,7 @@ Keep:
   - `failed`
   - `done`
 
-Synopse should not mix planning-board state into `TaskStatus`. If a planning/status-board layer is added later, it should use a separate planning-status concept.
+Synapse should not mix planning-board state into `TaskStatus`. If a planning/status-board layer is added later, it should use a separate planning-status concept.
 
 ## Execution Protocol
 
@@ -536,7 +536,7 @@ The practical answer to the Codex question is:
 - yes, both avoid a human-driven interactive TTY workflow
 - no, the two Codex implementations are not the same shape
 
-Synopse currently uses a simpler one-shot non-interactive Codex CLI integration, while richer sessionful Codex integrations are possible in principle.
+Synapse currently uses a simpler one-shot non-interactive Codex CLI integration, while richer sessionful Codex integrations are possible in principle.
 
 ### Sessionful Executor Abstraction Pattern
 
@@ -552,7 +552,7 @@ A richer sessionful executor integration typically has a common stack like:
 - agent-specific implementations
   - Claude, Codex, Gemini, and others all plug into the same interface
 
-This is architecturally important because Synopse's proposed `ExecutionSession` and `ExecutionRun` split fits this model well: the executor family and overrides are normalized at the common layer, while backend-specific continuity remains isolated in the concrete implementation.
+This is architecturally important because Synapse's proposed `ExecutionSession` and `ExecutionRun` split fits this model well: the executor family and overrides are normalized at the common layer, while backend-specific continuity remains isolated in the concrete implementation.
 
 ### Sessionful Codex Integration Pattern
 
@@ -577,9 +577,9 @@ Important details:
 
 So from the product/runtime point of view, it is non-interactive, but it is not merely a one-off CLI call. It is a programmatic, sessionful Codex integration.
 
-### Shared Abstraction in Synopse Today
+### Shared Abstraction in Synapse Today
 
-Synopse also already has a common executor abstraction:
+Synapse also already has a common executor abstraction:
 
 - `AsyncExecutor`
   - top-level async executor protocol
@@ -597,11 +597,11 @@ The main files are:
 - `runtime/executors/external_backend.py`
 - `runtime/executors/codex/backend.py`
 
-This means Synopse already has the right overall structure for multiple executors. The missing piece is not abstraction. The missing piece is richer executor-native session continuity and explicit run lineage above the backend.
+This means Synapse already has the right overall structure for multiple executors. The missing piece is not abstraction. The missing piece is richer executor-native session continuity and explicit run lineage above the backend.
 
-### How Codex Works in Synopse Today
+### How Codex Works in Synapse Today
 
-Synopse's current Codex backend is intentionally much simpler than a sessionful Codex integration.
+Synapse's current Codex backend is intentionally much simpler than a sessionful Codex integration.
 
 It launches:
 
@@ -624,19 +624,19 @@ It is useful because:
 
 - it is simple
 - it keeps the transport thin
-- it normalizes Codex activity into Synopse execution events
+- it normalizes Codex activity into Synapse execution events
 
 But it does not currently provide true Codex-native follow-up continuity. The current implementation is a disposable run model.
 
-### Design Implications for Synopse
+### Design Implications for Synapse
 
 The proposed `Task` / `ExecutionSession` / `ExecutionRun` model works with both styles of executor integration.
 
-For Synopse specifically:
+For Synapse specifically:
 
 - the current `codex exec --json --ephemeral` backend is a good fit for disposable `ExecutionRun`s
 - it is not yet a good fit for executor-native resumable `ExecutionSession`s
-- follow-up continuity in Synopse today should be treated as logical runtime continuity, not true Codex thread continuity
+- follow-up continuity in Synapse today should be treated as logical runtime continuity, not true Codex thread continuity
 
 That matters for the design:
 
@@ -648,12 +648,12 @@ That matters for the design:
   - recent summary
   - selected artifacts or task context
 
-If Synopse later wants true Codex-native resume behavior, it will likely need one of two changes:
+If Synapse later wants true Codex-native resume behavior, it will likely need one of two changes:
 
 - a richer Codex app-server or sessionful protocol integration
 - a backend-supported resume handle path exposed by the non-interactive Codex interface
 
-Until then, Synopse should explicitly model the difference between:
+Until then, Synapse should explicitly model the difference between:
 
 - runtime-level continuity
 - executor-native continuity
@@ -701,9 +701,9 @@ They must not be interpreted by:
 
 They are only carried and stored by Execution Brain.
 
-## Why Synopse Uses a Narrower Runtime Model
+## Why Synapse Uses a Narrower Runtime Model
 
-Synopse should use the execution-lineage ideas without importing a broader task-board product model.
+Synapse should use the execution-lineage ideas without importing a broader task-board product model.
 
 A broader execution product may separate:
 
@@ -712,7 +712,7 @@ A broader execution product may separate:
 - sessions
 - execution processes
 
-Synopse should adapt that into:
+Synapse should adapt that into:
 
 - runtime session
 - task
@@ -721,10 +721,10 @@ Synopse should adapt that into:
 
 Important differences:
 
-- Synopse runtime session is the top-level container
-- Synopse core runtime has no issue/kanban model
-- Synopse core runtime has no Git workspace/worktree abstraction
-- Synopse V1 should not support shared-write parallel runs on the same task
+- Synapse runtime session is the top-level container
+- Synapse core runtime has no issue/kanban model
+- Synapse core runtime has no Git workspace/worktree abstraction
+- Synapse V1 should not support shared-write parallel runs on the same task
 
 This is intentionally narrower and cleaner for a protocol-first runtime.
 
@@ -757,7 +757,7 @@ This is intentionally narrower and cleaner for a protocol-first runtime.
 - Whether future review UX needs dedicated frontend panels
 - Whether queued follow-up depth should remain `1` long-term
 - Whether future delegated sub-runs should become a separate child-run model or remain child tasks
-- Whether setup/helper behavior should become explicit run reasons in Synopse, similar to richer executor orchestration systems
+- Whether setup/helper behavior should become explicit run reasons in Synapse, similar to richer executor orchestration systems
 
 ## Implementation Impact
 

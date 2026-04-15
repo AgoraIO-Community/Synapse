@@ -1,4 +1,4 @@
-from synopse.executor_core import (
+from synapse.executor_core import (
     ExecutorCapabilities,
     ExecutorEvent,
     ExecutorEventType,

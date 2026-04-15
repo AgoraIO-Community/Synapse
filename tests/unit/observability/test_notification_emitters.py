@@ -1,12 +1,12 @@
 from datetime import UTC, datetime
 
-from synopse.communication.model import LlmTraceRecord
-from synopse.notification.policy import NotificationDeliveryGroup, NotificationDeliveryPlan
-from synopse.observability.emitters.communication import CommunicationDiagnosticEmitter
-from synopse.observability.emitters.notification import NotificationDiagnosticEmitter
-from synopse.observability.logger import DiagnosticLogger
-from synopse.observability.store import InMemoryDiagnosticStore
-from synopse.protocol import (
+from synapse.communication.model import LlmTraceRecord
+from synapse.notification.policy import NotificationDeliveryGroup, NotificationDeliveryPlan
+from synapse.observability.emitters.communication import CommunicationDiagnosticEmitter
+from synapse.observability.emitters.notification import NotificationDiagnosticEmitter
+from synapse.observability.logger import DiagnosticLogger
+from synapse.observability.store import InMemoryDiagnosticStore
+from synapse.protocol import (
     NotificationCandidate,
     NotificationCandidateType,
     NotificationDeliveryStatus,

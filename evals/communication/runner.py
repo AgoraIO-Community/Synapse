@@ -4,13 +4,13 @@ from dataclasses import asdict, dataclass
 import json
 from typing import Any
 
-from synopse.blackboard import InMemoryBlackboard
-from synopse.communication import CommunicationBrain, InMemoryConversationHistory
-from synopse.communication.models import OpenAICommunicationModel
-from synopse.communication.tools import build_default_tool_registry
-from synopse.executor_core import ExecutorCapabilities
-from synopse.infrastructure.llm import OpenAIProvider
-from synopse.runtime import Settings
+from synapse.blackboard import InMemoryBlackboard
+from synapse.communication import CommunicationBrain, InMemoryConversationHistory
+from synapse.communication.models import OpenAICommunicationModel
+from synapse.communication.tools import build_default_tool_registry
+from synapse.executor_core import ExecutorCapabilities
+from synapse.infrastructure.llm import OpenAIProvider
+from synapse.runtime import Settings
 
 from .scenarios import COMMUNICATION_EVAL_SCENARIOS, CommunicationEvalScenario
 

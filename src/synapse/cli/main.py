@@ -1,0 +1,1585 @@
+from __future__ import annotations
+
+import argparse
+from dataclasses import dataclass
+import getpass
+import os
+from pathlib import Path
+import re
+import shutil
+import signal
+import socket
+import subprocess
+import sys
+import tempfile
+import time
+
+from synapse.config_home import (
+    SYNAPSE_ENV_FILE,
+    format_user_path,
+)
+from synapse.yaml_support import YAMLParseError, load_yaml_file
+
+
+ROOT = Path(__file__).resolve().parents[3]
+FRONTEND = ROOT / "src" / "synapse" / "ui"
+VENV_DIR = ROOT / ".venv"
+ENV_LOCAL = SYNAPSE_ENV_FILE
+ENV_LINE_RE = re.compile(r"^\s*(?P<comment>#\s*)?(?P<key>[A-Z0-9_]+)=(?P<value>.*)$")
+TRUTHY_VALUES = {"1", "true", "yes", "on", "y"}
+FALSY_VALUES = {"0", "false", "no", "off", "n"}
+OPENAI_KEY = "OPENAI_API_KEY"
+CODEX_ENABLED_KEY = "SYNAPSE_CODEX_EXECUTOR_ENABLED"
+CODEX_COMMAND_KEY = "SYNAPSE_CODEX_COMMAND"
+INTERACTIVE_SETUP_KEYS = {OPENAI_KEY, CODEX_ENABLED_KEY, CODEX_COMMAND_KEY}
+GATEWAY_ENABLED_KEY = "SYNAPSE_GATEWAY_ENABLED"
+GATEWAY_HOST_KEY = "SYNAPSE_GATEWAY_HOST"
+GATEWAY_PORT_KEY = "SYNAPSE_GATEWAY_PORT"
+GATEWAY_PUBLIC_BASE_URL_KEY = "SYNAPSE_GATEWAY_PUBLIC_BASE_URL"
+GATEWAY_SYNAPSE_BASE_URL_KEY = "SYNAPSE_GATEWAY_SYNAPSE_BASE_URL"
+GATEWAY_MODULES_KEY = "SYNAPSE_GATEWAY_MODULES"
+SYSTEMD_UNIT_NAME = "synapse.service"
+SYSTEMD_SERVICE_DIR = Path("/etc/systemd/system")
+DEFAULT_ENV_TEMPLATE_LINES = (
+    "OPENAI_API_KEY=your_openai_api_key_here",
+    "SYNAPSE_OPENAI_MODEL=gpt-4o-mini",
+    "SYNAPSE_OPENAI_TIMEOUT_SECONDS=30",
+    "# SYNAPSE_OPENAI_BASE_URL=",
+    "# Optional ACPX-backed executor (install first with: npm install -g acpx@latest).",
+    "# SYNAPSE_ACPX_EXECUTOR_ENABLED=true",
+    "# SYNAPSE_ACPX_COMMAND=acpx",
+    "# SYNAPSE_ACPX_AGENT=codex",
+    "# SYNAPSE_ACPX_PERMISSION_MODE=approve-all",
+    "# SYNAPSE_ACPX_NON_INTERACTIVE_PERMISSIONS=deny",
+    "# SYNAPSE_ACPX_TIMEOUT_SECONDS=300",
+    "",
+    "# Set to true only after the Codex CLI is installed and configured locally.",
+    "SYNAPSE_CODEX_EXECUTOR_ENABLED=false",
+    "# Legacy fallback only; prefer runtime.codex_command in ~/.synapse/config.yaml.",
+    "# SYNAPSE_CODEX_COMMAND=codex",
+    "",
+    f"# Runtime and gateway credentials written by `synapse setup` to {format_user_path(ENV_LOCAL)}",
+    "# AGORA_APP_ID=",
+    "# AGORA_APP_CERTIFICATE=",
+    "# DEEPGRAM_API_KEY=",
+    "# ELEVENLABS_API_KEY=",
+)
+
+
+@dataclass(slots=True)
+class EnvTemplateLine:
+    raw: str
+    key: str | None = None
+    value: str | None = None
+    commented: bool = False
+
+
+@dataclass(slots=True)
+class GatewaySetupResult:
+    env_values: dict[str, str | None]
+    config_path: Path | None = None
+    config_text: str | None = None
+
+
+@dataclass(slots=True)
+class SetupValuesResult:
+    env_values: dict[str, str | None]
+    runtime_values: dict[str, object]
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="synapse", description="Synapse developer CLI.")
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    setup_parser = subparsers.add_parser(
+        "setup",
+        help=f"Interactively configure {format_user_path(ENV_LOCAL)}.",
+    )
+    setup_parser.add_argument(
+        "--non-interactive",
+        action="store_true",
+        help=f"Resolve values from {format_user_path(ENV_LOCAL)} and process env without prompting.",
+    )
+    setup_parser.add_argument(
+        "--bootstrap-defaults",
+        action="store_true",
+        help=argparse.SUPPRESS,
+    )
+
+    dev_parser = subparsers.add_parser("dev", help="Run backend and frontend together.")
+    _add_host_port(dev_parser, backend_port=8000, frontend_port=5173, include_frontend_port=True)
+
+    backend_parser = subparsers.add_parser("backend", help="Run the FastAPI backend with reload.")
+    _add_host_port(backend_parser, backend_port=8000)
+
+    frontend_parser = subparsers.add_parser("frontend", help="Run the frontend dev server.")
+    frontend_parser.add_argument("--host", default="0.0.0.0")
+    frontend_parser.add_argument("--port", type=int, default=5173)
+
+    doctor_parser = subparsers.add_parser("doctor", help="Check local development prerequisites.")
+    doctor_parser.add_argument("--backend-port", type=int, default=8000)
+    doctor_parser.add_argument("--frontend-port", type=int, default=5173)
+
+    start_parser = subparsers.add_parser("start", help="Run the FastAPI backend without reload.")
+    _add_host_port(start_parser, backend_port=8000)
+
+    gateway_parser = subparsers.add_parser("gateway", help="Configure and run the gateway host.")
+    gateway_subparsers = gateway_parser.add_subparsers(dest="gateway_command", required=True)
+    gateway_subparsers.add_parser("setup", help="Interactively configure gateway modules.")
+    gateway_run_parser = gateway_subparsers.add_parser("run", help="Run the headless gateway host.")
+    gateway_run_parser.add_argument("--host")
+    gateway_run_parser.add_argument("--port", type=int)
+    gateway_run_parser.add_argument(
+        "--reload",
+        action="store_true",
+        help="Run the gateway host with reload enabled.",
+    )
+
+    service_parser = subparsers.add_parser("service", help="Install and control the Ubuntu systemd service.")
+    service_subparsers = service_parser.add_subparsers(dest="service_command", required=True)
+    service_install_parser = service_subparsers.add_parser(
+        "install",
+        help="Install or update the systemd unit for this repo checkout.",
+    )
+    _add_host_port(service_install_parser, backend_port=8000)
+    service_subparsers.add_parser("start", help="Start the installed systemd service.")
+    service_subparsers.add_parser("stop", help="Stop the installed systemd service.")
+    service_subparsers.add_parser("restart", help="Restart the installed systemd service.")
+
+    return parser
+
+
+def _add_host_port(parser: argparse.ArgumentParser, backend_port: int, frontend_port: int | None = None, include_frontend_port: bool = False) -> None:
+    parser.add_argument("--host", default="0.0.0.0")
+    parser.add_argument("--port", type=int, default=backend_port)
+    if include_frontend_port:
+        parser.add_argument("--frontend-port", type=int, default=frontend_port or 5173)
+
+
+def main(argv: list[str] | None = None) -> int:
+    try:
+        parser = build_parser()
+        args = parser.parse_args(argv)
+
+        handlers = {
+            "setup": cmd_setup,
+            "dev": cmd_dev,
+            "backend": cmd_backend,
+            "frontend": cmd_frontend,
+            "doctor": cmd_doctor,
+            "start": cmd_start,
+            "gateway": cmd_gateway,
+            "service": cmd_service,
+        }
+        return handlers[args.command](args)
+    except CliError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
+
+def cmd_setup(_args: argparse.Namespace) -> int:
+    args = _args
+    if args.bootstrap_defaults:
+        bootstrap_setup_files()
+        return 0
+    if not args.non_interactive and not setup_can_prompt():
+        raise CliError("synapse setup requires a TTY. Use --non-interactive for automation.")
+
+    template_lines = load_env_template()
+    existing_values, existing_order = load_env_assignments(ENV_LOCAL)
+    config_path = gateway_config_path()
+    existing_config_yaml, config_load_error = _load_existing_gateway_yaml_for_setup(config_path)
+    if config_load_error is not None:
+        print(
+            f"[warn] ignoring invalid existing config at {format_user_path(config_path)}: {config_load_error}"
+        )
+    setup_values = resolve_setup_values(
+        template_lines=template_lines,
+        existing_values=existing_values,
+        environ=os.environ,
+        interactive=not args.non_interactive,
+        existing_config_yaml=existing_config_yaml,
+    )
+    resolved_values = setup_values.env_values
+    gateway_setup = resolve_gateway_setup_values(
+        existing_values=existing_values,
+        environ=os.environ,
+        interactive=not args.non_interactive,
+        force_prompt=False,
+        existing_config_yaml=existing_config_yaml,
+        runtime_values=setup_values.runtime_values,
+    )
+    resolved_values.update(gateway_setup.env_values)
+    write_env_file(
+        template_lines=template_lines,
+        resolved_values=resolved_values,
+        existing_values=existing_values,
+        existing_order=existing_order,
+        destination=ENV_LOCAL,
+    )
+    config_setup = gateway_setup
+    if config_setup.config_text is None and (
+        setup_values.runtime_values or not config_path.exists()
+    ):
+        config_setup = GatewaySetupResult(
+            env_values=gateway_setup.env_values,
+            config_path=config_path,
+            config_text=render_gateway_config(
+                runtime=_resolved_runtime_config(existing_config_yaml, setup_values.runtime_values),
+                host=_existing_host_config(existing_config_yaml),
+                gateways=_existing_gateways_config(existing_config_yaml),
+            ),
+        )
+    _write_gateway_config_if_needed(config_setup)
+    print(f"[write] configured {format_user_path(ENV_LOCAL)}")
+    return 0
+
+
+def cmd_dev(args: argparse.Namespace) -> int:
+    venv_python = require_venv_python()
+    commands = [
+        ("backend", backend_command(venv_python, args.host, args.port, reload=True), ROOT),
+        ("frontend", frontend_dev_command(args.host, args.frontend_port), FRONTEND),
+    ]
+    gateway_settings = load_gateway_settings_if_enabled()
+    if gateway_settings is not None:
+        commands.append(
+            (
+                "gateway",
+                gateway_command(
+                    venv_python,
+                    gateway_settings.host,
+                    gateway_settings.port,
+                    reload=True,
+                ),
+                ROOT,
+            )
+        )
+
+    print("\nSynapse dev is running")
+    print(f"Frontend: http://localhost:{args.frontend_port}")
+    print(f"Backend : http://localhost:{args.port}")
+    if gateway_settings is not None:
+        print(f"Gateway : {gateway_settings.public_base_url}")
+    print("Press Ctrl+C to stop\n")
+    return run_managed_processes(commands)
+
+
+def cmd_backend(args: argparse.Namespace) -> int:
+    venv_python = require_venv_python()
+    return run_checked(backend_command(venv_python, args.host, args.port, reload=True), cwd=ROOT)
+
+
+def cmd_start(args: argparse.Namespace) -> int:
+    venv_python = require_venv_python()
+    commands = [("backend", backend_command(venv_python, args.host, args.port, reload=False), ROOT)]
+    gateway_settings = load_gateway_settings_if_enabled()
+    if gateway_settings is not None:
+        commands.append(
+            (
+                "gateway",
+                gateway_command(
+                    venv_python,
+                    gateway_settings.host,
+                    gateway_settings.port,
+                    reload=False,
+                ),
+                ROOT,
+            )
+        )
+    return run_managed_processes(commands)
+
+
+def cmd_frontend(args: argparse.Namespace) -> int:
+    require_venv_python()
+    return run_checked(frontend_dev_command(args.host, args.port), cwd=FRONTEND)
+
+
+def cmd_doctor(args: argparse.Namespace) -> int:
+    ok = True
+    ok &= report_path("python", sys.executable)
+    frontend_ok = report_command("bun") or report_command("npm")
+    ok &= frontend_ok
+    report_command("docker", required=False)
+
+    venv_python = venv_python_path()
+    if venv_python.exists():
+        print(f"[ok] virtualenv: {VENV_DIR.relative_to(ROOT)}")
+        print(f"[ok] venv python: {venv_python}")
+    else:
+        print("[missing] virtualenv: run ./install.sh")
+        ok = False
+
+    ok &= report_port(args.backend_port)
+    ok &= report_port(args.frontend_port)
+
+    if ENV_LOCAL.exists():
+        print(f"[ok] env file: {format_user_path(ENV_LOCAL)}")
+    else:
+        print("[missing] env file: run ./synapse setup")
+        ok = False
+
+    if openai_api_key_present():
+        print("[ok] env: OPENAI_API_KEY")
+    else:
+        print("[missing] env: OPENAI_API_KEY (run ./synapse setup)")
+        ok = False
+
+    ok &= report_gateway_status(args)
+
+    return 0 if ok else 1
+
+
+def cmd_gateway(args: argparse.Namespace) -> int:
+    if args.gateway_command == "setup":
+        return cmd_gateway_setup(args)
+    if args.gateway_command == "run":
+        return cmd_gateway_run(args)
+    raise CliError(f"Unknown gateway command: {args.gateway_command}")
+
+
+def cmd_service(args: argparse.Namespace) -> int:
+    if args.service_command == "install":
+        return cmd_service_install(args)
+    if args.service_command in {"start", "stop", "restart"}:
+        return cmd_service_lifecycle(args.service_command)
+    raise CliError(f"Unknown service command: {args.service_command}")
+
+
+def cmd_gateway_setup(_args: argparse.Namespace) -> int:
+    if not setup_can_prompt():
+        raise CliError("synapse gateway setup requires a TTY.")
+
+    template_lines = load_env_template()
+    existing_values, existing_order = load_env_assignments(ENV_LOCAL)
+    existing_config_yaml = _load_existing_gateway_yaml(gateway_config_path())
+    gateway_setup = resolve_gateway_setup_values(
+        existing_values=existing_values,
+        environ=os.environ,
+        interactive=True,
+        force_prompt=True,
+        existing_config_yaml=existing_config_yaml,
+        runtime_values=None,
+    )
+    write_env_file(
+        template_lines=template_lines,
+        resolved_values={**existing_values, **gateway_setup.env_values},
+        existing_values=existing_values,
+        existing_order=existing_order,
+        destination=ENV_LOCAL,
+    )
+    _write_gateway_config_if_needed(gateway_setup)
+    print(f"[write] configured {format_user_path(ENV_LOCAL)}")
+    return 0
+
+
+def cmd_gateway_run(args: argparse.Namespace) -> int:
+    venv_python = require_venv_python()
+    settings = load_gateway_settings()
+    host = args.host or settings.host
+    port = args.port or settings.port
+    return run_checked(gateway_command(venv_python, host, port, reload=args.reload), cwd=ROOT)
+
+
+def cmd_service_install(args: argparse.Namespace) -> int:
+    ensure_service_install_supported()
+    ensure_service_manager_available()
+    user = current_service_user()
+    home = service_user_home()
+    venv_python = ensure_service_runtime_ready()
+    unit_text = render_service_unit(
+        user=user,
+        home=home,
+        workdir=ROOT,
+        venv_python=venv_python,
+        host=args.host,
+        port=args.port,
+    )
+    install_service_unit(unit_text)
+    print(f"[ok] installed {service_unit_path()}")
+    print(f"[hint] start with: ./synapse service start")
+    return 0
+
+
+def cmd_service_lifecycle(action: str) -> int:
+    ensure_service_manager_available()
+    return run_privileged_checked(["systemctl", action, SYSTEMD_UNIT_NAME], cwd=ROOT)
+
+
+def backend_command(venv_python: Path, host: str, port: int, *, reload: bool) -> list[str]:
+    command = [
+        str(venv_python),
+        "-m",
+        "uvicorn",
+        "synapse.api.app:app",
+        "--host",
+        host,
+        "--port",
+        str(port),
+    ]
+    if reload:
+        command.append("--reload")
+    return command
+
+
+def gateway_command(venv_python: Path, host: str, port: int, *, reload: bool) -> list[str]:
+    command = [
+        str(venv_python),
+        "-m",
+        "uvicorn",
+        "synapse.gateway_host.app:app",
+        "--host",
+        host,
+        "--port",
+        str(port),
+    ]
+    if reload:
+        command.append("--reload")
+    return command
+
+
+def frontend_install_command() -> list[str]:
+    frontend_tool = preferred_frontend_tool()
+    if frontend_tool == "bun":
+        return ["bun", "install"]
+    return ["npm", "install"]
+
+
+def frontend_dev_command(host: str, port: int) -> list[str]:
+    frontend_tool = preferred_frontend_tool()
+    if frontend_tool == "bun":
+        return ["bun", "run", "dev", "--", "--host", host, "--port", str(port)]
+    return ["npm", "run", "dev", "--", "--host", host, "--port", str(port)]
+
+
+def preferred_frontend_tool() -> str:
+    if shutil.which("bun"):
+        return "bun"
+    if shutil.which("npm"):
+        return "npm"
+    raise CliError("Missing frontend package manager: install Bun or npm.")
+
+
+def ensure_service_install_supported() -> None:
+    if not sys.platform.startswith("linux"):
+        raise CliError("synapse service install currently supports Linux/systemd hosts only.")
+
+
+def ensure_service_manager_available() -> None:
+    if not sys.platform.startswith("linux"):
+        raise CliError("systemd service management currently supports Linux hosts only.")
+    if shutil.which("systemctl") is None:
+        raise CliError("systemctl is required for synapse service commands.")
+    if os.geteuid() != 0 and shutil.which("sudo") is None:
+        raise CliError("sudo is required for synapse service commands.")
+
+
+def current_service_user() -> str:
+    return getpass.getuser()
+
+
+def service_user_home() -> Path:
+    return ENV_LOCAL.parent.parent
+
+
+def service_unit_path() -> Path:
+    return SYSTEMD_SERVICE_DIR / SYSTEMD_UNIT_NAME
+
+
+def ensure_service_runtime_ready() -> Path:
+    venv_python = require_venv_python(allow_missing=True)
+    if not venv_python.exists():
+        run_checked([sys.executable, "-m", "venv", str(VENV_DIR)], cwd=ROOT)
+
+    venv_python = require_venv_python()
+    run_checked([str(venv_python), "-m", "pip", "install", "--upgrade", "pip"], cwd=ROOT)
+    run_checked([str(venv_python), "-m", "pip", "install", "-e", "."], cwd=ROOT)
+
+    bootstrap_setup_files()
+    if not openai_api_key_present():
+        print(
+            f"[warn] env: OPENAI_API_KEY is not configured in {format_user_path(ENV_LOCAL)}"
+        )
+
+    return venv_python
+
+
+def render_service_unit(
+    *,
+    user: str,
+    home: Path,
+    workdir: Path,
+    venv_python: Path,
+    host: str,
+    port: int,
+) -> str:
+    path_entries = [
+        str(workdir / ".venv" / "bin"),
+        str(home / ".local" / "bin"),
+        str(home / ".bun" / "bin"),
+        "/usr/local/sbin",
+        "/usr/local/bin",
+        "/usr/sbin",
+        "/usr/bin",
+        "/sbin",
+        "/bin",
+    ]
+    exec_start = _render_systemd_exec_start(
+        [str(venv_python), "-m", "synapse", "start", "--host", host, "--port", str(port)]
+    )
+    lines = [
+        "[Unit]",
+        "Description=Synapse service",
+        "After=network-online.target",
+        "Wants=network-online.target",
+        "",
+        "[Service]",
+        "Type=simple",
+        f"User={user}",
+        f"WorkingDirectory={workdir}",
+        _render_systemd_env("HOME", str(home)),
+        _render_systemd_env("PATH", ":".join(path_entries)),
+        f"ExecStart={exec_start}",
+        "Restart=on-failure",
+        "RestartSec=5",
+        "",
+        "[Install]",
+        "WantedBy=multi-user.target",
+        "",
+    ]
+    return "\n".join(lines)
+
+
+def _render_systemd_env(name: str, value: str) -> str:
+    escaped = value.replace("\\", "\\\\").replace('"', '\\"')
+    return f'Environment="{name}={escaped}"'
+
+
+def _render_systemd_exec_start(args: list[str]) -> str:
+    rendered: list[str] = []
+    for arg in args:
+        if not arg or any(char.isspace() for char in arg):
+            escaped = arg.replace("\\", "\\\\").replace('"', '\\"')
+            rendered.append(f'"{escaped}"')
+            continue
+        rendered.append(arg)
+    return " ".join(rendered)
+
+
+def install_service_unit(unit_text: str) -> None:
+    temp_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=False) as handle:
+            handle.write(unit_text)
+            temp_path = Path(handle.name)
+        run_privileged_checked(
+            [
+                "install",
+                "-o",
+                "root",
+                "-g",
+                "root",
+                "-m",
+                "0644",
+                str(temp_path),
+                str(service_unit_path()),
+            ],
+            cwd=ROOT,
+        )
+        run_privileged_checked(["systemctl", "daemon-reload"], cwd=ROOT)
+        run_privileged_checked(["systemctl", "enable", SYSTEMD_UNIT_NAME], cwd=ROOT)
+    finally:
+        if temp_path is not None:
+            temp_path.unlink(missing_ok=True)
+
+
+def run_privileged_checked(cmd: list[str], *, cwd: Path) -> int:
+    if os.geteuid() == 0:
+        return run_checked(cmd, cwd=cwd)
+    return run_checked(["sudo", *cmd], cwd=cwd)
+
+
+def require_venv_python(*, allow_missing: bool = False) -> Path:
+    venv_python = venv_python_path()
+    if venv_python.exists():
+        return venv_python
+    if allow_missing:
+        return venv_python
+    raise CliError("Repo virtualenv is not ready. Run ./install.sh first.")
+
+
+def venv_python_path() -> Path:
+    if os.name == "nt":
+        return VENV_DIR / "Scripts" / "python.exe"
+    return VENV_DIR / "bin" / "python"
+
+
+def run_checked(cmd: list[str], cwd: Path) -> int:
+    print(f"[run] {' '.join(cmd)}")
+    completed = subprocess.run(cmd, cwd=cwd, check=False)
+    if completed.returncode != 0:
+        raise SystemExit(completed.returncode)
+    return completed.returncode
+
+
+def run_managed_processes(commands: list[tuple[str, list[str], Path]]) -> int:
+    processes: list[tuple[str, subprocess.Popen[str]]] = []
+
+    def start_process(name: str, cmd: list[str], cwd: Path) -> subprocess.Popen[str]:
+        print(f"[start] {name}: {' '.join(cmd)}")
+        process = subprocess.Popen(cmd, cwd=cwd)
+        processes.append((name, process))
+        return process
+
+    def stop_all() -> None:
+        for name, process in reversed(processes):
+            if process.poll() is None:
+                print(f"[stop] {name}")
+                process.terminate()
+        deadline = time.time() + 5
+        for _, process in processes:
+            while process.poll() is None and time.time() < deadline:
+                time.sleep(0.1)
+        for name, process in processes:
+            if process.poll() is None:
+                print(f"[kill] {name}")
+                process.kill()
+
+    def handle_signal(_signum: int, _frame) -> None:
+        stop_all()
+        raise SystemExit(0)
+
+    signal.signal(signal.SIGINT, handle_signal)
+    signal.signal(signal.SIGTERM, handle_signal)
+
+    for name, cmd, cwd in commands:
+        start_process(name, cmd, cwd)
+
+    try:
+        while True:
+            for name, process in processes:
+                code = process.poll()
+                if code is not None:
+                    print(f"[exit] {name} exited with code {code}")
+                    stop_all()
+                    return code
+            time.sleep(1)
+    finally:
+        stop_all()
+
+
+def report_command(name: str, *, required: bool = True) -> bool:
+    path = shutil.which(name)
+    if path:
+        print(f"[ok] command: {name} -> {path}")
+        return True
+    status = "missing" if required else "warn"
+    print(f"[{status}] command: {name}")
+    return not required
+
+
+def report_path(label: str, value: str) -> bool:
+    print(f"[ok] {label}: {value}")
+    return True
+
+
+def report_port(port: int) -> bool:
+    try:
+        sock = socket.socket()
+    except PermissionError:
+        print(f"[warn] port {port} could not be checked in this environment")
+        return True
+
+    try:
+        sock.bind(("127.0.0.1", port))
+        print(f"[ok] port {port} is free")
+        return True
+    except PermissionError:
+        print(f"[warn] port {port} could not be checked in this environment")
+        return True
+    except OSError:
+        print(f"[busy] port {port} is already in use")
+        return False
+    finally:
+        sock.close()
+
+
+def openai_api_key_present() -> bool:
+    if os.getenv("OPENAI_API_KEY"):
+        return True
+    if not ENV_LOCAL.exists():
+        return False
+    for line in ENV_LOCAL.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "=" not in stripped:
+            continue
+        key, _, value = stripped.partition("=")
+        if key.strip() == "OPENAI_API_KEY" and value.strip():
+            return True
+    return False
+
+
+def setup_can_prompt() -> bool:
+    return sys.stdin.isatty()
+
+
+def load_env_template() -> list[EnvTemplateLine]:
+    return _parse_env_template_lines(DEFAULT_ENV_TEMPLATE_LINES)
+
+
+def _parse_env_template_lines(raw_lines: tuple[str, ...]) -> list[EnvTemplateLine]:
+    lines: list[EnvTemplateLine] = []
+    for raw_line in raw_lines:
+        match = ENV_LINE_RE.match(raw_line)
+        if not match:
+            lines.append(EnvTemplateLine(raw=raw_line))
+            continue
+        lines.append(
+            EnvTemplateLine(
+                raw=raw_line,
+                key=match.group("key"),
+                value=match.group("value"),
+                commented=match.group("comment") is not None,
+            )
+        )
+    return lines
+
+
+def bootstrap_env_template() -> list[EnvTemplateLine]:
+    template_lines = load_env_template()
+    bootstrapped_lines: list[EnvTemplateLine] = []
+    for line in template_lines:
+        if line.key == OPENAI_KEY:
+            bootstrapped_lines.append(
+                EnvTemplateLine(
+                    raw=f"{OPENAI_KEY}=",
+                    key=OPENAI_KEY,
+                    value="",
+                    commented=False,
+                )
+            )
+            continue
+        bootstrapped_lines.append(line)
+    return bootstrapped_lines
+
+
+def load_env_assignments(path: Path) -> tuple[dict[str, str], list[str]]:
+    if not path.exists():
+        return {}, []
+
+    values: dict[str, str] = {}
+    order: list[str] = []
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        match = ENV_LINE_RE.match(raw_line)
+        if not match or match.group("comment") is not None:
+            continue
+        key = match.group("key")
+        if key not in values:
+            order.append(key)
+        values[key] = match.group("value")
+    return values, order
+
+
+def resolve_setup_values(
+    *,
+    template_lines: list[EnvTemplateLine],
+    existing_values: dict[str, str],
+    environ: os._Environ[str],
+    interactive: bool,
+    existing_config_yaml: dict[str, object],
+) -> SetupValuesResult:
+    template_values = {line.key: line.value for line in template_lines if line.key is not None}
+    resolved: dict[str, str | None] = {}
+
+    for line in template_lines:
+        if line.key is None or line.key in INTERACTIVE_SETUP_KEYS:
+            continue
+        current_value = pick_env_value(line.key, existing_values, environ)
+        if current_value is None and not line.commented:
+            current_value = line.value
+        resolved[line.key] = normalize_optional_value(current_value)
+
+    openai_default = normalize_required_value(
+        pick_env_value(OPENAI_KEY, existing_values, environ),
+        placeholder=template_values.get(OPENAI_KEY),
+    )
+    if interactive:
+        resolved[OPENAI_KEY] = prompt_secret_value(OPENAI_KEY, default_value=openai_default)
+    else:
+        if openai_default is None:
+            raise CliError(
+                f"OPENAI_API_KEY is required for non-interactive setup. Set it in {format_user_path(ENV_LOCAL)} or the shell environment."
+            )
+        resolved[OPENAI_KEY] = openai_default
+
+    explicit_codex_enabled = pick_env_value(CODEX_ENABLED_KEY, existing_values, environ)
+    codex_enabled = resolve_codex_enabled(explicit_codex_enabled, interactive=interactive)
+    resolved[CODEX_ENABLED_KEY] = format_bool(codex_enabled)
+
+    existing_yaml_codex_command = _existing_yaml_value(
+        existing_config_yaml,
+        "runtime",
+        "codex_command",
+    )
+    legacy_codex_command = pick_env_value(CODEX_COMMAND_KEY, existing_values, environ)
+    discovered_codex_command = _detected_codex_command()
+    prompt_default_codex_command = (
+        existing_yaml_codex_command
+        or legacy_codex_command
+        or discovered_codex_command
+        or template_values.get(CODEX_COMMAND_KEY)
+        or "codex"
+    )
+    resolved_codex_command = (
+        existing_yaml_codex_command
+        or legacy_codex_command
+        or discovered_codex_command
+        or template_values.get(CODEX_COMMAND_KEY)
+        or "codex"
+    )
+    runtime_values: dict[str, object] = {}
+    if interactive and codex_enabled:
+        codex_command = prompt_text_value(
+            "Codex command",
+            default_value=prompt_default_codex_command,
+            required=True,
+        )
+        if not _codex_command_available(codex_command):
+            print(f"[warn] command '{codex_command}' is not currently available on PATH")
+        runtime_values["codex_command"] = codex_command
+    elif codex_enabled:
+        runtime_values["codex_command"] = resolved_codex_command
+    elif existing_yaml_codex_command:
+        runtime_values["codex_command"] = existing_yaml_codex_command
+    elif legacy_codex_command:
+        runtime_values["codex_command"] = legacy_codex_command
+
+    return SetupValuesResult(env_values=resolved, runtime_values=runtime_values)
+
+
+def resolve_bootstrap_values(
+    *,
+    template_lines: list[EnvTemplateLine],
+    existing_values: dict[str, str],
+) -> dict[str, str | None]:
+    template_values = {line.key: line.value for line in template_lines if line.key is not None}
+    resolved: dict[str, str | None] = {}
+
+    for line in template_lines:
+        if line.key is None or line.key in INTERACTIVE_SETUP_KEYS:
+            continue
+        current_value = existing_values.get(line.key)
+        if current_value is None and not line.commented:
+            current_value = line.value
+        resolved[line.key] = normalize_optional_value(current_value)
+
+    resolved[OPENAI_KEY] = normalize_optional_value(existing_values.get(OPENAI_KEY))
+
+    explicit_codex_enabled = existing_values.get(CODEX_ENABLED_KEY)
+    parsed_codex_enabled = (
+        parse_bool_value(explicit_codex_enabled)
+        if explicit_codex_enabled not in (None, "")
+        else None
+    )
+    codex_enabled = parsed_codex_enabled if parsed_codex_enabled is not None else False
+    resolved[CODEX_ENABLED_KEY] = format_bool(codex_enabled)
+
+    return resolved
+
+
+def resolve_gateway_setup_values(
+    *,
+    existing_values: dict[str, str],
+    environ: os._Environ[str],
+    interactive: bool,
+    force_prompt: bool,
+    existing_config_yaml: dict[str, object],
+    runtime_values: dict[str, object] | None,
+) -> GatewaySetupResult:
+    if not interactive:
+        return GatewaySetupResult(env_values={})
+
+    existing_enabled = pick_env_value(GATEWAY_ENABLED_KEY, existing_values, environ)
+    default_enabled = parse_bool_value(existing_enabled) if existing_enabled is not None else False
+    should_configure = prompt_bool_value("Configure gateway host", default=bool(default_enabled or force_prompt))
+    if not should_configure:
+        if not force_prompt:
+            return GatewaySetupResult(env_values={})
+        return GatewaySetupResult(
+            env_values={},
+            config_path=gateway_config_path(),
+            config_text=render_gateway_config(
+                runtime=_resolved_runtime_config(existing_config_yaml, runtime_values),
+                host=_default_host_config(),
+                gateways={},
+            ),
+        )
+
+    config_path = gateway_config_path()
+
+    gateways = prompt_gateway_selection()
+    host = prompt_text_value(
+        "Gateway host",
+        default_value=_existing_yaml_value(existing_config_yaml, "host", "host")
+        or pick_env_value(GATEWAY_HOST_KEY, existing_values, environ)
+        or "0.0.0.0",
+        required=True,
+    )
+    port = prompt_text_value(
+        "Gateway port",
+        default_value=str(
+            _existing_yaml_value(existing_config_yaml, "host", "port")
+            or pick_env_value(GATEWAY_PORT_KEY, existing_values, environ)
+            or "8010"
+        ),
+        required=True,
+    )
+    public_base_url = prompt_text_value(
+        "Gateway public base URL",
+        default_value=_existing_yaml_value(existing_config_yaml, "host", "public_base_url")
+        or pick_env_value(GATEWAY_PUBLIC_BASE_URL_KEY, existing_values, environ)
+        or f"http://127.0.0.1:{port}",
+        required=True,
+    )
+    synapse_base_url = prompt_text_value(
+        "Synapse API base URL for gateway callbacks",
+        default_value=_existing_yaml_value(existing_config_yaml, "host", "synapse_base_url")
+        or pick_env_value(GATEWAY_SYNAPSE_BASE_URL_KEY, existing_values, environ)
+        or "http://127.0.0.1:8000",
+        required=True,
+    )
+
+    resolved_env: dict[str, str | None] = {}
+    gateway_blocks: dict[str, dict[str, object]] = {}
+    for gateway in gateways:
+        if gateway == "agora-convoai":
+            block, env_updates = resolve_agora_gateway_setup_values(
+                existing_values,
+                environ,
+                existing_config_yaml,
+            )
+            gateway_blocks[gateway] = block
+            resolved_env.update(env_updates)
+    config_text = render_gateway_config(
+        runtime=_resolved_runtime_config(existing_config_yaml, runtime_values),
+        host={
+            "enabled": True,
+            "host": host,
+            "port": int(port),
+            "public_base_url": public_base_url,
+            "synapse_base_url": synapse_base_url,
+            "enabled_gateways": gateways,
+        },
+        gateways=gateway_blocks,
+    )
+    return GatewaySetupResult(
+        env_values=resolved_env,
+        config_path=config_path,
+        config_text=config_text,
+    )
+
+
+def bootstrap_setup_files() -> None:
+    existing_values, existing_order = load_env_assignments(ENV_LOCAL)
+    if not ENV_LOCAL.exists():
+        template_lines = bootstrap_env_template()
+        resolved_values = resolve_bootstrap_values(
+            template_lines=template_lines,
+            existing_values=existing_values,
+        )
+        write_env_file(
+            template_lines=template_lines,
+            resolved_values=resolved_values,
+            existing_values=existing_values,
+            existing_order=existing_order,
+            destination=ENV_LOCAL,
+        )
+        print(f"[write] configured {format_user_path(ENV_LOCAL)}")
+
+    config_path = gateway_config_path()
+    if not config_path.exists():
+        _write_gateway_config_if_needed(
+            GatewaySetupResult(
+                env_values={},
+                config_path=config_path,
+                config_text=render_gateway_config(
+                    runtime=resolve_bootstrap_runtime_values(existing_values),
+                    host=_default_host_config(),
+                    gateways={},
+                ),
+            )
+        )
+
+
+def resolve_agora_gateway_setup_values(
+    existing_values: dict[str, str],
+    environ: os._Environ[str],
+    existing_gateway_yaml: dict[str, object],
+) -> tuple[dict[str, object], dict[str, str | None]]:
+    env_updates: dict[str, str | None] = {}
+    existing_gateway = _existing_gateway_block(existing_gateway_yaml, "agora-convoai")
+
+    app_id = prompt_text_value(
+        "Agora App ID",
+        default_value=pick_env_value("AGORA_APP_ID", existing_values, environ) or "",
+        required=True,
+    )
+    app_certificate = prompt_secret_value(
+        "Agora App Certificate",
+        default_value=pick_env_value("AGORA_APP_CERTIFICATE", existing_values, environ),
+    )
+    env_updates["AGORA_APP_ID"] = app_id
+    env_updates["AGORA_APP_CERTIFICATE"] = app_certificate
+
+    asr_mode = prompt_choice_value(
+        "ASR credential mode",
+        choices=["managed", "byok"],
+        default_value=str(
+            _existing_nested_value(existing_gateway, "asr", "credential_mode") or "managed"
+        ),
+    )
+    asr_model = prompt_choice_value(
+        "ASR model",
+        choices=["nova-3", "nova-2"],
+        default_value=str(_existing_nested_value(existing_gateway, "asr", "model") or "nova-3"),
+    )
+    asr_language = prompt_text_value(
+        "ASR language",
+        default_value=str(_existing_nested_value(existing_gateway, "asr", "language") or "en-US"),
+        required=True,
+    )
+    asr_block: dict[str, object] = {
+        "vendor": "deepgram",
+        "credential_mode": asr_mode,
+        "model": asr_model,
+        "language": asr_language,
+    }
+    if asr_mode == "byok":
+        deepgram_api_key = prompt_secret_value(
+            "Deepgram API Key",
+            default_value=pick_env_value("DEEPGRAM_API_KEY", existing_values, environ),
+        )
+        env_updates["DEEPGRAM_API_KEY"] = deepgram_api_key
+        asr_block["api_key"] = "$DEEPGRAM_API_KEY"
+
+    tts_vendor = prompt_choice_value(
+        "TTS vendor",
+        choices=["minimax", "openai", "elevenlabs"],
+        default_value=str(_existing_nested_value(existing_gateway, "tts", "vendor") or "minimax"),
+    )
+    if tts_vendor == "minimax":
+        tts_block: dict[str, object] = {
+            "vendor": "minimax",
+            "credential_mode": "managed",
+            "model": prompt_choice_value(
+                "TTS model",
+                choices=["speech_2_6_turbo", "speech_2_8_turbo"],
+                default_value=str(
+                    _existing_nested_value(existing_gateway, "tts", "model")
+                    or "speech_2_6_turbo"
+                ),
+            ),
+            "voice": normalize_optional_value(
+                prompt_text_value(
+                    "TTS voice",
+                    default_value=(
+                        _existing_nested_value(existing_gateway, "tts", "voice")
+                        or "English_magnetic_voiced_man"
+                    ),
+                )
+            ),
+            "sample_rate": None,
+        }
+    elif tts_vendor == "openai":
+        tts_block = {
+            "vendor": "openai",
+            "credential_mode": "managed",
+            "model": "tts-1",
+            "voice": normalize_optional_value(
+                prompt_text_value(
+                    "TTS voice",
+                    default_value=_existing_nested_value(existing_gateway, "tts", "voice") or "alloy",
+                )
+            )
+            or "alloy",
+            "sample_rate": None,
+        }
+    else:
+        elevenlabs_api_key = prompt_secret_value(
+            "ElevenLabs API Key",
+            default_value=pick_env_value("ELEVENLABS_API_KEY", existing_values, environ),
+        )
+        env_updates["ELEVENLABS_API_KEY"] = elevenlabs_api_key
+        tts_block = {
+            "vendor": "elevenlabs",
+            "credential_mode": "byok",
+            "model": prompt_text_value(
+                "TTS model",
+                default_value=str(
+                    _existing_nested_value(existing_gateway, "tts", "model")
+                    or "eleven_flash_v2_5"
+                ),
+                required=True,
+            ),
+            "voice": normalize_optional_value(
+                prompt_text_value(
+                    "TTS voice",
+                    default_value=_existing_nested_value(existing_gateway, "tts", "voice"),
+                    required=True,
+                )
+            ),
+            "api_key": "$ELEVENLABS_API_KEY",
+            "sample_rate": int(
+                prompt_text_value(
+                    "TTS sample rate",
+                    default_value=str(
+                        _existing_nested_value(existing_gateway, "tts", "sample_rate") or "24000"
+                    ),
+                    required=True,
+                )
+            ),
+        }
+
+    return (
+        {
+            "app_id": "$AGORA_APP_ID",
+            "app_certificate": "$AGORA_APP_CERTIFICATE",
+            "convoai_area": "US",
+            "client_token_ttl_seconds": int(existing_gateway.get("client_token_ttl_seconds") or 3600),
+            "speak_priority": str(existing_gateway.get("speak_priority") or "APPEND").upper(),
+            "speak_interruptable": bool(existing_gateway.get("speak_interruptable", True)),
+            "request_timeout_seconds": float(existing_gateway.get("request_timeout_seconds") or 10.0),
+            "asr": asr_block,
+            "tts": tts_block,
+        },
+        env_updates,
+    )
+
+
+def write_env_file(
+    *,
+    template_lines: list[EnvTemplateLine],
+    resolved_values: dict[str, str | None],
+    existing_values: dict[str, str],
+    existing_order: list[str],
+    destination: Path,
+) -> None:
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    known_keys = [line.key for line in template_lines if line.key is not None]
+    rendered_lines: list[str] = []
+
+    for line in template_lines:
+        if line.key is None:
+            rendered_lines.append(line.raw)
+            continue
+
+        resolved_value = resolved_values.get(line.key)
+        if resolved_value is None or resolved_value == "":
+            if line.commented:
+                rendered_lines.append(line.raw)
+            elif line.value is not None:
+                rendered_lines.append(f"{line.key}={line.value}")
+            else:
+                rendered_lines.append(f"{line.key}=")
+            continue
+
+        rendered_lines.append(f"{line.key}={resolved_value}")
+
+    unknown_keys = [key for key in existing_order if key not in known_keys]
+    additional_resolved_keys = [
+        key
+        for key, value in resolved_values.items()
+        if key not in known_keys and key not in unknown_keys and value not in (None, "")
+    ]
+    if unknown_keys:
+        if rendered_lines and rendered_lines[-1] != "":
+            rendered_lines.append("")
+        for key in unknown_keys:
+            rendered_lines.append(f"{key}={existing_values[key]}")
+    if additional_resolved_keys:
+        if rendered_lines and rendered_lines[-1] != "":
+            rendered_lines.append("")
+        for key in additional_resolved_keys:
+            rendered_lines.append(f"{key}={resolved_values[key]}")
+
+    destination.write_text("\n".join(rendered_lines) + "\n", encoding="utf-8")
+
+
+def pick_env_value(name: str, existing_values: dict[str, str], environ: os._Environ[str]) -> str | None:
+    if name in existing_values:
+        return existing_values[name]
+    return environ.get(name)
+
+
+def normalize_optional_value(value: str | None) -> str | None:
+    if value is None or value == "":
+        return None
+    return value
+
+
+def normalize_required_value(value: str | None, *, placeholder: str | None) -> str | None:
+    if value is None or value == "" or value == placeholder:
+        return None
+    return value
+
+
+def _detected_codex_command() -> str | None:
+    return shutil.which("codex")
+
+
+def _codex_command_available(command: str) -> bool:
+    return shutil.which(command) is not None
+
+
+def resolve_codex_enabled(explicit_value: str | None, *, interactive: bool) -> bool:
+    if explicit_value is not None:
+        parsed = parse_bool_value(explicit_value)
+        if parsed is None:
+            raise CliError(
+                f"{CODEX_ENABLED_KEY} must be one of true/false/yes/no/1/0, got '{explicit_value}'."
+            )
+        explicit_default = parsed
+    else:
+        explicit_default = None
+
+    if not interactive:
+        return explicit_default if explicit_default is not None else False
+
+    default_value = explicit_default if explicit_default is not None else _codex_command_available("codex")
+    return prompt_bool_value("Enable Codex executor", default=default_value)
+
+
+def parse_bool_value(raw_value: str) -> bool | None:
+    normalized = raw_value.strip().lower()
+    if normalized in TRUTHY_VALUES:
+        return True
+    if normalized in FALSY_VALUES:
+        return False
+    return None
+
+
+def format_bool(value: bool) -> str:
+    return "true" if value else "false"
+
+
+def prompt_secret_value(name: str, *, default_value: str | None) -> str:
+    while True:
+        suffix = " [configured]" if default_value else ""
+        entered = getpass.getpass(f"{name}{suffix}: ")
+        if entered:
+            return entered
+        if default_value:
+            return default_value
+        print(f"{name} is required.")
+
+
+def prompt_bool_value(label: str, *, default: bool) -> bool:
+    prompt = "Y/n" if default else "y/N"
+    while True:
+        entered = input(f"{label} [{prompt}]: ").strip()
+        if not entered:
+            return default
+        parsed = parse_bool_value(entered)
+        if parsed is not None:
+            return parsed
+        print("Please answer yes or no.")
+
+
+def prompt_gateway_module_selection() -> list[str]:
+    return prompt_gateway_selection()
+
+
+def prompt_gateway_selection() -> list[str]:
+    gateways = list_available_gateway_modules()
+    if not gateways:
+        raise CliError("No gateways are currently registered.")
+
+    print("Available gateways:")
+    for index, gateway in enumerate(gateways, start=1):
+        print(f"  {index}. {gateway}")
+
+    while True:
+        entered = input("Select gateways [1]: ").strip()
+        if not entered:
+            return [gateways[0]]
+        selected: list[str] = []
+        try:
+            for part in entered.split(","):
+                index = int(part.strip())
+                selected.append(gateways[index - 1])
+        except (ValueError, IndexError):
+            print("Enter one or more numeric choices separated by commas.")
+            continue
+        deduped: list[str] = []
+        for gateway in selected:
+            if gateway not in deduped:
+                deduped.append(gateway)
+        return deduped
+
+
+def prompt_text_value(label: str, *, default_value: str | None, required: bool = False) -> str:
+    while True:
+        suffix = f" [{default_value}]" if default_value else ""
+        entered = input(f"{label}{suffix}: ").strip()
+        if entered:
+            return entered
+        if default_value:
+            return default_value
+        if not required:
+            return ""
+        print(f"{label} is required.")
+
+
+def prompt_choice_value(label: str, *, choices: list[str], default_value: str) -> str:
+    normalized_choices = {choice.lower(): choice for choice in choices}
+    while True:
+        entered = input(f"{label} [{default_value}]: ").strip()
+        value = (entered or default_value).lower()
+        if value in normalized_choices:
+            return normalized_choices[value]
+        print(f"Choose one of: {', '.join(choices)}")
+
+
+def list_available_gateway_modules() -> list[str]:
+    from synapse.gateway_host.catalog import list_gateway_module_specs
+
+    return [spec.slug for spec in list_gateway_module_specs()]
+
+
+def load_gateway_settings():
+    import importlib
+    gateway_config_module = importlib.import_module("synapse.gateway_host.config")
+    return gateway_config_module.load_gateway_host_settings(env_file=ENV_LOCAL)
+
+
+def load_gateway_settings_if_enabled():
+    settings = load_gateway_settings()
+    if not settings.enabled or not settings.enabled_gateways:
+        return None
+    return settings
+
+
+def report_gateway_status(args: argparse.Namespace) -> bool:
+    try:
+        settings = load_gateway_settings()
+    except Exception as exc:
+        print(f"[missing] gateway config: {exc}")
+        return False
+    if not settings.enabled:
+        print("[ok] gateway: disabled")
+        return True
+
+    ok = True
+    gateways = ", ".join(settings.enabled_gateways) or "(none)"
+    print(f"[ok] gateway: enabled -> {gateways}")
+    print(f"[ok] gateway public URL: {settings.public_base_url}")
+    ok &= report_port(settings.port)
+
+    return ok
+
+
+def report_required_env_keys(keys: list[str]) -> bool:
+    ok = True
+    existing_values, _ = load_env_assignments(ENV_LOCAL)
+    for key in keys:
+        value = pick_env_value(key, existing_values, os.environ)
+        if value:
+            print(f"[ok] env: {key}")
+        else:
+            print(f"[missing] env: {key} (run ./synapse gateway setup)")
+            ok = False
+    return ok
+
+
+class CliError(Exception):
+    pass
+
+
+def gateway_config_path() -> Path:
+    return ENV_LOCAL.with_name("config.yaml")
+
+
+def _load_existing_gateway_yaml(path: Path) -> dict[str, object]:
+    if not path.exists():
+        return {}
+    loaded = load_yaml_file(path)
+    if isinstance(loaded, dict):
+        return loaded
+    return {}
+
+
+def _load_existing_gateway_yaml_for_setup(path: Path) -> tuple[dict[str, object], str | None]:
+    try:
+        return _load_existing_gateway_yaml(path), None
+    except Exception as exc:
+        return {}, str(exc)
+
+
+def _existing_yaml_value(raw_gateway_yaml: dict[str, object], *path: str) -> str | None:
+    value: object = raw_gateway_yaml
+    for part in path:
+        if not isinstance(value, dict) or part not in value:
+            return None
+        value = value[part]
+    if value in (None, ""):
+        return None
+    return str(value)
+
+
+def _existing_gateway_block(raw_gateway_yaml: dict[str, object], gateway: str) -> dict[str, object]:
+    raw_gateways = raw_gateway_yaml.get("gateways")
+    if not isinstance(raw_gateways, dict):
+        return {}
+    raw_gateway = raw_gateways.get(gateway)
+    if not isinstance(raw_gateway, dict):
+        return {}
+    return raw_gateway
+
+
+def _existing_nested_value(raw_gateway: dict[str, object], *path: str) -> str | None:
+    value: object = raw_gateway
+    for part in path:
+        if not isinstance(value, dict) or part not in value:
+            return None
+        value = value[part]
+    if value in (None, ""):
+        return None
+    return str(value)
+
+
+def _existing_runtime_config(raw_gateway_yaml: dict[str, object]) -> dict[str, object]:
+    raw_runtime = raw_gateway_yaml.get("runtime")
+    if not isinstance(raw_runtime, dict):
+        return {}
+    return dict(raw_runtime)
+
+
+def _existing_host_config(raw_gateway_yaml: dict[str, object]) -> dict[str, object]:
+    raw_host = raw_gateway_yaml.get("host")
+    if isinstance(raw_host, dict):
+        return dict(raw_host)
+    return _default_host_config()
+
+
+def _existing_gateways_config(raw_gateway_yaml: dict[str, object]) -> dict[str, dict[str, object]]:
+    raw_gateways = raw_gateway_yaml.get("gateways")
+    if not isinstance(raw_gateways, dict):
+        return {}
+    return {
+        key: value
+        for key, value in raw_gateways.items()
+        if isinstance(key, str) and isinstance(value, dict)
+    }
+
+
+def _resolved_runtime_config(
+    raw_gateway_yaml: dict[str, object],
+    runtime_values: dict[str, object] | None,
+) -> dict[str, object]:
+    resolved = _existing_runtime_config(raw_gateway_yaml)
+    for key, value in (runtime_values or {}).items():
+        if value in (None, ""):
+            resolved.pop(key, None)
+            continue
+        resolved[key] = value
+    return resolved
+
+
+def _default_host_config() -> dict[str, object]:
+    return {
+        "enabled": False,
+        "host": "0.0.0.0",
+        "port": 8010,
+        "public_base_url": "http://127.0.0.1:8010",
+        "synapse_base_url": "http://127.0.0.1:8000",
+        "enabled_gateways": [],
+    }
+
+
+def resolve_bootstrap_runtime_values(existing_values: dict[str, str]) -> dict[str, object]:
+    explicit_codex_enabled = existing_values.get(CODEX_ENABLED_KEY)
+    parsed_codex_enabled = (
+        parse_bool_value(explicit_codex_enabled)
+        if explicit_codex_enabled not in (None, "")
+        else None
+    )
+    codex_enabled = parsed_codex_enabled if parsed_codex_enabled is not None else False
+    existing_codex_command = existing_values.get(CODEX_COMMAND_KEY)
+    if codex_enabled:
+        return {
+            "codex_command": existing_codex_command or _detected_codex_command() or "codex"
+        }
+    if existing_codex_command:
+        return {"codex_command": existing_codex_command}
+    return {}
+
+
+def render_gateway_config(
+    *,
+    runtime: dict[str, object],
+    host: dict[str, object],
+    gateways: dict[str, dict[str, object]],
+) -> str:
+    lines = ["version: 1", ""]
+    if runtime:
+        lines.append("runtime:")
+        lines.extend(_render_yaml_mapping(runtime, indent=2))
+    else:
+        lines.append("runtime: {}")
+    lines.extend(["", "host:"])
+    lines.extend(_render_yaml_mapping(host, indent=2))
+    lines.append("")
+    if gateways:
+        lines.append("gateways:")
+        lines.extend(_render_yaml_mapping(gateways, indent=2))
+    else:
+        lines.append("gateways: {}")
+    return "\n".join(lines) + "\n"
+
+
+def _render_yaml_mapping(mapping: dict[str, object], *, indent: int) -> list[str]:
+    lines: list[str] = []
+    prefix = " " * indent
+    for key, value in mapping.items():
+        if isinstance(value, dict):
+            if not value:
+                lines.append(f"{prefix}{key}: {{}}")
+                continue
+            lines.append(f"{prefix}{key}:")
+            lines.extend(_render_yaml_mapping(value, indent=indent + 2))
+            continue
+        if isinstance(value, list):
+            if not value:
+                lines.append(f"{prefix}{key}: []")
+                continue
+            lines.append(f"{prefix}{key}:")
+            for item in value:
+                lines.append(f"{prefix}  - {_render_yaml_scalar(item)}")
+            continue
+        lines.append(f"{prefix}{key}: {_render_yaml_scalar(value)}")
+    return lines
+
+
+def _render_yaml_scalar(value: object) -> str:
+    if value is None:
+        return "null"
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)):
+        return str(value)
+    text = str(value)
+    if re.search(r"[:#\n]", text):
+        return f'"{text}"'
+    return text
+
+
+def _write_gateway_config_if_needed(result: GatewaySetupResult) -> None:
+    if result.config_path is None or result.config_text is None:
+        return
+    result.config_path.parent.mkdir(parents=True, exist_ok=True)
+    result.config_path.write_text(result.config_text, encoding="utf-8")
+    print(f"[write] configured {format_user_path(result.config_path)}")
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

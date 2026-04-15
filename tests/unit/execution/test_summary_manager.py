@@ -1,5 +1,5 @@
-from synopse.execution import SummaryManager
-from synopse.protocol import ExecutionRun, RunStatus, Task
+from synapse.execution import SummaryManager
+from synapse.protocol import ExecutionRun, RunStatus, Task
 
 
 def test_summary_manager_builds_blocked_summary():

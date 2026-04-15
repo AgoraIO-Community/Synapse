@@ -7,8 +7,8 @@ import textwrap
 
 import pytest
 
-from synopse.executor_adapters.codex import CodexExecutor
-from synopse.protocol import ExecutionRun, Task
+from synapse.executor_adapters.codex import CodexExecutor
+from synapse.protocol import ExecutionRun, Task
 
 
 def _write_fake_codex(tmp_path, *, auth_ok: bool = True):

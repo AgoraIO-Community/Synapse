@@ -1,6 +1,6 @@
 # Repository Structure
 
-For open source, Synopse should move toward a `src` layout organized by domain boundaries.
+For open source, Synapse should move toward a `src` layout organized by domain boundaries.
 
 Recommended repository structure:
 
@@ -11,18 +11,16 @@ Recommended repository structure:
 ├─ LICENSE
 ├─ CONTRIBUTING.md
 ├─ pyproject.toml
-├─ .env.example
+├─ install.sh
 ├─ docs/
 ├─ examples/
+├─ exmaple-ui/
 ├─ schemas/
 ├─ tests/
 ├─ evals/
-├─ fixtures/
-├─ replays/
 ├─ scripts/
-├─ frontend/
 └─ src/
-   └─ synopse/
+   └─ synapse/
       ├─ __init__.py
       ├─ protocol/
       ├─ blackboard/
@@ -33,14 +31,17 @@ Recommended repository structure:
       ├─ notification/
       ├─ runtime/
       ├─ api/
+      ├─ gateway_host/
+      ├─ gateways/
       ├─ cli/
+      ├─ ui/
       └─ infrastructure/
 ```
 
-Recommended package structure inside `src/synopse/`:
+Recommended package structure inside `src/synapse/`:
 
 ```text
-src/synopse/
+src/synapse/
 ├─ protocol/
 ├─ blackboard/
 ├─ communication/
@@ -50,7 +51,10 @@ src/synopse/
 ├─ notification/
 ├─ runtime/
 ├─ api/
+├─ gateway_host/
+├─ gateways/
 ├─ cli/
+├─ ui/
 └─ infrastructure/
 ```
 
@@ -62,9 +66,9 @@ Organizing rule:
 
 The most stable public boundaries should be:
 
-- `synopse.protocol`
-- `synopse.blackboard.interfaces`
-- `synopse.executor_core`
+- `synapse.protocol`
+- `synapse.blackboard.interfaces`
+- `synapse.executor_core`
 
 This keeps the project easier to understand and extend in open source.
 
@@ -76,17 +80,16 @@ Additional repository-level guidance:
   - deterministic correctness
 - `evals/`
   - behavior-quality validation
-- `fixtures/`
-  - shared deterministic scenario inputs
-- `replays/`
-  - optional captured traces for replay-based inspection
 - `scripts/`
   - repository maintenance and dev helpers
 - `examples/`
   - minimal runnable demos and integration examples
+- `exmaple-ui/`
+  - repo-root example browser clients and first-party demo frontends
+  - keep reusable backend and gateway logic out of this directory
 
 Migration rule:
 
 - current `runtime/` remains a temporary prototype structure during migration
-- target package identity is `synopse`
+- target package identity is `synapse`
 - avoid introducing a second public package name

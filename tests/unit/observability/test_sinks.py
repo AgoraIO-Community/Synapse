@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from io import StringIO
 
-from synopse.observability.bootstrap import build_stdout_sink
-from synopse.observability.schema import DiagnosticEvent
-from synopse.observability.sinks.pretty import PrettyDiagnosticSink, render_pretty_event
-from synopse.observability.sinks.stdout import StdoutDiagnosticSink
-from synopse.runtime.config import Settings
+from synapse.observability.bootstrap import build_stdout_sink
+from synapse.observability.schema import DiagnosticEvent
+from synapse.observability.sinks.pretty import PrettyDiagnosticSink, render_pretty_event
+from synapse.observability.sinks.stdout import StdoutDiagnosticSink
+from synapse.runtime.config import Settings
 
 
 class TtyStringIO(StringIO):

@@ -1,6 +1,6 @@
 # Sessions and Runs
 
-Synopse `v2` separates durable work items from execution lineage.
+Synapse `v2` separates durable work items from execution lineage.
 
 Core concepts:
 
@@ -28,7 +28,7 @@ Default policy:
 - completed tasks can be reopened without creating duplicate tasks
 - executor-family handoff creates a new execution session under the same task
 
-This model is what lets Synopse preserve:
+This model is what lets Synapse preserve:
 
 - stable user-facing task identity
 - clear execution history

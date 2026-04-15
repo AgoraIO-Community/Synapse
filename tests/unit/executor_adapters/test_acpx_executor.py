@@ -6,8 +6,8 @@ import textwrap
 
 import pytest
 
-from synopse.executor_adapters.acpx import AcpxExecutor
-from synopse.protocol import ExecutionRun, Task
+from synapse.executor_adapters.acpx import AcpxExecutor
+from synapse.protocol import ExecutionRun, Task
 
 
 def _write_fake_acpx(tmp_path):

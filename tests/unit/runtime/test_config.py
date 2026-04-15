@@ -2,21 +2,51 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from synopse.runtime import config as config_module
+from synapse.runtime import config as config_module
+
+
+def configure_runtime_paths(monkeypatch, *, env_file: Path, config_file: Path) -> None:
+    monkeypatch.setattr(config_module, "LOCAL_ENV_FILE", env_file)
+    monkeypatch.setattr(config_module, "LOCAL_CONFIG_FILE", config_file)
+
+
+def clear_runtime_env(monkeypatch) -> None:
+    for name in [
+        "OPENAI_API_KEY",
+        "SYNAPSE_OPENAI_MODEL",
+        "SYNAPSE_OPENAI_TIMEOUT_SECONDS",
+        "SYNAPSE_OPENAI_BASE_URL",
+        "OPENAI_BASE_URL",
+        "SYNAPSE_ACPX_EXECUTOR_ENABLED",
+        "SYNAPSE_ACPX_COMMAND",
+        "SYNAPSE_ACPX_AGENT",
+        "SYNAPSE_ACPX_PERMISSION_MODE",
+        "SYNAPSE_ACPX_NON_INTERACTIVE_PERMISSIONS",
+        "SYNAPSE_ACPX_TIMEOUT_SECONDS",
+        "SYNAPSE_CODEX_EXECUTOR_ENABLED",
+        "SYNAPSE_CODEX_COMMAND",
+        "SYNAPSE_LOG_FORMAT",
+        "SYNAPSE_LOG_COLOR",
+        "SYNAPSE_QUIET_DIAGNOSTICS_ACCESS_LOGS",
+        "SYNAPSE_LOG_LLM_DETAILS",
+    ]:
+        monkeypatch.delenv(name, raising=False)
 
 
 def test_load_settings_reads_openai_config(monkeypatch, tmp_path: Path):
-    env_file = tmp_path / ".env.local"
+    env_file = tmp_path / ".env"
+    config_file = tmp_path / "config.yaml"
+    clear_runtime_env(monkeypatch)
     env_file.write_text(
         "\n".join(
             [
                 "OPENAI_API_KEY=test-key",
-                "SYNOPSE_OPENAI_MODEL=gpt-4.1-mini",
-                "SYNOPSE_OPENAI_TIMEOUT_SECONDS=45",
+                "SYNAPSE_OPENAI_MODEL=gpt-4.1-mini",
+                "SYNAPSE_OPENAI_TIMEOUT_SECONDS=45",
             ]
         )
     )
-    monkeypatch.setattr(config_module, "LOCAL_ENV_FILE", env_file)
+    configure_runtime_paths(monkeypatch, env_file=env_file, config_file=config_file)
 
     settings = config_module.load_settings()
 
@@ -26,18 +56,20 @@ def test_load_settings_reads_openai_config(monkeypatch, tmp_path: Path):
 
 
 def test_load_settings_reads_log_output_config(monkeypatch, tmp_path: Path):
-    env_file = tmp_path / ".env.local"
+    env_file = tmp_path / ".env"
+    config_file = tmp_path / "config.yaml"
+    clear_runtime_env(monkeypatch)
     env_file.write_text(
         "\n".join(
             [
-                "SYNOPSE_LOG_FORMAT=pretty",
-                "SYNOPSE_LOG_COLOR=never",
-                "SYNOPSE_QUIET_DIAGNOSTICS_ACCESS_LOGS=false",
-                "SYNOPSE_LOG_LLM_DETAILS=true",
+                "SYNAPSE_LOG_FORMAT=pretty",
+                "SYNAPSE_LOG_COLOR=never",
+                "SYNAPSE_QUIET_DIAGNOSTICS_ACCESS_LOGS=false",
+                "SYNAPSE_LOG_LLM_DETAILS=true",
             ]
         )
     )
-    monkeypatch.setattr(config_module, "LOCAL_ENV_FILE", env_file)
+    configure_runtime_paths(monkeypatch, env_file=env_file, config_file=config_file)
 
     settings = config_module.load_settings()
 
@@ -47,21 +79,25 @@ def test_load_settings_reads_log_output_config(monkeypatch, tmp_path: Path):
     assert settings.log_llm_details is True
 
 
-def test_load_settings_reads_acpx_executor_config(monkeypatch, tmp_path: Path):
-    env_file = tmp_path / ".env.local"
+def test_load_settings_reads_acpx_executor_config_from_env(monkeypatch, tmp_path: Path):
+    env_file = tmp_path / ".env"
+    config_file = tmp_path / "config.yaml"
+    clear_runtime_env(monkeypatch)
     env_file.write_text(
         "\n".join(
             [
-                "SYNOPSE_ACPX_EXECUTOR_ENABLED=true",
-                "SYNOPSE_ACPX_COMMAND=/usr/local/bin/acpx",
-                "SYNOPSE_ACPX_AGENT=claude",
-                "SYNOPSE_ACPX_PERMISSION_MODE=approve-reads",
-                "SYNOPSE_ACPX_NON_INTERACTIVE_PERMISSIONS=fail",
-                "SYNOPSE_ACPX_TIMEOUT_SECONDS=90",
+                "SYNAPSE_ACPX_EXECUTOR_ENABLED=true",
+                "SYNAPSE_ACPX_COMMAND=/usr/local/bin/acpx",
+                "SYNAPSE_ACPX_AGENT=claude",
+                "SYNAPSE_ACPX_PERMISSION_MODE=approve-reads",
+                "SYNAPSE_ACPX_NON_INTERACTIVE_PERMISSIONS=fail",
+                "SYNAPSE_ACPX_TIMEOUT_SECONDS=90",
             ]
         )
+        + "\n",
+        encoding="utf-8",
     )
-    monkeypatch.setattr(config_module, "LOCAL_ENV_FILE", env_file)
+    configure_runtime_paths(monkeypatch, env_file=env_file, config_file=config_file)
 
     settings = config_module.load_settings()
 
@@ -71,3 +107,94 @@ def test_load_settings_reads_acpx_executor_config(monkeypatch, tmp_path: Path):
     assert settings.acpx_permission_mode == "approve-reads"
     assert settings.acpx_non_interactive_permissions == "fail"
     assert settings.acpx_timeout_seconds == 90.0
+
+
+def test_load_settings_prefers_yaml_acpx_command_and_agent(monkeypatch, tmp_path: Path):
+    env_file = tmp_path / ".env"
+    config_file = tmp_path / "config.yaml"
+    clear_runtime_env(monkeypatch)
+    env_file.write_text(
+        "\n".join(
+            [
+                "SYNAPSE_ACPX_EXECUTOR_ENABLED=true",
+                "SYNAPSE_ACPX_COMMAND=/env/acpx",
+                "SYNAPSE_ACPX_AGENT=claude",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    config_file.write_text(
+        "\n".join(
+            [
+                "version: 1",
+                "runtime:",
+                "  acpx_command: /yaml/acpx",
+                "  acpx_agent: openclaw",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    configure_runtime_paths(monkeypatch, env_file=env_file, config_file=config_file)
+
+    settings = config_module.load_settings()
+
+    assert settings.acpx_executor_enabled is True
+    assert settings.acpx_command == "/yaml/acpx"
+    assert settings.acpx_agent == "openclaw"
+
+
+def test_load_settings_prefers_yaml_codex_command(monkeypatch, tmp_path: Path):
+    env_file = tmp_path / ".env"
+    config_file = tmp_path / "config.yaml"
+    clear_runtime_env(monkeypatch)
+    env_file.write_text(
+        "\n".join(
+            [
+                "SYNAPSE_CODEX_EXECUTOR_ENABLED=true",
+                "SYNAPSE_CODEX_COMMAND=/env/codex",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    config_file.write_text(
+        "\n".join(
+            [
+                "version: 1",
+                "runtime:",
+                "  codex_command: /yaml/codex",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    configure_runtime_paths(monkeypatch, env_file=env_file, config_file=config_file)
+
+    settings = config_module.load_settings()
+
+    assert settings.codex_executor_enabled is True
+    assert settings.codex_command == "/yaml/codex"
+
+
+def test_load_settings_falls_back_to_legacy_env_codex_command(monkeypatch, tmp_path: Path):
+    env_file = tmp_path / ".env"
+    config_file = tmp_path / "config.yaml"
+    clear_runtime_env(monkeypatch)
+    env_file.write_text(
+        "\n".join(
+            [
+                "SYNAPSE_CODEX_EXECUTOR_ENABLED=true",
+                "SYNAPSE_CODEX_COMMAND=/env/codex",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    configure_runtime_paths(monkeypatch, env_file=env_file, config_file=config_file)
+
+    settings = config_module.load_settings()
+
+    assert settings.codex_executor_enabled is True
+    assert settings.codex_command == "/env/codex"

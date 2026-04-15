@@ -11,14 +11,14 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from synopse.runtime import config as config_module
+from synapse.runtime import config as config_module
 
 
 @pytest.fixture(autouse=True)
 def isolate_test_runtime_env(monkeypatch, tmp_path: Path):
     for name in list(os.environ):
-        if name.startswith(("SYNOPSE_", "OPENAI_")):
+        if name.startswith(("SYNAPSE_", "OPENAI_")):
             monkeypatch.delenv(name, raising=False)
 
-    # Tests should opt into local config explicitly instead of inheriting a developer's `.env.local`.
-    monkeypatch.setattr(config_module, "LOCAL_ENV_FILE", tmp_path / ".env.local")
+    # Tests should opt into local config explicitly instead of inheriting a developer's ~/.synapse env.
+    monkeypatch.setattr(config_module, "LOCAL_ENV_FILE", tmp_path / ".env")

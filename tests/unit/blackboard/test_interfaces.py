@@ -1,4 +1,4 @@
-from synopse.blackboard import BlackboardStore
+from synapse.blackboard import BlackboardStore
 
 
 def test_blackboard_store_protocol_exposes_expected_methods():

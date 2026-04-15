@@ -1,6 +1,6 @@
 # V2 Overview
 
-Synopse `v2` is a blackboard-centered dual-brain runtime.
+Synapse `v2` is a blackboard-centered dual-brain runtime.
 
 For the unified open-source architecture overview, start with
 [../../ARCHITECTURE.md](../../ARCHITECTURE.md).
