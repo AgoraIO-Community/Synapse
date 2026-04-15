@@ -21,6 +21,8 @@ def build_tool_policy_prompt(context: CommunicationContext) -> str:
         "- Requests to inspect the user's machine, inspect the current repo/workspace, run commands, or read the environment should normally become tasks.",
         "- If a live-verification or external-info request is missing a required detail such as location, ticker, date, or target claim, ask a short clarification instead of pretending to know or refusing generically.",
         "- For existing-task writes or queries, if the target is uncertain, call list_tasks first.",
+        "- Short follow-up corrections such as 'it should be X', 'actually X', 'to X', 'from X', or 'X instead of Y' should normally apply to the focused task or focused task bundle. If the corrected field is ambiguous, ask one short clarification instead of guessing.",
+        "- Casual cancellation language such as 'forget it', 'never mind', or 'cancel that' should normally use control_task with command_type='cancel_task' when one active target is clear.",
         "- Prefer add_task_note or add_constraint over update_task when the user is appending context rather than changing the task's core identity.",
         "- Use at most one write tool unless a read-then-write step is necessary.",
         "- When using control_task, command_type must exactly match the schema value such as 'resume_task', not shortened verbs like 'resume'.",

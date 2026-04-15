@@ -29,6 +29,11 @@ Core communication policy:
 - invalid tool arguments from the model should be returned through the tool loop for correction instead of crashing the message transport
 - invalid executor ids should be rejected before task creation, and pre-existing bad tasks should fail cleanly rather than crashing execution
 - ambiguous task references should not silently fall back to the latest task; the communication brain should resolve them explicitly or ask for clarification
+- short deictic control turns, current-work questions, and follow-up corrections should rely on the LLM plus focused task/bundle context rather than large local heuristic parsers
+- narrow "what are you working on" style replies should still be grounded in current blackboard task state rather than free-form conversational continuity
+- focused task-bundle context should be exposed to the LLM so short follow-up corrections such as "it should be X", "actually X", "to X", "from X", and "X instead of Y" can be interpreted without hardcoding domain- or language-specific parsing into the runtime
+- ambiguous follow-up corrections should ask a clarification when the corrected field is not clear enough to map safely
+- explicit follow-up corrections that change a focused task bundle's core identity may replace that whole bundle instead of partially mutating only one task
 - task-first routing is the default; only clear social, subjective, or Synapse-meta conversation should remain pure chat
 - actionable requests should usually become tasks even when phrased as questions
 - fact-checking, claim verification, current-world information, and other live external-fact requests should normally route toward `create_task` rather than unsupported pure-chat answers
@@ -61,6 +66,8 @@ Tool intent defaults:
 - use `update_task` only for core structured task fields such as title, goal, priority, executor preference, or latest instruction
 - use `list_tasks` before a write or query when the target task is uncertain
 - use `create_task.mock_safe = true` only for explicit simulation, demo, or record-only tasks
+- when a cancelled task is explicitly resumed conversationally, it is acceptable to create a fresh replacement task rather than reviving the cancelled task in place
+- when a follow-up correction changes the core identity of a focused task bundle, it is acceptable to cancel the old bundle and create a fresh corrected bundle
 
 `control_task.command_type` must use the canonical protocol values from
 [`TaskCommandType`](../protocol/mutation-and-command.md), for example `resume_task`

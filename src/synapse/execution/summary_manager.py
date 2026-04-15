@@ -31,6 +31,15 @@ class SummaryManager:
                 latest_user_visible_status="failed",
                 needs_user_input=False,
             )
+        if run.status == RunStatus.CANCELLED:
+            text = f"Cancelled: {task.title}"
+            return TaskSummary(
+                task_id=task.task_id,
+                operational_summary=text,
+                conversational_summary=text,
+                latest_user_visible_status="cancelled",
+                needs_user_input=False,
+            )
         text = run.latest_progress_message or f"Running: {task.title}"
         return TaskSummary(
             task_id=task.task_id,

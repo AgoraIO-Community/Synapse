@@ -52,6 +52,11 @@ class RunManager:
         run: ExecutionRun,
         event: ExecutorEvent,
     ) -> None:
+        if task.status == TaskStatus.CANCELLED and event.event_type != ExecutorEventType.CANCELLED:
+            await store.put_run(run)
+            await store.put_task(task)
+            return
+
         if event.event_type == ExecutorEventType.PROGRESS:
             run.status = RunStatus.RUNNING
             run.latest_progress_message = event.message

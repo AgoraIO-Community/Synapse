@@ -10,6 +10,7 @@ The Execution Brain owns:
 - summary refresh
 - execution classification decisions
 - interruption resolution on the execution side
+- best-effort live run pause/cancel handling for explicit task-control commands
 
 It should be driven by:
 
@@ -45,6 +46,10 @@ Important subsystems:
 - run manager
 - summary manager
 - reconcile loop
+
+Execution-side interruption rule:
+
+- explicit cancel/pause commands should update task, run, session, and binding projections promptly, even if the executor reports a late stale terminal event afterward
 
 Related docs:
 

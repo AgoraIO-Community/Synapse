@@ -218,6 +218,10 @@ def _summarize_tool_result(result: object) -> str:
         status = result.latest_user_visible_status or "summary"
         return f"{status}: {text}"
     if isinstance(result, dict):
+        if isinstance(result.get("task"), Task) and isinstance(result.get("command"), TaskCommand):
+            task = result["task"]
+            command = result["command"]
+            return f"{command.command_type.value} for {task.title} ({task.task_id})"
         if isinstance(result.get("matches"), list):
             matches = result["matches"]
             if not matches:

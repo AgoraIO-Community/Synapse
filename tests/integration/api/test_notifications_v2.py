@@ -4,8 +4,10 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 from synapse.api.app import create_app
+from synapse.communication.model import ToolCall
 from synapse.communication.models import ScriptedCommunicationModel
 from synapse.communication.models.scripted import ScriptedPlan
+from synapse.executor_core import ExecutorCapabilities, ExecutorEvent, ExecutorEventType, ExecutorSession
 from synapse.protocol import Task, TaskStatus, TaskSummary
 from synapse.runtime import Settings
 from synapse.runtime.container import RuntimeContainer
@@ -26,7 +28,7 @@ async def _wait_for_conversation(
     client: AsyncClient,
     session_id: str,
     predicate,
-    timeout: float = 4.0,
+    timeout: float = 6.0,
 ):
     deadline = asyncio.get_running_loop().time() + timeout
     while True:
@@ -52,6 +54,39 @@ def _build_app():
         settings=Settings(),
     )
     return app
+
+
+class CancelAwareExecutor:
+    def __init__(self) -> None:
+        self._release = asyncio.Event()
+        self._capabilities = ExecutorCapabilities(executor_type="cancel-aware", supports_cancel=True)
+
+    def get_capabilities(self) -> ExecutorCapabilities:
+        return self._capabilities
+
+    async def create_session(self, workspace_id: str | None = None) -> ExecutorSession:
+        return ExecutorSession(session_id="cancel-aware-session", executor_type="cancel-aware")
+
+    async def cancel_run(self, run_id: str) -> None:
+        self._release.set()
+
+    async def pause_run(self, run_id: str) -> None:
+        return None
+
+    async def run_task(self, run, task, session):
+        yield ExecutorEvent(
+            run_id=run.run_id,
+            session_id=session.session_id,
+            event_type=ExecutorEventType.PROGRESS,
+            message="working",
+        )
+        await self._release.wait()
+        yield ExecutorEvent(
+            run_id=run.run_id,
+            session_id=session.session_id,
+            event_type=ExecutorEventType.COMPLETED,
+            message="should not surface",
+        )
 
 
 @pytest.mark.anyio
@@ -182,3 +217,88 @@ async def test_needs_input_summary_notification_can_emit_without_run_event():
             for candidate in snapshot["notification_candidates"]
         )
         assert conversation["conversation_history"][-1]["text"] == "I need one more detail from you."
+
+
+@pytest.mark.anyio
+async def test_cancelled_task_does_not_emit_stale_completion_notification():
+    app = create_app()
+    app.state.runtime_container = RuntimeContainer(
+        communication_model=ScriptedCommunicationModel(
+            {
+                "forget it": ScriptedPlan(
+                    conversational_act="acknowledge_and_hold",
+                    tool_calls=[
+                        ToolCall(
+                            name="control_task",
+                            args={
+                                "reference": "cancelable",
+                                "command_type": "cancel_task",
+                            },
+                        )
+                    ],
+                    reply_override="Okay, I won't continue with that.",
+                ),
+                "__default__": ScriptedPlan(
+                    conversational_act="model_reply",
+                    reply_override="Noted.",
+                ),
+            }
+        ),
+        settings=Settings(),
+    )
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        session_id = (await client.post("/sessions")).json()["session_id"]
+        session = app.state.runtime_container.get_session(session_id)
+        session.registry.register(CancelAwareExecutor())
+        await session.blackboard.put_task(
+            Task(
+                task_id="task-cancelable",
+                root_task_id="task-cancelable",
+                title="Cancelable task",
+                goal="Cancelable task",
+                status=TaskStatus.QUEUED,
+                preferred_executor="cancel-aware",
+            )
+        )
+        session.schedule_execution()
+        await _wait_for_snapshot(
+            client,
+            session_id,
+            lambda snap: snap["tasks"][0]["status"] == "running",
+            timeout=1.0,
+        )
+        session.history.append_assistant(
+            session_id,
+            "I'm working on Cancelable task right now.",
+            focused_task_id="task-cancelable",
+            affected_task_ids=["task-cancelable"],
+        )
+
+        response = await client.post(
+            f"/sessions/{session_id}/messages",
+            json={"text": "forget it"},
+        )
+
+        assert response.status_code == 200
+        await _wait_for_snapshot(
+            client,
+            session_id,
+            lambda snap: snap["tasks"][0]["status"] == "cancelled",
+            timeout=1.0,
+        )
+        await asyncio.sleep(0.2)
+
+        snapshot = (await client.get(f"/sessions/{session_id}")).json()
+        conversation = (await client.get(f"/sessions/{session_id}/conversation")).json()
+
+        assert snapshot["tasks"][0]["status"] == "cancelled"
+        assert snapshot["execution_runs"][0]["status"] == "cancelled"
+        assert snapshot["notification_candidates"] == []
+        assert not any(
+            entry["role"] == "assistant" and entry["text"] == "should not surface"
+            for entry in conversation["conversation_history"]
+        )

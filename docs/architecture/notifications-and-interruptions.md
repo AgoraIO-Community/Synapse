@@ -26,7 +26,10 @@ Interruption rules:
 - `barge-in` first stops current output
 - `barge-in` does not cancel tasks by default
 - only explicit task-control or task-update intent should affect execution
+- casual cancellation language such as "forget it" or "never mind" counts as explicit task control when one active task is clearly targeted
 - user speech and current assistant speech both take precedence over proactive notification delivery
+- cancelling a task suppresses any still-pending notification candidates for that task
+- stale completion signals that arrive after a task has been cancelled must not become proactive assistant speech
 
 Interruption classes:
 

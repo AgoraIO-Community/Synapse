@@ -44,7 +44,8 @@ async def test_create_update_note_constraint_control_and_query_tools():
         task_id=created.task_id,
         command_type=TaskCommandType.PAUSE_TASK.value,
     )
-    assert command.command_type == TaskCommandType.PAUSE_TASK
+    assert command["task"].task_id == created.task_id
+    assert command["command"].command_type == TaskCommandType.PAUSE_TASK
 
     summary = await registry.get("query_task_summary")(task_id=created.task_id)
     assert summary is None
@@ -132,6 +133,30 @@ async def test_control_task_rejects_non_canonical_command_aliases():
 
     commands = await store.list_commands(created.task_id)
     assert commands == []
+
+
+@pytest.mark.anyio
+async def test_control_task_uses_apply_callback_when_configured():
+    store = InMemoryBlackboard()
+    applied = []
+    registry = build_default_tool_registry(
+        store,
+        apply_task_command=lambda command: applied.append(command) or [command.task_id],
+    )
+    created = await registry.get("create_task")(
+        title="Draft email",
+        goal="Draft an email reply",
+        mock_safe=True,
+    )
+
+    command = await registry.get("control_task")(
+        task_id=created.task_id,
+        command_type=TaskCommandType.CANCEL_TASK.value,
+    )
+
+    assert command["command"].command_type == TaskCommandType.CANCEL_TASK
+    assert applied == [command["command"]]
+    assert await store.list_commands(created.task_id) == []
 
 
 @pytest.mark.anyio

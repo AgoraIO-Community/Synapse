@@ -13,12 +13,22 @@ from synapse.executor_adapters.acpx import AcpxExecutor
 from synapse.execution import ExecutionBrain
 from synapse.executor_adapters.codex import CodexExecutor
 from synapse.executor_adapters.mock import MockExecutor
-from synapse.executor_core import ExecutorRegistry
+from synapse.executor_core import ExecutorRegistry, UnknownExecutorError
 from synapse.notification import NotificationManager
 from synapse.observability.bootstrap import SessionObservability, build_session_observability
 from synapse.observability.context import bind_diagnostic_context
 from synapse.observability.reason_codes import COMMUNICATION_MODEL_FAILURE
-from synapse.protocol import TaskCommand, TaskCommandType, TaskStatus
+from synapse.protocol import (
+    BindingStatus,
+    ExecutionRun,
+    ExecutionSession,
+    NotificationDeliveryStatus,
+    RunStatus,
+    TaskCommand,
+    TaskCommandType,
+    TaskStatus,
+    TaskSummary,
+)
 
 from .config import Settings
 from .models import (
@@ -227,15 +237,159 @@ class SessionRuntime:
         if task is None:
             return []
 
+        binding = await self.blackboard.get_binding(task.task_id)
+        execution_session = None
+        if binding is not None and binding.execution_session_id is not None:
+            execution_session = await self.blackboard.get_session(binding.execution_session_id)
+        run = await self._select_command_run(execution_session)
+
         if command.command_type in {TaskCommandType.PAUSE_TASK, TaskCommandType.PREEMPT_TASK}:
             task.status = TaskStatus.PAUSED
+            await self._pause_live_run(run)
+            if run is not None:
+                run.status = RunStatus.PAUSED
+                await self.blackboard.put_run(run)
+            if binding is not None:
+                await self.blackboard.put_binding(
+                    binding.model_copy(
+                        update={
+                            "claimed_by": None,
+                            "claim_expires_at": None,
+                            "binding_status": BindingStatus.PAUSED,
+                        }
+                    )
+                )
+            await self.blackboard.put_summary(
+                TaskSummary(
+                    task_id=task.task_id,
+                    operational_summary=f"Paused: {task.title}",
+                    conversational_summary=f"I paused {task.title}.",
+                    latest_user_visible_status="paused",
+                    needs_user_input=False,
+                )
+            )
         elif command.command_type == TaskCommandType.CANCEL_TASK:
             task.status = TaskStatus.CANCELLED
+            await self._cancel_live_run(run)
+            if run is not None:
+                run.status = RunStatus.CANCELLED
+                await self.blackboard.put_run(run)
+            if execution_session is not None and execution_session.active_run_id == (
+                run.run_id if run is not None else None
+            ):
+                execution_session.active_run_id = None
+                await self.blackboard.put_session(execution_session)
+            if binding is not None:
+                await self.blackboard.put_binding(
+                    binding.model_copy(
+                        update={
+                            "claimed_by": None,
+                            "claim_expires_at": None,
+                            "binding_status": BindingStatus.RELEASED,
+                        }
+                    )
+                )
+            await self.blackboard.put_summary(
+                TaskSummary(
+                    task_id=task.task_id,
+                    operational_summary=f"Cancelled: {task.title}",
+                    conversational_summary=f"I won't continue with {task.title}.",
+                    latest_user_visible_status="cancelled",
+                    needs_user_input=False,
+                )
+            )
+            await self._suppress_pending_notifications(task.task_id)
         elif command.command_type in {TaskCommandType.RESUME_TASK, TaskCommandType.RETRY_TASK}:
             task.status = TaskStatus.QUEUED
+            if execution_session is not None and run is not None and execution_session.active_run_id == run.run_id:
+                execution_session.active_run_id = None
+                await self.blackboard.put_session(execution_session)
+            if binding is not None:
+                await self.blackboard.put_binding(
+                    binding.model_copy(
+                        update={
+                            "claimed_by": None,
+                            "claim_expires_at": None,
+                            "binding_status": BindingStatus.RELEASED,
+                        }
+                    )
+                )
+            await self.blackboard.put_summary(
+                TaskSummary(
+                    task_id=task.task_id,
+                    operational_summary=f"Queued: {task.title}",
+                    conversational_summary=f"I queued {task.title} again.",
+                    latest_user_visible_status="queued",
+                    needs_user_input=False,
+                )
+            )
 
         await self.blackboard.put_task(task)
         return [task.task_id]
+
+    async def _select_command_run(
+        self,
+        execution_session: ExecutionSession | None,
+    ) -> ExecutionRun | None:
+        if execution_session is None:
+            return None
+        candidate_run_ids = []
+        if execution_session.active_run_id:
+            candidate_run_ids.append(execution_session.active_run_id)
+        if execution_session.latest_run_id and execution_session.latest_run_id not in candidate_run_ids:
+            candidate_run_ids.append(execution_session.latest_run_id)
+        for run_id in candidate_run_ids:
+            run = await self.blackboard.get_run(run_id)
+            if run is not None and run.status in {
+                RunStatus.CREATED,
+                RunStatus.ASSIGNED,
+                RunStatus.RUNNING,
+                RunStatus.BLOCKED,
+                RunStatus.PAUSED,
+            }:
+                return run
+        return None
+
+    async def _cancel_live_run(self, run) -> None:
+        if run is None:
+            return
+        try:
+            executor = self.registry.get(run.executor_type)
+        except UnknownExecutorError:
+            return
+        if not executor.get_capabilities().supports_cancel:
+            return
+        try:
+            await executor.cancel_run(run.run_id)
+        except Exception:
+            return
+
+    async def _pause_live_run(self, run) -> None:
+        if run is None:
+            return
+        try:
+            executor = self.registry.get(run.executor_type)
+        except UnknownExecutorError:
+            return
+        if not executor.get_capabilities().supports_pause:
+            return
+        try:
+            await executor.pause_run(run.run_id)
+        except Exception:
+            return
+
+    async def _suppress_pending_notifications(self, task_id: str) -> None:
+        candidates = await self.blackboard.list_notification_candidates()
+        for candidate in candidates:
+            if (
+                candidate.task_id == task_id
+                and candidate.delivery_status == NotificationDeliveryStatus.PENDING
+            ):
+                await self.blackboard.put_notification_candidate(
+                    candidate.model_copy(
+                        update={"delivery_status": NotificationDeliveryStatus.SUPPRESSED}
+                    )
+                )
 
     async def _run_execution_loop(self) -> None:
         try:
@@ -556,15 +710,16 @@ def create_session_runtime(
         if settings.acpx_executor_enabled
         else "codex" if settings.codex_executor_enabled else "mock"
     )
+    tool_registry = build_default_tool_registry(
+        blackboard,
+        executor_types=registry.list_executor_types(),
+        default_executor_type=default_executor_type,
+    )
     communication_brain = CommunicationBrain(
         blackboard,
         model,
         history=history,
-        tool_registry=build_default_tool_registry(
-            blackboard,
-            executor_types=registry.list_executor_types(),
-            default_executor_type=default_executor_type,
-        ),
+        tool_registry=tool_registry,
         executor_capabilities=registry.list_capabilities(),
         default_executor_type=default_executor_type,
         observability=observability.communication,
@@ -592,6 +747,9 @@ def create_session_runtime(
         notification_manager=notification_manager,
         observability=observability,
     )
+    control_task_handler = tool_registry.get("control_task").handler
+    if hasattr(control_task_handler, "set_apply_callback"):
+        control_task_handler.set_apply_callback(runtime.apply_command)
     communication_brain.set_trace_callback(runtime._record_llm_trace)
     notification_manager.set_conversation_event_callback(runtime._broadcast_conversation_append)
     runtime.start_notification_processing()

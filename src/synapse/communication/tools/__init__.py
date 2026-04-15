@@ -60,6 +60,7 @@ def build_default_tool_registry(
     *,
     executor_types: list[str] | None = None,
     default_executor_type: str = "mock",
+    apply_task_command=None,
 ) -> ToolRegistry:
     resolved_executor_types = sorted(set(executor_types or ["mock"]))
     create_task = CreateTaskTool(
@@ -69,7 +70,7 @@ def build_default_tool_registry(
     )
     add_constraint = AddConstraintTool(store)
     add_task_note = AddTaskNoteTool(store)
-    control_task = ControlTaskTool(store)
+    control_task = ControlTaskTool(store, apply_callback=apply_task_command)
     list_tasks = ListTasksTool(store)
     query_task_detail = QueryTaskDetailTool(store)
     query_task_summary = QueryTaskSummaryTool(store)

@@ -103,3 +103,11 @@ Short log of important design decisions and changes for Synapse.
 - Added a first-class `synapse service` CLI for Ubuntu/systemd deployment from a repo checkout, installing one combined `synapse.service` unit that runs `synapse start` as the deploy user and keeps runtime config in `~/.synapse`.
 - Allowed `synapse service install` to run as `root`, with the installed systemd unit now running as the invoking user and reading runtime config from that user’s `~/.synapse` home.
 - Moved the Codex executor command path out of `SYNAPSE_CODEX_COMMAND` env and into `~/.synapse/config.yaml` under `runtime.codex_command`, while keeping `synapse setup` responsible for prompting and migrating the effective path.
+
+## 2026-04-16
+
+- Routed conversational `control_task` through runtime command application, so chat-driven cancel/pause updates now affect live executor runs and task projections instead of only appending blackboard command records.
+- Suppressed pending notification candidates for cancelled tasks and ignored stale late completion events after cancellation so cancelled work no longer reappears as proactive assistant replies.
+- Added structured task focus to internal communication history and grounded short stop/continue/current-work turns on that focus plus live blackboard state, so chat replies stop drifting onto the wrong task.
+- Added a generic focused-bundle correction layer so short follow-up fixes like `it should be X`, `to X`, `from X`, and `X instead of Y` resolve against structured bundle slots, ask on ambiguity, and replace the whole bundle only when the correction is explicit enough.
+- Shifted correction/current-work interpretation back toward the LLM by exposing focused bundle state in prompt context and using only a small post-tool grounding fallback in runtime instead of expanding local English heuristic parsing.

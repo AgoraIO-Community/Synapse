@@ -10,6 +10,7 @@ from synapse.protocol import (
     NotificationPriority,
     RunStatus,
     Task,
+    TaskStatus,
     TaskSummary,
     ExecutionRun,
 )
@@ -31,6 +32,9 @@ class NotificationCandidateBuilder:
         summary: TaskSummary | None,
         existing: list[NotificationCandidate],
     ) -> NotificationCandidate | None:
+        if task.status == TaskStatus.CANCELLED:
+            return None
+
         if run.status == RunStatus.COMPLETED:
             candidate = NotificationCandidate(
                 candidate_id=_candidate_id(

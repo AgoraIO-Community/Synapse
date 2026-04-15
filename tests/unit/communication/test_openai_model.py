@@ -79,6 +79,8 @@ async def test_openai_model_maps_payload_to_model_result():
             )
         ],
         summaries={},
+        focused_task_ids=[],
+        focused_tasks=[],
         active_tasks=[],
         recent_tasks=[],
         executor_runtime=ExecutorRuntimeSummary(
@@ -107,6 +109,8 @@ async def test_openai_model_maps_payload_to_model_result():
     assert "Examples:" in provider.calls[0]["messages"][5]["content"]
     assert json.loads(provider.calls[0]["messages"][6]["content"]) == {
         "conversation_id": "conv-1",
+        "focused_task_ids": [],
+        "focused_tasks": [],
         "active_tasks": [],
         "recent_tasks": [],
         "executor_runtime": {
@@ -133,6 +137,8 @@ async def test_openai_model_emits_tool_call_record_for_successful_invocation():
         recent_history=[ConversationEntry(role="user", text="hi")],
         tasks=[],
         summaries={},
+        focused_task_ids=[],
+        focused_tasks=[],
         active_tasks=[],
         recent_tasks=[],
         executor_runtime=ExecutorRuntimeSummary(
@@ -167,6 +173,8 @@ async def test_openai_model_blocks_real_executor_request_when_only_mock_is_avail
         recent_history=[ConversationEntry(role="user", text="check my pc cpu usage")],
         tasks=[],
         summaries={},
+        focused_task_ids=[],
+        focused_tasks=[],
         active_tasks=[],
         recent_tasks=[],
         executor_runtime=ExecutorRuntimeSummary(

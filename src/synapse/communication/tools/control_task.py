@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
+import inspect
 from uuid import uuid4
 
 from synapse.blackboard import BlackboardStore
@@ -13,9 +15,21 @@ class ControlTaskTool:
     name = "control_task"
     allowed_command_types = [command_type.value for command_type in TaskCommandType]
 
-    def __init__(self, store: BlackboardStore) -> None:
+    def __init__(
+        self,
+        store: BlackboardStore,
+        *,
+        apply_callback: Callable[[TaskCommand], Awaitable[list[str]] | list[str]] | None = None,
+    ) -> None:
         self._store = store
         self._resolver = TaskResolver()
+        self._apply_callback = apply_callback
+
+    def set_apply_callback(
+        self,
+        callback: Callable[[TaskCommand], Awaitable[list[str]] | list[str]] | None,
+    ) -> None:
+        self._apply_callback = callback
 
     async def __call__(
         self,
@@ -25,7 +39,7 @@ class ControlTaskTool:
         reference: str | None = None,
         payload: dict[str, object] | None = None,
         reason: str | None = None,
-    ) -> TaskCommand:
+    ) -> dict[str, object]:
         tasks = await self._store.list_tasks()
         resolution = self._resolver.resolve(tasks, task_id=task_id, reference=reference)
         if resolution.status == "ambiguous":
@@ -53,5 +67,13 @@ class ControlTaskTool:
             created_by="communication_brain",
             reason=reason,
         )
-        await self._store.append_command(command)
-        return command
+        if self._apply_callback is not None:
+            maybe_awaitable = self._apply_callback(command)
+            if inspect.isawaitable(maybe_awaitable):
+                await maybe_awaitable
+        else:
+            await self._store.append_command(command)
+        return {
+            "task": task,
+            "command": command,
+        }

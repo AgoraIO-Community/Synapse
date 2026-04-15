@@ -1,6 +1,6 @@
 import json
 
-from synapse.communication.context import CommunicationContext, ExecutorRuntimeSummary
+from synapse.communication.context import CommunicationContext, CommunicationTaskBrief, ExecutorRuntimeSummary
 from synapse.communication.history import ConversationEntry
 from synapse.communication.prompts import build_notification_messages, build_reply_messages
 from synapse.protocol import (
@@ -19,6 +19,7 @@ def _build_context(
     recent_history: list[ConversationEntry] | None = None,
     tasks: list[Task] | None = None,
     summaries: dict[str, TaskSummary | None] | None = None,
+    focused_task_ids: list[str] | None = None,
 ) -> CommunicationContext:
     return CommunicationContext(
         conversation_id="conv-1",
@@ -29,6 +30,23 @@ def _build_context(
         ],
         tasks=tasks or [],
         summaries=summaries or {},
+        focused_task_ids=focused_task_ids or [],
+        focused_tasks=[
+            CommunicationTaskBrief(
+                task_id=task.task_id,
+                title=task.title,
+                goal=task.goal,
+                status=task.status.value,
+                priority=task.priority,
+                latest_instruction=task.latest_instruction,
+                conversational_summary=(summaries or {}).get(task.task_id).conversational_summary if (summaries or {}).get(task.task_id) else None,
+                latest_user_visible_status=(summaries or {}).get(task.task_id).latest_user_visible_status if (summaries or {}).get(task.task_id) else None,
+                note_count=0,
+                constraint_count=0,
+            )
+            for task in (tasks or [])
+            if task.task_id in (focused_task_ids or [])
+        ],
         active_tasks=[],
         recent_tasks=[],
         executor_runtime=ExecutorRuntimeSummary(
@@ -64,17 +82,24 @@ def test_build_reply_messages_keeps_expected_message_shape():
     assert "Do not expose internal tool names" in messages[3]["content"]
     assert "The latest user message is: Draft email" in messages[4]["content"]
     assert "current external information" in messages[4]["content"]
+    assert "forget it" in messages[4]["content"]
+    assert "focused_tasks" in messages[4]["content"]
     assert "Available tools: create_task, query_task_summary" in messages[4]["content"]
     assert "Examples:" in messages[5]["content"]
     assert "What is the weather?" in messages[5]["content"]
     assert "which city should I check?" in messages[5]["content"]
     assert "Help me find flights from Shanghai to Beijing tomorrow." in messages[5]["content"]
+    assert "Forget it." in messages[5]["content"]
+    assert "It should be Shanghai." in messages[5]["content"]
+    assert "cancel_task" in messages[5]["content"]
     assert "How do I seem today?" in messages[5]["content"]
     assert "What is the weather in Shanghai today?" not in messages[5]["content"]
     assert "Can you fact-check this claim for me?" not in messages[5]["content"]
     assert "What's the stock price today?" not in messages[5]["content"]
     assert json.loads(messages[6]["content"]) == {
         "conversation_id": "conv-1",
+        "focused_task_ids": [],
+        "focused_tasks": [],
         "active_tasks": [],
         "recent_tasks": [],
         "executor_runtime": {

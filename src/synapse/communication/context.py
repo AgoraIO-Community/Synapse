@@ -41,6 +41,8 @@ class CommunicationContext:
     recent_history: list[ConversationEntry]
     tasks: list[Task]
     summaries: dict[str, TaskSummary | None]
+    focused_task_ids: list[str]
+    focused_tasks: list[CommunicationTaskBrief]
     active_tasks: list[CommunicationTaskBrief]
     recent_tasks: list[CommunicationTaskBrief]
     executor_runtime: ExecutorRuntimeSummary
@@ -74,6 +76,13 @@ class CommunicationContextBuilder:
             task.task_id: await self._store.get_summary(task.task_id)
             for task in tasks
         }
+        focused_task_ids = self._history.latest_focused_task_ids(conversation_id)
+        focused_tasks = [
+            self._build_task_brief(task, summaries.get(task.task_id))
+            for task_id in focused_task_ids
+            for task in tasks
+            if task.task_id == task_id
+        ]
         active_tasks = [
             self._build_task_brief(task, summaries.get(task.task_id))
             for task in tasks
@@ -95,6 +104,8 @@ class CommunicationContextBuilder:
             recent_history=self._history.get_recent(conversation_id, limit=history_limit),
             tasks=tasks,
             summaries=summaries,
+            focused_task_ids=focused_task_ids,
+            focused_tasks=focused_tasks,
             active_tasks=active_tasks,
             recent_tasks=recent_tasks,
             executor_runtime=self._build_executor_runtime_summary(),

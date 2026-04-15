@@ -12,6 +12,8 @@ NOTIFICATION_CHAT_HISTORY_LIMIT = 6
 def build_runtime_context(context: CommunicationContext) -> dict[str, object]:
     return {
         "conversation_id": context.conversation_id,
+        "focused_task_ids": context.focused_task_ids,
+        "focused_tasks": [_task_brief_payload(task) for task in context.focused_tasks],
         "active_tasks": [_task_brief_payload(task) for task in context.active_tasks],
         "recent_tasks": [_task_brief_payload(task) for task in context.recent_tasks],
         "executor_runtime": {
