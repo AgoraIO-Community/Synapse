@@ -104,6 +104,12 @@ Short log of important design decisions and changes for Synapse.
 - Allowed `synapse service install` to run as `root`, with the installed systemd unit now running as the invoking user and reading runtime config from that user’s `~/.synapse` home.
 - Moved the Codex executor command path out of `SYNAPSE_CODEX_COMMAND` env and into `~/.synapse/config.yaml` under `runtime.codex_command`, while keeping `synapse setup` responsible for prompting and migrating the effective path.
 
+## 2026-04-15
+
+- Reworked the main frontend in `src/synapse/ui/` into a chat-first dual-pane workbench with `Conversation` on the left and `Workbench` on the right, keeping debug detail as a secondary surface instead of the primary layout.
+- Upgraded the main frontend workspace to Vite 8, introduced TanStack Router and TanStack Query for frontend app structure and durable read-model state, and moved the session HTTP/WebSocket client code under `src/synapse/ui/src/lib/`.
+- Added a documented `Frontend Workbench` guide under `docs/guides/` so the current main UI intent, stack, and data-flow boundaries are part of the stable docs.
+
 ## 2026-04-16
 
 - Routed conversational `control_task` through runtime command application, so chat-driven cancel/pause updates now affect live executor runs and task projections instead of only appending blackboard command records.
@@ -112,3 +118,4 @@ Short log of important design decisions and changes for Synapse.
 - Added a generic focused-bundle correction layer so short follow-up fixes like `it should be X`, `to X`, `from X`, and `X instead of Y` resolve against structured bundle slots, ask on ambiguity, and replace the whole bundle only when the correction is explicit enough.
 - Shifted correction/current-work interpretation back toward the LLM by exposing focused bundle state in prompt context and using only a small post-tool grounding fallback in runtime instead of expanding local English heuristic parsing.
 - Stopped rewriting the execution-mode blackboard projection when only `elapsed_seconds` changes, so `bb.execution_mode.updated` and `exec.task.classified` now fire on semantic mode transitions instead of spamming repeated `managed` updates.
+-

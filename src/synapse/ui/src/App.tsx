@@ -1,4 +1,29 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
+import {
+  startTransition,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+  type KeyboardEvent,
+} from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  Activity,
+  AlertCircle,
+  Bot,
+  CheckCircle2,
+  LoaderCircle,
+  MessageSquare,
+  PanelRightOpen,
+  PauseCircle,
+  RotateCcw,
+  Sparkles,
+  SquareSlash,
+  WandSparkles,
+  Workflow,
+  XCircle,
+} from "lucide-react";
 import {
   createSession,
   getConversationSnapshot,
@@ -7,7 +32,7 @@ import {
   openSessionStream,
   sendSocketCommand,
   sendSocketMessage,
-} from "./client";
+} from "./lib/session-client";
 import type {
   AssistantResponseCompletedStreamEvent,
   ConnectionStatus,
@@ -25,6 +50,29 @@ import type {
   TaskCommandType,
   TaskSummary,
 } from "./types";
+import { Badge } from "./components/ui/badge";
+import { Button } from "./components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "./components/ui/card";
+import { ScrollArea } from "./components/ui/scroll-area";
+import { Separator } from "./components/ui/separator";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "./components/ui/sheet";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "./components/ui/tabs";
+import { Textarea } from "./components/ui/textarea";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./components/ui/tooltip";
+import { cn } from "./lib/utils";
 
 type TaskResultDetail = {
   shortText: string;
@@ -46,6 +94,16 @@ type LiveAssistantBubble = {
   messageId?: string;
   conversationalAct?: string;
   affectedTaskIds: string[];
+};
+
+type ConversationTaskEvent = {
+  id: string;
+  taskId: string;
+  label: string;
+  title: string;
+  summary: string;
+  tone: "success" | "warning" | "destructive" | "default";
+  status: Task["status"];
 };
 
 function makeRequestId() {
@@ -84,7 +142,6 @@ function buildDiffItems(
   }
 
   const items: SnapshotDiffItem[] = [];
-
   const previousTasks = new Map(previous?.tasks.map((task) => [task.task_id, task]) ?? []);
   for (const task of current.tasks) {
     const prev = previousTasks.get(task.task_id);
@@ -260,33 +317,13 @@ function summarizeTaskResultForCard(detail: TaskResultDetail | null) {
   return detail.shortText.length > 120 ? `${detail.shortText.slice(0, 117)}...` : detail.shortText;
 }
 
-function summarizeToolArgs(args: Record<string, unknown>) {
-  const preferredKeys = [
-    "task_id",
-    "reference",
-    "command_type",
-    "title",
-    "goal",
-    "note",
-    "constraint",
-  ];
-  const parts = preferredKeys
-    .filter((key) => args[key] !== undefined && args[key] !== null)
-    .map((key) => `${key}=${String(args[key])}`);
-  if (parts.length > 0) {
-    return parts.join(", ");
-  }
-  const keys = Object.keys(args);
-  return keys.length > 0 ? `keys: ${keys.join(", ")}` : "no args";
-}
-
 function pickAutoSelectedTask(
   nextSnapshot: SessionSnapshot,
   previous: SessionSnapshot | null,
   currentSelectedTaskId: string | null,
 ) {
   const previousTasks = new Map(previous?.tasks.map((task) => [task.task_id, task]) ?? []);
-  const promotedStatuses = new Set(["completed", "failed", "waiting_user_input"]);
+  const promotedStatuses = new Set(["completed", "failed", "waiting_user_input", "running"]);
   const transitioned = nextSnapshot.tasks.find((task) => {
     const prev = previousTasks.get(task.task_id);
     return prev && prev.status !== task.status && promotedStatuses.has(task.status);
@@ -309,14 +346,6 @@ function getDetailRecord(value: unknown): Record<string, unknown> {
     : {};
 }
 
-function getDetailString(value: unknown) {
-  return typeof value === "string" ? value : null;
-}
-
-function getDetailStringArray(value: unknown) {
-  return Array.isArray(value) ? value.map((item) => String(item)) : [];
-}
-
 function summarizeDiagnosticEvent(event: DiagnosticEvent) {
   const detailKeys = Object.keys(event.details ?? {});
   return detailKeys.length > 0
@@ -324,8 +353,218 @@ function summarizeDiagnosticEvent(event: DiagnosticEvent) {
     : event.event_name;
 }
 
+function statusTone(status: Task["status"]): ConversationTaskEvent["tone"] {
+  if (status === "completed") {
+    return "success";
+  }
+  if (status === "failed" || status === "cancelled") {
+    return "destructive";
+  }
+  if (status === "waiting_user_input" || status === "paused") {
+    return "warning";
+  }
+  return "default";
+}
+
+function statusLabel(status: Task["status"]) {
+  if (status === "running" || status === "queued" || status === "created") {
+    return "In progress";
+  }
+  if (status === "waiting_user_input") {
+    return "Needs input";
+  }
+  return status.replaceAll("_", " ");
+}
+
+function taskStatusVariant(status: Task["status"]): "default" | "secondary" | "success" | "warning" | "destructive" {
+  if (status === "completed") {
+    return "success";
+  }
+  if (status === "failed" || status === "cancelled") {
+    return "destructive";
+  }
+  if (status === "waiting_user_input" || status === "paused") {
+    return "warning";
+  }
+  if (status === "running") {
+    return "default";
+  }
+  return "secondary";
+}
+
+function eventIcon(status: Task["status"]) {
+  if (status === "completed") {
+    return CheckCircle2;
+  }
+  if (status === "failed" || status === "cancelled") {
+    return XCircle;
+  }
+  if (status === "waiting_user_input" || status === "paused") {
+    return AlertCircle;
+  }
+  return LoaderCircle;
+}
+
+function buildConversationTaskEvents(
+  snapshot: SessionSnapshot | null,
+  summaryByTaskId: Map<string, TaskSummary>,
+  latestRunByTaskId: Map<string, ExecutionRun>,
+): ConversationTaskEvent[] {
+  if (!snapshot) {
+    return [];
+  }
+  const tasks = [...snapshot.tasks];
+  tasks.sort((a, b) => {
+    const rank = (status: Task["status"]) =>
+      ({
+        running: 0,
+        waiting_user_input: 1,
+        failed: 2,
+        completed: 3,
+        paused: 4,
+        queued: 5,
+        created: 6,
+        cancelled: 7,
+      })[status];
+    return rank(a.status) - rank(b.status);
+  });
+  return tasks.slice(0, 6).map((task) => {
+    const detail = getTaskResultDetail(task.task_id, summaryByTaskId, latestRunByTaskId);
+    return {
+      id: `event-${task.task_id}-${task.task_revision}`,
+      taskId: task.task_id,
+      label: statusLabel(task.status),
+      title: task.title,
+      summary:
+        detail?.fullText ||
+        task.latest_instruction ||
+        task.goal ||
+        "The execution brain is tracking this task.",
+      tone: statusTone(task.status),
+      status: task.status,
+    };
+  });
+}
+
+function statusDotClass(status: ConnectionStatus) {
+  if (status === "connected") {
+    return "bg-emerald-500";
+  }
+  if (status === "error" || status === "disconnected") {
+    return "bg-rose-500";
+  }
+  return "bg-amber-500";
+}
+
+function MessageBubble({
+  entry,
+}: {
+  entry: ConversationHistoryEntry;
+}) {
+  const isUser = entry.role === "user";
+  return (
+    <div className={cn("flex", isUser ? "justify-end" : "justify-start")}>
+      <div
+        className={cn(
+          "max-w-[86%] rounded-[28px] px-4 py-3 shadow-sm sm:px-5",
+          isUser
+            ? "bg-[linear-gradient(135deg,hsl(var(--accent))_0%,hsl(var(--accent-strong))_100%)] text-white"
+            : "border border-border/60 bg-white/85 text-foreground",
+        )}
+      >
+        <div className="mb-2 flex items-center justify-between gap-3 text-[11px] font-semibold uppercase tracking-[0.18em] opacity-80">
+          <span>{isUser ? "You" : "Assistant"}</span>
+          <span className="truncate">{entry.message_id}</span>
+        </div>
+        <p className="whitespace-pre-wrap text-sm leading-6">{entry.text}</p>
+      </div>
+    </div>
+  );
+}
+
+function LiveAssistantCard({ liveAssistant }: { liveAssistant: LiveAssistantBubble }) {
+  const statusText =
+    liveAssistant.state === "streaming"
+      ? "Streaming"
+      : liveAssistant.state === "failed"
+        ? "Failed"
+        : "Completed";
+  return (
+    <div className="flex justify-start">
+      <div className="max-w-[86%] rounded-[28px] border border-emerald-500/20 bg-emerald-500/7 px-5 py-3">
+        <div className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700">
+          <Bot className="size-3.5" />
+          <span>{statusText}</span>
+        </div>
+        <p className="whitespace-pre-wrap text-sm leading-6 text-foreground">
+          {liveAssistant.text || "..."}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function TaskEventCard({
+  event,
+  onSelectTask,
+}: {
+  event: ConversationTaskEvent;
+  onSelectTask: (taskId: string) => void;
+}) {
+  const Icon = eventIcon(event.status);
+  return (
+    <button
+      type="button"
+      onClick={() => onSelectTask(event.taskId)}
+      className="w-full text-left"
+    >
+      <Card className="border-white/70 bg-white/75 transition hover:-translate-y-0.5 hover:bg-white">
+        <CardContent className="p-4">
+          <div className="mb-3 flex items-start justify-between gap-3">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                <Workflow className="size-3.5" />
+                <span>Task update</span>
+              </div>
+              <h3 className="font-serif text-lg text-foreground">{event.title}</h3>
+            </div>
+            <Badge variant={taskStatusVariant(event.status)}>{event.label}</Badge>
+          </div>
+          <div className="flex items-start gap-3 text-sm text-muted-foreground">
+            <Icon className={cn("mt-0.5 size-4 shrink-0", event.status === "running" && "animate-spin")} />
+            <p className="line-clamp-3">{event.summary}</p>
+          </div>
+        </CardContent>
+      </Card>
+    </button>
+  );
+}
+
+function DebugFeedSection({
+  title,
+  empty,
+  children,
+}: {
+  title: string;
+  empty: string;
+  children?: React.ReactNode;
+}) {
+  return (
+    <section className="space-y-3">
+      <div className="flex items-center justify-between">
+        <h3 className="font-serif text-lg text-foreground">{title}</h3>
+      </div>
+      {children || (
+        <Card className="border-dashed border-border/80 bg-white/55">
+          <CardContent className="p-4 text-sm text-muted-foreground">{empty}</CardContent>
+        </Card>
+      )}
+    </section>
+  );
+}
+
 export default function App() {
-  const [sessionId, setSessionId] = useState<string | null>(null);
+  const queryClient = useQueryClient();
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>("booting");
   const [composer, setComposer] = useState("");
   const [actionError, setActionError] = useState<string | null>(null);
@@ -346,6 +585,7 @@ export default function App() {
   const [selectedExecutionSessionId, setSelectedExecutionSessionId] = useState<string | null>(null);
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [pendingCommand, setPendingCommand] = useState<string | null>(null);
+  const [mobileWorkbenchOpen, setMobileWorkbenchOpen] = useState(false);
   const socketRef = useRef<WebSocket | null>(null);
   const latestSnapshotRef = useRef<SessionSnapshot | null>(null);
   const latestDiagnosticSequenceRef = useRef(0);
@@ -354,31 +594,47 @@ export default function App() {
   const taskSelectionPinnedRef = useRef(false);
   const pendingCommandRequestsRef = useRef<Map<string, string>>(new Map());
 
+  const sessionQuery = useQuery<SessionResponse>({
+    queryKey: ["session"],
+    queryFn: createSession,
+    staleTime: Infinity,
+    retry: false,
+  });
+
+  const sessionId = sessionQuery.data?.session_id ?? null;
+
+  const snapshotQuery = useQuery<SessionSnapshot>({
+    queryKey: ["session", sessionId, "snapshot"],
+    queryFn: () => getSessionSnapshot(sessionId!),
+    enabled: Boolean(sessionId),
+    staleTime: Infinity,
+    retry: false,
+  });
+
+  const conversationQuery = useQuery<ConversationSnapshot>({
+    queryKey: ["session", sessionId, "conversation"],
+    queryFn: () => getConversationSnapshot(sessionId!),
+    enabled: Boolean(sessionId),
+    staleTime: Infinity,
+    retry: false,
+  });
+
   useEffect(() => {
-    let active = true;
-    async function boot() {
-      setConnectionStatus("booting");
-      try {
-        const session: SessionResponse = await createSession();
-        if (!active) {
-          return;
-        }
-        setSessionId(session.session_id);
-        setDiagnosticEvents([]);
-        latestDiagnosticSequenceRef.current = 0;
-      } catch (error) {
-        if (!active) {
-          return;
-        }
-        setConnectionStatus("error");
-        setActionError(error instanceof Error ? error.message : "Failed to create session.");
-      }
+    if (sessionQuery.error) {
+      setConnectionStatus("error");
+      setActionError(
+        sessionQuery.error instanceof Error ? sessionQuery.error.message : "Failed to create session.",
+      );
     }
-    void boot();
-    return () => {
-      active = false;
-    };
-  }, []);
+  }, [sessionQuery.error]);
+
+  useEffect(() => {
+    if (!sessionId) {
+      return;
+    }
+    setDiagnosticEvents([]);
+    latestDiagnosticSequenceRef.current = 0;
+  }, [sessionId]);
 
   useEffect(() => {
     latestSnapshotRef.current = snapshot;
@@ -406,59 +662,46 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!sessionId) {
-      return;
+    if (snapshotQuery.data) {
+      startTransition(() => {
+        setSnapshot(snapshotQuery.data);
+        latestSnapshotRef.current = snapshotQuery.data;
+        setConnectionStatus((current) => {
+          if (current === "booting") {
+            return "connecting";
+          }
+          return current;
+        });
+      });
     }
-    const activeSessionId = sessionId;
-    let active = true;
-    async function loadInitialStateSnapshot() {
-      try {
-        const stateSnapshot = await getSessionSnapshot(activeSessionId);
-        if (!active) {
-          return;
-        }
-        setSnapshot(stateSnapshot);
-        latestSnapshotRef.current = stateSnapshot;
-        setConnectionStatus("connecting");
-      } catch (error) {
-        if (!active) {
-          return;
-        }
-        setConnectionStatus("error");
-        setActionError(error instanceof Error ? error.message : "Failed to load session data.");
-      }
-    }
-    void loadInitialStateSnapshot();
-    return () => {
-      active = false;
-    };
-  }, [sessionId]);
+  }, [snapshotQuery.data]);
 
   useEffect(() => {
-    if (!sessionId) {
-      return;
+    if (snapshotQuery.error) {
+      setConnectionStatus("error");
+      setActionError(
+        snapshotQuery.error instanceof Error ? snapshotQuery.error.message : "Failed to load session data.",
+      );
     }
-    const activeSessionId = sessionId;
-    let active = true;
-    async function loadConversationProjection() {
-      try {
-        const chatSnapshot = await getConversationSnapshot(activeSessionId);
-        if (!active) {
-          return;
-        }
-        setConversationSnapshot(chatSnapshot);
-      } catch (error) {
-        if (!active) {
-          return;
-        }
-        setActionError(error instanceof Error ? error.message : "Failed to refresh conversation projection.");
-      }
+  }, [snapshotQuery.error]);
+
+  useEffect(() => {
+    if (conversationQuery.data) {
+      startTransition(() => {
+        setConversationSnapshot(conversationQuery.data);
+      });
     }
-    void loadConversationProjection();
-    return () => {
-      active = false;
-    };
-  }, [sessionId]);
+  }, [conversationQuery.data]);
+
+  useEffect(() => {
+    if (conversationQuery.error) {
+      setActionError(
+        conversationQuery.error instanceof Error
+          ? conversationQuery.error.message
+          : "Failed to refresh conversation projection.",
+      );
+    }
+  }, [conversationQuery.error]);
 
   useEffect(() => {
     if (!sessionId) {
@@ -481,9 +724,11 @@ export default function App() {
         if (!active || response.events.length === 0) {
           return;
         }
-        setDiagnosticEvents((current) => {
-          const next = [...current, ...response.events];
-          return next.length > 200 ? next.slice(next.length - 200) : next;
+        startTransition(() => {
+          setDiagnosticEvents((current) => {
+            const next = [...current, ...response.events];
+            return next.length > 200 ? next.slice(next.length - 200) : next;
+          });
         });
         latestDiagnosticSequenceRef.current =
           response.events[response.events.length - 1].sequence;
@@ -564,15 +809,18 @@ export default function App() {
         if (event.type === "snapshot") {
           const nextSnapshot = event.snapshot;
           const previous = latestSnapshotRef.current;
-          setConnectionStatus("connected");
-          setPreviousSnapshot(previous);
-          setSnapshot(nextSnapshot);
-          latestSnapshotRef.current = nextSnapshot;
-          setSelectedTaskId((current) =>
-            taskSelectionPinnedRef.current
-              ? current
-              : pickAutoSelectedTask(nextSnapshot, previous, current),
-          );
+          queryClient.setQueryData(["session", sessionId, "snapshot"], nextSnapshot);
+          startTransition(() => {
+            setConnectionStatus("connected");
+            setPreviousSnapshot(previous);
+            setSnapshot(nextSnapshot);
+            latestSnapshotRef.current = nextSnapshot;
+            setSelectedTaskId((current) =>
+              taskSelectionPinnedRef.current
+                ? current
+                : pickAutoSelectedTask(nextSnapshot, previous, current),
+            );
+          });
           if (isPageVisibleRef.current && refreshDiagnosticsRef.current) {
             void refreshDiagnosticsRef.current();
           }
@@ -659,6 +907,28 @@ export default function App() {
               ],
             };
           });
+          queryClient.setQueryData(
+            ["session", sessionId, "conversation"],
+            (current: ConversationSnapshot | undefined) => {
+              if (!current) {
+                return current;
+              }
+              if (current.conversation_history.some((entry) => entry.message_id === event.message_id)) {
+                return current;
+              }
+              return {
+                ...current,
+                conversation_history: [
+                  ...current.conversation_history,
+                  {
+                    role: "assistant",
+                    text: event.reply_text,
+                    message_id: event.message_id,
+                  },
+                ],
+              };
+            },
+          );
           setLiveAssistant({
             requestId: event.request_id,
             text: event.reply_text,
@@ -707,7 +977,28 @@ export default function App() {
               ],
             };
           });
-          return;
+          queryClient.setQueryData(
+            ["session", sessionId, "conversation"],
+            (current: ConversationSnapshot | undefined) => {
+              if (!current) {
+                return current;
+              }
+              if (current.conversation_history.some((entry) => entry.message_id === event.message_id)) {
+                return current;
+              }
+              return {
+                ...current,
+                conversation_history: [
+                  ...current.conversation_history,
+                  {
+                    role: event.role,
+                    text: event.text,
+                    message_id: event.message_id,
+                  },
+                ],
+              };
+            },
+          );
         }
       },
     });
@@ -737,11 +1028,16 @@ export default function App() {
   );
   const summaryByTaskId = useMemo(() => buildTaskSummaryMap(snapshot), [snapshot]);
   const latestRunByTaskId = useMemo(() => buildLatestRunMap(snapshot), [snapshot]);
+  const conversationTaskEvents = useMemo(
+    () => buildConversationTaskEvents(snapshot, summaryByTaskId, latestRunByTaskId),
+    [snapshot, summaryByTaskId, latestRunByTaskId],
+  );
 
   const selectedTask = snapshot?.tasks.find((task) => task.task_id === selectedTaskId) ?? null;
   const selectedSummary = selectedTaskId ? summaryByTaskId.get(selectedTaskId) ?? null : null;
   const toolCallHistory = useMemo(
-    () => diagnosticEvents.filter((event) => event.event_name === "comm.tool.called").slice(-50).reverse(),
+    () =>
+      diagnosticEvents.filter((event) => event.event_name === "comm.tool.called").slice(-50).reverse(),
     [diagnosticEvents],
   );
   const selectedMutations = useMemo(
@@ -764,8 +1060,6 @@ export default function App() {
     snapshot?.bindings.filter((binding) => binding.task_id === selectedTaskId) ?? [];
   const selectedSessions =
     snapshot?.execution_sessions.filter((session) => session.task_id === selectedTaskId) ?? [];
-  const selectedRuns =
-    snapshot?.execution_runs.filter((run) => run.task_id === selectedTaskId) ?? [];
 
   useEffect(() => {
     if (!selectedSessions.length) {
@@ -830,6 +1124,25 @@ export default function App() {
         ],
       };
     });
+    queryClient.setQueryData(
+      ["session", sessionId, "conversation"],
+      (current: ConversationSnapshot | undefined) => {
+        if (!current) {
+          return current;
+        }
+        return {
+          ...current,
+          conversation_history: [
+            ...current.conversation_history,
+            {
+              role: "user",
+              text,
+              message_id: makeLocalMessageId("user", requestId),
+            },
+          ],
+        };
+      },
+    );
     sendSocketMessage(socket, requestId, text);
     setComposer("");
   }
@@ -851,6 +1164,12 @@ export default function App() {
     sendSocketCommand(socket, requestId, commandType, taskId);
   }
 
+  function focusTask(taskId: string) {
+    setSelectedTaskId(taskId);
+    setTaskSelectionPinned(true);
+    setMobileWorkbenchOpen(true);
+  }
+
   const tasks = snapshot?.tasks ?? [];
   const conversation = conversationSnapshot?.conversation_history ?? [];
   const recentWrites = diagnosticEvents.filter(
@@ -860,499 +1179,418 @@ export default function App() {
       event.event_name.startsWith("notify."),
   );
 
-  return (
-    <main className="shell debug-shell">
-      <header className="hero debug-hero">
-        <div>
-          <p className="eyebrow">Synapse Runtime Debugger</p>
-          <h1>Blackboard Inspector</h1>
-          <p className="intro">
-            Inspect how the communication brain writes to the blackboard, how the execution brain
-            claims and runs work, and how the runtime snapshot changes over time.
-          </p>
-        </div>
-        <div className={`status-pill status-${connectionStatus}`}>
-          <span className="status-dot" />
-          <span>{connectionStatus}</span>
-          {sessionId ? <code>{sessionId}</code> : null}
-        </div>
-      </header>
-
-      {actionError ? <div className="error-banner">{actionError}</div> : null}
-
-      <section className="debug-grid">
-        <section className="panel debug-panel">
-          <div className="panel-header sticky-header">
-            <div>
-              <p className="panel-kicker">Communication</p>
-              <h2>Conversation</h2>
-            </div>
-          </div>
-          <div className="inspector-scroll conversation-panel">
-            {conversation.length === 0 && !liveAssistant ? (
-              <div className="empty-state">Waiting for the first conversation turn.</div>
-            ) : (
-              <>
-                {conversation.map((entry: ConversationHistoryEntry) => (
-                  <article key={entry.message_id} className={`bubble bubble-${entry.role}`}>
-                    <div className="bubble-meta">
-                      <span>{entry.role === "user" ? "User" : "Assistant"}</span>
-                      <span>{entry.message_id}</span>
-                    </div>
-                    <p>{entry.text}</p>
-                  </article>
-                ))}
-                {liveAssistant ? (
-                  <article key={liveAssistant.requestId} className="bubble bubble-assistant">
-                    <div className="bubble-meta">
-                      <span>Assistant</span>
-                      <span>{liveAssistant.state}</span>
-                    </div>
-                    <p>{liveAssistant.text || "..."}</p>
-                  </article>
-                ) : null}
-              </>
-            )}
-          </div>
-          <form className="composer" onSubmit={handleSendMessage}>
-            <textarea
-              value={composer}
-              onChange={(event) => setComposer(event.target.value)}
-              onKeyDown={(event: KeyboardEvent<HTMLTextAreaElement>) => {
-                if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
-                  event.preventDefault();
-                  void handleSendMessage(event as unknown as FormEvent<HTMLFormElement>);
-                }
-              }}
-              placeholder="Send an instruction to inspect how the blackboard changes..."
-              rows={4}
-            />
-            <button type="submit" disabled={!sessionId || !composer.trim() || isSending}>
-              {isSending ? "Sending..." : "Send"}
-            </button>
-          </form>
-          <div className="inspector-footer">
-            <section className="meta-card">
-              <h3>Last Reply</h3>
-              {lastAssistantResponse ? (
-                <>
-                  <p>{lastAssistantResponse.reply_text}</p>
-                  <dl className="kv">
-                    <div>
-                      <dt>Act</dt>
-                      <dd>{lastAssistantResponse.conversational_act}</dd>
-                    </div>
-                    <div>
-                      <dt>Tasks</dt>
-                      <dd>{lastAssistantResponse.affected_task_ids.join(", ") || "none"}</dd>
-                    </div>
-                  </dl>
-                </>
-              ) : (
-                <p className="muted-copy">No message response yet.</p>
-              )}
-            </section>
-            <section className="meta-card">
-              <h3>Client Stream</h3>
-              <p className="muted-copy">
-                The websocket now carries only assistant text, acks, and durable snapshots.
-                Diagnostic inspection panels are rebuilt from the log timeline instead of a
-                separate debug channel.
-              </p>
-            </section>
-          </div>
-          <div className="panel-inline-section">
-            <section className="inspector-section">
-              <h3>Tool Call History</h3>
-              {toolCallHistory.length === 0 ? (
-                <div className="empty-state">No tool call diagnostics in this session yet.</div>
-              ) : (
-                <div className="stack compact-stack">
-                  {toolCallHistory.map((event) => {
-                    const details = getDetailRecord(event.details);
-                    const args = getDetailRecord(details.args);
-                    const resultPreview =
-                      details.result_preview && typeof details.result_preview === "object"
-                        ? getDetailRecord(details.result_preview)
-                        : null;
-                    const error =
-                      details.error && typeof details.error === "object"
-                        ? getDetailRecord(details.error)
-                        : null;
-                    const affectedTaskIds = getDetailStringArray(details.affected_task_ids);
-                    const toolName = getDetailString(details.tool_name) ?? event.summary;
-                    return (
-                    <details key={`${event.sequence}:${toolName}`} className="log-card llm-trace-card">
-                      <summary className="entity-head llm-trace-summary">
-                        <strong>{toolName}</strong>
-                        <span>{event.outcome ?? "n/a"}</span>
-                      </summary>
-                      <div className="llm-trace-body">
-                        <p>{getDetailString(details.result_summary) ?? event.summary}</p>
-                        <dl className="kv compact">
-                          <div>
-                            <dt>Request</dt>
-                            <dd>{event.request_id ?? "n/a"}</dd>
-                          </div>
-                          <div>
-                            <dt>Tasks</dt>
-                            <dd>{affectedTaskIds.join(", ") || "none"}</dd>
-                          </div>
-                          <div>
-                            <dt>Args</dt>
-                            <dd>{summarizeToolArgs(args)}</dd>
-                          </div>
-                        </dl>
-                        {error ? (
-                          <div className="summary-block">
-                            <h4>Error</h4>
-                            <pre>{formatJson(error)}</pre>
-                          </div>
-                        ) : null}
-                        <div className="summary-block">
-                          <h4>Arguments</h4>
-                          <pre>{formatJson(args)}</pre>
-                        </div>
-                        {resultPreview ? (
-                          <div className="summary-block">
-                            <h4>Result Preview</h4>
-                            <pre>{formatJson(resultPreview)}</pre>
-                          </div>
-                        ) : null}
-                      </div>
-                    </details>
-                  )})}
-                </div>
-              )}
-            </section>
-          </div>
-        </section>
-
-        <section className="panel debug-panel">
-          <div className="panel-header sticky-header">
-            <div>
-              <p className="panel-kicker">Blackboard</p>
-              <h2>State</h2>
-            </div>
-          </div>
-          <div className="inspector-scroll">
-            <section className="inspector-section">
-              <h3>Tasks</h3>
-              {tasks.length === 0 ? (
-                <div className="empty-state">No tasks yet.</div>
-              ) : (
-                <div className="stack">
-                  {tasks.map((task) => (
-                    <button
-                      key={task.task_id}
-                      type="button"
-                      className={`entity-card ${selectedTaskId === task.task_id ? "selected" : ""}`}
-                      onClick={() => {
-                        setTaskSelectionPinned(true);
-                        setSelectedTaskId(task.task_id);
-                      }}
-                    >
-                      <div className="entity-head">
-                        <strong>{task.title}</strong>
-                        <span className={`status-chip status-${task.status}`}>{task.status}</span>
-                      </div>
-                      <p>{task.goal}</p>
-                      <p className="muted-copy">{summarizeTaskResultForCard(getTaskResultDetail(task.task_id, summaryByTaskId, latestRunByTaskId))}</p>
-                      <dl className="kv compact">
-                        <div>
-                          <dt>ID</dt>
-                          <dd><code>{task.task_id}</code></dd>
-                        </div>
-                        <div>
-                          <dt>Revision</dt>
-                          <dd>{task.task_revision}</dd>
-                        </div>
-                        <div>
-                          <dt>Priority</dt>
-                          <dd>{task.priority}</dd>
-                        </div>
-                        <div>
-                          <dt>Executor</dt>
-                          <dd>{task.preferred_executor ?? "n/a"}</dd>
-                        </div>
-                      </dl>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </section>
-
-            <section className="inspector-section">
-              <h3>Selected Task Detail</h3>
-              {selectedTask ? (
-                <div className="detail-card">
-                  <dl className="kv">
-                    <div><dt>ID</dt><dd><code>{selectedTask.task_id}</code></dd></div>
-                    <div><dt>Status</dt><dd>{selectedTask.status}</dd></div>
-                    <div><dt>Revision</dt><dd>{selectedTask.task_revision}</dd></div>
-                    <div><dt>Latest Instruction</dt><dd>{selectedTask.latest_instruction ?? "n/a"}</dd></div>
-                    <div><dt>Requires Confirmation</dt><dd>{selectedTask.requires_confirmation ? "yes" : "no"}</dd></div>
-                    <div><dt>Interruptible</dt><dd>{selectedTask.interruptible ? "yes" : "no"}</dd></div>
-                  </dl>
-                  <div className="summary-block">
-                    <h4>Latest Result</h4>
-                    <p>{selectedTaskResult?.fullText ?? "No result yet."}</p>
-                  </div>
-                  <div className="command-bar">
-                    {(["pause_task", "resume_task", "retry_task", "cancel_task"] as TaskCommandType[]).map(
-                      (command) => (
-                        <button
-                          key={command}
-                          type="button"
-                          className="ghost-button"
-                          disabled={!canRunCommand(selectedTask, command) || pendingCommand === `${selectedTask.task_id}:${command}`}
-                          onClick={() => void handleCommand(selectedTask.task_id, command)}
-                        >
-                          {pendingCommand === `${selectedTask.task_id}:${command}` ? "..." : commandLabel(command)}
-                        </button>
-                      ),
-                    )}
-                  </div>
-                </div>
-              ) : (
-                <div className="empty-state">Select a task to inspect mutations, commands, and summaries.</div>
-              )}
-            </section>
-
-            <section className="inspector-section">
-              <h3>Mutations</h3>
-              {selectedMutations.length === 0 ? (
-                <div className="empty-state">No mutations for the selected task.</div>
-              ) : (
-                <div className="stack compact-stack">
-                  {selectedMutations.map((event) => {
-                    const details = getDetailRecord(event.details);
-                    return (
-                    <article key={String(details.mutation_id ?? event.sequence)} className="log-card">
-                      <div className="entity-head">
-                        <strong>{String(details.mutation_type ?? event.event_name)}</strong>
-                        <code>{String(details.mutation_id ?? event.sequence)}</code>
-                      </div>
-                      <dl className="kv compact">
-                        <div><dt>By</dt><dd>{String(details.created_by ?? "n/a")}</dd></div>
-                        <div><dt>Scope</dt><dd>{String(details.effective_scope ?? "n/a")}</dd></div>
-                        <div><dt>Replan</dt><dd>{details.requires_replan ? "yes" : "no"}</dd></div>
-                      </dl>
-                      <pre>{formatJson(details.patch ?? {})}</pre>
-                    </article>
-                  )})}
-                </div>
-              )}
-            </section>
-
-            <section className="inspector-section">
-              <h3>Commands</h3>
-              {selectedCommands.length === 0 ? (
-                <div className="empty-state">No commands for the selected task.</div>
-              ) : (
-                <div className="stack compact-stack">
-                  {selectedCommands.map((event) => {
-                    const details = getDetailRecord(event.details);
-                    return (
-                    <article key={String(details.command_id ?? event.sequence)} className="log-card">
-                      <div className="entity-head">
-                        <strong>{String(details.command_type ?? event.event_name)}</strong>
-                        <code>{String(details.command_id ?? event.sequence)}</code>
-                      </div>
-                      <dl className="kv compact">
-                        <div><dt>By</dt><dd>{String(details.created_by ?? "n/a")}</dd></div>
-                        <div><dt>Reason</dt><dd>{String(details.reason ?? "n/a")}</dd></div>
-                      </dl>
-                      <pre>{formatJson(details.payload ?? {})}</pre>
-                    </article>
-                  )})}
-                </div>
-              )}
-            </section>
-
-            <section className="inspector-section">
-              <h3>Summaries</h3>
-              {selectedSummary ? (
-                <article className="detail-card">
-                  <dl className="kv">
-                    <div><dt>User Status</dt><dd>{selectedSummary.latest_user_visible_status ?? "n/a"}</dd></div>
-                    <div><dt>Needs Input</dt><dd>{selectedSummary.needs_user_input ? "yes" : "no"}</dd></div>
-                  </dl>
-                  <div className="summary-block">
-                    <h4>Conversational</h4>
-                    <p>{selectedSummary.conversational_summary ?? "n/a"}</p>
-                  </div>
-                  <div className="summary-block">
-                    <h4>Operational</h4>
-                    <p>{selectedSummary.operational_summary ?? "n/a"}</p>
-                  </div>
-                </article>
-              ) : (
-                <div className="empty-state">No summary for the selected task.</div>
-              )}
-            </section>
-          </div>
-        </section>
-
-        <section className="panel debug-panel">
-          <div className="panel-header sticky-header">
-            <div>
-              <p className="panel-kicker">Execution</p>
-              <h2>Sessions & Runs</h2>
-            </div>
-          </div>
-          <div className="inspector-scroll">
-            <section className="inspector-section">
-              <h3>Bindings</h3>
-              {selectedBindings.length === 0 ? (
-                <div className="empty-state">No binding for the selected task.</div>
-              ) : (
-                selectedBindings.map((binding: SessionBinding) => (
-                  <article key={`${binding.task_id}-${binding.session_id ?? "none"}`} className="detail-card">
-                    <dl className="kv">
-                      <div><dt>Session</dt><dd><code>{binding.session_id ?? "n/a"}</code></dd></div>
-                      <div><dt>Owner</dt><dd>{binding.claimed_by ?? "n/a"}</dd></div>
-                      <div><dt>Lease</dt><dd>{formatTime(binding.claim_expires_at)}</dd></div>
-                      <div><dt>Exec Revision</dt><dd>{binding.execution_revision}</dd></div>
-                      <div><dt>Status</dt><dd>{binding.binding_status}</dd></div>
-                    </dl>
-                  </article>
-                ))
-              )}
-            </section>
-
-            <section className="inspector-section">
-              <h3>Execution Sessions</h3>
-              {selectedSessions.length === 0 ? (
-                <div className="empty-state">No execution sessions for the selected task.</div>
-              ) : (
-                <div className="stack">
-                  {selectedSessions.map((session: ExecutionSession) => (
-                    <button
-                      key={session.execution_session_id}
-                      type="button"
-                      className={`entity-card ${selectedExecutionSessionId === session.execution_session_id ? "selected" : ""}`}
-                      onClick={() => setSelectedExecutionSessionId(session.execution_session_id)}
-                    >
-                      <div className="entity-head">
-                        <strong>{session.base_executor_id}</strong>
-                        <code>{session.execution_session_id}</code>
-                      </div>
-                      <dl className="kv compact">
-                        <div><dt>Active Run</dt><dd>{session.active_run_id ?? "n/a"}</dd></div>
-                        <div><dt>Latest Run</dt><dd>{session.latest_run_id ?? "n/a"}</dd></div>
-                        <div><dt>Run Count</dt><dd>{session.run_ids.length}</dd></div>
-                      </dl>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </section>
-
-            <section className="inspector-section">
-              <h3>Execution Runs</h3>
-              {sessionRuns.length === 0 ? (
-                <div className="empty-state">No runs for the selected execution session.</div>
-              ) : (
-                <div className="stack">
-                  {sessionRuns.map((run: ExecutionRun) => (
-                    <button
-                      key={run.run_id}
-                      type="button"
-                      className={`entity-card ${selectedRunId === run.run_id ? "selected" : ""}`}
-                      onClick={() => setSelectedRunId(run.run_id)}
-                    >
-                      <div className="entity-head">
-                        <strong>{run.executor_type}</strong>
-                        <span className={`status-chip status-${run.status}`}>{run.status}</span>
-                      </div>
-                      <dl className="kv compact">
-                        <div><dt>ID</dt><dd><code>{run.run_id}</code></dd></div>
-                        <div><dt>Revision</dt><dd>{run.run_revision}</dd></div>
-                        <div><dt>Owner</dt><dd>{run.claimed_by ?? "n/a"}</dd></div>
-                      </dl>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </section>
-
-            <section className="inspector-section">
-              <h3>Selected Run Detail</h3>
-              {selectedRun ? (
-                <article className="detail-card">
-                  <dl className="kv">
-                    <div><dt>ID</dt><dd><code>{selectedRun.run_id}</code></dd></div>
-                    <div><dt>Status</dt><dd>{selectedRun.status}</dd></div>
-                    <div><dt>Progress</dt><dd>{selectedRun.latest_progress_message ?? "n/a"}</dd></div>
-                    <div><dt>Output</dt><dd>{selectedRun.output_summary ?? "n/a"}</dd></div>
-                    <div><dt>Blocked</dt><dd>{selectedRun.block_reason ?? "n/a"}</dd></div>
-                    <div><dt>Failure</dt><dd>{selectedRun.failure_reason ?? "n/a"}</dd></div>
-                  </dl>
-                  <pre>{formatJson(selectedRun.metadata)}</pre>
-                </article>
-              ) : (
-                <div className="empty-state">Select a run to inspect execution detail.</div>
-              )}
-            </section>
-          </div>
-        </section>
-      </section>
-
-      <section className="panel change-feed-panel">
-        <div className="panel-header sticky-header">
+  const workbench = (
+    <Card className="h-full overflow-hidden">
+      <CardHeader className="gap-4 border-b border-border/60 bg-white/60 pb-5">
+        <div className="flex items-start justify-between gap-3">
           <div>
-            <p className="panel-kicker">Diff & Writes</p>
-            <h2>Change Feed</h2>
+            <div className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+              <Sparkles className="size-3.5" />
+              <span>Execution visibility</span>
+            </div>
+            <CardTitle className="text-2xl">Workbench</CardTitle>
+            <CardDescription>
+              Task queue first. Execution and diagnostics stay available behind Debug.
+            </CardDescription>
           </div>
-          <div className="feed-meta">
-            <span>{diffItems.length} diffs</span>
-            <span>{recentWrites.length} writes</span>
-            {lastCommandStatus ? <span>last command: {lastCommandStatus}</span> : null}
-          </div>
+          <Badge variant="secondary">{tasks.length} tracked</Badge>
         </div>
-        <div className="change-feed-grid">
-          <section className="inspector-section">
-            <h3>Snapshot Diff</h3>
-            {diffItems.length === 0 ? (
-              <div className="empty-state">Waiting for snapshot changes.</div>
-            ) : (
-              <div className="stack compact-stack">
-                {diffItems.map((item) => (
-                  <article key={item.id} className="diff-row">
-                    <div className="diff-head">
-                      <span className="entity-badge">{item.entityKind}</span>
-                      <strong>{item.changeType}</strong>
-                      <code>{item.entityId}</code>
+      </CardHeader>
+      <CardContent className="h-[calc(100%-132px)] p-0">
+        <Tabs defaultValue="overview" className="flex h-full flex-col">
+          <div className="border-b border-border/60 px-6 py-4">
+            <TabsList>
+              <TabsTrigger value="overview">Overview</TabsTrigger>
+              <TabsTrigger value="debug">Debug</TabsTrigger>
+            </TabsList>
+          </div>
+          <TabsContent value="overview" className="mt-0 flex-1 overflow-hidden">
+            <ScrollArea className="h-full">
+              <div className="space-y-6 p-6">
+                <section className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h3 className="font-serif text-xl text-foreground">Active Tasks</h3>
+                    <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                      Queue
+                    </p>
+                  </div>
+                  {tasks.length === 0 ? (
+                    <Card className="border-dashed border-border/80 bg-white/55">
+                      <CardContent className="p-4 text-sm text-muted-foreground">
+                        The execution brain has not opened any tasks yet.
+                      </CardContent>
+                    </Card>
+                  ) : (
+                    <div className="space-y-3">
+                      {tasks.map((task) => {
+                        const detail = getTaskResultDetail(task.task_id, summaryByTaskId, latestRunByTaskId);
+                        const selected = selectedTaskId === task.task_id;
+                        return (
+                          <button
+                            key={task.task_id}
+                            type="button"
+                            className="w-full text-left"
+                            onClick={() => {
+                              setSelectedTaskId(task.task_id);
+                              setTaskSelectionPinned(true);
+                            }}
+                          >
+                            <Card
+                              className={cn(
+                                "border-white/70 bg-white/70 transition hover:-translate-y-0.5 hover:bg-white",
+                                selected && "ring-2 ring-primary/30",
+                              )}
+                            >
+                              <CardContent className="space-y-4 p-4">
+                                <div className="flex items-start justify-between gap-3">
+                                  <div className="space-y-1">
+                                    <h4 className="font-medium text-foreground">{task.title}</h4>
+                                    <p className="text-sm text-muted-foreground">{task.goal}</p>
+                                  </div>
+                                  <Badge variant={taskStatusVariant(task.status)}>{statusLabel(task.status)}</Badge>
+                                </div>
+                                <div className="rounded-2xl bg-muted/70 p-3 text-sm text-muted-foreground">
+                                  {summarizeTaskResultForCard(detail)}
+                                </div>
+                              </CardContent>
+                            </Card>
+                          </button>
+                        );
+                      })}
                     </div>
-                    <p>{item.details}</p>
-                  </article>
-                ))}
-              </div>
-            )}
-          </section>
+                  )}
+                </section>
 
-          <section className="inspector-section">
-            <h3>Recent Blackboard Diagnostics</h3>
-            {recentWrites.length === 0 ? (
-              <div className="empty-state">No writes published yet.</div>
-            ) : (
-              <div className="stack compact-stack">
-                {[...recentWrites].reverse().map((event, index) => (
-                  <article key={`${event.sequence}-${index}`} className="diff-row">
-                    <div className="diff-head">
-                      <span className="entity-badge">{event.event_name}</span>
-                      <code>{event.task_id ?? event.run_id ?? event.execution_session_id ?? "n/a"}</code>
+                <Separator />
+
+                <section className="space-y-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <h3 className="font-serif text-xl text-foreground">Task Detail</h3>
+                      <p className="text-sm text-muted-foreground">
+                        {selectedTask
+                          ? "Focused task for execution status and controls."
+                          : "Choose a task from the queue to inspect execution detail."}
+                      </p>
                     </div>
-                    <p>{summarizeDiagnosticEvent(event)}</p>
-                    {Object.keys(event.details ?? {}).length ? <pre>{formatJson(event.details)}</pre> : null}
-                  </article>
-                ))}
+                  </div>
+                  {selectedTask ? (
+                    <Card className="border-white/75 bg-white/80">
+                      <CardContent className="space-y-5 p-5">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Badge variant={taskStatusVariant(selectedTask.status)}>
+                            {statusLabel(selectedTask.status)}
+                          </Badge>
+                          <Badge variant="secondary">Rev {selectedTask.task_revision}</Badge>
+                          <Badge variant="secondary">
+                            {selectedTask.preferred_executor ?? "executor:auto"}
+                          </Badge>
+                        </div>
+                        <div className="space-y-2">
+                          <h4 className="font-serif text-2xl">{selectedTask.title}</h4>
+                          <p className="text-sm text-muted-foreground">{selectedTask.goal}</p>
+                        </div>
+                        <div className="grid gap-3 md:grid-cols-2">
+                          <div className="rounded-2xl bg-muted/70 p-4">
+                            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                              Latest result
+                            </p>
+                            <p className="mt-2 text-sm leading-6 text-foreground">
+                              {selectedTaskResult?.fullText ?? "No result yet."}
+                            </p>
+                          </div>
+                          <div className="rounded-2xl bg-muted/70 p-4">
+                            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                              Latest instruction
+                            </p>
+                            <p className="mt-2 text-sm leading-6 text-foreground">
+                              {selectedTask.latest_instruction ?? "n/a"}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          {(["pause_task", "resume_task", "retry_task", "cancel_task"] as TaskCommandType[]).map(
+                            (command) => (
+                              <Button
+                                key={command}
+                                type="button"
+                                variant={command === "cancel_task" ? "destructive" : "secondary"}
+                                size="sm"
+                                disabled={
+                                  !canRunCommand(selectedTask, command) ||
+                                  pendingCommand === `${selectedTask.task_id}:${command}`
+                                }
+                                onClick={() => void handleCommand(selectedTask.task_id, command)}
+                              >
+                                {pendingCommand === `${selectedTask.task_id}:${command}` ? "…" : commandLabel(command)}
+                              </Button>
+                            ),
+                          )}
+                        </div>
+                        {selectedSummary ? (
+                          <div className="rounded-2xl border border-border/60 bg-background/60 p-4">
+                            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                              User-facing summary
+                            </p>
+                            <p className="mt-2 text-sm leading-6 text-foreground">
+                              {selectedSummary.conversational_summary ??
+                                selectedSummary.operational_summary ??
+                                "n/a"}
+                            </p>
+                          </div>
+                        ) : null}
+                      </CardContent>
+                    </Card>
+                  ) : (
+                    <Card className="border-dashed border-border/80 bg-white/55">
+                      <CardContent className="p-4 text-sm text-muted-foreground">
+                        Select a task to inspect its status, result, and controls.
+                      </CardContent>
+                    </Card>
+                  )}
+                </section>
               </div>
-            )}
-          </section>
+            </ScrollArea>
+          </TabsContent>
+          <TabsContent value="debug" className="mt-0 flex-1 overflow-hidden">
+            <ScrollArea className="h-full">
+              <div className="space-y-6 p-6">
+                <DebugFeedSection title="Snapshot Diff" empty="Waiting for snapshot changes.">
+                  {diffItems.length > 0 ? (
+                    <div className="space-y-3">
+                      {diffItems.map((item) => (
+                        <Card key={item.id} className="border-white/70 bg-white/70">
+                          <CardContent className="space-y-2 p-4">
+                            <div className="flex items-center gap-2 text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                              <Badge variant="secondary">{item.entityKind}</Badge>
+                              <span>{item.changeType}</span>
+                            </div>
+                            <p className="text-sm text-foreground">{item.details}</p>
+                            <code className="text-xs text-muted-foreground">{item.entityId}</code>
+                          </CardContent>
+                        </Card>
+                      ))}
+                    </div>
+                  ) : undefined}
+                </DebugFeedSection>
+
+                <DebugFeedSection
+                  title="Execution & diagnostics"
+                  empty="No execution diagnostics have been recorded yet."
+                >
+                  {recentWrites.length > 0 ? (
+                    <div className="space-y-3">
+                      {[...recentWrites].reverse().map((event, index) => (
+                        <Card
+                          key={`${event.sequence}-${index}`}
+                          className="border-white/70 bg-white/70"
+                        >
+                          <CardContent className="space-y-2 p-4">
+                            <div className="flex items-center justify-between gap-3 text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                              <span>{event.event_name}</span>
+                              <span>
+                                {event.task_id ?? event.run_id ?? event.execution_session_id ?? "n/a"}
+                              </span>
+                            </div>
+                            <p className="text-sm text-foreground">{summarizeDiagnosticEvent(event)}</p>
+                            {Object.keys(event.details ?? {}).length ? (
+                              <pre className="overflow-x-auto rounded-2xl bg-muted/70 p-3 text-xs text-muted-foreground">
+                                {formatJson(event.details)}
+                              </pre>
+                            ) : null}
+                          </CardContent>
+                        </Card>
+                      ))}
+                    </div>
+                  ) : undefined}
+                </DebugFeedSection>
+
+                <DebugFeedSection title="Tool calls" empty="No tool calls recorded yet.">
+                  {toolCallHistory.length > 0 ? (
+                    <div className="space-y-3">
+                      {toolCallHistory.map((event) => (
+                        <Card key={event.sequence} className="border-white/70 bg-white/70">
+                          <CardContent className="space-y-2 p-4">
+                            <div className="flex items-center justify-between gap-3 text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                              <span>{event.event_name}</span>
+                              <span>{event.outcome ?? "n/a"}</span>
+                            </div>
+                            <p className="text-sm text-foreground">{event.summary}</p>
+                          </CardContent>
+                        </Card>
+                      ))}
+                    </div>
+                  ) : undefined}
+                </DebugFeedSection>
+
+                {selectedRun ? (
+                  <DebugFeedSection title="Selected run" empty="No run selected.">
+                    <Card className="border-white/70 bg-white/70">
+                      <CardContent className="space-y-3 p-4">
+                        <div className="flex flex-wrap gap-2">
+                          <Badge variant="secondary">{selectedRun.executor_type}</Badge>
+                          <Badge variant={taskStatusVariant(selectedRun.status as Task["status"])}>
+                            {selectedRun.status}
+                          </Badge>
+                        </div>
+                        <p className="text-sm text-foreground">
+                          {selectedRun.output_summary ??
+                            selectedRun.failure_reason ??
+                            selectedRun.block_reason ??
+                            selectedRun.latest_progress_message ??
+                            "No run summary yet."}
+                        </p>
+                        <pre className="overflow-x-auto rounded-2xl bg-muted/70 p-3 text-xs text-muted-foreground">
+                          {formatJson(selectedRun.metadata)}
+                        </pre>
+                      </CardContent>
+                    </Card>
+                  </DebugFeedSection>
+                ) : null}
+              </div>
+            </ScrollArea>
+          </TabsContent>
+        </Tabs>
+      </CardContent>
+    </Card>
+  );
+
+  return (
+    <TooltipProvider delayDuration={200}>
+      <div className="h-screen overflow-hidden p-3 sm:p-5">
+        <div className="grid h-full gap-4 xl:grid-cols-[minmax(0,1.55fr)_minmax(380px,0.9fr)]">
+          <Card className="h-full overflow-hidden">
+            <CardHeader className="gap-5 border-b border-border/60 bg-white/60 pb-5">
+              <div className="flex items-start justify-between gap-3">
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                    <WandSparkles className="size-3.5" />
+                    <span>Synapse Runtime</span>
+                  </div>
+                  <div>
+                    <CardTitle className="text-3xl sm:text-4xl">Conversation</CardTitle>
+                    <CardDescription className="mt-2 max-w-2xl text-sm leading-6">
+                      Chat-first control surface for the communication brain. Task updates stay visible
+                      in context while the execution brain works in the background.
+                    </CardDescription>
+                  </div>
+                </div>
+                <div className="flex flex-col items-end gap-3">
+                  <div className="inline-flex items-center gap-3 rounded-full border border-border/70 bg-white/85 px-4 py-2 text-sm text-muted-foreground shadow-sm">
+                    <span className={cn("size-2.5 rounded-full", statusDotClass(connectionStatus))} />
+                    <span className="capitalize">{connectionStatus}</span>
+                    {sessionId ? <code className="hidden text-xs sm:inline">{sessionId}</code> : null}
+                  </div>
+                  <Sheet open={mobileWorkbenchOpen} onOpenChange={setMobileWorkbenchOpen}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <SheetTrigger asChild>
+                          <Button variant="secondary" size="icon" className="xl:hidden">
+                            <PanelRightOpen className="size-4" />
+                            <span className="sr-only">Open workbench</span>
+                          </Button>
+                        </SheetTrigger>
+                      </TooltipTrigger>
+                      <TooltipContent>Open workbench</TooltipContent>
+                    </Tooltip>
+                    <SheetContent side="right" className="p-0">
+                      <SheetHeader className="border-b border-border/60 p-6">
+                        <SheetTitle>Workbench</SheetTitle>
+                        <SheetDescription>
+                          Task queue, details, and debug surfaces for the active session.
+                        </SheetDescription>
+                      </SheetHeader>
+                      <div className="h-[calc(100%-98px)]">{workbench}</div>
+                    </SheetContent>
+                  </Sheet>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-3">
+                <Badge variant="secondary" className="gap-1.5">
+                  <MessageSquare className="size-3.5" />
+                  {conversation.length} messages
+                </Badge>
+                <Badge variant="secondary" className="gap-1.5">
+                  <Activity className="size-3.5" />
+                  {conversationTaskEvents.length} task updates
+                </Badge>
+                {lastCommandStatus ? (
+                  <Badge variant={lastCommandStatus === "accepted" ? "success" : "destructive"}>
+                    command {lastCommandStatus}
+                  </Badge>
+                ) : null}
+              </div>
+
+              {actionError ? (
+                <div className="rounded-3xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-700">
+                  {actionError}
+                </div>
+              ) : null}
+            </CardHeader>
+
+            <CardContent className="flex h-[calc(100%-210px)] flex-col p-0">
+              <ScrollArea className="flex-1 px-3 py-4 sm:px-5">
+                <div className="mx-auto flex max-w-3xl flex-col gap-4 pb-6">
+                  {conversation.length === 0 && !liveAssistant && conversationTaskEvents.length === 0 ? (
+                    <Card className="border-dashed border-border/80 bg-white/55">
+                      <CardContent className="p-6 text-sm text-muted-foreground">
+                        Waiting for the first conversation turn.
+                      </CardContent>
+                    </Card>
+                  ) : null}
+                  {conversation.map((entry) => (
+                    <MessageBubble key={entry.message_id} entry={entry} />
+                  ))}
+                  {liveAssistant ? <LiveAssistantCard liveAssistant={liveAssistant} /> : null}
+                  {conversationTaskEvents.map((event) => (
+                    <TaskEventCard key={event.id} event={event} onSelectTask={focusTask} />
+                  ))}
+                </div>
+              </ScrollArea>
+
+              <div className="border-t border-border/60 bg-white/50 p-3 sm:p-5">
+                <div className="mx-auto max-w-3xl">
+                  <form className="space-y-3" onSubmit={handleSendMessage}>
+                    <Textarea
+                      value={composer}
+                      onChange={(event) => setComposer(event.target.value)}
+                      onKeyDown={(event: KeyboardEvent<HTMLTextAreaElement>) => {
+                        if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+                          event.preventDefault();
+                          void handleSendMessage(event as unknown as FormEvent<HTMLFormElement>);
+                        }
+                      }}
+                      placeholder="Ask Synapse to plan, execute, or inspect work..."
+                      rows={4}
+                    />
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                        Shift + Enter for a newline
+                      </p>
+                      <Button type="submit" disabled={!sessionId || !composer.trim() || isSending}>
+                        {isSending ? "Sending…" : "Send"}
+                      </Button>
+                    </div>
+                  </form>
+
+                  {lastAssistantResponse ? (
+                    <div className="mt-4 rounded-[28px] border border-border/60 bg-background/65 p-4">
+                      <div className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                        <Bot className="size-3.5" />
+                        <span>Latest assistant reply</span>
+                      </div>
+                      <p className="text-sm leading-6 text-foreground">{lastAssistantResponse.reply_text}</p>
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <div className="hidden h-full xl:block">{workbench}</div>
         </div>
-      </section>
-    </main>
+      </div>
+    </TooltipProvider>
   );
 }

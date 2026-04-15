@@ -1,11 +1,11 @@
 import type {
   ConversationSnapshot,
   DiagnosticTimelineResponse,
-  SessionStreamEvent,
-  TaskCommandType,
   SessionResponse,
   SessionSnapshot,
-} from "./types";
+  SessionStreamEvent,
+  TaskCommandType,
+} from "../types";
 
 async function ensureOk(response: Response) {
   if (!response.ok) {
