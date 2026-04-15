@@ -4,7 +4,7 @@ from uuid import uuid4
 
 from synapse.blackboard import BlackboardStore
 from synapse.executor_core import ExecutorEvent, ExecutorEventType
-from synapse.observability.emitters import ExecutionDiagnosticEmitter
+from synapse.observability.emitters.execution import ExecutionDiagnosticEmitter
 from synapse.protocol import ExecutionRun, ExecutionSession, RunStatus, Task, TaskStatus
 
 

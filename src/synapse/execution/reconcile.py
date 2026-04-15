@@ -6,7 +6,7 @@ from synapse.blackboard import BlackboardQueryService, BlackboardStore
 from synapse.executor_adapters.acpx import AcpxExecutor, AcpxExecutorSession
 from synapse.executor_adapters.codex import CodexExecutor, CodexExecutorSession
 from synapse.executor_core import ExecutorRegistry, UnknownExecutorError
-from synapse.observability.emitters import ExecutionDiagnosticEmitter
+from synapse.observability.emitters.execution import ExecutionDiagnosticEmitter
 from synapse.protocol import BindingStatus, RunStatus, Task, TaskStatus, TaskSummary
 
 from .assignment import AssignmentManager

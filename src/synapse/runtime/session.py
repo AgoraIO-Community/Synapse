@@ -484,11 +484,13 @@ class SessionRuntime:
                             on_trace=self._record_llm_trace,
                             on_tool_call=self._record_tool_call,
                         )
-                except Exception:
+                except Exception as exc:
                     self.observability.communication.reply_failed(
                         conversation_id=self.session_id,
                         request_id=request.request_id,
                         reason_code=COMMUNICATION_MODEL_FAILURE,
+                        error_type=type(exc).__name__,
+                        error_message=str(exc),
                     )
                     assistant_entry = self.history.append_assistant(
                         self.session_id,

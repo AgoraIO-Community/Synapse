@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from synapse.blackboard import BlackboardStore
-from synapse.observability.emitters import ExecutionDiagnosticEmitter
+from synapse.observability.emitters.execution import ExecutionDiagnosticEmitter
 from synapse.observability.reason_codes import (
     ELAPSED_THRESHOLD_EXCEEDED,
     TERMINAL_RUN_UNDER_THRESHOLD,
@@ -45,14 +45,21 @@ class ExecutionModeManager:
     ) -> TaskExecutionMode:
         current = await self.initialize_task_mode(store, task_id)
         next_mode = self._next_mode(current.mode, run_status=run_status, elapsed_seconds=elapsed_seconds)
+        decided_from_run_id = (
+            run_id if next_mode != ExecutionMode.UNDECIDED else current.decided_from_run_id
+        )
+        should_emit_update = (
+            next_mode != current.mode
+            or decided_from_run_id != current.decided_from_run_id
+        )
         updated = current.model_copy(
             update={
                 "mode": next_mode,
-                "decided_from_run_id": run_id if next_mode != ExecutionMode.UNDECIDED else current.decided_from_run_id,
-                "elapsed_seconds": elapsed_seconds,
+                "decided_from_run_id": decided_from_run_id,
+                "elapsed_seconds": elapsed_seconds if should_emit_update else current.elapsed_seconds,
             }
         )
-        if updated != current:
+        if should_emit_update:
             await store.put_execution_mode(updated)
             if self._observability is not None and next_mode != ExecutionMode.UNDECIDED:
                 self._observability.task_classified(

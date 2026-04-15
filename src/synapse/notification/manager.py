@@ -7,7 +7,7 @@ from synapse.blackboard import BlackboardStore
 from synapse.blackboard.store import BlackboardWriteEvent, BlackboardWriteKind
 from synapse.communication import CommunicationBrain
 from synapse.communication.types import CommunicationTurnResult
-from synapse.observability.emitters import NotificationDiagnosticEmitter
+from synapse.observability.emitters.notification import NotificationDiagnosticEmitter
 from synapse.observability.reason_codes import (
     NOTIFICATION_DEFERRED_ASSISTANT_BUSY,
     NOTIFICATION_DEFERRED_PENDING_USER_MESSAGE,

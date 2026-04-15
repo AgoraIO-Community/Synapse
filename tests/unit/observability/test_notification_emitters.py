@@ -126,3 +126,22 @@ def test_communication_emitter_logs_notification_trace_summary_fields():
     assert event.details["notification_key_task_id"] == "task-trip"
     assert event.details["notification_relevant_task_ids"] == ["task-trip", "task-hotel"]
     assert event.details["notification_recent_chat_turn_count"] == 4
+
+
+def test_communication_emitter_logs_reply_failed_error_details():
+    logger = DiagnosticLogger(store=InMemoryDiagnosticStore())
+    emitter = CommunicationDiagnosticEmitter(logger)
+
+    emitter.reply_failed(
+        conversation_id="conv-1",
+        request_id="req-1",
+        reason_code="communication_model_failure",
+        error_type="JSONDecodeError",
+        error_message="Expecting value: line 1 column 1 (char 0)",
+    )
+
+    event = list(logger.store.all())[-1]
+    assert event.event_name == "comm.reply.failed"
+    assert event.reason_code == "communication_model_failure"
+    assert event.details["error_type"] == "JSONDecodeError"
+    assert "Expecting value" in event.details["error_message"]

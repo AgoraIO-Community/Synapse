@@ -4,7 +4,7 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 from synapse.api.app import create_app
-from synapse.communication.model import ToolCall
+from synapse.communication.model import CommunicationModelResult, ToolCall
 from synapse.communication.models import ScriptedCommunicationModel
 from synapse.communication.models.scripted import ScriptedPlan
 from synapse.runtime import Settings
@@ -288,3 +288,44 @@ async def test_diagnostics_timeline_supports_after_sequence_incremental_polling(
 
     assert incremental
     assert all(item["sequence"] > after_sequence for item in incremental)
+
+
+class FailingCommunicationModel:
+    async def respond(self, **kwargs):
+        raise RuntimeError("boom while generating reply")
+
+    async def render_notification(self, **kwargs):
+        return "noop"
+
+
+@pytest.mark.anyio
+async def test_diagnostics_timeline_includes_reply_failed_error_details():
+    app = create_app()
+    app.state.runtime_container = RuntimeContainer(
+        communication_model=FailingCommunicationModel(),
+        settings=Settings(),
+    )
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        session_id = (await client.post("/sessions")).json()["session_id"]
+        response = await client.post(
+            f"/sessions/{session_id}/messages",
+            json={"text": "hello"},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["reply_text"] == "Sorry, something went wrong while generating the reply."
+
+        events = await _wait_for_timeline_event(
+            client,
+            session_id,
+            lambda items: any(item["event_name"] == "comm.reply.failed" for item in items),
+        )
+
+    failed = next(item for item in events if item["event_name"] == "comm.reply.failed")
+    assert failed["reason_code"] == "communication_model_failure"
+    assert failed["details"]["error_type"] == "RuntimeError"
+    assert "boom while generating reply" in failed["details"]["error_message"]

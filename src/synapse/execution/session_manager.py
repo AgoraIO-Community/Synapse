@@ -6,7 +6,7 @@ from synapse.blackboard import BlackboardStore
 from synapse.executor_adapters.acpx import AcpxExecutorSession
 from synapse.executor_adapters.codex import CodexExecutorSession
 from synapse.executor_core import Executor, ExecutorSession
-from synapse.observability.emitters import ExecutionDiagnosticEmitter
+from synapse.observability.emitters.execution import ExecutionDiagnosticEmitter
 from synapse.observability.reason_codes import (
     EXECUTOR_SESSION_RECREATED,
     EXISTING_LIVE_SESSION_REUSED,

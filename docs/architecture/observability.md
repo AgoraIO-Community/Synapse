@@ -137,6 +137,10 @@ Instrumentation is added at the runtime edges:
 - notification candidate creation, defer, and emission
 - notification plan adoption and task-anchoring decisions for rendered proactive updates
 
+Execution-mode note:
+
+- `exec.task.classified` and `bb.execution_mode.updated` are transition-oriented signals and should emit when the semantic execution mode changes, not on every elapsed-time sample while the mode remains the same.
+
 The in-memory diagnostic store is session-scoped and non-durable.
 It exists to support fast incident drill-downs during development and testing.
 

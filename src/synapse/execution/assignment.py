@@ -4,7 +4,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 from synapse.blackboard import BlackboardStore
-from synapse.observability.emitters import ExecutionDiagnosticEmitter
+from synapse.observability.emitters.execution import ExecutionDiagnosticEmitter
 from synapse.blackboard.revisions import claim_is_active
 from synapse.protocol import BindingStatus, SessionBinding, Task
 

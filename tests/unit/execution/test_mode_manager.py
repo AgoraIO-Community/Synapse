@@ -1,7 +1,7 @@
 import pytest
 
 from synapse.blackboard import InMemoryBlackboard
-from synapse.execution import ExecutionModeManager
+from synapse.execution.mode_manager import ExecutionModeManager
 from synapse.protocol import ExecutionMode, RunStatus
 
 
@@ -78,3 +78,61 @@ async def test_mode_manager_allows_lightweight_to_upgrade_to_managed():
     )
 
     assert upgraded.mode == ExecutionMode.MANAGED
+
+
+@pytest.mark.anyio
+async def test_mode_manager_does_not_rewrite_undecided_projection_when_only_elapsed_changes():
+    store = InMemoryBlackboard()
+    manager = ExecutionModeManager(threshold_seconds=30.0)
+
+    first = await manager.classify(
+        store,
+        task_id="task-1",
+        run_id="run-1",
+        run_status=RunStatus.RUNNING,
+        elapsed_seconds=5.0,
+    )
+    second = await manager.classify(
+        store,
+        task_id="task-1",
+        run_id="run-1",
+        run_status=RunStatus.RUNNING,
+        elapsed_seconds=12.0,
+    )
+
+    recent_writes = await store.list_recent_writes()
+    execution_mode_writes = [event for event in recent_writes if event.kind.value == "execution_mode"]
+
+    assert first.mode == ExecutionMode.UNDECIDED
+    assert second.mode == ExecutionMode.UNDECIDED
+    assert second.elapsed_seconds == first.elapsed_seconds
+    assert len(execution_mode_writes) == 1
+
+
+@pytest.mark.anyio
+async def test_mode_manager_does_not_rewrite_managed_projection_when_only_elapsed_changes():
+    store = InMemoryBlackboard()
+    manager = ExecutionModeManager(threshold_seconds=30.0)
+
+    first = await manager.classify(
+        store,
+        task_id="task-1",
+        run_id="run-1",
+        run_status=RunStatus.RUNNING,
+        elapsed_seconds=31.0,
+    )
+    second = await manager.classify(
+        store,
+        task_id="task-1",
+        run_id="run-1",
+        run_status=RunStatus.RUNNING,
+        elapsed_seconds=90.0,
+    )
+
+    recent_writes = await store.list_recent_writes()
+    execution_mode_writes = [event for event in recent_writes if event.kind.value == "execution_mode"]
+
+    assert first.mode == ExecutionMode.MANAGED
+    assert second.mode == ExecutionMode.MANAGED
+    assert second.elapsed_seconds == first.elapsed_seconds
+    assert len(execution_mode_writes) == 2

@@ -92,7 +92,14 @@ class CommunicationDiagnosticEmitter:
         conversation_id: str,
         request_id: str | None,
         reason_code: str,
+        error_type: str | None = None,
+        error_message: str | None = None,
     ) -> None:
+        details: dict[str, Any] = {}
+        if error_type is not None:
+            details["error_type"] = error_type
+        if error_message is not None:
+            details["error_message"] = error_message
         self.logger.emit_event(
             level="ERROR",
             event_name="comm.reply.failed",
@@ -101,6 +108,7 @@ class CommunicationDiagnosticEmitter:
             conversation_id=conversation_id,
             request_id=request_id,
             reason_code=reason_code,
+            details=details,
         )
 
     def llm_trace(self, trace: LlmTraceRecord) -> None:

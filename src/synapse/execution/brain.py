@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from synapse.blackboard import BlackboardQueryService, BlackboardStore
 from synapse.executor_core import ExecutorRegistry
-from synapse.observability.emitters import ExecutionDiagnosticEmitter
+from synapse.observability.emitters.execution import ExecutionDiagnosticEmitter
 
 from .assignment import AssignmentManager
 from .mode_manager import ExecutionModeManager
