@@ -11,6 +11,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Activity,
   AlertCircle,
+  ArrowUp,
+  ArrowRight,
   Bot,
   CheckCircle2,
   ChevronsRight,
@@ -496,15 +498,18 @@ function MessageBubble({
 }) {
   const isUser = entry.role === "user";
   return (
-    <div className={cn("flex", isUser ? "justify-end" : "justify-start")}>
+    <div className={cn("message-row flex", isUser ? "justify-end" : "justify-start")}>
       <div
         className={cn(
           "chat-bubble max-w-[86%] rounded-[28px] px-4 py-3 shadow-sm sm:px-5",
           isUser ? "chat-bubble-user" : "chat-bubble-assistant",
         )}
       >
-        <div className="mb-2 flex items-center justify-between gap-3 text-[11px] font-semibold uppercase tracking-[0.18em] opacity-80">
-          <span>{isUser ? "You" : "Assistant"}</span>
+        <div className="bubble-meta-row mb-2 flex items-center justify-between gap-3 text-[11px] font-semibold uppercase tracking-[0.18em] opacity-80">
+          <div className="bubble-author">
+            <span className="bubble-avatar">{isUser ? "Y" : "A"}</span>
+            <span>{isUser ? "You" : "Assistant"}</span>
+          </div>
           <span className="truncate">{entry.message_id}</span>
         </div>
         <p className="whitespace-pre-wrap text-sm leading-6">{entry.text}</p>
@@ -521,10 +526,10 @@ function LiveAssistantCard({ liveAssistant }: { liveAssistant: LiveAssistantBubb
         ? "Failed"
         : "Completed";
   return (
-    <div className="flex justify-start">
+    <div className="message-row flex justify-start">
       <div className="chat-bubble live-bubble max-w-[86%] rounded-[28px] px-5 py-3">
-        <div className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700">
-          <Bot className="size-3.5" />
+        <div className="bubble-meta-row mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700">
+          <span className="bubble-avatar bubble-avatar-ai">A</span>
           <span>{statusText}</span>
         </div>
         <p className="whitespace-pre-wrap text-sm leading-6 text-foreground">
@@ -547,14 +552,16 @@ function TaskEventCard({
     <button
       type="button"
       onClick={() => onSelectTask(event.taskId)}
-      className="w-full text-left"
+      className="event-card-button w-full text-left"
     >
       <Card className="border-white/70 bg-white/75 transition hover:-translate-y-0.5 hover:bg-white">
         <CardContent className="p-4">
           <div className="mb-3 flex items-start justify-between gap-3">
             <div className="space-y-1">
-              <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-                <Workflow className="size-3.5" />
+              <div className="event-kicker flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                <span className="event-kicker-icon">
+                  <Workflow className="size-3.5" />
+                </span>
                 <span>Task update</span>
               </div>
               <h3 className="font-serif text-lg text-foreground">{event.title}</h3>
@@ -564,6 +571,10 @@ function TaskEventCard({
           <div className="flex items-start gap-3 text-sm text-muted-foreground">
             <Icon className={cn("mt-0.5 size-4 shrink-0", event.status === "running" && "animate-spin")} />
             <p className="line-clamp-3">{event.summary}</p>
+          </div>
+          <div className="event-card-footer">
+            <span>Open in workbench</span>
+            <ArrowRight className="size-4" />
           </div>
         </CardContent>
       </Card>
@@ -615,6 +626,8 @@ function QueueCard({
               <div className="queue-card-kicker">
                 <Workflow className="size-3.5" />
                 <span>{task.preferred_executor ?? "executor:auto"}</span>
+                <span className="queue-card-dot" />
+                <span>rev {task.task_revision}</span>
               </div>
               <h4 className="font-medium text-foreground">{task.title}</h4>
               <p className="text-sm text-muted-foreground">{task.goal}</p>
@@ -635,6 +648,21 @@ function QueueCard({
         </CardContent>
       </Card>
     </button>
+  );
+}
+
+function TaskFact({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="task-fact">
+      <span className="task-fact-label">{label}</span>
+      <strong className="task-fact-value">{value}</strong>
+    </div>
   );
 }
 
@@ -1277,6 +1305,8 @@ export default function App() {
     ["failed", "paused", "waiting_user_input"].includes(task.status),
   );
   const conversation = conversationSnapshot?.conversation_history ?? [];
+  const isConversationEmpty =
+    conversation.length === 0 && !liveAssistant && conversationTaskEvents.length === 0;
   const recentWrites = diagnosticEvents.filter(
     (event) =>
       event.event_name.startsWith("bb.") ||
@@ -1337,6 +1367,7 @@ export default function App() {
                     <Card className="border-dashed border-border/80 bg-white/55">
                       <CardContent className="p-4 text-sm text-muted-foreground workbench-empty">
                         <div className="workbench-empty-kicker">Idle</div>
+                        <h4 className="workbench-empty-title">No active tasks yet.</h4>
                         <p>The execution brain has not opened any tasks yet.</p>
                       </CardContent>
                     </Card>
@@ -1395,6 +1426,18 @@ export default function App() {
                           <h4 className="font-serif text-2xl">{selectedTask.title}</h4>
                           <p className="text-sm text-muted-foreground">{selectedTask.goal}</p>
                         </div>
+                        <div className="task-fact-grid">
+                          <TaskFact label="Status" value={statusLabel(selectedTask.status)} />
+                          <TaskFact label="Revision" value={String(selectedTask.task_revision)} />
+                          <TaskFact
+                            label="Executor"
+                            value={selectedTask.preferred_executor ?? "auto"}
+                          />
+                          <TaskFact
+                            label="Task"
+                            value={selectedTask.task_id.replace(/^task-/, "").slice(0, 8) || selectedTask.task_id}
+                          />
+                        </div>
                         <div className="grid gap-3 md:grid-cols-2">
                           <div className="rounded-2xl bg-muted/70 p-4">
                             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
@@ -1413,31 +1456,37 @@ export default function App() {
                             </p>
                           </div>
                         </div>
-                        <div className="flex flex-wrap gap-2 command-pill-row">
-                          {(["pause_task", "resume_task", "retry_task", "cancel_task"] as TaskCommandType[]).map(
-                            (command) => {
+                        <div className="space-y-2">
+                          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                            Actions
+                          </p>
+                          <div className="flex flex-wrap gap-2 command-pill-row">
+                          {(["pause_task", "resume_task", "retry_task", "cancel_task"] as TaskCommandType[])
+                            .filter(
+                              (command) =>
+                                canRunCommand(selectedTask, command) ||
+                                pendingCommand === `${selectedTask.task_id}:${command}`,
+                            )
+                            .map((command) => {
                               const Icon = commandIcon(command);
                               return (
-                              <Button
-                                key={command}
-                                type="button"
-                                variant={command === "cancel_task" ? "destructive" : "secondary"}
-                                size="sm"
-                                disabled={
-                                  !canRunCommand(selectedTask, command) ||
-                                  pendingCommand === `${selectedTask.task_id}:${command}`
-                                }
-                                onClick={() => void handleCommand(selectedTask.task_id, command)}
-                              >
-                                <Icon className="size-3.5" />
-                                {pendingCommand === `${selectedTask.task_id}:${command}` ? "…" : commandLabel(command)}
-                              </Button>
-                            );
-                            },
-                          )}
+                                <Button
+                                  key={command}
+                                  type="button"
+                                  variant={command === "cancel_task" ? "destructive" : "secondary"}
+                                  size="sm"
+                                  disabled={pendingCommand === `${selectedTask.task_id}:${command}`}
+                                  onClick={() => void handleCommand(selectedTask.task_id, command)}
+                                >
+                                  <Icon className="size-3.5" />
+                                  {pendingCommand === `${selectedTask.task_id}:${command}` ? "…" : commandLabel(command)}
+                                </Button>
+                              );
+                            })}
+                          </div>
                         </div>
                         {selectedSummary ? (
-                          <div className="rounded-2xl border border-border/60 bg-background/60 p-4">
+                          <div className="rounded-2xl border border-border/60 bg-background/60 p-4 detail-summary-card">
                             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
                               User-facing summary
                             </p>
@@ -1452,8 +1501,10 @@ export default function App() {
                     </Card>
                   ) : (
                     <Card className="border-dashed border-border/80 bg-white/55">
-                      <CardContent className="p-4 text-sm text-muted-foreground">
-                        Select a task to inspect its status, result, and controls.
+                      <CardContent className="p-4 text-sm text-muted-foreground workbench-empty">
+                        <div className="workbench-empty-kicker">Detail</div>
+                        <h4 className="workbench-empty-title">Pick a task from the queue.</h4>
+                        <p>Select a task to inspect its status, result, and controls.</p>
                       </CardContent>
                     </Card>
                   )}
@@ -1566,25 +1617,24 @@ export default function App() {
 
   return (
     <TooltipProvider delayDuration={200}>
-      <div className="h-screen overflow-hidden p-3 sm:p-5">
-        <div className="grid h-full gap-4 xl:grid-cols-[minmax(0,1.55fr)_minmax(380px,0.9fr)]">
-          <Card className="h-full overflow-hidden flex flex-col">
-            <CardHeader className="gap-5 border-b border-border/60 bg-white/60 pb-5">
-              <div className="flex items-start justify-between gap-3">
-                <div className="space-y-3">
-                  <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+      <div className="app-shell h-screen overflow-hidden p-3 sm:p-5">
+        <div className="app-grid grid h-full gap-4 xl:grid-cols-[minmax(0,1.55fr)_minmax(380px,0.9fr)]">
+          <Card className="pane-shell conversation-pane h-full overflow-hidden flex flex-col">
+            <CardHeader className="conversation-header gap-2 border-b border-border/60 bg-white/60 pb-3">
+              <div className="hero-top flex items-start justify-between gap-3">
+                <div className="hero-copy space-y-1.5">
+                  <div className="hero-kicker-row flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
                     <WandSparkles className="size-3.5" />
                     <span>Synapse Runtime</span>
                   </div>
                   <div>
-                    <CardTitle className="text-3xl sm:text-4xl">Conversation</CardTitle>
-                    <CardDescription className="mt-2 max-w-2xl text-sm leading-6">
-                      Chat-first control surface for the communication brain. Task updates stay visible
-                      in context while the execution brain works in the background.
+                    <CardTitle className="hero-title text-3xl sm:text-4xl">Conversation</CardTitle>
+                    <CardDescription className="hero-description mt-1 max-w-2xl text-sm leading-6">
+                      Chat-first runtime control with a live execution workbench.
                     </CardDescription>
                   </div>
                 </div>
-                <div className="flex flex-col items-end gap-3">
+                <div className="hero-tools flex flex-col items-end gap-3">
                   <div className="inline-flex items-center gap-3 rounded-full border border-border/70 bg-white/85 px-4 py-2 text-sm text-muted-foreground shadow-sm status-pill-modern">
                     <span className={cn("size-2.5 rounded-full", statusDotClass(connectionStatus))} />
                     <span className="capitalize">{connectionStatus}</span>
@@ -1594,9 +1644,9 @@ export default function App() {
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <SheetTrigger asChild>
-                          <Button variant="secondary" size="icon" className="xl:hidden">
+                          <Button variant="secondary" size="icon" className="xl:hidden mobile-workbench-trigger">
                             <PanelRightOpen className="size-4" />
-                            <span className="sr-only">Open workbench</span>
+                            <span className="mobile-workbench-label">Open workbench</span>
                           </Button>
                         </SheetTrigger>
                       </TooltipTrigger>
@@ -1615,7 +1665,7 @@ export default function App() {
                 </div>
               </div>
 
-              <div className="flex flex-wrap items-center gap-3">
+              <div className="metrics-row flex flex-wrap items-center gap-2">
                 <Badge variant="secondary" className="gap-1.5">
                   <MessageSquare className="size-3.5" />
                   {conversation.length} messages
@@ -1652,12 +1702,6 @@ export default function App() {
                     </button>
                   ))}
                 </div>
-              ) : conversation.length === 0 ? (
-                <div className="starter-grid">
-                  {STARTER_PROMPTS.map((prompt) => (
-                    <StarterPromptButton key={prompt} prompt={prompt} onSelect={setComposer} />
-                  ))}
-                </div>
               ) : null}
 
               {actionError ? (
@@ -1669,20 +1713,36 @@ export default function App() {
 
             <CardContent className="flex flex-1 min-h-0 flex-col p-0">
               <ScrollArea className="flex-1 px-3 py-4 sm:px-5">
-                <div className="mx-auto flex max-w-3xl flex-col gap-4 pb-6">
-                  {conversation.length === 0 && !liveAssistant && conversationTaskEvents.length === 0 ? (
+                <div
+                  className={cn(
+                    "mx-auto flex max-w-3xl flex-col gap-4 pb-6",
+                    isConversationEmpty ? "empty-thread" : "thread-filled",
+                  )}
+                >
+                  {isConversationEmpty ? (
                     <Card className="border-dashed border-border/80 bg-white/55 empty-chat-card">
-                      <CardContent className="p-6 text-sm text-muted-foreground">
+                      <CardContent className="p-5 text-sm text-muted-foreground">
                         <div className="empty-chat-eyebrow">Fresh session</div>
-                        <h3 className="font-serif text-2xl text-foreground">
+                        <h3 className="font-serif text-xl text-foreground">
                           Start with a clear instruction.
                         </h3>
                         <p className="empty-chat-copy">
                           Ask Synapse to plan, draft, review, summarize, or execute. The workbench
                           will light up as soon as the execution brain opens tasks.
                         </p>
+                        <div className="starter-grid">
+                          {STARTER_PROMPTS.map((prompt) => (
+                            <StarterPromptButton key={prompt} prompt={prompt} onSelect={setComposer} />
+                          ))}
+                        </div>
                       </CardContent>
                     </Card>
+                  ) : null}
+                  {!isConversationEmpty ? (
+                    <div className="thread-kicker">
+                      <span className="thread-kicker-line" />
+                      <span>Live conversation</span>
+                    </div>
                   ) : null}
                   {conversation.map((entry) => (
                     <MessageBubble key={entry.message_id} entry={entry} />
@@ -1697,43 +1757,62 @@ export default function App() {
               <div className="border-t border-border/60 bg-white/60 p-3 sm:p-5 composer-shell">
                 <div className="mx-auto max-w-3xl">
                   <form className="space-y-3" onSubmit={handleSendMessage}>
-                    <Textarea
-                      value={composer}
-                      onChange={(event) => setComposer(event.target.value)}
-                      onKeyDown={(event: KeyboardEvent<HTMLTextAreaElement>) => {
-                        if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
-                          event.preventDefault();
-                          void handleSendMessage(event as unknown as FormEvent<HTMLFormElement>);
-                        }
-                      }}
-                      placeholder="Ask Synapse to plan, execute, or inspect work..."
-                      rows={4}
-                    />
-                    <div className="composer-actions flex flex-wrap items-center justify-between gap-3">
-                      <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
-                        Shift + Enter for a newline
-                      </p>
-                      <Button type="submit" disabled={!sessionId || !composer.trim() || isSending}>
-                        {isSending ? "Sending…" : "Send"}
-                      </Button>
+                    <div className="composer-panel">
+                      <div className="composer-kicker">
+                        <div className="composer-kicker-left">
+                          <Sparkles className="size-3.5" />
+                          <span>Prompt Composer</span>
+                        </div>
+                        <Badge variant="secondary">Local runtime</Badge>
+                      </div>
+                      {!isConversationEmpty ? (
+                        <div className="composer-tools-row">
+                          {STARTER_PROMPTS.map((prompt) => (
+                            <button
+                              key={prompt}
+                              type="button"
+                              className="composer-tool-chip"
+                              onClick={() => setComposer(prompt)}
+                            >
+                              {prompt}
+                            </button>
+                          ))}
+                        </div>
+                      ) : null}
+                      <Textarea
+                        value={composer}
+                        onChange={(event) => setComposer(event.target.value)}
+                        onKeyDown={(event: KeyboardEvent<HTMLTextAreaElement>) => {
+                          if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+                            event.preventDefault();
+                            void handleSendMessage(event as unknown as FormEvent<HTMLFormElement>);
+                          }
+                        }}
+                        placeholder="Ask Synapse to plan, execute, or inspect work..."
+                        rows={4}
+                      />
+                      <div className="composer-actions flex flex-wrap items-center justify-between gap-3">
+                        <div className="composer-hint-stack">
+                          <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                            Shift + Enter for a newline
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            Ask for planning, execution, review, or a task update.
+                          </p>
+                        </div>
+                        <Button type="submit" disabled={!sessionId || !composer.trim() || isSending}>
+                          <ArrowUp className="size-3.5" />
+                          {isSending ? "Sending…" : "Send"}
+                        </Button>
+                      </div>
                     </div>
                   </form>
-
-                  {lastAssistantResponse ? (
-                    <div className="reply-summary-card mt-4 rounded-[28px] border border-border/60 bg-background/65 p-4">
-                      <div className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-                        <Bot className="size-3.5" />
-                        <span>Latest assistant reply</span>
-                      </div>
-                      <p className="text-sm leading-6 text-foreground">{lastAssistantResponse.reply_text}</p>
-                    </div>
-                  ) : null}
                 </div>
               </div>
             </CardContent>
           </Card>
 
-          <div className="hidden h-full xl:block">{workbench}</div>
+          <div className="hidden h-full xl:block workbench-pane">{workbench}</div>
         </div>
       </div>
     </TooltipProvider>
