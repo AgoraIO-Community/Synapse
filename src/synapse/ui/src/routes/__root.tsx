@@ -1,6 +1,5 @@
 /// <reference types="vite/client" />
 import { HeadContent, Outlet, createRootRoute } from "@tanstack/react-router";
-import { TanStackRouterDevtools } from "@tanstack/react-router-devtools";
 import { DefaultCatchBoundary } from "../components/DefaultCatchBoundary";
 import { NotFound } from "../components/NotFound";
 import "../styles/app.css";
@@ -28,7 +27,6 @@ function RootDocument() {
     <>
       <HeadContent />
       <Outlet />
-      <TanStackRouterDevtools position="bottom-right" />
     </>
   );
 }

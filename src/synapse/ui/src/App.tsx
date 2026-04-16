@@ -13,13 +13,15 @@ import {
   AlertCircle,
   Bot,
   CheckCircle2,
+  ChevronsRight,
   LoaderCircle,
   MessageSquare,
-  PanelRightOpen,
   PauseCircle,
+  PanelRightOpen,
+  PlayCircle,
   RotateCcw,
   Sparkles,
-  SquareSlash,
+  Timer,
   WandSparkles,
   Workflow,
   XCircle,
@@ -105,6 +107,12 @@ type ConversationTaskEvent = {
   tone: "success" | "warning" | "destructive" | "default";
   status: Task["status"];
 };
+
+const STARTER_PROMPTS = [
+  "Draft a clear release note for the current sprint.",
+  "Review the active tasks and tell me what needs attention.",
+  "Create a plan for polishing the onboarding experience.",
+];
 
 function makeRequestId() {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
@@ -209,6 +217,19 @@ function buildDiffItems(
 
 function commandLabel(command: TaskCommandType) {
   return command.replace("_task", "").replace("_", " ");
+}
+
+function commandIcon(command: TaskCommandType) {
+  if (command === "pause_task") {
+    return PauseCircle;
+  }
+  if (command === "resume_task") {
+    return PlayCircle;
+  }
+  if (command === "retry_task") {
+    return RotateCcw;
+  }
+  return XCircle;
 }
 
 function canRunCommand(task: Task, command: TaskCommandType) {
@@ -376,6 +397,18 @@ function statusLabel(status: Task["status"]) {
   return status.replaceAll("_", " ");
 }
 
+function statusProgress(status: Task["status"]) {
+  if (status === "created") return 12;
+  if (status === "queued") return 28;
+  if (status === "running") return 62;
+  if (status === "waiting_user_input") return 76;
+  if (status === "paused") return 58;
+  if (status === "completed") return 100;
+  if (status === "failed") return 100;
+  if (status === "cancelled") return 100;
+  return 0;
+}
+
 function taskStatusVariant(status: Task["status"]): "default" | "secondary" | "success" | "warning" | "destructive" {
   if (status === "completed") {
     return "success";
@@ -466,10 +499,8 @@ function MessageBubble({
     <div className={cn("flex", isUser ? "justify-end" : "justify-start")}>
       <div
         className={cn(
-          "max-w-[86%] rounded-[28px] px-4 py-3 shadow-sm sm:px-5",
-          isUser
-            ? "bg-[linear-gradient(135deg,hsl(var(--accent))_0%,hsl(var(--accent-strong))_100%)] text-white"
-            : "border border-border/60 bg-white/85 text-foreground",
+          "chat-bubble max-w-[86%] rounded-[28px] px-4 py-3 shadow-sm sm:px-5",
+          isUser ? "chat-bubble-user" : "chat-bubble-assistant",
         )}
       >
         <div className="mb-2 flex items-center justify-between gap-3 text-[11px] font-semibold uppercase tracking-[0.18em] opacity-80">
@@ -491,7 +522,7 @@ function LiveAssistantCard({ liveAssistant }: { liveAssistant: LiveAssistantBubb
         : "Completed";
   return (
     <div className="flex justify-start">
-      <div className="max-w-[86%] rounded-[28px] border border-emerald-500/20 bg-emerald-500/7 px-5 py-3">
+      <div className="chat-bubble live-bubble max-w-[86%] rounded-[28px] px-5 py-3">
         <div className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700">
           <Bot className="size-3.5" />
           <span>{statusText}</span>
@@ -533,6 +564,73 @@ function TaskEventCard({
           <div className="flex items-start gap-3 text-sm text-muted-foreground">
             <Icon className={cn("mt-0.5 size-4 shrink-0", event.status === "running" && "animate-spin")} />
             <p className="line-clamp-3">{event.summary}</p>
+          </div>
+        </CardContent>
+      </Card>
+    </button>
+  );
+}
+
+function StarterPromptButton({
+  prompt,
+  onSelect,
+}: {
+  prompt: string;
+  onSelect: (value: string) => void;
+}) {
+  return (
+    <button type="button" className="starter-chip" onClick={() => onSelect(prompt)}>
+      <span className="starter-chip-icon">
+        <Sparkles className="size-3.5" />
+      </span>
+      <span>{prompt}</span>
+      <ChevronsRight className="size-4 text-muted-foreground" />
+    </button>
+  );
+}
+
+function QueueCard({
+  task,
+  detail,
+  selected,
+  onSelect,
+}: {
+  task: Task;
+  detail: TaskResultDetail | null;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  const progress = statusProgress(task.status);
+  return (
+    <button type="button" className="w-full text-left" onClick={onSelect}>
+      <Card
+        className={cn(
+          "queue-card border-white/70 bg-white/70 transition hover:-translate-y-0.5 hover:bg-white",
+          selected && "ring-2 ring-primary/30",
+        )}
+      >
+        <CardContent className="space-y-4 p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div className="space-y-1">
+              <div className="queue-card-kicker">
+                <Workflow className="size-3.5" />
+                <span>{task.preferred_executor ?? "executor:auto"}</span>
+              </div>
+              <h4 className="font-medium text-foreground">{task.title}</h4>
+              <p className="text-sm text-muted-foreground">{task.goal}</p>
+            </div>
+            <Badge variant={taskStatusVariant(task.status)}>{statusLabel(task.status)}</Badge>
+          </div>
+
+          <div className="queue-progress">
+            <div className="queue-progress-track">
+              <div className="queue-progress-fill" style={{ width: `${progress}%` }} />
+            </div>
+            <span className="queue-progress-value">{progress}%</span>
+          </div>
+
+          <div className="rounded-2xl bg-muted/70 p-3 text-sm text-muted-foreground">
+            {summarizeTaskResultForCard(detail)}
           </div>
         </CardContent>
       </Card>
@@ -1171,6 +1269,13 @@ export default function App() {
   }
 
   const tasks = snapshot?.tasks ?? [];
+  const activeTasks = tasks.filter(
+    (task) => !["completed", "failed", "cancelled"].includes(task.status),
+  );
+  const completedTasks = tasks.filter((task) => task.status === "completed");
+  const blockedTasks = tasks.filter((task) =>
+    ["failed", "paused", "waiting_user_input"].includes(task.status),
+  );
   const conversation = conversationSnapshot?.conversation_history ?? [];
   const recentWrites = diagnosticEvents.filter(
     (event) =>
@@ -1180,7 +1285,7 @@ export default function App() {
   );
 
   const workbench = (
-    <Card className="h-full overflow-hidden">
+    <Card className="h-full overflow-hidden flex flex-col">
       <CardHeader className="gap-4 border-b border-border/60 bg-white/60 pb-5">
         <div className="flex items-start justify-between gap-3">
           <div>
@@ -1195,16 +1300,30 @@ export default function App() {
           </div>
           <Badge variant="secondary">{tasks.length} tracked</Badge>
         </div>
+        <div className="workbench-summary-grid">
+          <div className="workbench-summary-card">
+            <span className="workbench-summary-label">Active</span>
+            <strong>{activeTasks.length}</strong>
+          </div>
+          <div className="workbench-summary-card">
+            <span className="workbench-summary-label">Waiting</span>
+            <strong>{blockedTasks.length}</strong>
+          </div>
+          <div className="workbench-summary-card">
+            <span className="workbench-summary-label">Done</span>
+            <strong>{completedTasks.length}</strong>
+          </div>
+        </div>
       </CardHeader>
-      <CardContent className="h-[calc(100%-132px)] p-0">
-        <Tabs defaultValue="overview" className="flex h-full flex-col">
+      <CardContent className="flex flex-1 min-h-0 flex-col p-0">
+        <Tabs defaultValue="overview" className="flex h-full min-h-0 flex-col">
           <div className="border-b border-border/60 px-6 py-4">
             <TabsList>
               <TabsTrigger value="overview">Overview</TabsTrigger>
               <TabsTrigger value="debug">Debug</TabsTrigger>
             </TabsList>
           </div>
-          <TabsContent value="overview" className="mt-0 flex-1 overflow-hidden">
+          <TabsContent value="overview" className="mt-0 flex-1 min-h-0 overflow-hidden">
             <ScrollArea className="h-full">
               <div className="space-y-6 p-6">
                 <section className="space-y-3">
@@ -1216,8 +1335,9 @@ export default function App() {
                   </div>
                   {tasks.length === 0 ? (
                     <Card className="border-dashed border-border/80 bg-white/55">
-                      <CardContent className="p-4 text-sm text-muted-foreground">
-                        The execution brain has not opened any tasks yet.
+                      <CardContent className="p-4 text-sm text-muted-foreground workbench-empty">
+                        <div className="workbench-empty-kicker">Idle</div>
+                        <p>The execution brain has not opened any tasks yet.</p>
                       </CardContent>
                     </Card>
                   ) : (
@@ -1226,35 +1346,16 @@ export default function App() {
                         const detail = getTaskResultDetail(task.task_id, summaryByTaskId, latestRunByTaskId);
                         const selected = selectedTaskId === task.task_id;
                         return (
-                          <button
+                          <QueueCard
                             key={task.task_id}
-                            type="button"
-                            className="w-full text-left"
-                            onClick={() => {
+                            task={task}
+                            detail={detail}
+                            selected={selected}
+                            onSelect={() => {
                               setSelectedTaskId(task.task_id);
                               setTaskSelectionPinned(true);
                             }}
-                          >
-                            <Card
-                              className={cn(
-                                "border-white/70 bg-white/70 transition hover:-translate-y-0.5 hover:bg-white",
-                                selected && "ring-2 ring-primary/30",
-                              )}
-                            >
-                              <CardContent className="space-y-4 p-4">
-                                <div className="flex items-start justify-between gap-3">
-                                  <div className="space-y-1">
-                                    <h4 className="font-medium text-foreground">{task.title}</h4>
-                                    <p className="text-sm text-muted-foreground">{task.goal}</p>
-                                  </div>
-                                  <Badge variant={taskStatusVariant(task.status)}>{statusLabel(task.status)}</Badge>
-                                </div>
-                                <div className="rounded-2xl bg-muted/70 p-3 text-sm text-muted-foreground">
-                                  {summarizeTaskResultForCard(detail)}
-                                </div>
-                              </CardContent>
-                            </Card>
-                          </button>
+                          />
                         );
                       })}
                     </div>
@@ -1287,6 +1388,10 @@ export default function App() {
                           </Badge>
                         </div>
                         <div className="space-y-2">
+                          <div className="detail-kicker">
+                            <Activity className="size-3.5" />
+                            <span>Selected task</span>
+                          </div>
                           <h4 className="font-serif text-2xl">{selectedTask.title}</h4>
                           <p className="text-sm text-muted-foreground">{selectedTask.goal}</p>
                         </div>
@@ -1308,9 +1413,11 @@ export default function App() {
                             </p>
                           </div>
                         </div>
-                        <div className="flex flex-wrap gap-2">
+                        <div className="flex flex-wrap gap-2 command-pill-row">
                           {(["pause_task", "resume_task", "retry_task", "cancel_task"] as TaskCommandType[]).map(
-                            (command) => (
+                            (command) => {
+                              const Icon = commandIcon(command);
+                              return (
                               <Button
                                 key={command}
                                 type="button"
@@ -1322,9 +1429,11 @@ export default function App() {
                                 }
                                 onClick={() => void handleCommand(selectedTask.task_id, command)}
                               >
+                                <Icon className="size-3.5" />
                                 {pendingCommand === `${selectedTask.task_id}:${command}` ? "…" : commandLabel(command)}
                               </Button>
-                            ),
+                            );
+                            },
                           )}
                         </div>
                         {selectedSummary ? (
@@ -1352,7 +1461,7 @@ export default function App() {
               </div>
             </ScrollArea>
           </TabsContent>
-          <TabsContent value="debug" className="mt-0 flex-1 overflow-hidden">
+          <TabsContent value="debug" className="mt-0 flex-1 min-h-0 overflow-hidden">
             <ScrollArea className="h-full">
               <div className="space-y-6 p-6">
                 <DebugFeedSection title="Snapshot Diff" empty="Waiting for snapshot changes.">
@@ -1459,7 +1568,7 @@ export default function App() {
     <TooltipProvider delayDuration={200}>
       <div className="h-screen overflow-hidden p-3 sm:p-5">
         <div className="grid h-full gap-4 xl:grid-cols-[minmax(0,1.55fr)_minmax(380px,0.9fr)]">
-          <Card className="h-full overflow-hidden">
+          <Card className="h-full overflow-hidden flex flex-col">
             <CardHeader className="gap-5 border-b border-border/60 bg-white/60 pb-5">
               <div className="flex items-start justify-between gap-3">
                 <div className="space-y-3">
@@ -1476,7 +1585,7 @@ export default function App() {
                   </div>
                 </div>
                 <div className="flex flex-col items-end gap-3">
-                  <div className="inline-flex items-center gap-3 rounded-full border border-border/70 bg-white/85 px-4 py-2 text-sm text-muted-foreground shadow-sm">
+                  <div className="inline-flex items-center gap-3 rounded-full border border-border/70 bg-white/85 px-4 py-2 text-sm text-muted-foreground shadow-sm status-pill-modern">
                     <span className={cn("size-2.5 rounded-full", statusDotClass(connectionStatus))} />
                     <span className="capitalize">{connectionStatus}</span>
                     {sessionId ? <code className="hidden text-xs sm:inline">{sessionId}</code> : null}
@@ -1512,7 +1621,11 @@ export default function App() {
                   {conversation.length} messages
                 </Badge>
                 <Badge variant="secondary" className="gap-1.5">
-                  <Activity className="size-3.5" />
+                  <PlayCircle className="size-3.5" />
+                  {activeTasks.length} live tasks
+                </Badge>
+                <Badge variant="secondary" className="gap-1.5">
+                  <Timer className="size-3.5" />
                   {conversationTaskEvents.length} task updates
                 </Badge>
                 {lastCommandStatus ? (
@@ -1522,6 +1635,31 @@ export default function App() {
                 ) : null}
               </div>
 
+              {activeTasks.length > 0 ? (
+                <div className="activity-rail">
+                  {activeTasks.slice(0, 3).map((task) => (
+                    <button
+                      key={task.task_id}
+                      type="button"
+                      className="activity-rail-item"
+                      onClick={() => focusTask(task.task_id)}
+                    >
+                      <div className="activity-rail-item-top">
+                        <span className={cn("activity-rail-dot", task.status === "running" && "is-live")} />
+                        <span>{task.title}</span>
+                      </div>
+                      <span className="activity-rail-item-bottom">{statusLabel(task.status)}</span>
+                    </button>
+                  ))}
+                </div>
+              ) : conversation.length === 0 ? (
+                <div className="starter-grid">
+                  {STARTER_PROMPTS.map((prompt) => (
+                    <StarterPromptButton key={prompt} prompt={prompt} onSelect={setComposer} />
+                  ))}
+                </div>
+              ) : null}
+
               {actionError ? (
                 <div className="rounded-3xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-700">
                   {actionError}
@@ -1529,13 +1667,20 @@ export default function App() {
               ) : null}
             </CardHeader>
 
-            <CardContent className="flex h-[calc(100%-210px)] flex-col p-0">
+            <CardContent className="flex flex-1 min-h-0 flex-col p-0">
               <ScrollArea className="flex-1 px-3 py-4 sm:px-5">
                 <div className="mx-auto flex max-w-3xl flex-col gap-4 pb-6">
                   {conversation.length === 0 && !liveAssistant && conversationTaskEvents.length === 0 ? (
-                    <Card className="border-dashed border-border/80 bg-white/55">
+                    <Card className="border-dashed border-border/80 bg-white/55 empty-chat-card">
                       <CardContent className="p-6 text-sm text-muted-foreground">
-                        Waiting for the first conversation turn.
+                        <div className="empty-chat-eyebrow">Fresh session</div>
+                        <h3 className="font-serif text-2xl text-foreground">
+                          Start with a clear instruction.
+                        </h3>
+                        <p className="empty-chat-copy">
+                          Ask Synapse to plan, draft, review, summarize, or execute. The workbench
+                          will light up as soon as the execution brain opens tasks.
+                        </p>
                       </CardContent>
                     </Card>
                   ) : null}
@@ -1549,7 +1694,7 @@ export default function App() {
                 </div>
               </ScrollArea>
 
-              <div className="border-t border-border/60 bg-white/50 p-3 sm:p-5">
+              <div className="border-t border-border/60 bg-white/60 p-3 sm:p-5 composer-shell">
                 <div className="mx-auto max-w-3xl">
                   <form className="space-y-3" onSubmit={handleSendMessage}>
                     <Textarea
@@ -1564,7 +1709,7 @@ export default function App() {
                       placeholder="Ask Synapse to plan, execute, or inspect work..."
                       rows={4}
                     />
-                    <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="composer-actions flex flex-wrap items-center justify-between gap-3">
                       <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
                         Shift + Enter for a newline
                       </p>
@@ -1575,7 +1720,7 @@ export default function App() {
                   </form>
 
                   {lastAssistantResponse ? (
-                    <div className="mt-4 rounded-[28px] border border-border/60 bg-background/65 p-4">
+                    <div className="reply-summary-card mt-4 rounded-[28px] border border-border/60 bg-background/65 p-4">
                       <div className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
                         <Bot className="size-3.5" />
                         <span>Latest assistant reply</span>

@@ -4,23 +4,21 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "../../lib/utils";
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-full text-sm font-medium transition-all disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 shrink-0 [&_svg]:shrink-0 outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
+  "btn",
   {
     variants: {
       variant: {
-        default:
-          "bg-[linear-gradient(135deg,hsl(var(--accent))_0%,hsl(var(--accent-strong))_100%)] text-white shadow-lg shadow-emerald-950/15 hover:brightness-110",
-        secondary:
-          "bg-white/80 text-foreground ring-1 ring-border/70 hover:bg-white",
-        ghost: "bg-transparent text-muted-foreground hover:bg-white/60 hover:text-foreground",
-        outline: "bg-transparent ring-1 ring-border/80 hover:bg-white/70",
-        destructive: "bg-destructive text-white hover:brightness-110",
+        default: "btn-default",
+        secondary: "btn-secondary",
+        ghost: "btn-ghost",
+        outline: "btn-outline",
+        destructive: "btn-destructive",
       },
       size: {
-        default: "h-10 px-4 py-2",
-        sm: "h-8 px-3 text-xs",
-        lg: "h-11 px-5",
-        icon: "size-10 rounded-full",
+        default: "btn-size-default",
+        sm: "btn-size-sm",
+        lg: "btn-size-lg",
+        icon: "btn-size-icon",
       },
     },
     defaultVariants: {
