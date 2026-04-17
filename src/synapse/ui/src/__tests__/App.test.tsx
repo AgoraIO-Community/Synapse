@@ -91,6 +91,7 @@ describe("App shell", () => {
     expect(screen.getByRole("tab", { name: "Debug" })).toBeInTheDocument();
     expect(screen.queryByText("Execution visibility")).not.toBeInTheDocument();
     expect(screen.getByTestId("workbench-queue-stack")).toBeInTheDocument();
+    expect(screen.queryByText((content) => content.includes("tracked"))).not.toBeInTheDocument();
   });
 
   it("renders the atmospheric split shell scaffolding around the conversation and workbench panes", async () => {
@@ -99,7 +100,7 @@ describe("App shell", () => {
     expect(await screen.findByTestId("workspace-atmosphere")).toBeInTheDocument();
     expect(screen.getByTestId("workspace-left-pane")).toBeInTheDocument();
     expect(screen.getByTestId("workspace-right-pane")).toBeInTheDocument();
-    expect(screen.getByTestId("workspace-split-seam")).toBeInTheDocument();
+    expect(screen.queryByTestId("workspace-split-seam")).not.toBeInTheDocument();
     expect(
       screen.getByTestId("workspace-right-pane").querySelector('[aria-hidden="true"]'),
     ).not.toBeInTheDocument();

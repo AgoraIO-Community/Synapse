@@ -1368,28 +1368,21 @@ export default function App() {
         </div>
       </div>
 
-      <div className="mb-3 shrink-0 flex items-start gap-3">
-        <div className="grid min-w-0 flex-1 grid-cols-3 gap-3">
-          <div className="relative rounded-[1.15rem] border border-[rgba(214,255,100,0.1)] bg-[linear-gradient(180deg,rgba(29,31,35,0.96),rgba(24,26,30,0.92))] px-4 py-4 text-white shadow-[0_22px_40px_-30px_rgba(0,0,0,0.55)] transition hover:-translate-y-1 hover:border-[rgba(214,255,100,0.16)]">
-            <div className="pointer-events-none absolute inset-x-4 top-0 h-px bg-[linear-gradient(90deg,rgba(255,255,255,0),rgba(214,255,100,0.45),rgba(255,255,255,0))]" />
-            <div className="text-[0.62rem] font-bold uppercase tracking-[0.2em] text-white/38">Active</div>
-            <div className="mt-2 text-3xl font-black tracking-[-0.06em] text-white">{activeTasks.length}</div>
-          </div>
-          <div className="relative translate-y-2 rounded-[1.15rem] border border-[rgba(214,255,100,0.1)] bg-[linear-gradient(180deg,rgba(29,31,35,0.96),rgba(24,26,30,0.92))] px-4 py-4 text-white shadow-[0_22px_40px_-30px_rgba(0,0,0,0.55)] transition hover:-translate-y-0 hover:border-[rgba(214,255,100,0.16)]">
-            <div className="pointer-events-none absolute inset-x-4 top-0 h-px bg-[linear-gradient(90deg,rgba(255,255,255,0),rgba(255,255,255,0.24),rgba(255,255,255,0))]" />
-            <div className="text-[0.62rem] font-bold uppercase tracking-[0.2em] text-white/38">Waiting</div>
-            <div className="mt-2 text-3xl font-black tracking-[-0.06em] text-white">{blockedTasks.length}</div>
-          </div>
-          <div className="relative -translate-y-1 rounded-[1.15rem] border border-[rgba(214,255,100,0.14)] bg-[linear-gradient(180deg,rgba(29,31,35,0.96),rgba(24,26,30,0.92))] px-4 py-4 text-white shadow-[0_22px_40px_-30px_rgba(0,0,0,0.55)] transition hover:-translate-y-2 hover:border-[rgba(214,255,100,0.2)]">
-            <div className="pointer-events-none absolute inset-x-4 top-0 h-px bg-[linear-gradient(90deg,rgba(255,255,255,0),rgba(214,255,100,0.55),rgba(255,255,255,0))]" />
-            <div className="text-[0.62rem] font-bold uppercase tracking-[0.2em] text-[#d7ff1f]">Done</div>
-            <div className="mt-2 text-3xl font-black tracking-[-0.06em] text-white">{completedTasks.length}</div>
-          </div>
+      <div className="mb-3 shrink-0 grid grid-cols-3 gap-3">
+        <div className="relative rounded-[1.15rem] border border-[rgba(214,255,100,0.1)] bg-[linear-gradient(180deg,rgba(29,31,35,0.96),rgba(24,26,30,0.92))] px-4 py-4 text-white shadow-[0_22px_40px_-30px_rgba(0,0,0,0.55)] transition hover:-translate-y-1 hover:border-[rgba(214,255,100,0.16)]">
+          <div className="pointer-events-none absolute inset-x-4 top-0 h-px bg-[linear-gradient(90deg,rgba(255,255,255,0),rgba(214,255,100,0.45),rgba(255,255,255,0))]" />
+          <div className="text-[0.62rem] font-bold uppercase tracking-[0.2em] text-white/38">Active</div>
+          <div className="mt-2 text-3xl font-black tracking-[-0.06em] text-white">{activeTasks.length}</div>
         </div>
-        <div className="shrink-0 pt-1">
-          <span className="rounded-full bg-white/72 px-3 py-1 text-[0.68rem] font-black uppercase tracking-[0.18em] text-[#6f786f] shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]">
-            {tasks.length} tracked
-          </span>
+        <div className="relative rounded-[1.15rem] border border-[rgba(214,255,100,0.1)] bg-[linear-gradient(180deg,rgba(29,31,35,0.96),rgba(24,26,30,0.92))] px-4 py-4 text-white shadow-[0_22px_40px_-30px_rgba(0,0,0,0.55)] transition hover:-translate-y-1 hover:border-[rgba(214,255,100,0.16)]">
+          <div className="pointer-events-none absolute inset-x-4 top-0 h-px bg-[linear-gradient(90deg,rgba(255,255,255,0),rgba(255,255,255,0.24),rgba(255,255,255,0))]" />
+          <div className="text-[0.62rem] font-bold uppercase tracking-[0.2em] text-white/38">Waiting</div>
+          <div className="mt-2 text-3xl font-black tracking-[-0.06em] text-white">{blockedTasks.length}</div>
+        </div>
+        <div className="relative rounded-[1.15rem] border border-[rgba(214,255,100,0.14)] bg-[linear-gradient(180deg,rgba(29,31,35,0.96),rgba(24,26,30,0.92))] px-4 py-4 text-white shadow-[0_22px_40px_-30px_rgba(0,0,0,0.55)] transition hover:-translate-y-1 hover:border-[rgba(214,255,100,0.2)]">
+          <div className="pointer-events-none absolute inset-x-4 top-0 h-px bg-[linear-gradient(90deg,rgba(255,255,255,0),rgba(214,255,100,0.55),rgba(255,255,255,0))]" />
+          <div className="text-[0.62rem] font-bold uppercase tracking-[0.2em] text-[#d7ff1f]">Done</div>
+          <div className="mt-2 text-3xl font-black tracking-[-0.06em] text-white">{completedTasks.length}</div>
         </div>
       </div>
 
@@ -1410,8 +1403,6 @@ export default function App() {
               </div>
               {tasks.length === 0 ? (
                 <div data-testid="workbench-queue-stack" className="relative pb-2 pt-5">
-                  <div className="absolute inset-x-4 top-0 h-full rounded-[1.15rem] border border-white/5 bg-[linear-gradient(180deg,rgba(25,27,31,0.48),rgba(20,22,26,0.42))]" />
-                  <div className="absolute inset-x-2 top-2 h-full rounded-[1.15rem] border border-white/6 bg-[linear-gradient(180deg,rgba(27,29,33,0.62),rgba(22,24,28,0.56))]" />
                   <div className="relative rounded-[1.15rem] border border-[rgba(214,255,100,0.1)] bg-[linear-gradient(180deg,rgba(29,31,35,0.96),rgba(24,26,30,0.92))] px-4 py-4 text-white shadow-[0_22px_40px_-30px_rgba(0,0,0,0.55)]">
                     <div className="text-[0.62rem] font-bold uppercase tracking-[0.18em] text-[#d7ff1f]">Idle</div>
                     <h4 className="mt-2 text-sm font-semibold text-white">No active tasks yet.</h4>
@@ -1657,12 +1648,6 @@ export default function App() {
 
         <div className="app-shell relative h-full w-full overflow-hidden p-3 sm:p-5">
           <div className="app-grid relative grid h-full w-full min-w-0 gap-4 xl:grid-cols-[minmax(0,1.08fr)_minmax(420px,0.92fr)]">
-            <div
-              data-testid="workspace-split-seam"
-              aria-hidden="true"
-              className="pointer-events-none absolute inset-y-4 left-1/2 hidden w-px -translate-x-1/2 bg-[linear-gradient(180deg,rgba(255,255,255,0),rgba(255,255,255,0.88)18%,rgba(217,255,182,0.95)48%,rgba(255,255,255,0.7)76%,rgba(255,255,255,0)) shadow-[0_0_0_1px_rgba(255,255,255,0.12),0_0_28px_rgba(224,255,193,0.55),14px_0_44px_rgba(12,18,15,0.12),-14px_0_44px_rgba(255,255,255,0.2)] xl:left-[56%] xl:block"
-            />
-
             <section
               data-testid="workspace-left-pane"
               className="relative z-10 flex h-full min-h-0 min-w-0 flex-col px-3 pb-32 pt-5 sm:px-5 sm:pb-36 sm:pt-6 xl:pr-8"
