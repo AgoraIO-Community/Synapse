@@ -61,12 +61,14 @@ def build_default_tool_registry(
     executor_types: list[str] | None = None,
     default_executor_type: str = "mock",
     apply_task_command=None,
+    persona_assigner=None,
 ) -> ToolRegistry:
     resolved_executor_types = sorted(set(executor_types or ["mock"]))
     create_task = CreateTaskTool(
         store,
         valid_executor_types=resolved_executor_types,
         default_executor_type=default_executor_type,
+        persona_assigner=persona_assigner,
     )
     add_constraint = AddConstraintTool(store)
     add_task_note = AddTaskNoteTool(store)
@@ -79,7 +81,7 @@ def build_default_tool_registry(
         tools={
             "add_constraint": ToolSpec(
                 name="add_constraint",
-                description="Add an execution-relevant constraint to an existing task.",
+                description="Add an execution-relevant constraint to an existing task. Prefer passing task_id over reference when the task is visible in context.",
                 input_schema={
                     "type": "object",
                     "properties": {
@@ -95,7 +97,7 @@ def build_default_tool_registry(
             ),
             "add_task_note": ToolSpec(
                 name="add_task_note",
-                description="Attach an extra user note or contextual hint to an existing task.",
+                description="Attach an extra user note or contextual hint to an existing task. Prefer passing task_id over reference when the task is visible in context.",
                 input_schema={
                     "type": "object",
                     "properties": {
@@ -192,7 +194,7 @@ def build_default_tool_registry(
             ),
             "update_task": ToolSpec(
                 name="update_task",
-                description="Update core structured task fields such as goal, title, instruction, priority, or executor preference.",
+                description="Update core structured task fields such as goal, title, instruction, priority, or executor preference. Prefer passing task_id over reference when the task is visible in context.",
                 input_schema={
                     "type": "object",
                     "properties": {

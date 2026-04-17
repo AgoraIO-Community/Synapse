@@ -28,6 +28,13 @@ COMMUNICATION_EVAL_SCENARIOS = [
         forbidden_tools=["query_task_summary", "control_task"],
     ),
     CommunicationEvalScenario(
+        name="create_drawing_task_cn",
+        user_text="帮我画一只戴着萝卜帽子的小猫",
+        expected_tools_when_real_executor=["create_task"],
+        forbidden_tools_when_mock_only=["create_task"],
+        forbidden_tools=["query_task_summary", "control_task"],
+    ),
+    CommunicationEvalScenario(
         name="add_note_cn",
         user_text="给那个邮件任务补一句，语气再简短一点",
         initial_tasks=[

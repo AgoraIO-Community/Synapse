@@ -10,7 +10,7 @@ NOTIFICATION_CHAT_HISTORY_LIMIT = 6
 
 
 def build_runtime_context(context: CommunicationContext) -> dict[str, object]:
-    return {
+    result: dict[str, object] = {
         "conversation_id": context.conversation_id,
         "focused_task_ids": context.focused_task_ids,
         "focused_tasks": [_task_brief_payload(task) for task in context.focused_tasks],
@@ -24,6 +24,7 @@ def build_runtime_context(context: CommunicationContext) -> dict[str, object]:
         },
         "available_tools": context.available_tools,
     }
+    return result
 
 
 def build_notification_candidates_payload(
@@ -95,6 +96,8 @@ def _task_brief_payload(task: object) -> dict[str, object]:
         "latest_user_visible_status": getattr(task, "latest_user_visible_status", None),
         "note_count": getattr(task, "note_count", None),
         "constraint_count": getattr(task, "constraint_count", None),
+        "persona_name": getattr(task, "persona_name", None),
+        "persona_avatar": getattr(task, "persona_avatar", None),
     }
 
 

@@ -17,10 +17,12 @@ class CreateTaskTool:
         *,
         valid_executor_types: list[str],
         default_executor_type: str,
+        persona_assigner=None,
     ) -> None:
         self._store = store
         self._valid_executor_types = list(valid_executor_types)
         self._default_executor_type = default_executor_type
+        self._persona_assigner = persona_assigner
 
     @property
     def valid_executor_types(self) -> list[str]:
@@ -49,6 +51,10 @@ class CreateTaskTool:
             )
 
         task_id = f"task-{uuid4().hex[:8]}"
+        metadata: dict[str, object] = {"mock_safe": True} if mock_safe else {}
+        if self._persona_assigner is not None:
+            persona = self._persona_assigner.assign(task_id)
+            metadata.update(self._persona_assigner.to_metadata(persona))
         task = Task(
             task_id=task_id,
             root_task_id=task_id,
@@ -56,7 +62,7 @@ class CreateTaskTool:
             goal=goal,
             preferred_executor=resolved_executor,
             requires_confirmation=requires_confirmation,
-            metadata={"mock_safe": True} if mock_safe else {},
+            metadata=metadata,
         )
         await self._store.put_task(task)
         await self._store.put_execution_mode(

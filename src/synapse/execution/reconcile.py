@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import time
 
 from synapse.blackboard import BlackboardQueryService, BlackboardStore
@@ -45,48 +46,59 @@ class ReconcileLoop:
         self._observability = observability
 
     async def tick(self) -> list[str]:
-        completed_run_ids: list[str] = []
         tasks = await self._scheduler.list_runnable_tasks()
+        coroutines = []
         for task in tasks:
             claimed = await self._assignment.claim_task(self._store, task)
             if claimed is None:
                 continue
-            executor_type = task.preferred_executor or self._default_executor_type
-            try:
-                executor = self._registry.get(executor_type)
-            except UnknownExecutorError:
-                await self._fail_unknown_executor(task, claimed, executor_type)
-                continue
-            session, claimed, executor_session = await self._sessions.ensure_session(
-                self._store,
-                executor,
-                task,
-                claimed,
-            )
-            run = await self._runs.create_run(
-                self._store,
-                task,
-                session,
-                claimed_by=claimed.claimed_by,
-                executor_type=executor_type,
-            )
-            await self._modes.initialize_task_mode(self._store, task.task_id)
-            started_at = time.monotonic()
-            async for event in executor.run_task(run, task, executor_session):
-                await self._runs.apply_event(self._store, task, run, event)
-                await self._modes.classify(
-                    self._store,
-                    task_id=task.task_id,
-                    run_id=run.run_id,
-                    run_status=run.status,
-                    elapsed_seconds=max(0.0, time.monotonic() - started_at),
-                )
-            await self._sync_executor_session(executor, session, executor_session)
-            summary = self._summaries.build_summary(task, run)
-            await self._store.put_summary(summary)
-            if run.status == RunStatus.COMPLETED:
-                completed_run_ids.append(run.run_id)
+            coroutines.append(self._execute_task(task, claimed))
+        if not coroutines:
+            return []
+        results = await asyncio.gather(*coroutines, return_exceptions=True)
+        completed_run_ids: list[str] = []
+        for result in results:
+            if isinstance(result, str):
+                completed_run_ids.append(result)
         return completed_run_ids
+
+    async def _execute_task(self, task: Task, claimed) -> str | None:
+        executor_type = task.preferred_executor or self._default_executor_type
+        try:
+            executor = self._registry.get(executor_type)
+        except UnknownExecutorError:
+            await self._fail_unknown_executor(task, claimed, executor_type)
+            return None
+        session, claimed, executor_session = await self._sessions.ensure_session(
+            self._store,
+            executor,
+            task,
+            claimed,
+        )
+        run = await self._runs.create_run(
+            self._store,
+            task,
+            session,
+            claimed_by=claimed.claimed_by,
+            executor_type=executor_type,
+        )
+        await self._modes.initialize_task_mode(self._store, task.task_id)
+        started_at = time.monotonic()
+        async for event in executor.run_task(run, task, executor_session):
+            await self._runs.apply_event(self._store, task, run, event)
+            await self._modes.classify(
+                self._store,
+                task_id=task.task_id,
+                run_id=run.run_id,
+                run_status=run.status,
+                elapsed_seconds=max(0.0, time.monotonic() - started_at),
+            )
+        await self._sync_executor_session(executor, session, executor_session)
+        summary = self._summaries.build_summary(task, run)
+        await self._store.put_summary(summary)
+        if run.status == RunStatus.COMPLETED:
+            return run.run_id
+        return None
 
     async def _sync_executor_session(
         self,
