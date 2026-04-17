@@ -13,6 +13,11 @@ on:
       - ".github/workflows/deploy-ui-vercel.yml"
       - "src/synapse/ui/**"
 
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
 concurrency:
   group: vercel-ui-${{ github.ref }}
   cancel-in-progress: true
@@ -53,7 +58,49 @@ jobs:
         run: vercel build --token="$VERCEL_TOKEN"
 
       - name: Deploy preview
-        run: vercel deploy --prebuilt --token="$VERCEL_TOKEN"
+        id: deploy_preview
+        run: |
+          deployment_url="$(vercel deploy --prebuilt --token="$VERCEL_TOKEN")"
+          echo "deployment_url=$deployment_url" >> "$GITHUB_OUTPUT"
+
+      - name: Comment preview URL on PR
+        uses: actions/github-script@v7
+        env:
+          DEPLOYMENT_URL: ${{ steps.deploy_preview.outputs.deployment_url }}
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const marker = "<!-- vercel-preview-comment -->";
+            const previewUrl = process.env.DEPLOYMENT_URL;
+            const body = `${marker}
+            Vercel preview is ready.
+
+            ${previewUrl}`;
+            const { owner, repo } = context.repo;
+            const issue_number = context.payload.pull_request.number;
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner,
+              repo,
+              issue_number,
+            });
+            const existing = comments.find((comment) => {
+              return comment.user?.type === "Bot" && comment.body?.includes(marker);
+            });
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner,
+                repo,
+                comment_id: existing.id,
+                body,
+              });
+              return;
+            }
+            await github.rest.issues.createComment({
+              owner,
+              repo,
+              issue_number,
+              body,
+            });
 
   deploy-production:
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
