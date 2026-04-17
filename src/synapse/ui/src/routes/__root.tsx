@@ -2,7 +2,6 @@
 import { HeadContent, Outlet, createRootRoute } from "@tanstack/react-router";
 import { DefaultCatchBoundary } from "../components/DefaultCatchBoundary";
 import { NotFound } from "../components/NotFound";
-import "../styles/app.css";
 
 export const Route = createRootRoute({
   head: () => ({
@@ -14,6 +13,22 @@ export const Route = createRootRoute({
         name: "description",
         content:
           "Chat-first workbench for the Synapse communication-brain and execution-brain runtime.",
+      },
+    ],
+    links: [
+      {
+        rel: "preconnect",
+        href: "https://fonts.googleapis.com",
+      },
+      {
+        rel: "preconnect",
+        href: "https://fonts.gstatic.com",
+        crossOrigin: "anonymous",
+      },
+      {
+        rel: "stylesheet",
+        href:
+          "https://fonts.googleapis.com/css2?family=Noto+Sans:wght@400;600;700&family=Noto+Sans+SC:wght@400;700&display=swap",
       },
     ],
   }),

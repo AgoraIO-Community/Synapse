@@ -37,6 +37,7 @@
 - [Add Executor Adapter](./guides/add-executor-adapter.md)
 - [Add Blackboard Backend](./guides/add-blackboard-backend.md)
 - [Frontend Contracts](./guides/frontend-contracts.md)
+- [Frontend Handoff](./guides/frontend-handoff.md)
 - [Frontend Workbench](./guides/frontend-workbench.md)
 - [Gateway Host](./guides/gateway-host.md)
 - [Agora Conversational AI](./guides/agora-conversational-ai.md)

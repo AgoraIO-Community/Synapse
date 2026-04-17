@@ -1,4 +1,3 @@
-import tailwindcss from "@tailwindcss/vite";
 import viteReact from "@vitejs/plugin-react";
 import path from "node:path";
 import { defineConfig } from "vitest/config";
@@ -10,7 +9,7 @@ export default defineConfig({
     },
     tsconfigPaths: true,
   },
-  plugins: [viteReact(), tailwindcss()],
+  plugins: [viteReact()],
   test: {
     environment: "happy-dom",
     setupFiles: "./src/test/setup.ts",

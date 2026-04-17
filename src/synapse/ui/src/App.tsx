@@ -74,7 +74,6 @@ import {
   SheetTrigger,
 } from "./components/ui/sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./components/ui/tabs";
-import { Textarea } from "./components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./components/ui/tooltip";
 import { cn } from "./lib/utils";
 
@@ -481,16 +480,6 @@ function buildConversationTaskEvents(
   });
 }
 
-function statusDotClass(status: ConnectionStatus) {
-  if (status === "connected") {
-    return "bg-emerald-500";
-  }
-  if (status === "error" || status === "disconnected") {
-    return "bg-rose-500";
-  }
-  return "bg-amber-500";
-}
-
 function MessageBubble({
   entry,
 }: {
@@ -498,21 +487,43 @@ function MessageBubble({
 }) {
   const isUser = entry.role === "user";
   return (
-    <div className={cn("message-row flex", isUser ? "justify-end" : "justify-start")}>
+    <div className={cn("flex", isUser ? "justify-end pl-10" : "justify-start pr-6")}>
       <div
         className={cn(
-          "chat-bubble max-w-[86%] rounded-[28px] px-4 py-3 shadow-sm sm:px-5",
-          isUser ? "chat-bubble-user" : "chat-bubble-assistant",
+          "max-w-[88%] shadow-[0_28px_48px_-34px_rgba(15,23,42,0.22)]",
+          isUser
+            ? "rounded-[1.2rem] rounded-tr-[0.35rem] border border-white/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.95),rgba(249,248,246,0.82))] px-5 py-4 text-[#1b201d]"
+            : "rounded-[1.35rem] border border-[rgba(214,255,100,0.1)] bg-[linear-gradient(180deg,rgba(29,31,35,0.96),rgba(24,26,30,0.92))] px-5 py-4 text-white backdrop-blur-xl",
         )}
       >
-        <div className="bubble-meta-row mb-2 flex items-center justify-between gap-3 text-[11px] font-semibold uppercase tracking-[0.18em] opacity-80">
-          <div className="bubble-author">
-            <span className="bubble-avatar">{isUser ? "Y" : "A"}</span>
-            <span>{isUser ? "You" : "Assistant"}</span>
+        {isUser ? (
+          <div className="mb-2 flex items-center justify-between gap-3 text-[10px] font-semibold uppercase tracking-[0.16em] text-[#61706a]">
+            <span>You</span>
+            <span className="truncate text-[0.6rem] text-[#94a09a]">{entry.message_id}</span>
           </div>
-          <span className="truncate">{entry.message_id}</span>
-        </div>
-        <p className="whitespace-pre-wrap text-sm leading-6">{entry.text}</p>
+        ) : (
+          <div className="mb-3 flex items-start gap-3">
+            <span className="inline-flex size-9 shrink-0 items-center justify-center rounded-full bg-[#d6ff64]/16 text-[#d6ff64]">
+              <Bot className="size-4" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center justify-between gap-3">
+                <div className="text-[0.68rem] font-bold uppercase tracking-[0.22em] text-[#d6ff64]">
+                  System Intelligence
+                </div>
+                <span className="truncate text-[0.6rem] font-medium uppercase tracking-[0.16em] text-white/35">
+                  {entry.message_id}
+                </span>
+              </div>
+              <div className="mt-1 text-[0.72rem] font-medium uppercase tracking-[0.14em] text-white/45">
+                Assistant response
+              </div>
+            </div>
+          </div>
+        )}
+        <p className={cn("whitespace-pre-wrap text-sm leading-6", isUser ? "text-[#1f2421]" : "text-white/82")}>
+          {entry.text}
+        </p>
       </div>
     </div>
   );
@@ -526,13 +537,33 @@ function LiveAssistantCard({ liveAssistant }: { liveAssistant: LiveAssistantBubb
         ? "Failed"
         : "Completed";
   return (
-    <div className="message-row flex justify-start">
-      <div className="chat-bubble live-bubble max-w-[86%] rounded-[28px] px-5 py-3">
-        <div className="bubble-meta-row mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700">
-          <span className="bubble-avatar bubble-avatar-ai">A</span>
-          <span>{statusText}</span>
+    <div className="flex justify-start">
+      <div className="max-w-[88%] rounded-[1.35rem] border border-[rgba(214,255,100,0.14)] bg-[linear-gradient(180deg,rgba(29,31,35,0.96),rgba(24,26,30,0.92))] px-5 py-4 text-white shadow-[0_30px_52px_-38px_rgba(0,0,0,0.7)] backdrop-blur-xl">
+        <div className="mb-3 flex items-start gap-3">
+          <span className="inline-flex size-9 shrink-0 items-center justify-center rounded-full bg-[#d6ff64]/14 text-[#d6ff64]">
+            {liveAssistant.state === "failed" ? (
+              <AlertCircle className="size-4" />
+            ) : liveAssistant.state === "streaming" ? (
+              <LoaderCircle className="size-4 animate-spin" />
+            ) : (
+              <CheckCircle2 className="size-4" />
+            )}
+          </span>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-[0.68rem] font-bold uppercase tracking-[0.22em] text-[#d6ff64]">
+                Command Acknowledged
+              </span>
+              <span className="text-[0.62rem] font-black uppercase tracking-[0.18em] text-[#d6ff64]/90">
+                {statusText}
+              </span>
+            </div>
+            <div className="mt-1 text-[0.72rem] font-medium uppercase tracking-[0.14em] text-white/42">
+              Live assistant stream
+            </div>
+          </div>
         </div>
-        <p className="whitespace-pre-wrap text-sm leading-6 text-foreground">
+        <p className="whitespace-pre-wrap text-sm leading-6 text-white/82">
           {liveAssistant.text || "..."}
         </p>
       </div>
@@ -552,32 +583,31 @@ function TaskEventCard({
     <button
       type="button"
       onClick={() => onSelectTask(event.taskId)}
-      className="event-card-button w-full text-left"
+      className="relative w-full text-left"
     >
-      <Card className="border-white/70 bg-white/75 transition hover:-translate-y-0.5 hover:bg-white">
-        <CardContent className="p-4">
-          <div className="mb-3 flex items-start justify-between gap-3">
-            <div className="space-y-1">
-              <div className="event-kicker flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-                <span className="event-kicker-icon">
-                  <Workflow className="size-3.5" />
-                </span>
-                <span>Task update</span>
+      <div className="rounded-[1.35rem] border border-[rgba(214,255,100,0.1)] bg-[linear-gradient(180deg,rgba(29,31,35,0.96),rgba(24,26,30,0.92))] px-5 py-4 text-white shadow-[0_30px_52px_-38px_rgba(0,0,0,0.7)] transition hover:-translate-y-0.5 hover:border-[rgba(214,255,100,0.18)]">
+        <div className="mb-3 flex items-start justify-between gap-3">
+          <div className="flex min-w-0 items-start gap-3">
+            <span className="inline-flex size-9 shrink-0 items-center justify-center rounded-full bg-white/8 text-[#d6ff64]">
+              <Icon className={cn("size-4", event.status === "running" && "animate-spin")} />
+            </span>
+            <div className="min-w-0">
+              <div className="text-[0.68rem] font-bold uppercase tracking-[0.22em] text-white/40">
+                Task update
               </div>
-              <h3 className="font-serif text-lg text-foreground">{event.title}</h3>
+              <h3 className="mt-1 text-sm font-semibold tracking-tight text-white">{event.title}</h3>
             </div>
-            <Badge variant={taskStatusVariant(event.status)}>{event.label}</Badge>
           </div>
-          <div className="flex items-start gap-3 text-sm text-muted-foreground">
-            <Icon className={cn("mt-0.5 size-4 shrink-0", event.status === "running" && "animate-spin")} />
-            <p className="line-clamp-3">{event.summary}</p>
-          </div>
-          <div className="event-card-footer">
-            <span>Open in workbench</span>
-            <ArrowRight className="size-4" />
-          </div>
-        </CardContent>
-      </Card>
+          <span className="rounded-full bg-[#d6ff64]/10 px-2.5 py-1 text-[0.6rem] font-black uppercase tracking-[0.18em] text-[#d6ff64]">
+            {event.label}
+          </span>
+        </div>
+        <p className="text-sm leading-6 text-slate-300">{event.summary}</p>
+        <div className="mt-4 inline-flex items-center gap-1.5 text-[0.68rem] font-bold uppercase tracking-[0.18em] text-white/42">
+          <span>Open in workbench</span>
+          <ArrowRight className="size-4" />
+        </div>
+      </div>
     </button>
   );
 }
@@ -590,11 +620,15 @@ function StarterPromptButton({
   onSelect: (value: string) => void;
 }) {
   return (
-    <button type="button" className="starter-chip" onClick={() => onSelect(prompt)}>
-      <span className="starter-chip-icon">
-        <Sparkles className="size-3.5" />
+    <button
+      type="button"
+      className="flex w-full items-center gap-3 rounded-[1.15rem] border border-white/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(248,247,245,0.82))] px-4 py-4 text-left text-sm text-[#202622] shadow-[0_22px_36px_-30px_rgba(15,23,42,0.22),inset_0_1px_0_rgba(255,255,255,0.88)] transition hover:-translate-y-0.5 hover:border-[#d6ff64]/50 hover:bg-white"
+      onClick={() => onSelect(prompt)}
+    >
+      <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#d6ff64]/20 text-[#5b7300]">
+        <WandSparkles className="size-4" />
       </span>
-      <span>{prompt}</span>
+      <span className="flex-1">{prompt}</span>
       <ChevronsRight className="size-4 text-muted-foreground" />
     </button>
   );
@@ -1617,202 +1651,164 @@ export default function App() {
 
   return (
     <TooltipProvider delayDuration={200}>
-      <div className="app-shell h-screen overflow-hidden p-3 sm:p-5">
-        <div className="app-grid grid h-full gap-4 xl:grid-cols-[minmax(0,1.55fr)_minmax(380px,0.9fr)]">
-          <Card className="pane-shell conversation-pane h-full overflow-hidden flex flex-col">
-            <CardHeader className="conversation-header gap-2 border-b border-border/60 bg-white/60 pb-3">
-              <div className="hero-top flex items-start justify-between gap-3">
-                <div className="hero-copy space-y-1.5">
-                  <div className="hero-kicker-row flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-                    <WandSparkles className="size-3.5" />
-                    <span>Synapse Runtime</span>
-                  </div>
-                  <div>
-                    <CardTitle className="hero-title text-3xl sm:text-4xl">Conversation</CardTitle>
-                    <CardDescription className="hero-description mt-1 max-w-2xl text-sm leading-6">
-                      Chat-first runtime control with a live execution workbench.
-                    </CardDescription>
-                  </div>
-                </div>
-                <div className="hero-tools flex flex-col items-end gap-3">
-                  <div className="inline-flex items-center gap-3 rounded-full border border-border/70 bg-white/85 px-4 py-2 text-sm text-muted-foreground shadow-sm status-pill-modern">
-                    <span className={cn("size-2.5 rounded-full", statusDotClass(connectionStatus))} />
-                    <span className="capitalize">{connectionStatus}</span>
-                    {sessionId ? <code className="hidden text-xs sm:inline">{sessionId}</code> : null}
-                  </div>
-                  <Sheet open={mobileWorkbenchOpen} onOpenChange={setMobileWorkbenchOpen}>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <SheetTrigger asChild>
-                          <Button variant="secondary" size="icon" className="xl:hidden mobile-workbench-trigger">
-                            <PanelRightOpen className="size-4" />
-                            <span className="mobile-workbench-label">Open workbench</span>
-                          </Button>
-                        </SheetTrigger>
-                      </TooltipTrigger>
-                      <TooltipContent>Open workbench</TooltipContent>
-                    </Tooltip>
-                    <SheetContent side="right" className="p-0">
-                      <SheetHeader className="border-b border-border/60 p-6">
-                        <SheetTitle>Workbench</SheetTitle>
-                        <SheetDescription>
-                          Task queue, details, and debug surfaces for the active session.
-                        </SheetDescription>
-                      </SheetHeader>
-                      <div className="h-[calc(100%-98px)]">{workbench}</div>
-                    </SheetContent>
-                  </Sheet>
-                </div>
+      <div
+        data-testid="workspace-atmosphere"
+        className="relative h-screen overflow-hidden bg-[linear-gradient(135deg,#fff8ef_0%,#fcefd9_22%,#ebf4ff_50%,#f5eefe_78%,#edf4ea_100%)] text-[#18211d]"
+      >
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 overflow-hidden"
+        >
+          <div className="absolute -left-[14%] top-[-18%] h-[38rem] w-[38rem] rounded-full bg-[radial-gradient(circle,rgba(255,255,255,0.92)_0%,rgba(255,244,225,0.58)_34%,rgba(255,244,225,0)_72%)] blur-3xl" />
+          <div className="absolute left-[18%] top-[8%] h-[28rem] w-[28rem] rounded-full bg-[radial-gradient(circle,rgba(244,226,202,0.58)_0%,rgba(244,226,202,0.16)_42%,rgba(244,226,202,0)_72%)] blur-3xl" />
+          <div className="absolute bottom-[-22%] left-[6%] h-[30rem] w-[34rem] rounded-full bg-[radial-gradient(circle,rgba(218,235,247,0.56)_0%,rgba(218,235,247,0.14)_46%,rgba(218,235,247,0)_76%)] blur-3xl" />
+          <div className="absolute inset-y-0 right-0 w-full bg-[linear-gradient(90deg,rgba(255,255,255,0)_0%,rgba(64,74,62,0.06)_50%,rgba(17,21,19,0.2)_100%)] xl:w-[52%]" />
+          <div className="absolute -right-[12%] top-[-10%] h-[42rem] w-[42rem] rounded-full bg-[radial-gradient(circle,rgba(39,45,41,0.34)_0%,rgba(39,45,41,0.18)_28%,rgba(39,45,41,0.04)_56%,rgba(39,45,41,0)_74%)] blur-3xl" />
+          <div className="absolute bottom-[-26%] right-[-10%] h-[40rem] w-[38rem] rounded-full bg-[radial-gradient(circle,rgba(53,64,59,0.3)_0%,rgba(53,64,59,0.15)_32%,rgba(53,64,59,0.03)_58%,rgba(53,64,59,0)_76%)] blur-3xl" />
+          <div className="absolute inset-y-0 right-0 hidden w-[48%] bg-[linear-gradient(180deg,rgba(18,22,21,0.06)_0%,rgba(18,22,21,0.16)_40%,rgba(18,22,21,0.28)_100%)] xl:block" />
+        </div>
+
+        <div className="app-shell relative h-full w-full overflow-hidden p-3 sm:p-5">
+          <div className="app-grid relative grid h-full w-full min-w-0 gap-4 xl:grid-cols-[minmax(0,1.08fr)_minmax(420px,0.92fr)]">
+            <div
+              data-testid="workspace-split-seam"
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-y-4 left-1/2 hidden w-px -translate-x-1/2 bg-[linear-gradient(180deg,rgba(255,255,255,0),rgba(255,255,255,0.88)18%,rgba(217,255,182,0.95)48%,rgba(255,255,255,0.7)76%,rgba(255,255,255,0)) shadow-[0_0_0_1px_rgba(255,255,255,0.12),0_0_28px_rgba(224,255,193,0.55),14px_0_44px_rgba(12,18,15,0.12),-14px_0_44px_rgba(255,255,255,0.2)] xl:left-[56%] xl:block"
+            />
+
+            <section
+              data-testid="workspace-left-pane"
+              className="relative z-10 flex h-full min-h-0 min-w-0 flex-col px-3 pb-32 pt-5 sm:px-5 sm:pb-36 sm:pt-6 xl:pr-8"
+            >
+              <h1 className="sr-only">Conversation</h1>
+
+              <div className="absolute right-3 top-4 z-20 sm:right-5 xl:hidden">
+                <Sheet open={mobileWorkbenchOpen} onOpenChange={setMobileWorkbenchOpen}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <SheetTrigger asChild>
+                        <Button
+                          variant="secondary"
+                          size="icon"
+                          className="h-auto w-auto gap-2 rounded-full bg-white/78 px-3 py-2 shadow-[0_14px_34px_-24px_rgba(15,23,42,0.24)]"
+                        >
+                          <PanelRightOpen className="size-4" />
+                          <span className="whitespace-nowrap text-[0.8rem] font-semibold text-[#1a2a23]">
+                            Open workbench
+                          </span>
+                        </Button>
+                      </SheetTrigger>
+                    </TooltipTrigger>
+                    <TooltipContent>Open workbench</TooltipContent>
+                  </Tooltip>
+                  <SheetContent side="right" className="p-0">
+                    <SheetHeader className="border-b border-border/60 p-6">
+                      <SheetTitle>Workbench</SheetTitle>
+                      <SheetDescription>
+                        Task queue, details, and debug surfaces for the active session.
+                      </SheetDescription>
+                    </SheetHeader>
+                    <div className="h-[calc(100%-98px)]">{workbench}</div>
+                  </SheetContent>
+                </Sheet>
               </div>
 
-              <div className="metrics-row flex flex-wrap items-center gap-2">
-                <Badge variant="secondary" className="gap-1.5">
-                  <MessageSquare className="size-3.5" />
-                  {conversation.length} messages
-                </Badge>
-                <Badge variant="secondary" className="gap-1.5">
-                  <PlayCircle className="size-3.5" />
-                  {activeTasks.length} live tasks
-                </Badge>
-                <Badge variant="secondary" className="gap-1.5">
-                  <Timer className="size-3.5" />
-                  {conversationTaskEvents.length} task updates
-                </Badge>
-                {lastCommandStatus ? (
-                  <Badge variant={lastCommandStatus === "accepted" ? "success" : "destructive"}>
-                    command {lastCommandStatus}
-                  </Badge>
-                ) : null}
-              </div>
-
-              {activeTasks.length > 0 ? (
-                <div className="activity-rail">
-                  {activeTasks.slice(0, 3).map((task) => (
-                    <button
-                      key={task.task_id}
-                      type="button"
-                      className="activity-rail-item"
-                      onClick={() => focusTask(task.task_id)}
-                    >
-                      <div className="activity-rail-item-top">
-                        <span className={cn("activity-rail-dot", task.status === "running" && "is-live")} />
-                        <span>{task.title}</span>
-                      </div>
-                      <span className="activity-rail-item-bottom">{statusLabel(task.status)}</span>
-                    </button>
-                  ))}
-                </div>
-              ) : null}
-
-              {actionError ? (
-                <div className="rounded-3xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-700">
-                  {actionError}
-                </div>
-              ) : null}
-            </CardHeader>
-
-            <CardContent className="flex flex-1 min-h-0 flex-col p-0">
-              <ScrollArea className="flex-1 px-3 py-4 sm:px-5">
+              <ScrollArea className="flex-1 pr-1 sm:pr-2">
                 <div
                   className={cn(
-                    "mx-auto flex max-w-3xl flex-col gap-4 pb-6",
-                    isConversationEmpty ? "empty-thread" : "thread-filled",
+                    "mx-auto flex min-h-full w-full max-w-3xl flex-col gap-4 pb-14",
+                    isConversationEmpty ? "justify-center py-10" : "justify-start py-8",
                   )}
                 >
+                  {actionError ? (
+                    <div className="mx-auto w-full max-w-[38rem] rounded-[1.2rem] border border-rose-500/18 bg-[linear-gradient(180deg,rgba(255,241,243,0.88),rgba(255,232,236,0.72))] px-4 py-3 text-sm text-rose-700 shadow-[0_18px_42px_-34px_rgba(190,24,93,0.3)]">
+                      {actionError}
+                    </div>
+                  ) : null}
+
                   {isConversationEmpty ? (
-                    <Card className="border-dashed border-border/80 bg-white/55 empty-chat-card">
-                      <CardContent className="p-5 text-sm text-muted-foreground">
-                        <div className="empty-chat-eyebrow">Fresh session</div>
-                        <h3 className="font-serif text-xl text-foreground">
+                    <div className="flex min-h-full flex-col justify-center gap-7">
+                      <div className="mx-auto max-w-[36rem] text-center">
+                        <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-white/70 bg-white/72 px-3 py-1 text-[0.65rem] font-bold uppercase tracking-[0.22em] text-[#68736c] shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]">
+                          <Sparkles className="size-3.5 text-[#7e9862]" />
+                          Fresh session
+                        </div>
+                        <h3 className="font-['Noto_Sans_SC','Noto_Sans','Geist_Variable',sans-serif] text-[2.15rem] leading-[1.02] font-bold tracking-[-0.05em] text-[#1f2521] sm:text-[2.6rem]">
                           Start with a clear instruction.
                         </h3>
-                        <p className="empty-chat-copy">
+                        <p className="mx-auto mt-4 max-w-[32rem] text-[1rem] leading-7 text-[#5e6761]">
                           Ask Synapse to plan, draft, review, summarize, or execute. The workbench
                           will light up as soon as the execution brain opens tasks.
                         </p>
-                        <div className="starter-grid">
-                          {STARTER_PROMPTS.map((prompt) => (
-                            <StarterPromptButton key={prompt} prompt={prompt} onSelect={setComposer} />
-                          ))}
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ) : null}
-                  {!isConversationEmpty ? (
-                    <div className="thread-kicker">
-                      <span className="thread-kicker-line" />
-                      <span>Live conversation</span>
+                      </div>
+                      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                        {STARTER_PROMPTS.map((prompt) => (
+                          <StarterPromptButton key={prompt} prompt={prompt} onSelect={setComposer} />
+                        ))}
+                      </div>
                     </div>
-                  ) : null}
-                  {conversation.map((entry) => (
-                    <MessageBubble key={entry.message_id} entry={entry} />
-                  ))}
-                  {liveAssistant ? <LiveAssistantCard liveAssistant={liveAssistant} /> : null}
-                  {conversationTaskEvents.map((event) => (
-                    <TaskEventCard key={event.id} event={event} onSelectTask={focusTask} />
-                  ))}
+                  ) : (
+                    <>
+                      {conversation.map((entry) => (
+                        <MessageBubble key={entry.message_id} entry={entry} />
+                      ))}
+                      {liveAssistant ? <LiveAssistantCard liveAssistant={liveAssistant} /> : null}
+                      {conversationTaskEvents.map((event) => (
+                        <TaskEventCard key={event.id} event={event} onSelectTask={focusTask} />
+                      ))}
+                    </>
+                  )}
                 </div>
               </ScrollArea>
 
-              <div className="border-t border-border/60 bg-white/60 p-3 sm:p-5 composer-shell">
+              <div className="pointer-events-none absolute inset-x-3 bottom-4 z-20 sm:inset-x-5 sm:bottom-5 xl:right-8">
                 <div className="mx-auto max-w-3xl">
-                  <form className="space-y-3" onSubmit={handleSendMessage}>
-                    <div className="composer-panel">
-                      <div className="composer-kicker">
-                        <div className="composer-kicker-left">
-                          <Sparkles className="size-3.5" />
-                          <span>Prompt Composer</span>
-                        </div>
-                        <Badge variant="secondary">Local runtime</Badge>
-                      </div>
-                      {!isConversationEmpty ? (
-                        <div className="composer-tools-row">
-                          {STARTER_PROMPTS.map((prompt) => (
-                            <button
-                              key={prompt}
-                              type="button"
-                              className="composer-tool-chip"
-                              onClick={() => setComposer(prompt)}
-                            >
-                              {prompt}
-                            </button>
-                          ))}
-                        </div>
-                      ) : null}
-                      <Textarea
-                        value={composer}
-                        onChange={(event) => setComposer(event.target.value)}
-                        onKeyDown={(event: KeyboardEvent<HTMLTextAreaElement>) => {
-                          if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
-                            event.preventDefault();
-                            void handleSendMessage(event as unknown as FormEvent<HTMLFormElement>);
-                          }
-                        }}
-                        placeholder="Ask Synapse to plan, execute, or inspect work..."
-                        rows={4}
-                      />
-                      <div className="composer-actions flex flex-wrap items-center justify-between gap-3">
-                        <div className="composer-hint-stack">
-                          <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
-                            Shift + Enter for a newline
-                          </p>
-                          <p className="text-xs text-muted-foreground">
-                            Ask for planning, execution, review, or a task update.
-                          </p>
-                        </div>
-                        <Button type="submit" disabled={!sessionId || !composer.trim() || isSending}>
-                          <ArrowUp className="size-3.5" />
-                          {isSending ? "Sending…" : "Send"}
+                  <form className="pointer-events-auto" onSubmit={handleSendMessage}>
+                    <div
+                      data-testid="conversation-composer-shell"
+                      className="rounded-full border border-[rgba(214,255,100,0.12)] bg-[linear-gradient(180deg,rgba(33,35,39,0.98),rgba(28,30,34,0.94))] px-4 py-3 shadow-[0_30px_60px_-32px_rgba(0,0,0,0.58),inset_0_1px_0_rgba(255,255,255,0.05)] backdrop-blur-xl sm:px-5 sm:py-3.5"
+                    >
+                      <div className="flex items-center gap-2 sm:gap-3">
+                        <input
+                          value={composer}
+                          onChange={(event) => setComposer(event.target.value)}
+                          onKeyDown={(event: KeyboardEvent<HTMLInputElement>) => {
+                            if (event.key === "Enter" && !event.nativeEvent.isComposing) {
+                              event.preventDefault();
+                              void handleSendMessage(event as unknown as FormEvent<HTMLFormElement>);
+                            }
+                          }}
+                          placeholder="Issue a system directive..."
+                          className="min-h-0 flex-1 border-none bg-transparent px-2 py-2 text-[0.98rem] font-medium text-white shadow-none outline-none placeholder:text-[#74819b] focus-visible:ring-0 sm:text-[1.06rem] sm:placeholder:text-[#7e89a0]"
+                        />
+                        <Button
+                          data-testid="conversation-composer-send"
+                          aria-label="Send"
+                          type="submit"
+                          variant="secondary"
+                          disabled={!sessionId || !composer.trim() || isSending}
+                          className="size-11 min-h-11 shrink-0 rounded-full bg-[#e9ff77] px-0 text-[#14180c] shadow-[0_18px_36px_-18px_rgba(233,255,119,0.85)] hover:translate-y-0 hover:scale-[1.03] disabled:opacity-100 disabled:bg-[#e9ff77]/82 disabled:text-[#14180c]/70 sm:size-12 sm:min-h-12"
+                        >
+                          <ArrowUp className="size-5 sm:size-6" />
                         </Button>
                       </div>
                     </div>
                   </form>
                 </div>
               </div>
-            </CardContent>
-          </Card>
+            </section>
 
-          <div className="hidden h-full xl:block workbench-pane">{workbench}</div>
+            <div
+              data-testid="workspace-right-pane"
+              className="relative hidden h-full min-w-0 overflow-hidden rounded-[32px] border border-white/10 bg-[linear-gradient(180deg,rgba(23,28,26,0.62),rgba(18,22,20,0.76)_46%,rgba(14,16,15,0.84)_100%)] shadow-[0_44px_90px_-52px_rgba(6,10,8,0.8),inset_0_1px_0_rgba(255,255,255,0.08),inset_22px_0_80px_rgba(255,255,255,0.03)] backdrop-blur-[26px] xl:block"
+            >
+              <div
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(231,255,203,0.14),rgba(231,255,203,0)_32%),radial-gradient(circle_at_12%_18%,rgba(255,255,255,0.08),rgba(255,255,255,0)_28%),linear-gradient(90deg,rgba(255,255,255,0.05),rgba(255,255,255,0)_22%,rgba(0,0,0,0)_100%)]"
+              />
+              <div className="relative h-full workbench-pane">{workbench}</div>
+            </div>
+          </div>
         </div>
       </div>
     </TooltipProvider>
