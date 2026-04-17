@@ -1357,7 +1357,7 @@ export default function App() {
 
   const workbench = (
     <Tabs defaultValue="overview" className="flex h-full min-h-0 flex-col overflow-hidden">
-      <div className="mb-3 shrink-0 flex items-start justify-between gap-3">
+      <div className="mb-3 shrink-0">
         <div>
           <h2 className="font-['Noto_Sans_SC','Noto_Sans','Geist_Variable',sans-serif] text-[2rem] font-bold tracking-[-0.05em] text-[#1f2521]">
             Workbench
@@ -1366,26 +1366,30 @@ export default function App() {
             Task queue first. Execution and diagnostics stay available behind Debug.
           </p>
         </div>
-        <span className="rounded-full bg-white/72 px-3 py-1 text-[0.68rem] font-black uppercase tracking-[0.18em] text-[#6f786f] shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]">
-          {tasks.length} tracked
-        </span>
       </div>
 
-      <div className="mb-3 shrink-0 grid grid-cols-3 gap-3">
-        <div className="relative rounded-[1.15rem] border border-[rgba(214,255,100,0.1)] bg-[linear-gradient(180deg,rgba(29,31,35,0.96),rgba(24,26,30,0.92))] px-4 py-4 text-white shadow-[0_22px_40px_-30px_rgba(0,0,0,0.55)] transition hover:-translate-y-1 hover:border-[rgba(214,255,100,0.16)]">
-          <div className="pointer-events-none absolute inset-x-4 top-0 h-px bg-[linear-gradient(90deg,rgba(255,255,255,0),rgba(214,255,100,0.45),rgba(255,255,255,0))]" />
-          <div className="text-[0.62rem] font-bold uppercase tracking-[0.2em] text-white/38">Active</div>
-          <div className="mt-2 text-3xl font-black tracking-[-0.06em] text-white">{activeTasks.length}</div>
+      <div className="mb-3 shrink-0 flex items-start gap-3">
+        <div className="grid min-w-0 flex-1 grid-cols-3 gap-3">
+          <div className="relative rounded-[1.15rem] border border-[rgba(214,255,100,0.1)] bg-[linear-gradient(180deg,rgba(29,31,35,0.96),rgba(24,26,30,0.92))] px-4 py-4 text-white shadow-[0_22px_40px_-30px_rgba(0,0,0,0.55)] transition hover:-translate-y-1 hover:border-[rgba(214,255,100,0.16)]">
+            <div className="pointer-events-none absolute inset-x-4 top-0 h-px bg-[linear-gradient(90deg,rgba(255,255,255,0),rgba(214,255,100,0.45),rgba(255,255,255,0))]" />
+            <div className="text-[0.62rem] font-bold uppercase tracking-[0.2em] text-white/38">Active</div>
+            <div className="mt-2 text-3xl font-black tracking-[-0.06em] text-white">{activeTasks.length}</div>
+          </div>
+          <div className="relative translate-y-2 rounded-[1.15rem] border border-[rgba(214,255,100,0.1)] bg-[linear-gradient(180deg,rgba(29,31,35,0.96),rgba(24,26,30,0.92))] px-4 py-4 text-white shadow-[0_22px_40px_-30px_rgba(0,0,0,0.55)] transition hover:-translate-y-0 hover:border-[rgba(214,255,100,0.16)]">
+            <div className="pointer-events-none absolute inset-x-4 top-0 h-px bg-[linear-gradient(90deg,rgba(255,255,255,0),rgba(255,255,255,0.24),rgba(255,255,255,0))]" />
+            <div className="text-[0.62rem] font-bold uppercase tracking-[0.2em] text-white/38">Waiting</div>
+            <div className="mt-2 text-3xl font-black tracking-[-0.06em] text-white">{blockedTasks.length}</div>
+          </div>
+          <div className="relative -translate-y-1 rounded-[1.15rem] border border-[rgba(214,255,100,0.14)] bg-[linear-gradient(180deg,rgba(29,31,35,0.96),rgba(24,26,30,0.92))] px-4 py-4 text-white shadow-[0_22px_40px_-30px_rgba(0,0,0,0.55)] transition hover:-translate-y-2 hover:border-[rgba(214,255,100,0.2)]">
+            <div className="pointer-events-none absolute inset-x-4 top-0 h-px bg-[linear-gradient(90deg,rgba(255,255,255,0),rgba(214,255,100,0.55),rgba(255,255,255,0))]" />
+            <div className="text-[0.62rem] font-bold uppercase tracking-[0.2em] text-[#d7ff1f]">Done</div>
+            <div className="mt-2 text-3xl font-black tracking-[-0.06em] text-white">{completedTasks.length}</div>
+          </div>
         </div>
-        <div className="relative translate-y-2 rounded-[1.15rem] border border-[rgba(214,255,100,0.1)] bg-[linear-gradient(180deg,rgba(29,31,35,0.96),rgba(24,26,30,0.92))] px-4 py-4 text-white shadow-[0_22px_40px_-30px_rgba(0,0,0,0.55)] transition hover:-translate-y-0 hover:border-[rgba(214,255,100,0.16)]">
-          <div className="pointer-events-none absolute inset-x-4 top-0 h-px bg-[linear-gradient(90deg,rgba(255,255,255,0),rgba(255,255,255,0.24),rgba(255,255,255,0))]" />
-          <div className="text-[0.62rem] font-bold uppercase tracking-[0.2em] text-white/38">Waiting</div>
-          <div className="mt-2 text-3xl font-black tracking-[-0.06em] text-white">{blockedTasks.length}</div>
-        </div>
-        <div className="relative -translate-y-1 rounded-[1.15rem] border border-[rgba(214,255,100,0.14)] bg-[linear-gradient(180deg,rgba(29,31,35,0.96),rgba(24,26,30,0.92))] px-4 py-4 text-white shadow-[0_22px_40px_-30px_rgba(0,0,0,0.55)] transition hover:-translate-y-2 hover:border-[rgba(214,255,100,0.2)]">
-          <div className="pointer-events-none absolute inset-x-4 top-0 h-px bg-[linear-gradient(90deg,rgba(255,255,255,0),rgba(214,255,100,0.55),rgba(255,255,255,0))]" />
-          <div className="text-[0.62rem] font-bold uppercase tracking-[0.2em] text-[#d7ff1f]">Done</div>
-          <div className="mt-2 text-3xl font-black tracking-[-0.06em] text-white">{completedTasks.length}</div>
+        <div className="shrink-0 pt-1">
+          <span className="rounded-full bg-white/72 px-3 py-1 text-[0.68rem] font-black uppercase tracking-[0.18em] text-[#6f786f] shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]">
+            {tasks.length} tracked
+          </span>
         </div>
       </div>
 
@@ -1398,17 +1402,14 @@ export default function App() {
 
       <TabsContent value="overview" className="mt-0 flex-1 min-h-0 overflow-hidden">
         <ScrollArea className="h-full min-h-0 pr-2">
-          <div className="space-y-5 pb-10">
+          <div className="space-y-6 pb-10">
             <section className="space-y-3">
               <div className="flex items-center justify-between">
                 <h3 className="text-lg font-bold tracking-tight text-[#212723]">Active Tasks</h3>
                 <p className="text-[0.65rem] font-bold uppercase tracking-[0.18em] text-[#6d766f]">Queue</p>
               </div>
               {tasks.length === 0 ? (
-                <div
-                  data-testid="workbench-queue-stack"
-                  className="relative pt-5"
-                >
+                <div data-testid="workbench-queue-stack" className="relative pb-2 pt-5">
                   <div className="absolute inset-x-4 top-0 h-full rounded-[1.15rem] border border-white/5 bg-[linear-gradient(180deg,rgba(25,27,31,0.48),rgba(20,22,26,0.42))]" />
                   <div className="absolute inset-x-2 top-2 h-full rounded-[1.15rem] border border-white/6 bg-[linear-gradient(180deg,rgba(27,29,33,0.62),rgba(22,24,28,0.56))]" />
                   <div className="relative rounded-[1.15rem] border border-[rgba(214,255,100,0.1)] bg-[linear-gradient(180deg,rgba(29,31,35,0.96),rgba(24,26,30,0.92))] px-4 py-4 text-white shadow-[0_22px_40px_-30px_rgba(0,0,0,0.55)]">
@@ -1421,7 +1422,7 @@ export default function App() {
                 </div>
               ) : (
                 <div data-testid="workbench-queue-stack" className="relative pb-2 pt-5">
-                  {tasks.map((task, index) => {
+                  {tasks.slice(0, 3).map((task, index) => {
                     const detail = getTaskResultDetail(task.task_id, summaryByTaskId, latestRunByTaskId);
                     const selected = selectedTaskId === task.task_id;
                     return (
@@ -1430,8 +1431,8 @@ export default function App() {
                         className={cn(
                           "origin-top transition-transform",
                           index === 0 && "relative z-30",
-                          index === 1 && "relative z-20 -translate-y-2.5 scale-[0.985] opacity-94",
-                          index >= 2 && "relative z-10 -translate-y-5 scale-[0.972] opacity-84",
+                          index === 1 && "relative z-20 -translate-y-4 scale-[0.985] opacity-94",
+                          index === 2 && "relative z-10 -translate-y-8 scale-[0.968] opacity-82",
                         )}
                       >
                         <QueueCard
@@ -1446,11 +1447,18 @@ export default function App() {
                       </div>
                     );
                   })}
+                  {tasks.length > 3 ? (
+                    <div className="mt-[-1rem] flex justify-end">
+                      <span className="rounded-full bg-white/72 px-3 py-1 text-[0.62rem] font-black uppercase tracking-[0.18em] text-[#6f786f] shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]">
+                        +{tasks.length - 3} more
+                      </span>
+                    </div>
+                  ) : null}
                 </div>
               )}
             </section>
 
-            <section className="space-y-3 pb-2">
+            <section className="space-y-3">
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <h3 className="text-lg font-bold tracking-tight text-[#212723]">Task Detail</h3>
@@ -1786,10 +1794,6 @@ export default function App() {
               data-testid="workspace-right-pane"
               className="relative hidden h-full min-w-0 overflow-hidden xl:flex xl:flex-col xl:py-2 xl:pl-3"
             >
-              <div
-                aria-hidden="true"
-                className="pointer-events-none absolute inset-y-0 left-6 right-0 rounded-[2rem] bg-[radial-gradient(circle_at_top_right,rgba(231,255,203,0.08),rgba(231,255,203,0)_28%),radial-gradient(circle_at_0%_18%,rgba(255,255,255,0.08),rgba(255,255,255,0)_22%),linear-gradient(180deg,rgba(20,24,22,0.08),rgba(20,24,22,0.18)_32%,rgba(20,24,22,0.26)_100%)] blur-[1px]"
-              />
               <div className="relative h-full min-h-0">{workbench}</div>
             </aside>
           </div>

@@ -100,6 +100,9 @@ describe("App shell", () => {
     expect(screen.getByTestId("workspace-left-pane")).toBeInTheDocument();
     expect(screen.getByTestId("workspace-right-pane")).toBeInTheDocument();
     expect(screen.getByTestId("workspace-split-seam")).toBeInTheDocument();
+    expect(
+      screen.getByTestId("workspace-right-pane").querySelector('[aria-hidden="true"]'),
+    ).not.toBeInTheDocument();
   });
 
   it("renders the left composer as a monolith capsule with waveform controls", async () => {
