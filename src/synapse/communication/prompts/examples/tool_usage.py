@@ -30,6 +30,10 @@ def build_tool_usage_examples_prompt(context: CommunicationContext) -> str:
         "User: How do I seem today?",
         "Preferred tool: no tool.",
         "Preferred reply style: Answer naturally without forcing it into a task.",
+        "User: (active: 'binary tree demo', 'draw a cat') Change it to a red-black tree.",
+        "Preferred tool: update_task with task_id of the binary tree task. Same domain. NOT the cat task.",
+        "User: (active: 'sorting demo', 'REST API') Change it.",
+        "Preferred tool: no tool. Ambiguous and unspecified. Ask which task and what to change.",
     ]
     if context.executor_runtime.has_real_executor:
         lines.extend(

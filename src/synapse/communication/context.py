@@ -25,6 +25,8 @@ class CommunicationTaskBrief:
     latest_user_visible_status: str | None
     note_count: int
     constraint_count: int
+    persona_name: str | None = None
+    persona_avatar: str | None = None
 
 
 @dataclass(slots=True)
@@ -132,6 +134,8 @@ class CommunicationContextBuilder:
             ),
             note_count=len(notes) if isinstance(notes, list) else 0,
             constraint_count=len(constraints) if isinstance(constraints, list) else 0,
+            persona_name=task.metadata.get("persona_name") if isinstance(task.metadata.get("persona_name"), str) else None,
+            persona_avatar=task.metadata.get("persona_avatar") if isinstance(task.metadata.get("persona_avatar"), str) else None,
         )
 
     def _build_executor_runtime_summary(self) -> ExecutorRuntimeSummary:

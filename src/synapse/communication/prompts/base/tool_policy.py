@@ -26,6 +26,11 @@ def build_tool_policy_prompt(context: CommunicationContext) -> str:
         "- Prefer add_task_note or add_constraint over update_task when the user is appending context rather than changing the task's core identity.",
         "- Use at most one write tool unless a read-then-write step is necessary.",
         "- When using control_task, command_type must exactly match the schema value such as 'resume_task', not shortened verbs like 'resume'.",
+        "- Always pass task_id from context rather than a text reference when the task is visible in active_tasks or focused_tasks.",
+        "- Refinements to a running task (adding details, constraints) -> add_constraint / add_task_note. Do NOT cancel + recreate.",
+        "- Cancel + create only when the user abandons the previous goal entirely.",
+        "- When uncertain whether to update or create, ask a short clarification.",
+        "- Creating a new task does NOT require pausing or cancelling other tasks. Tasks run in parallel.",
     ]
     if context.executor_runtime.has_real_executor:
         lines.append(
