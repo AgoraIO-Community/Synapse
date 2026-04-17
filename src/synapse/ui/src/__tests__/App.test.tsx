@@ -208,5 +208,7 @@ describe("App shell", () => {
     expect(
       screen.queryByRole("button", { name: "Draft a clear release note for the current sprint." }),
     ).not.toBeInTheDocument();
+    expect(screen.queryByText("You")).not.toBeInTheDocument();
+    expect(screen.queryByText("Assistant response")).not.toBeInTheDocument();
   });
 });

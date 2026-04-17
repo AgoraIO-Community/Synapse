@@ -487,40 +487,21 @@ function MessageBubble({
 }) {
   const isUser = entry.role === "user";
   return (
-    <div className={cn("flex", isUser ? "justify-end pl-10" : "justify-start pr-6")}>
+    <div className={cn("flex", isUser ? "justify-end pl-12" : "justify-start pr-10")}>
       <div
         className={cn(
-          "max-w-[88%] shadow-[0_28px_48px_-34px_rgba(15,23,42,0.22)]",
+          "max-w-[84%] shadow-[0_18px_34px_-28px_rgba(15,23,42,0.18)]",
           isUser
-            ? "rounded-[1.2rem] rounded-tr-[0.35rem] border border-white/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.95),rgba(249,248,246,0.82))] px-5 py-4 text-[#1b201d]"
-            : "rounded-[1.35rem] border border-[rgba(214,255,100,0.1)] bg-[linear-gradient(180deg,rgba(29,31,35,0.96),rgba(24,26,30,0.92))] px-5 py-4 text-white backdrop-blur-xl",
+            ? "rounded-[1rem] rounded-tr-[0.3rem] border border-white/78 bg-[linear-gradient(180deg,rgba(255,255,255,0.94),rgba(249,248,246,0.82))] px-4 py-3 text-[#1b201d]"
+            : "rounded-[1.05rem] border border-[rgba(214,255,100,0.08)] bg-[linear-gradient(180deg,rgba(29,31,35,0.96),rgba(24,26,30,0.92))] px-4 py-3 text-white backdrop-blur-xl",
         )}
       >
-        {isUser ? (
-          <div className="mb-2 flex items-center justify-between gap-3 text-[10px] font-semibold uppercase tracking-[0.16em] text-[#61706a]">
-            <span>You</span>
-            <span className="truncate text-[0.6rem] text-[#94a09a]">{entry.message_id}</span>
+        {!isUser ? (
+          <div className="mb-2 flex items-center gap-2 text-[0.66rem] font-bold uppercase tracking-[0.18em] text-[#d6ff64]">
+            <Bot className="size-3.5" />
+            <span>System</span>
           </div>
-        ) : (
-          <div className="mb-3 flex items-start gap-3">
-            <span className="inline-flex size-9 shrink-0 items-center justify-center rounded-full bg-[#d6ff64]/16 text-[#d6ff64]">
-              <Bot className="size-4" />
-            </span>
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center justify-between gap-3">
-                <div className="text-[0.68rem] font-bold uppercase tracking-[0.22em] text-[#d6ff64]">
-                  System Intelligence
-                </div>
-                <span className="truncate text-[0.6rem] font-medium uppercase tracking-[0.16em] text-white/35">
-                  {entry.message_id}
-                </span>
-              </div>
-              <div className="mt-1 text-[0.72rem] font-medium uppercase tracking-[0.14em] text-white/45">
-                Assistant response
-              </div>
-            </div>
-          </div>
-        )}
+        ) : null}
         <p className={cn("whitespace-pre-wrap text-sm leading-6", isUser ? "text-[#1f2421]" : "text-white/82")}>
           {entry.text}
         </p>
@@ -538,30 +519,21 @@ function LiveAssistantCard({ liveAssistant }: { liveAssistant: LiveAssistantBubb
         : "Completed";
   return (
     <div className="flex justify-start">
-      <div className="max-w-[88%] rounded-[1.35rem] border border-[rgba(214,255,100,0.14)] bg-[linear-gradient(180deg,rgba(29,31,35,0.96),rgba(24,26,30,0.92))] px-5 py-4 text-white shadow-[0_30px_52px_-38px_rgba(0,0,0,0.7)] backdrop-blur-xl">
-        <div className="mb-3 flex items-start gap-3">
-          <span className="inline-flex size-9 shrink-0 items-center justify-center rounded-full bg-[#d6ff64]/14 text-[#d6ff64]">
+      <div className="max-w-[84%] rounded-[1.05rem] border border-[rgba(214,255,100,0.12)] bg-[linear-gradient(180deg,rgba(29,31,35,0.96),rgba(24,26,30,0.92))] px-4 py-3 text-white shadow-[0_22px_40px_-32px_rgba(0,0,0,0.55)] backdrop-blur-xl">
+        <div className="mb-2 flex items-center justify-between gap-3">
+          <div className="inline-flex items-center gap-2 text-[0.66rem] font-bold uppercase tracking-[0.18em] text-[#d6ff64]">
             {liveAssistant.state === "failed" ? (
-              <AlertCircle className="size-4" />
+              <AlertCircle className="size-3.5" />
             ) : liveAssistant.state === "streaming" ? (
-              <LoaderCircle className="size-4 animate-spin" />
+              <LoaderCircle className="size-3.5 animate-spin" />
             ) : (
-              <CheckCircle2 className="size-4" />
+              <CheckCircle2 className="size-3.5" />
             )}
-          </span>
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center justify-between gap-3">
-              <span className="text-[0.68rem] font-bold uppercase tracking-[0.22em] text-[#d6ff64]">
-                Command Acknowledged
-              </span>
-              <span className="text-[0.62rem] font-black uppercase tracking-[0.18em] text-[#d6ff64]/90">
-                {statusText}
-              </span>
-            </div>
-            <div className="mt-1 text-[0.72rem] font-medium uppercase tracking-[0.14em] text-white/42">
-              Live assistant stream
-            </div>
+            <span>{statusText}</span>
           </div>
+          <span className="text-[0.62rem] font-black uppercase tracking-[0.18em] text-[#d6ff64]/88">
+            Live
+          </span>
         </div>
         <p className="whitespace-pre-wrap text-sm leading-6 text-white/82">
           {liveAssistant.text || "..."}
@@ -585,25 +557,25 @@ function TaskEventCard({
       onClick={() => onSelectTask(event.taskId)}
       className="relative w-full text-left"
     >
-      <div className="rounded-[1.35rem] border border-[rgba(214,255,100,0.1)] bg-[linear-gradient(180deg,rgba(29,31,35,0.96),rgba(24,26,30,0.92))] px-5 py-4 text-white shadow-[0_30px_52px_-38px_rgba(0,0,0,0.7)] transition hover:-translate-y-0.5 hover:border-[rgba(214,255,100,0.18)]">
-        <div className="mb-3 flex items-start justify-between gap-3">
-          <div className="flex min-w-0 items-start gap-3">
-            <span className="inline-flex size-9 shrink-0 items-center justify-center rounded-full bg-white/8 text-[#d6ff64]">
+      <div className="rounded-[1.05rem] border border-[rgba(214,255,100,0.1)] bg-[linear-gradient(180deg,rgba(29,31,35,0.96),rgba(24,26,30,0.92))] px-4 py-3 text-white shadow-[0_22px_40px_-32px_rgba(0,0,0,0.55)] transition hover:-translate-y-0.5 hover:border-[rgba(214,255,100,0.18)]">
+        <div className="mb-2 flex items-start justify-between gap-3">
+          <div className="flex min-w-0 items-start gap-2.5">
+            <span className="inline-flex size-8 shrink-0 items-center justify-center rounded-full bg-white/8 text-[#d6ff64]">
               <Icon className={cn("size-4", event.status === "running" && "animate-spin")} />
             </span>
             <div className="min-w-0">
-              <div className="text-[0.68rem] font-bold uppercase tracking-[0.22em] text-white/40">
+              <div className="text-[0.62rem] font-bold uppercase tracking-[0.18em] text-white/40">
                 Task update
               </div>
-              <h3 className="mt-1 text-sm font-semibold tracking-tight text-white">{event.title}</h3>
+              <h3 className="mt-0.5 text-sm font-semibold tracking-tight text-white">{event.title}</h3>
             </div>
           </div>
           <span className="rounded-full bg-[#d6ff64]/10 px-2.5 py-1 text-[0.6rem] font-black uppercase tracking-[0.18em] text-[#d6ff64]">
             {event.label}
           </span>
         </div>
-        <p className="text-sm leading-6 text-slate-300">{event.summary}</p>
-        <div className="mt-4 inline-flex items-center gap-1.5 text-[0.68rem] font-bold uppercase tracking-[0.18em] text-white/42">
+        <p className="text-sm leading-5 text-slate-300">{event.summary}</p>
+        <div className="mt-3 inline-flex items-center gap-1.5 text-[0.64rem] font-bold uppercase tracking-[0.18em] text-white/42">
           <span>Open in workbench</span>
           <ArrowRight className="size-4" />
         </div>
@@ -622,13 +594,13 @@ function StarterPromptButton({
   return (
     <button
       type="button"
-      className="flex w-full items-center gap-3 rounded-[1.15rem] border border-white/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(248,247,245,0.82))] px-4 py-4 text-left text-sm text-[#202622] shadow-[0_22px_36px_-30px_rgba(15,23,42,0.22),inset_0_1px_0_rgba(255,255,255,0.88)] transition hover:-translate-y-0.5 hover:border-[#d6ff64]/50 hover:bg-white"
+      className="flex w-full items-center gap-2.5 rounded-[1rem] border border-white/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(248,247,245,0.82))] px-3.5 py-3 text-left text-sm text-[#202622] shadow-[0_18px_30px_-28px_rgba(15,23,42,0.18),inset_0_1px_0_rgba(255,255,255,0.88)] transition hover:-translate-y-0.5 hover:border-[#d6ff64]/50 hover:bg-white"
       onClick={() => onSelect(prompt)}
     >
-      <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#d6ff64]/20 text-[#5b7300]">
-        <WandSparkles className="size-4" />
+      <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#d6ff64]/20 text-[#5b7300]">
+        <WandSparkles className="size-3.5" />
       </span>
-      <span className="flex-1">{prompt}</span>
+      <span className="flex-1 leading-5">{prompt}</span>
       <ChevronsRight className="size-4 text-muted-foreground" />
     </button>
   );
