@@ -9,6 +9,7 @@ synopse.egg-info/
 src/*.egg-info/
 .codex
 src/synapse/ui/node_modules/
+src/synapse/ui/.vercel/
 src/synapse/ui/.vite/
 src/synapse/ui/dist/
 src/synapse/ui/*.tsbuildinfo

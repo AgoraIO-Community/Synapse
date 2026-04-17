@@ -118,4 +118,8 @@ Short log of important design decisions and changes for Synapse.
 - Added a generic focused-bundle correction layer so short follow-up fixes like `it should be X`, `to X`, `from X`, and `X instead of Y` resolve against structured bundle slots, ask on ambiguity, and replace the whole bundle only when the correction is explicit enough.
 - Shifted correction/current-work interpretation back toward the LLM by exposing focused bundle state in prompt context and using only a small post-tool grounding fallback in runtime instead of expanding local English heuristic parsing.
 - Stopped rewriting the execution-mode blackboard projection when only `elapsed_seconds` changes, so `bb.execution_mode.updated` and `exec.task.classified` now fire on semantic mode transitions instead of spamming repeated `managed` updates.
--
+
+## 2026-04-17
+
+- Added configurable frontend transport base support through `VITE_API_BASE_URL`, plus backend `SYNAPSE_CORS_ALLOWED_ORIGINS`, so the main UI under `src/synapse/ui/` can be deployed on a separate public origin such as Vercel while keeping local same-origin behavior as the default.
+- Added a first-party GitHub Actions Vercel deployment workflow for `src/synapse/ui/`, with pull-request previews and production deploys from `main`.

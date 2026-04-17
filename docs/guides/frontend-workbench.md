@@ -71,6 +71,11 @@ State ownership:
 The websocket remains the primary transport for user message submission and task
 control commands.
 
+By default, the browser client talks to those routes on the current origin so
+local Vite proxying and same-origin backend hosting keep working. Separate UI
+deployments can set `VITE_API_BASE_URL` to a public backend base URL instead,
+and that URL must support both HTTPS requests and secure websocket upgrades.
+
 ## Component and Styling Direction
 
 The component vocabulary should stay aligned with shadcn-style primitives and
