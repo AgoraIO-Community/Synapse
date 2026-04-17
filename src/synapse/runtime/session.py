@@ -5,7 +5,9 @@ from dataclasses import replace
 from dataclasses import dataclass, field
 
 from synapse.blackboard import InMemoryBlackboard
-from synapse.communication import CommunicationBrain, InMemoryConversationHistory
+from synapse.communication import CommunicationBrain
+from synapse.communication.persona_pool import PersonaAssigner
+from synapse.communication.history import InMemoryConversationHistory
 from synapse.communication.model import CommunicationModel, LlmTraceRecord, ToolCallRecord
 from synapse.communication.tools import build_default_tool_registry
 from synapse.communication.types import CommunicationTurnResult
@@ -227,8 +229,10 @@ class SessionRuntime:
         )
 
     def schedule_execution(self) -> None:
-        if self._execution_task is not None and not self._execution_task.done():
-            return
+        # Always spawn a new execution loop for pending runnable tasks.
+        # Old loops that are blocked on a running executor will finish
+        # on their own; the reconcile loop's claim mechanism prevents
+        # double-execution of the same task.
         self._execution_task = asyncio.create_task(self._run_execution_loop())
 
     async def apply_command(self, command: TaskCommand) -> list[str]:
@@ -392,12 +396,9 @@ class SessionRuntime:
                 )
 
     async def _run_execution_loop(self) -> None:
-        try:
-            with bind_diagnostic_context(conversation_id=self.session_id):
-                while await self._has_runnable_tasks():
-                    await self.execution_brain.tick()
-        finally:
-            self._execution_task = None
+        with bind_diagnostic_context(conversation_id=self.session_id):
+            while await self._has_runnable_tasks():
+                await self.execution_brain.tick()
 
     async def _has_runnable_tasks(self) -> bool:
         tasks = await self.blackboard.list_tasks()
@@ -712,10 +713,12 @@ def create_session_runtime(
         if settings.acpx_executor_enabled
         else "codex" if settings.codex_executor_enabled else "mock"
     )
+    persona_assigner = PersonaAssigner()
     tool_registry = build_default_tool_registry(
         blackboard,
         executor_types=registry.list_executor_types(),
         default_executor_type=default_executor_type,
+        persona_assigner=persona_assigner,
     )
     communication_brain = CommunicationBrain(
         blackboard,
