@@ -1706,7 +1706,7 @@ export default function App() {
                           Start with a clear instruction.
                         </h3>
                         <p className="mx-auto mt-4 max-w-[32rem] text-[1rem] leading-7 text-[#5e6761]">
-                          Ask Synapse to plan, draft, review, summarize, or execute. The workbench
+                          Ask NewBro to plan, draft, review, summarize, or execute. The workbench
                           will light up as soon as the execution brain opens tasks.
                         </p>
                       </div>

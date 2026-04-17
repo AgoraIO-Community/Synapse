@@ -5,7 +5,7 @@ export function NotFound() {
     <div className="flex min-h-screen items-center justify-center bg-[hsl(var(--background))] p-6">
       <div className="max-w-md space-y-4 rounded-3xl border border-border/60 bg-card p-8 shadow-xl">
         <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-          Synapse UI
+          NewBro UI
         </p>
         <h1 className="font-serif text-3xl text-foreground">Page not found.</h1>
         <p className="text-sm text-muted-foreground">

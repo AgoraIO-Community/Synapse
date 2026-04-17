@@ -8,11 +8,11 @@ export const Route = createRootRoute({
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Synapse Workbench" },
+      { title: "NewBro Workbench" },
       {
         name: "description",
         content:
-          "Chat-first workbench for the Synapse communication-brain and execution-brain runtime.",
+          "Chat-first workbench for the NewBro communication-brain and execution-brain runtime.",
       },
     ],
     links: [
