@@ -1414,20 +1414,12 @@ export default function App() {
                   </div>
                 </div>
               ) : (
-                <div data-testid="workbench-queue-stack" className="relative pb-2 pt-5">
-                  {tasks.slice(0, 3).map((task, index) => {
+                <div data-testid="workbench-queue-stack" className="space-y-3">
+                  {[...tasks].reverse().map((task) => {
                     const detail = getTaskResultDetail(task.task_id, summaryByTaskId, latestRunByTaskId);
                     const selected = selectedTaskId === task.task_id;
                     return (
-                      <div
-                        key={task.task_id}
-                        className={cn(
-                          "origin-top transition-transform",
-                          index === 0 && "relative z-30",
-                          index === 1 && "relative z-20 -translate-y-4 scale-[0.985] opacity-94",
-                          index === 2 && "relative z-10 -translate-y-8 scale-[0.968] opacity-82",
-                        )}
-                      >
+                      <div key={task.task_id}>
                         <QueueCard
                           task={task}
                           detail={detail}
@@ -1440,13 +1432,6 @@ export default function App() {
                       </div>
                     );
                   })}
-                  {tasks.length > 3 ? (
-                    <div className="mt-[-1rem] flex justify-end">
-                      <span className="rounded-full bg-white/72 px-3 py-1 text-[0.62rem] font-black uppercase tracking-[0.18em] text-[#6f786f] shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]">
-                        +{tasks.length - 3} more
-                      </span>
-                    </div>
-                  ) : null}
                 </div>
               )}
             </section>
