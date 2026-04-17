@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import React from "react";
 import App from "../App";
 import type { ConversationSnapshot, SessionResponse, SessionStreamEvent, SessionSnapshot } from "../types";
@@ -89,6 +89,8 @@ describe("App shell", () => {
     expect(await screen.findByRole("heading", { name: "Workbench" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Active Tasks" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Debug" })).toBeInTheDocument();
+    expect(screen.queryByText("Execution visibility")).not.toBeInTheDocument();
+    expect(screen.getByTestId("workbench-queue-stack")).toBeInTheDocument();
   });
 
   it("renders the atmospheric split shell scaffolding around the conversation and workbench panes", async () => {
@@ -172,6 +174,68 @@ describe("App shell", () => {
     expect(await screen.findByText("Task update")).toBeInTheDocument();
     expect(screen.getAllByText("Draft release note").length).toBeGreaterThan(0);
     expect(screen.getAllByText("The release note is ready for review.").length).toBeGreaterThan(0);
+  });
+
+  it("anchors completed task updates after the assistant message that affected the task", async () => {
+    renderApp();
+
+    await waitFor(() => expect(streamState.handlers).not.toBeNull());
+
+    await act(async () => {
+      emit({
+        type: "assistant_response_completed",
+        sequence: 1,
+        request_id: "req-1",
+        message_id: "msg-assistant-2",
+        reply_text: "I created the reminder for you.",
+        conversational_act: "inform",
+        affected_task_ids: ["task-2"],
+      });
+
+      emit({
+        type: "snapshot",
+        sequence: 2,
+        snapshot: makeSnapshot({
+          tasks: [
+            {
+              task_id: "task-2",
+              root_task_id: "task-2",
+              parent_task_id: null,
+              title: "Reminder: check status in 5 minutes",
+              goal: "Create a simulated reminder",
+              status: "completed",
+              priority: 1,
+              interruptible: true,
+              requires_confirmation: false,
+              preferred_executor: "mock",
+              session_affinity: null,
+              task_revision: 1,
+              latest_instruction: "Create the reminder",
+              metadata: {},
+            },
+          ],
+          summaries: [
+            {
+              task_id: "task-2",
+              operational_summary: "Reminder created.",
+              conversational_summary: "Completed: Reminder: check status in 5 minutes",
+              latest_user_visible_status: "Completed",
+              needs_user_input: false,
+            },
+          ],
+        }),
+      });
+    });
+
+    const assistantMessage = await screen.findByText("I created the reminder for you.");
+    const taskUpdateCard = await screen.findByText("Task update");
+    const taskUpdate = within(taskUpdateCard.closest("button")!).getByText(
+      "Reminder: check status in 5 minutes",
+    );
+
+    expect(
+      assistantMessage.compareDocumentPosition(taskUpdate) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
   });
 
   it("shows the empty-state starter surface only before the first conversation turn", async () => {

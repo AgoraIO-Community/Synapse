@@ -1,4 +1,5 @@
 import {
+  Fragment,
   startTransition,
   useEffect,
   useMemo,
@@ -108,6 +109,8 @@ type ConversationTaskEvent = {
   tone: "success" | "warning" | "destructive" | "default";
   status: Task["status"];
 };
+
+type TaskEventAnchorMap = Record<string, string>;
 
 const STARTER_PROMPTS = [
   "Draft a clear release note for the current sprint.",
@@ -620,39 +623,42 @@ function QueueCard({
   const progress = statusProgress(task.status);
   return (
     <button type="button" className="w-full text-left" onClick={onSelect}>
-      <Card
+      <div
         className={cn(
-          "queue-card border-white/70 bg-white/70 transition hover:-translate-y-0.5 hover:bg-white",
-          selected && "ring-2 ring-primary/30",
+          "rounded-[1.1rem] border border-[rgba(214,255,100,0.1)] bg-[linear-gradient(180deg,rgba(29,31,35,0.96),rgba(24,26,30,0.92))] px-4 py-4 text-white shadow-[0_22px_40px_-30px_rgba(0,0,0,0.55)] transition hover:-translate-y-0.5 hover:border-[rgba(214,255,100,0.18)]",
+          selected && "ring-1 ring-[#d7ff1f]/35",
         )}
       >
-        <CardContent className="space-y-4 p-4">
-          <div className="flex items-start justify-between gap-3">
-            <div className="space-y-1">
-              <div className="queue-card-kicker">
-                <Workflow className="size-3.5" />
-                <span>{task.preferred_executor ?? "executor:auto"}</span>
-                <span className="queue-card-dot" />
-                <span>rev {task.task_revision}</span>
-              </div>
-              <h4 className="font-medium text-foreground">{task.title}</h4>
-              <p className="text-sm text-muted-foreground">{task.goal}</p>
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 space-y-1">
+            <div className="flex items-center gap-2 text-[0.62rem] font-bold uppercase tracking-[0.18em] text-white/40">
+              <Workflow className="size-3.5 text-[#d7ff1f]" />
+              <span>{task.preferred_executor ?? "executor:auto"}</span>
+              <span className="h-1 w-1 rounded-full bg-white/25" />
+              <span>rev {task.task_revision}</span>
             </div>
-            <Badge variant={taskStatusVariant(task.status)}>{statusLabel(task.status)}</Badge>
+            <h4 className="text-sm font-semibold text-white">{task.title}</h4>
+            <p className="line-clamp-2 text-sm leading-5 text-slate-300">{task.goal}</p>
           </div>
+          <span className="rounded-full bg-[#d7ff1f]/10 px-2.5 py-1 text-[0.6rem] font-black uppercase tracking-[0.18em] text-[#d7ff1f]">
+            {statusLabel(task.status)}
+          </span>
+        </div>
 
-          <div className="queue-progress">
-            <div className="queue-progress-track">
-              <div className="queue-progress-fill" style={{ width: `${progress}%` }} />
-            </div>
-            <span className="queue-progress-value">{progress}%</span>
+        <div className="mt-4 flex items-center gap-3">
+          <div className="h-1.5 flex-1 rounded-full bg-white/8 overflow-hidden">
+            <div
+              className="h-full rounded-full bg-[#d7ff1f] shadow-[0_0_12px_rgba(215,255,31,0.35)]"
+              style={{ width: `${progress}%` }}
+            />
           </div>
+          <span className="text-[0.68rem] font-bold text-[#d7ff1f]">{progress}%</span>
+        </div>
 
-          <div className="rounded-2xl bg-muted/70 p-3 text-sm text-muted-foreground">
-            {summarizeTaskResultForCard(detail)}
-          </div>
-        </CardContent>
-      </Card>
+        <div className="mt-4 rounded-[0.95rem] bg-white/5 px-3 py-3 text-sm leading-5 text-slate-300">
+          {summarizeTaskResultForCard(detail)}
+        </div>
+      </div>
     </button>
   );
 }
@@ -712,6 +718,7 @@ export default function App() {
     useState<AssistantResponseCompletedStreamEvent | null>(null);
   const [liveAssistant, setLiveAssistant] = useState<LiveAssistantBubble | null>(null);
   const [lastCommandStatus, setLastCommandStatus] = useState<string | null>(null);
+  const [taskEventAnchors, setTaskEventAnchors] = useState<TaskEventAnchorMap>({});
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [taskSelectionPinned, setTaskSelectionPinned] = useState(false);
   const [selectedExecutionSessionId, setSelectedExecutionSessionId] = useState<string | null>(null);
@@ -719,6 +726,7 @@ export default function App() {
   const [pendingCommand, setPendingCommand] = useState<string | null>(null);
   const [mobileWorkbenchOpen, setMobileWorkbenchOpen] = useState(false);
   const socketRef = useRef<WebSocket | null>(null);
+  const conversationViewportRef = useRef<HTMLDivElement | null>(null);
   const latestSnapshotRef = useRef<SessionSnapshot | null>(null);
   const latestDiagnosticSequenceRef = useRef(0);
   const refreshDiagnosticsRef = useRef<(() => Promise<void>) | null>(null);
@@ -766,6 +774,7 @@ export default function App() {
     }
     setDiagnosticEvents([]);
     latestDiagnosticSequenceRef.current = 0;
+    setTaskEventAnchors({});
   }, [sessionId]);
 
   useEffect(() => {
@@ -1020,6 +1029,15 @@ export default function App() {
 
         if (event.type === "assistant_response_completed") {
           setLastAssistantResponse(event);
+          if (event.affected_task_ids.length > 0) {
+            setTaskEventAnchors((current) => {
+              const next = { ...current };
+              for (const taskId of event.affected_task_ids) {
+                next[taskId] = event.message_id;
+              }
+              return next;
+            });
+          }
           setConversationSnapshot((current) => {
             if (!current) {
               return current;
@@ -1163,6 +1181,23 @@ export default function App() {
   const conversationTaskEvents = useMemo(
     () => buildConversationTaskEvents(snapshot, summaryByTaskId, latestRunByTaskId),
     [snapshot, summaryByTaskId, latestRunByTaskId],
+  );
+  const anchoredTaskEventsByMessageId = useMemo(() => {
+    const grouped = new Map<string, ConversationTaskEvent[]>();
+    for (const event of conversationTaskEvents) {
+      const messageId = taskEventAnchors[event.taskId];
+      if (!messageId) {
+        continue;
+      }
+      const current = grouped.get(messageId) ?? [];
+      current.push(event);
+      grouped.set(messageId, current);
+    }
+    return grouped;
+  }, [conversationTaskEvents, taskEventAnchors]);
+  const unanchoredConversationTaskEvents = useMemo(
+    () => conversationTaskEvents.filter((event) => !taskEventAnchors[event.taskId]),
+    [conversationTaskEvents, taskEventAnchors],
   );
 
   const selectedTask = snapshot?.tasks.find((task) => task.task_id === selectedTaskId) ?? null;
@@ -1321,305 +1356,277 @@ export default function App() {
   );
 
   const workbench = (
-    <Card className="h-full overflow-hidden flex flex-col">
-      <CardHeader className="gap-4 border-b border-border/60 bg-white/60 pb-5">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <div className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-              <Sparkles className="size-3.5" />
-              <span>Execution visibility</span>
-            </div>
-            <CardTitle className="text-2xl">Workbench</CardTitle>
-            <CardDescription>
-              Task queue first. Execution and diagnostics stay available behind Debug.
-            </CardDescription>
-          </div>
-          <Badge variant="secondary">{tasks.length} tracked</Badge>
+    <Tabs defaultValue="overview" className="flex h-full min-h-0 flex-col overflow-hidden">
+      <div className="mb-3 shrink-0 flex items-start justify-between gap-3">
+        <div>
+          <h2 className="font-['Noto_Sans_SC','Noto_Sans','Geist_Variable',sans-serif] text-[2rem] font-bold tracking-[-0.05em] text-[#1f2521]">
+            Workbench
+          </h2>
+          <p className="mt-1 max-w-[22rem] text-sm leading-6 text-[#5f6863]">
+            Task queue first. Execution and diagnostics stay available behind Debug.
+          </p>
         </div>
-        <div className="workbench-summary-grid">
-          <div className="workbench-summary-card">
-            <span className="workbench-summary-label">Active</span>
-            <strong>{activeTasks.length}</strong>
-          </div>
-          <div className="workbench-summary-card">
-            <span className="workbench-summary-label">Waiting</span>
-            <strong>{blockedTasks.length}</strong>
-          </div>
-          <div className="workbench-summary-card">
-            <span className="workbench-summary-label">Done</span>
-            <strong>{completedTasks.length}</strong>
-          </div>
+        <span className="rounded-full bg-white/72 px-3 py-1 text-[0.68rem] font-black uppercase tracking-[0.18em] text-[#6f786f] shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]">
+          {tasks.length} tracked
+        </span>
+      </div>
+
+      <div className="mb-3 shrink-0 grid grid-cols-3 gap-3">
+        <div className="relative rounded-[1.15rem] border border-[rgba(214,255,100,0.1)] bg-[linear-gradient(180deg,rgba(29,31,35,0.96),rgba(24,26,30,0.92))] px-4 py-4 text-white shadow-[0_22px_40px_-30px_rgba(0,0,0,0.55)] transition hover:-translate-y-1 hover:border-[rgba(214,255,100,0.16)]">
+          <div className="pointer-events-none absolute inset-x-4 top-0 h-px bg-[linear-gradient(90deg,rgba(255,255,255,0),rgba(214,255,100,0.45),rgba(255,255,255,0))]" />
+          <div className="text-[0.62rem] font-bold uppercase tracking-[0.2em] text-white/38">Active</div>
+          <div className="mt-2 text-3xl font-black tracking-[-0.06em] text-white">{activeTasks.length}</div>
         </div>
-      </CardHeader>
-      <CardContent className="flex flex-1 min-h-0 flex-col p-0">
-        <Tabs defaultValue="overview" className="flex h-full min-h-0 flex-col">
-          <div className="border-b border-border/60 px-6 py-4">
-            <TabsList>
-              <TabsTrigger value="overview">Overview</TabsTrigger>
-              <TabsTrigger value="debug">Debug</TabsTrigger>
-            </TabsList>
-          </div>
-          <TabsContent value="overview" className="mt-0 flex-1 min-h-0 overflow-hidden">
-            <ScrollArea className="h-full">
-              <div className="space-y-6 p-6">
-                <section className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <h3 className="font-serif text-xl text-foreground">Active Tasks</h3>
-                    <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
-                      Queue
+        <div className="relative translate-y-2 rounded-[1.15rem] border border-[rgba(214,255,100,0.1)] bg-[linear-gradient(180deg,rgba(29,31,35,0.96),rgba(24,26,30,0.92))] px-4 py-4 text-white shadow-[0_22px_40px_-30px_rgba(0,0,0,0.55)] transition hover:-translate-y-0 hover:border-[rgba(214,255,100,0.16)]">
+          <div className="pointer-events-none absolute inset-x-4 top-0 h-px bg-[linear-gradient(90deg,rgba(255,255,255,0),rgba(255,255,255,0.24),rgba(255,255,255,0))]" />
+          <div className="text-[0.62rem] font-bold uppercase tracking-[0.2em] text-white/38">Waiting</div>
+          <div className="mt-2 text-3xl font-black tracking-[-0.06em] text-white">{blockedTasks.length}</div>
+        </div>
+        <div className="relative -translate-y-1 rounded-[1.15rem] border border-[rgba(214,255,100,0.14)] bg-[linear-gradient(180deg,rgba(29,31,35,0.96),rgba(24,26,30,0.92))] px-4 py-4 text-white shadow-[0_22px_40px_-30px_rgba(0,0,0,0.55)] transition hover:-translate-y-2 hover:border-[rgba(214,255,100,0.2)]">
+          <div className="pointer-events-none absolute inset-x-4 top-0 h-px bg-[linear-gradient(90deg,rgba(255,255,255,0),rgba(214,255,100,0.55),rgba(255,255,255,0))]" />
+          <div className="text-[0.62rem] font-bold uppercase tracking-[0.2em] text-[#d7ff1f]">Done</div>
+          <div className="mt-2 text-3xl font-black tracking-[-0.06em] text-white">{completedTasks.length}</div>
+        </div>
+      </div>
+
+      <div className="mb-3 shrink-0">
+        <TabsList className="bg-white/68 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]">
+          <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="debug">Debug</TabsTrigger>
+        </TabsList>
+      </div>
+
+      <TabsContent value="overview" className="mt-0 flex-1 min-h-0 overflow-hidden">
+        <ScrollArea className="h-full min-h-0 pr-2">
+          <div className="space-y-5 pb-10">
+            <section className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-bold tracking-tight text-[#212723]">Active Tasks</h3>
+                <p className="text-[0.65rem] font-bold uppercase tracking-[0.18em] text-[#6d766f]">Queue</p>
+              </div>
+              {tasks.length === 0 ? (
+                <div
+                  data-testid="workbench-queue-stack"
+                  className="relative pt-5"
+                >
+                  <div className="absolute inset-x-4 top-0 h-full rounded-[1.15rem] border border-white/5 bg-[linear-gradient(180deg,rgba(25,27,31,0.48),rgba(20,22,26,0.42))]" />
+                  <div className="absolute inset-x-2 top-2 h-full rounded-[1.15rem] border border-white/6 bg-[linear-gradient(180deg,rgba(27,29,33,0.62),rgba(22,24,28,0.56))]" />
+                  <div className="relative rounded-[1.15rem] border border-[rgba(214,255,100,0.1)] bg-[linear-gradient(180deg,rgba(29,31,35,0.96),rgba(24,26,30,0.92))] px-4 py-4 text-white shadow-[0_22px_40px_-30px_rgba(0,0,0,0.55)]">
+                    <div className="text-[0.62rem] font-bold uppercase tracking-[0.18em] text-[#d7ff1f]">Idle</div>
+                    <h4 className="mt-2 text-sm font-semibold text-white">No active tasks yet.</h4>
+                    <p className="mt-1 text-sm leading-5 text-slate-300">
+                      The execution brain has not opened any tasks yet.
                     </p>
                   </div>
-                  {tasks.length === 0 ? (
-                    <Card className="border-dashed border-border/80 bg-white/55">
-                      <CardContent className="p-4 text-sm text-muted-foreground workbench-empty">
-                        <div className="workbench-empty-kicker">Idle</div>
-                        <h4 className="workbench-empty-title">No active tasks yet.</h4>
-                        <p>The execution brain has not opened any tasks yet.</p>
-                      </CardContent>
-                    </Card>
-                  ) : (
-                    <div className="space-y-3">
-                      {tasks.map((task) => {
-                        const detail = getTaskResultDetail(task.task_id, summaryByTaskId, latestRunByTaskId);
-                        const selected = selectedTaskId === task.task_id;
-                        return (
-                          <QueueCard
-                            key={task.task_id}
-                            task={task}
-                            detail={detail}
-                            selected={selected}
-                            onSelect={() => {
-                              setSelectedTaskId(task.task_id);
-                              setTaskSelectionPinned(true);
-                            }}
-                          />
-                        );
-                      })}
+                </div>
+              ) : (
+                <div data-testid="workbench-queue-stack" className="relative pb-2 pt-5">
+                  {tasks.map((task, index) => {
+                    const detail = getTaskResultDetail(task.task_id, summaryByTaskId, latestRunByTaskId);
+                    const selected = selectedTaskId === task.task_id;
+                    return (
+                      <div
+                        key={task.task_id}
+                        className={cn(
+                          "origin-top transition-transform",
+                          index === 0 && "relative z-30",
+                          index === 1 && "relative z-20 -translate-y-2.5 scale-[0.985] opacity-94",
+                          index >= 2 && "relative z-10 -translate-y-5 scale-[0.972] opacity-84",
+                        )}
+                      >
+                        <QueueCard
+                          task={task}
+                          detail={detail}
+                          selected={selected}
+                          onSelect={() => {
+                            setSelectedTaskId(task.task_id);
+                            setTaskSelectionPinned(true);
+                          }}
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
+
+            <section className="space-y-3 pb-2">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-lg font-bold tracking-tight text-[#212723]">Task Detail</h3>
+                  <p className="mt-1 text-sm text-[#6d766f]">
+                    {selectedTask
+                      ? "Focused task for execution status and controls."
+                      : "Choose a task from the queue to inspect execution detail."}
+                  </p>
+                </div>
+              </div>
+              {selectedTask ? (
+                <div className="relative rounded-[1.15rem] border border-[rgba(214,255,100,0.1)] bg-[linear-gradient(180deg,rgba(29,31,35,0.96),rgba(24,26,30,0.92))] px-4 py-4 text-white shadow-[0_24px_42px_-32px_rgba(0,0,0,0.55)]">
+                  <div className="pointer-events-none absolute right-4 top-4 size-16 rounded-full bg-[radial-gradient(circle,rgba(214,255,100,0.16),rgba(214,255,100,0)_70%)]" />
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="rounded-full bg-[#d7ff1f]/10 px-2.5 py-1 text-[0.6rem] font-black uppercase tracking-[0.18em] text-[#d7ff1f]">
+                      {statusLabel(selectedTask.status)}
+                    </span>
+                    <span className="rounded-full bg-white/8 px-2.5 py-1 text-[0.6rem] font-bold uppercase tracking-[0.16em] text-white/55">
+                      Rev {selectedTask.task_revision}
+                    </span>
+                    <span className="rounded-full bg-white/8 px-2.5 py-1 text-[0.6rem] font-bold uppercase tracking-[0.16em] text-white/55">
+                      {selectedTask.preferred_executor ?? "executor:auto"}
+                    </span>
+                  </div>
+                  <h4 className="mt-3 text-lg font-bold tracking-tight text-white">{selectedTask.title}</h4>
+                  <p className="mt-2 text-sm leading-5 text-slate-300">{selectedTask.goal}</p>
+
+                  <div className="mt-3 grid gap-3 md:grid-cols-2">
+                    <div className="rounded-[0.95rem] bg-white/5 px-4 py-3">
+                      <p className="text-[0.62rem] font-bold uppercase tracking-[0.18em] text-white/42">
+                        Latest result
+                      </p>
+                      <p className="mt-2 text-sm leading-5 text-slate-300">
+                        {selectedTaskResult?.fullText ?? "No result yet."}
+                      </p>
                     </div>
-                  )}
-                </section>
-
-                <Separator />
-
-                <section className="space-y-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <h3 className="font-serif text-xl text-foreground">Task Detail</h3>
-                      <p className="text-sm text-muted-foreground">
-                        {selectedTask
-                          ? "Focused task for execution status and controls."
-                          : "Choose a task from the queue to inspect execution detail."}
+                    <div className="rounded-[0.95rem] bg-white/5 px-4 py-3">
+                      <p className="text-[0.62rem] font-bold uppercase tracking-[0.18em] text-white/42">
+                        Latest instruction
+                      </p>
+                      <p className="mt-2 text-sm leading-5 text-slate-300">
+                        {selectedTask.latest_instruction ?? "n/a"}
                       </p>
                     </div>
                   </div>
-                  {selectedTask ? (
-                    <Card className="border-white/75 bg-white/80">
-                      <CardContent className="space-y-5 p-5">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <Badge variant={taskStatusVariant(selectedTask.status)}>
-                            {statusLabel(selectedTask.status)}
-                          </Badge>
-                          <Badge variant="secondary">Rev {selectedTask.task_revision}</Badge>
-                          <Badge variant="secondary">
-                            {selectedTask.preferred_executor ?? "executor:auto"}
-                          </Badge>
-                        </div>
-                        <div className="space-y-2">
-                          <div className="detail-kicker">
-                            <Activity className="size-3.5" />
-                            <span>Selected task</span>
-                          </div>
-                          <h4 className="font-serif text-2xl">{selectedTask.title}</h4>
-                          <p className="text-sm text-muted-foreground">{selectedTask.goal}</p>
-                        </div>
-                        <div className="task-fact-grid">
-                          <TaskFact label="Status" value={statusLabel(selectedTask.status)} />
-                          <TaskFact label="Revision" value={String(selectedTask.task_revision)} />
-                          <TaskFact
-                            label="Executor"
-                            value={selectedTask.preferred_executor ?? "auto"}
-                          />
-                          <TaskFact
-                            label="Task"
-                            value={selectedTask.task_id.replace(/^task-/, "").slice(0, 8) || selectedTask.task_id}
-                          />
-                        </div>
-                        <div className="grid gap-3 md:grid-cols-2">
-                          <div className="rounded-2xl bg-muted/70 p-4">
-                            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-                              Latest result
-                            </p>
-                            <p className="mt-2 text-sm leading-6 text-foreground">
-                              {selectedTaskResult?.fullText ?? "No result yet."}
-                            </p>
-                          </div>
-                          <div className="rounded-2xl bg-muted/70 p-4">
-                            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-                              Latest instruction
-                            </p>
-                            <p className="mt-2 text-sm leading-6 text-foreground">
-                              {selectedTask.latest_instruction ?? "n/a"}
-                            </p>
-                          </div>
-                        </div>
-                        <div className="space-y-2">
-                          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-                            Actions
-                          </p>
-                          <div className="flex flex-wrap gap-2 command-pill-row">
-                          {(["pause_task", "resume_task", "retry_task", "cancel_task"] as TaskCommandType[])
-                            .filter(
-                              (command) =>
-                                canRunCommand(selectedTask, command) ||
-                                pendingCommand === `${selectedTask.task_id}:${command}`,
-                            )
-                            .map((command) => {
-                              const Icon = commandIcon(command);
-                              return (
-                                <Button
-                                  key={command}
-                                  type="button"
-                                  variant={command === "cancel_task" ? "destructive" : "secondary"}
-                                  size="sm"
-                                  disabled={pendingCommand === `${selectedTask.task_id}:${command}`}
-                                  onClick={() => void handleCommand(selectedTask.task_id, command)}
-                                >
-                                  <Icon className="size-3.5" />
-                                  {pendingCommand === `${selectedTask.task_id}:${command}` ? "…" : commandLabel(command)}
-                                </Button>
-                              );
-                            })}
-                          </div>
-                        </div>
-                        {selectedSummary ? (
-                          <div className="rounded-2xl border border-border/60 bg-background/60 p-4 detail-summary-card">
-                            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-                              User-facing summary
-                            </p>
-                            <p className="mt-2 text-sm leading-6 text-foreground">
-                              {selectedSummary.conversational_summary ??
-                                selectedSummary.operational_summary ??
-                                "n/a"}
-                            </p>
-                          </div>
-                        ) : null}
-                      </CardContent>
-                    </Card>
-                  ) : (
-                    <Card className="border-dashed border-border/80 bg-white/55">
-                      <CardContent className="p-4 text-sm text-muted-foreground workbench-empty">
-                        <div className="workbench-empty-kicker">Detail</div>
-                        <h4 className="workbench-empty-title">Pick a task from the queue.</h4>
-                        <p>Select a task to inspect its status, result, and controls.</p>
-                      </CardContent>
-                    </Card>
-                  )}
-                </section>
-              </div>
-            </ScrollArea>
-          </TabsContent>
-          <TabsContent value="debug" className="mt-0 flex-1 min-h-0 overflow-hidden">
-            <ScrollArea className="h-full">
-              <div className="space-y-6 p-6">
-                <DebugFeedSection title="Snapshot Diff" empty="Waiting for snapshot changes.">
-                  {diffItems.length > 0 ? (
-                    <div className="space-y-3">
-                      {diffItems.map((item) => (
-                        <Card key={item.id} className="border-white/70 bg-white/70">
-                          <CardContent className="space-y-2 p-4">
-                            <div className="flex items-center gap-2 text-xs uppercase tracking-[0.18em] text-muted-foreground">
-                              <Badge variant="secondary">{item.entityKind}</Badge>
-                              <span>{item.changeType}</span>
-                            </div>
-                            <p className="text-sm text-foreground">{item.details}</p>
-                            <code className="text-xs text-muted-foreground">{item.entityId}</code>
-                          </CardContent>
-                        </Card>
-                      ))}
-                    </div>
-                  ) : undefined}
-                </DebugFeedSection>
 
-                <DebugFeedSection
-                  title="Execution & diagnostics"
-                  empty="No execution diagnostics have been recorded yet."
-                >
-                  {recentWrites.length > 0 ? (
-                    <div className="space-y-3">
-                      {[...recentWrites].reverse().map((event, index) => (
-                        <Card
-                          key={`${event.sequence}-${index}`}
-                          className="border-white/70 bg-white/70"
-                        >
-                          <CardContent className="space-y-2 p-4">
-                            <div className="flex items-center justify-between gap-3 text-xs uppercase tracking-[0.18em] text-muted-foreground">
-                              <span>{event.event_name}</span>
-                              <span>
-                                {event.task_id ?? event.run_id ?? event.execution_session_id ?? "n/a"}
-                              </span>
-                            </div>
-                            <p className="text-sm text-foreground">{summarizeDiagnosticEvent(event)}</p>
-                            {Object.keys(event.details ?? {}).length ? (
-                              <pre className="overflow-x-auto rounded-2xl bg-muted/70 p-3 text-xs text-muted-foreground">
-                                {formatJson(event.details)}
-                              </pre>
-                            ) : null}
-                          </CardContent>
-                        </Card>
-                      ))}
-                    </div>
-                  ) : undefined}
-                </DebugFeedSection>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {(["pause_task", "resume_task", "retry_task", "cancel_task"] as TaskCommandType[])
+                      .filter(
+                        (command) =>
+                          canRunCommand(selectedTask, command) ||
+                          pendingCommand === `${selectedTask.task_id}:${command}`,
+                      )
+                      .map((command) => {
+                        const Icon = commandIcon(command);
+                        return (
+                          <Button
+                            key={command}
+                            type="button"
+                            variant={command === "cancel_task" ? "destructive" : "secondary"}
+                            size="sm"
+                            disabled={pendingCommand === `${selectedTask.task_id}:${command}`}
+                            onClick={() => void handleCommand(selectedTask.task_id, command)}
+                            className="bg-white/8 text-white shadow-none hover:bg-white/12"
+                          >
+                            <Icon className="size-3.5" />
+                            {pendingCommand === `${selectedTask.task_id}:${command}` ? "…" : commandLabel(command)}
+                          </Button>
+                        );
+                      })}
+                  </div>
 
-                <DebugFeedSection title="Tool calls" empty="No tool calls recorded yet.">
-                  {toolCallHistory.length > 0 ? (
-                    <div className="space-y-3">
-                      {toolCallHistory.map((event) => (
-                        <Card key={event.sequence} className="border-white/70 bg-white/70">
-                          <CardContent className="space-y-2 p-4">
-                            <div className="flex items-center justify-between gap-3 text-xs uppercase tracking-[0.18em] text-muted-foreground">
-                              <span>{event.event_name}</span>
-                              <span>{event.outcome ?? "n/a"}</span>
-                            </div>
-                            <p className="text-sm text-foreground">{event.summary}</p>
-                          </CardContent>
-                        </Card>
-                      ))}
+                  {selectedSummary ? (
+                    <div className="mt-3 rounded-[0.95rem] border border-white/8 bg-white/4 px-4 py-3">
+                      <p className="text-[0.62rem] font-bold uppercase tracking-[0.18em] text-white/42">
+                        User-facing summary
+                      </p>
+                      <p className="mt-2 text-sm leading-5 text-slate-300">
+                        {selectedSummary.conversational_summary ??
+                          selectedSummary.operational_summary ??
+                          "n/a"}
+                      </p>
                     </div>
-                  ) : undefined}
-                </DebugFeedSection>
+                  ) : null}
+                </div>
+              ) : (
+                <div className="rounded-[1.15rem] border border-[rgba(214,255,100,0.1)] bg-[linear-gradient(180deg,rgba(29,31,35,0.96),rgba(24,26,30,0.92))] px-4 py-4 text-white shadow-[0_22px_40px_-30px_rgba(0,0,0,0.55)]">
+                  <div className="text-[0.62rem] font-bold uppercase tracking-[0.18em] text-white/42">Detail</div>
+                  <h4 className="mt-2 text-sm font-semibold text-white">Pick a task from the queue.</h4>
+                  <p className="mt-1 text-sm leading-5 text-slate-300">
+                    Select a task to inspect its status, result, and controls.
+                  </p>
+                </div>
+              )}
+            </section>
+          </div>
+        </ScrollArea>
+      </TabsContent>
 
-                {selectedRun ? (
-                  <DebugFeedSection title="Selected run" empty="No run selected.">
-                    <Card className="border-white/70 bg-white/70">
-                      <CardContent className="space-y-3 p-4">
-                        <div className="flex flex-wrap gap-2">
-                          <Badge variant="secondary">{selectedRun.executor_type}</Badge>
-                          <Badge variant={taskStatusVariant(selectedRun.status as Task["status"])}>
-                            {selectedRun.status}
-                          </Badge>
-                        </div>
-                        <p className="text-sm text-foreground">
-                          {selectedRun.output_summary ??
-                            selectedRun.failure_reason ??
-                            selectedRun.block_reason ??
-                            selectedRun.latest_progress_message ??
-                            "No run summary yet."}
-                        </p>
-                        <pre className="overflow-x-auto rounded-2xl bg-muted/70 p-3 text-xs text-muted-foreground">
-                          {formatJson(selectedRun.metadata)}
-                        </pre>
-                      </CardContent>
-                    </Card>
-                  </DebugFeedSection>
-                ) : null}
-              </div>
-            </ScrollArea>
-          </TabsContent>
-        </Tabs>
-      </CardContent>
-    </Card>
+      <TabsContent value="debug" className="mt-0 flex-1 min-h-0 overflow-hidden">
+        <ScrollArea className="h-full min-h-0 pr-2">
+          <div className="space-y-5 pb-10">
+            <DebugFeedSection title="Snapshot Diff" empty="Waiting for snapshot changes.">
+              {diffItems.length > 0 ? (
+                <div className="space-y-3">
+                  {diffItems.map((item) => (
+                    <div
+                      key={item.id}
+                      className="rounded-[1rem] border border-[rgba(214,255,100,0.08)] bg-[linear-gradient(180deg,rgba(29,31,35,0.96),rgba(24,26,30,0.92))] px-4 py-4 text-white shadow-[0_22px_40px_-30px_rgba(0,0,0,0.55)]"
+                    >
+                      <div className="flex items-center gap-2 text-[0.62rem] font-bold uppercase tracking-[0.18em] text-white/40">
+                        <span>{item.entityKind}</span>
+                        <span>{item.changeType}</span>
+                      </div>
+                      <p className="mt-2 text-sm leading-5 text-slate-300">{item.details}</p>
+                    </div>
+                  ))}
+                </div>
+              ) : undefined}
+            </DebugFeedSection>
+
+            <DebugFeedSection
+              title="Execution & diagnostics"
+              empty="No execution diagnostics have been recorded yet."
+            >
+              {recentWrites.length > 0 ? (
+                <div className="space-y-3">
+                  {[...recentWrites].reverse().map((event, index) => (
+                    <div
+                      key={`${event.sequence}-${index}`}
+                      className="rounded-[1rem] border border-[rgba(214,255,100,0.08)] bg-[linear-gradient(180deg,rgba(29,31,35,0.96),rgba(24,26,30,0.92))] px-4 py-4 text-white shadow-[0_22px_40px_-30px_rgba(0,0,0,0.55)]"
+                    >
+                      <div className="flex items-center justify-between gap-3 text-[0.62rem] font-bold uppercase tracking-[0.18em] text-white/40">
+                        <span>{event.event_name}</span>
+                        <span>{event.task_id ?? event.run_id ?? event.execution_session_id ?? "n/a"}</span>
+                      </div>
+                      <p className="mt-2 text-sm leading-5 text-slate-300">{summarizeDiagnosticEvent(event)}</p>
+                    </div>
+                  ))}
+                </div>
+              ) : undefined}
+            </DebugFeedSection>
+
+            {selectedRun ? (
+              <DebugFeedSection title="Selected run" empty="No run selected.">
+                <div className="rounded-[1rem] border border-[rgba(214,255,100,0.08)] bg-[linear-gradient(180deg,rgba(29,31,35,0.96),rgba(24,26,30,0.92))] px-4 py-4 text-white shadow-[0_22px_40px_-30px_rgba(0,0,0,0.55)]">
+                  <div className="flex flex-wrap gap-2 text-[0.62rem] font-bold uppercase tracking-[0.18em] text-white/40">
+                    <span>{selectedRun.executor_type}</span>
+                    <span>{selectedRun.status}</span>
+                  </div>
+                  <p className="mt-2 text-sm leading-5 text-slate-300">
+                    {selectedRun.output_summary ??
+                      selectedRun.failure_reason ??
+                      selectedRun.block_reason ??
+                      selectedRun.latest_progress_message ??
+                      "No run summary yet."}
+                  </p>
+                </div>
+              </DebugFeedSection>
+            ) : null}
+          </div>
+        </ScrollArea>
+      </TabsContent>
+    </Tabs>
   );
+
+  useEffect(() => {
+    if (isConversationEmpty) {
+      return;
+    }
+    const viewport = conversationViewportRef.current;
+    if (!viewport) {
+      return;
+    }
+    viewport.scrollTo({ top: viewport.scrollHeight, behavior: "smooth" });
+  }, [conversation.length, conversationTaskEvents.length, liveAssistant, isConversationEmpty]);
 
   return (
     <TooltipProvider delayDuration={200}>
@@ -1685,7 +1692,7 @@ export default function App() {
                 </Sheet>
               </div>
 
-              <ScrollArea className="flex-1 pr-1 sm:pr-2">
+              <ScrollArea viewportRef={conversationViewportRef} className="flex-1 pr-1 sm:pr-2">
                 <div
                   className={cn(
                     "mx-auto flex min-h-full w-full max-w-3xl flex-col gap-4 pb-14",
@@ -1722,10 +1729,15 @@ export default function App() {
                   ) : (
                     <>
                       {conversation.map((entry) => (
-                        <MessageBubble key={entry.message_id} entry={entry} />
+                        <Fragment key={entry.message_id}>
+                          <MessageBubble entry={entry} />
+                          {(anchoredTaskEventsByMessageId.get(entry.message_id) ?? []).map((event) => (
+                            <TaskEventCard key={event.id} event={event} onSelectTask={focusTask} />
+                          ))}
+                        </Fragment>
                       ))}
                       {liveAssistant ? <LiveAssistantCard liveAssistant={liveAssistant} /> : null}
-                      {conversationTaskEvents.map((event) => (
+                      {unanchoredConversationTaskEvents.map((event) => (
                         <TaskEventCard key={event.id} event={event} onSelectTask={focusTask} />
                       ))}
                     </>
@@ -1770,16 +1782,16 @@ export default function App() {
               </div>
             </section>
 
-            <div
+            <aside
               data-testid="workspace-right-pane"
-              className="relative hidden h-full min-w-0 overflow-hidden rounded-[32px] border border-white/10 bg-[linear-gradient(180deg,rgba(23,28,26,0.62),rgba(18,22,20,0.76)_46%,rgba(14,16,15,0.84)_100%)] shadow-[0_44px_90px_-52px_rgba(6,10,8,0.8),inset_0_1px_0_rgba(255,255,255,0.08),inset_22px_0_80px_rgba(255,255,255,0.03)] backdrop-blur-[26px] xl:block"
+              className="relative hidden h-full min-w-0 overflow-hidden xl:flex xl:flex-col xl:py-2 xl:pl-3"
             >
               <div
                 aria-hidden="true"
-                className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(231,255,203,0.14),rgba(231,255,203,0)_32%),radial-gradient(circle_at_12%_18%,rgba(255,255,255,0.08),rgba(255,255,255,0)_28%),linear-gradient(90deg,rgba(255,255,255,0.05),rgba(255,255,255,0)_22%,rgba(0,0,0,0)_100%)]"
+                className="pointer-events-none absolute inset-y-0 left-6 right-0 rounded-[2rem] bg-[radial-gradient(circle_at_top_right,rgba(231,255,203,0.08),rgba(231,255,203,0)_28%),radial-gradient(circle_at_0%_18%,rgba(255,255,255,0.08),rgba(255,255,255,0)_22%),linear-gradient(180deg,rgba(20,24,22,0.08),rgba(20,24,22,0.18)_32%,rgba(20,24,22,0.26)_100%)] blur-[1px]"
               />
-              <div className="relative h-full workbench-pane">{workbench}</div>
-            </div>
+              <div className="relative h-full min-h-0">{workbench}</div>
+            </aside>
           </div>
         </div>
       </div>
