@@ -1334,7 +1334,9 @@ export default function App() {
   function focusTask(taskId: string) {
     setSelectedTaskId(taskId);
     setTaskSelectionPinned(true);
-    setMobileWorkbenchOpen(true);
+    if (typeof window !== "undefined" && window.matchMedia("(max-width: 1279px)").matches) {
+      setMobileWorkbenchOpen(true);
+    }
   }
 
   const tasks = snapshot?.tasks ?? [];
@@ -1673,14 +1675,24 @@ export default function App() {
                     </TooltipTrigger>
                     <TooltipContent>Open workbench</TooltipContent>
                   </Tooltip>
-                  <SheetContent side="right" className="p-0">
-                    <SheetHeader className="border-b border-border/60 p-6">
+                  <SheetContent
+                    side="right"
+                    className="border-l border-white/15 bg-[linear-gradient(180deg,rgba(255,248,239,0.96),rgba(236,241,251,0.92))] p-3 sm:p-4"
+                  >
+                    <div className="flex h-full min-h-0 flex-col rounded-[1.75rem] border border-white/55 bg-[linear-gradient(180deg,rgba(255,255,255,0.72),rgba(247,248,250,0.62))] shadow-[0_24px_50px_-34px_rgba(15,23,42,0.28)] backdrop-blur-xl">
+                    <SheetHeader className="border-b border-border/60 px-5 py-5">
                       <SheetTitle>Workbench</SheetTitle>
                       <SheetDescription>
                         Task queue, details, and debug surfaces for the active session.
                       </SheetDescription>
                     </SheetHeader>
-                    <div className="h-[calc(100%-98px)]">{workbench}</div>
+                    <div
+                      data-testid="mobile-workbench-shell"
+                      className="min-h-0 flex-1 px-4 py-4"
+                    >
+                      {workbench}
+                    </div>
+                    </div>
                   </SheetContent>
                 </Sheet>
               </div>

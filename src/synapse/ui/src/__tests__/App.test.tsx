@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import React from "react";
 import App from "../App";
 import type { ConversationSnapshot, SessionResponse, SessionStreamEvent, SessionSnapshot } from "../types";
@@ -65,6 +65,19 @@ describe("App shell", () => {
   beforeEach(() => {
     streamState.handlers = null;
     vi.clearAllMocks();
+    Object.defineProperty(window, "matchMedia", {
+      writable: true,
+      value: vi.fn().mockImplementation((query: string) => ({
+        matches: query.includes("min-width: 1280px"),
+        media: query,
+        onchange: null,
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      })),
+    });
   });
 
   function renderApp() {
@@ -240,6 +253,74 @@ describe("App shell", () => {
     expect(
       assistantMessage.compareDocumentPosition(taskUpdate) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
+  });
+
+  it("does not open the mobile workbench drawer when clicking a task update on desktop", async () => {
+    renderApp();
+
+    await waitFor(() => expect(streamState.handlers).not.toBeNull());
+
+    await act(async () => {
+      emit({
+        type: "snapshot",
+        sequence: 1,
+        snapshot: makeSnapshot({
+          tasks: [
+            {
+              task_id: "task-3",
+              root_task_id: "task-3",
+              parent_task_id: null,
+              title: "Review deployment summary",
+              goal: "Check the deployment summary",
+              status: "completed",
+              priority: 1,
+              interruptible: true,
+              requires_confirmation: false,
+              preferred_executor: null,
+              session_affinity: null,
+              task_revision: 1,
+              latest_instruction: "Review the summary",
+              metadata: {},
+            },
+          ],
+          summaries: [
+            {
+              task_id: "task-3",
+              operational_summary: "Summary reviewed.",
+              conversational_summary: "The deployment summary is ready.",
+              latest_user_visible_status: "Completed",
+              needs_user_input: false,
+            },
+          ],
+        }),
+      });
+    });
+
+    const taskUpdate = await screen.findByText("Task update");
+    fireEvent.click(taskUpdate.closest("button")!);
+
+    expect(
+      screen.queryByText("Task queue, details, and debug surfaces for the active session."),
+    ).not.toBeInTheDocument();
+  });
+
+  it("renders a padded mobile workbench shell when the drawer is opened on mobile", async () => {
+    window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+      matches: query.includes("max-width: 1279px"),
+      media: query,
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })) as typeof window.matchMedia;
+
+    renderApp();
+
+    fireEvent.click(await screen.findByText("Open workbench"));
+
+    expect(await screen.findByTestId("mobile-workbench-shell")).toBeInTheDocument();
   });
 
   it("shows the empty-state starter surface only before the first conversation turn", async () => {
