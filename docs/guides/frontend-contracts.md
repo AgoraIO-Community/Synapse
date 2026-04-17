@@ -16,6 +16,8 @@ Preferred direction:
   - `assistant_response_*` plus request ack/reject events for chat transport
 - do not depend on communication-model tool-call details on the frontend
   websocket; tool activity is internal and debug inspection is log-backed
+- default to same-origin transport locally, but allow a separately deployed UI
+  to target a public backend base URL through `VITE_API_BASE_URL`
 
 User-visible conversation history should contain only:
 

@@ -7,6 +7,8 @@ import type {
   TaskCommandType,
 } from "../types";
 
+const configuredApiBaseUrl = getConfiguredApiBaseUrl();
+
 async function ensureOk(response: Response) {
   if (!response.ok) {
     const text = await response.text();
@@ -15,20 +17,58 @@ async function ensureOk(response: Response) {
   return response;
 }
 
+function getConfiguredApiBaseUrl(): URL | null {
+  const raw = import.meta.env.VITE_API_BASE_URL?.trim();
+  if (!raw) {
+    return null;
+  }
+  return new URL(raw, window.location.origin);
+}
+
+function withTrailingSlash(value: string): string {
+  return value.endsWith("/") ? value : `${value}/`;
+}
+
+function normalizePath(path: string): string {
+  return path.replace(/^\/+/, "");
+}
+
+function buildHttpUrl(path: string): string {
+  if (configuredApiBaseUrl === null) {
+    return path;
+  }
+  return new URL(normalizePath(path), withTrailingSlash(configuredApiBaseUrl.href)).toString();
+}
+
+function buildWebSocketUrl(path: string): string {
+  if (configuredApiBaseUrl === null) {
+    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+    return `${protocol}//${window.location.host}${path}`;
+  }
+
+  const socketUrl = new URL(normalizePath(path), withTrailingSlash(configuredApiBaseUrl.href));
+  if (socketUrl.protocol === "https:") {
+    socketUrl.protocol = "wss:";
+  } else if (socketUrl.protocol === "http:") {
+    socketUrl.protocol = "ws:";
+  }
+  return socketUrl.toString();
+}
+
 export async function createSession(): Promise<SessionResponse> {
-  const response = await fetch("/sessions", {
+  const response = await fetch(buildHttpUrl("/sessions"), {
     method: "POST",
   });
   return (await ensureOk(response)).json();
 }
 
 export async function getSessionSnapshot(sessionId: string): Promise<SessionSnapshot> {
-  const response = await fetch(`/sessions/${sessionId}`);
+  const response = await fetch(buildHttpUrl(`/sessions/${sessionId}`));
   return (await ensureOk(response)).json();
 }
 
 export async function getConversationSnapshot(sessionId: string): Promise<ConversationSnapshot> {
-  const response = await fetch(`/sessions/${sessionId}/conversation`);
+  const response = await fetch(buildHttpUrl(`/sessions/${sessionId}/conversation`));
   return (await ensureOk(response)).json();
 }
 
@@ -71,7 +111,7 @@ export async function getDiagnosticTimeline(
     query.set("limit", String(params.limit));
   }
   const suffix = query.size > 0 ? `?${query.toString()}` : "";
-  const response = await fetch(`/sessions/${sessionId}/diagnostics/timeline${suffix}`);
+  const response = await fetch(buildHttpUrl(`/sessions/${sessionId}/diagnostics/timeline${suffix}`));
   return (await ensureOk(response)).json();
 }
 
@@ -84,8 +124,7 @@ function openSocket<TEvent>(
     onError: () => void;
   },
 ): WebSocket {
-  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-  const socket = new WebSocket(`${protocol}//${window.location.host}${path}`);
+  const socket = new WebSocket(buildWebSocketUrl(path));
 
   socket.addEventListener("open", handlers.onOpen);
   socket.addEventListener("close", handlers.onClose);

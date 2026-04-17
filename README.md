@@ -197,3 +197,49 @@ Frontend build check:
 cd src/synapse/ui
 npm run build
 ```
+
+## Deploy UI to Vercel
+
+The main UI lives under `src/synapse/ui/`.
+
+Before deploying the frontend separately, make sure the backend is reachable on
+its own public HTTPS origin and allow the Vercel frontend origin through CORS:
+
+```env
+SYNAPSE_CORS_ALLOWED_ORIGINS=https://your-project.vercel.app
+```
+
+Then deploy from the UI workspace:
+
+```bash
+cd src/synapse/ui
+npx vercel env add VITE_API_BASE_URL production
+npx vercel --prod
+```
+
+Set the production `VITE_API_BASE_URL` value to your public backend base URL,
+for example:
+
+```text
+https://synapse-backend.example.com
+```
+
+If you also use Vercel preview deployments, add the same variable for the
+`preview` environment and include that preview origin in
+`SYNAPSE_CORS_ALLOWED_ORIGINS`.
+
+This repo also includes a GitHub Actions workflow at
+`.github/workflows/deploy-ui-vercel.yml`:
+
+- pull requests deploy a Vercel preview for `src/synapse/ui`
+- pushes to `main` deploy production
+- `workflow_dispatch` can trigger a manual production deploy
+
+Before enabling that workflow, configure these GitHub repository settings:
+
+- Actions secret: `VERCEL_TOKEN`
+- Actions variable: `VERCEL_ORG_ID`
+- Actions variable: `VERCEL_PROJECT_ID`
+
+The Vercel project should still own runtime frontend env vars such as
+`VITE_API_BASE_URL`.

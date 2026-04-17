@@ -29,6 +29,13 @@ def _get_bool(name: str, default: bool) -> bool:
     return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _get_csv(name: str) -> tuple[str, ...]:
+    raw = os.getenv(name)
+    if raw is None:
+        return ()
+    return tuple(part.strip() for part in raw.split(",") if part.strip())
+
+
 @dataclass(slots=True)
 class Settings:
     app_name: str = "Synapse v2"
@@ -51,6 +58,7 @@ class Settings:
     quiet_diagnostics_access_logs: bool = True
     log_llm_details: bool = False
     diagnostic_max_events: int = 500
+    cors_allowed_origins: tuple[str, ...] = ()
     git_sha: str | None = None
 
 
@@ -157,5 +165,6 @@ def load_settings() -> Settings:
         quiet_diagnostics_access_logs=_get_bool("SYNAPSE_QUIET_DIAGNOSTICS_ACCESS_LOGS", True),
         log_llm_details=_get_bool("SYNAPSE_LOG_LLM_DETAILS", False),
         diagnostic_max_events=int(os.getenv("SYNAPSE_DIAGNOSTIC_MAX_EVENTS", "500")),
+        cors_allowed_origins=_get_csv("SYNAPSE_CORS_ALLOWED_ORIGINS"),
         git_sha=os.getenv("SYNAPSE_GIT_SHA") or None,
     )
