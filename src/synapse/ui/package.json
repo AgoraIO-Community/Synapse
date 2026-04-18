@@ -28,6 +28,9 @@
     "@tanstack/react-router": "^1.168.22",
     "@tanstack/react-router-devtools": "^1.166.13",
     "@tanstack/react-start": "^1.167.41",
+    "agora-agent-client-toolkit": "^1.0.0",
+    "agora-rtc-sdk-ng": "^4.24.0",
+    "agora-rtm": "file:vendor/agora-rtm",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^1.8.0",
@@ -55,6 +58,7 @@
     "vitest": "^4.1.4"
   },
   "optionalDependencies": {
+    "@rolldown/binding-linux-x64-gnu": "1.0.0-rc.15",
     "@tailwindcss/oxide-linux-x64-gnu": "^4.2.2",
     "lightningcss-linux-x64-gnu": "^1.32.0"
   }

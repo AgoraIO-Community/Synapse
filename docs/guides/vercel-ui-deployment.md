@@ -18,6 +18,25 @@ The deployed UI expects one public backend base URL that serves both:
 Point `VITE_API_BASE_URL` at that public backend origin itself. Do not point it
 at `/sessions`, `/gateway`, or the gateway host on port `8010`.
 
+If the deployed UI also enables the compact Agora voice accessory in the main
+workbench, set a second frontend env var:
+
+```env
+VITE_GATEWAY_BASE_URL=https://gateway.example.com
+```
+
+That value is used only for browser calls to:
+
+- `GET /gateway/agora-convoai/config`
+- `POST /gateway/agora-convoai/sessions/prepare`
+- `POST /gateway/agora-convoai/sessions/activate`
+- `POST /gateway/agora-convoai/sessions/stop`
+
+The main shell's `Voice` mode now rebinds the whole frontend to the
+gateway-returned `synapse_session_id`, so deployed environments must ensure the
+public main-backend origin and the public gateway origin are both reachable from
+the browser during mode switches.
+
 ## Backend Configuration
 
 The backend must allow the deployed frontend origin through
@@ -40,10 +59,25 @@ Set the Vercel frontend env var:
 
 ```env
 VITE_API_BASE_URL=https://api.example.com
+VITE_GATEWAY_BASE_URL=https://gateway.example.com
 ```
 
 That value is consumed by `src/synapse/ui/src/lib/session-client.ts` and is
 used for both HTTPS requests and websocket URL derivation.
+`VITE_GATEWAY_BASE_URL` is consumed by
+`src/synapse/ui/src/lib/gateway-client.ts` for voice gateway calls only.
+
+The frontend workspace now vendors the `agora-rtm` package locally under
+`src/synapse/ui/vendor/agora-rtm/` because the published `agora-rtm` npm
+package still declares an incompatible peer on `agora-rtc-sdk-ng@4.23.0` while
+the Agora voice toolkit requires `agora-rtc-sdk-ng>=4.23.4`. Keep Vercel on the
+default `npm install` path; do not add `--legacy-peer-deps` for this project.
+
+The workspace also declares `@rolldown/binding-linux-x64-gnu` directly in root
+`optionalDependencies`. Vite 8 pulls Rolldown transitively, but some npm/Vercel
+installs can omit the nested Linux native binding and then fail during
+`npm run build` with `Cannot find native binding`. Keep the binding pinned at
+the root so plain `npm install` on Linux runners remains sufficient.
 
 For this repo's GitHub Actions production deploy path, the workflow currently
 injects `VITE_API_BASE_URL=https://newbro.plutoless.com` directly during the
@@ -55,6 +89,10 @@ Actions.
 
 If your public backend origin is served through Nginx, proxy the session routes
 to the main Synapse API on `127.0.0.1:8000`.
+
+If you choose not to expose a separate `VITE_GATEWAY_BASE_URL`, the same public
+origin must also proxy `/gateway/agora-convoai/*` to the gateway host on
+`127.0.0.1:8010`.
 
 Typical requirements:
 
@@ -103,5 +141,9 @@ After deployment:
 - verify `POST https://your-backend-origin/sessions`
 - verify the deployed Vercel UI can load a session and conversation snapshot
 - verify the websocket stream opens over `wss://.../sessions/{session_id}/stream`
+- verify `GET https://your-gateway-origin/gateway/agora-convoai/config` when
+  `VITE_GATEWAY_BASE_URL` is set
+- verify the main UI can start and stop the voice accessory without CORS or
+  mixed-origin failures
 - verify browser devtools show no CORS failures and no failed websocket
   handshake

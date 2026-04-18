@@ -1,0 +1,25 @@
+{
+  "name": "agora-rtm",
+  "version": "2.2.4",
+  "description": "JavaScript SDK for Agora RTM",
+  "keywords": [
+    "agora",
+    "rtm",
+    "real-time-messaging",
+    "sdk",
+    "javascript",
+    "signaling",
+    "stream",
+    "messaging"
+  ],
+  "homepage": "https://doc.shengwang.cn/doc/rtm2/javascript/landing-page",
+  "bugs": {
+    "url": "https://agora-ticket.agora.io",
+    "email": "support@agora.io"
+  },
+  "main": "agora-rtm.js",
+  "browser": "agora-rtm.js",
+  "types": "agora-rtm.d.ts",
+  "author": "Agora Lab.",
+  "license": "Apache"
+}

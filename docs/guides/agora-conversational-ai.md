@@ -20,7 +20,7 @@ That gateway module owns:
 
 The browser demo remains outside the gateway host under:
 
-- `exmaple-ui/`
+- `example-ui/`
 
 The gateway host runs separately from the main Synapse API server:
 
@@ -89,6 +89,20 @@ This example now mirrors the official sample's split identity model:
 
 The frontend uses the agent RTM uid for toolkit messaging calls and the agent RTC uid for media/transcript identity.
 
+The main workbench under `src/synapse/ui/` now supports an explicit `Text` /
+`Voice` mode switch. That UI path:
+
+- calls the gateway host through `/gateway/agora-convoai/*` when entering voice
+  mode
+- recreates a fresh frontend-owned session on every mode switch
+- starts voice mode in an idle shell state first, then rebinds the whole shell
+  to the voice session's returned `synapse_session_id` only after the user
+  presses `Start`
+- returns to a fresh normal `POST /sessions` session when switching back to
+  text mode
+- uses browser-local transcript/state from the Agora toolkit for the left-pane
+  voice transcript feed while the workbench follows the bound Synapse session
+
 ## Run
 
 Configure `~/.synapse/.env` and `~/.synapse/config.yaml`, then run:
@@ -108,7 +122,7 @@ For development with frontend + gateway together:
 For the example browser test client:
 
 ```bash
-cd exmaple-ui
+cd example-ui
 npm install
 npm run dev
 ```
@@ -123,5 +137,5 @@ For this example, Synapse fixes `gateways.agora-convoai.convoai_area` to `US`.
 
 ## Ownership Note
 
-The browser demo under `exmaple-ui/` is an example
+The browser demo under `example-ui/` is an example
 client only. It is not part of the gateway-host architecture boundary.

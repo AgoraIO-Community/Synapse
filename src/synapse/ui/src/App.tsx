@@ -10,7 +10,6 @@ import {
 } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Activity,
   AlertCircle,
   ArrowUp,
   ArrowRight,
@@ -18,6 +17,7 @@ import {
   CheckCircle2,
   ChevronsRight,
   LoaderCircle,
+  Mic,
   MessageSquare,
   PauseCircle,
   PanelRightOpen,
@@ -48,21 +48,16 @@ import type {
   ExecutionSession,
   SessionBinding,
   SessionStreamEvent,
-  SessionResponse,
   SessionSnapshot,
   SnapshotDiffItem,
   Task,
   TaskCommandType,
   TaskSummary,
 } from "./types";
-import { Badge } from "./components/ui/badge";
 import { Button } from "./components/ui/button";
 import {
   Card,
   CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
 } from "./components/ui/card";
 import { ScrollArea } from "./components/ui/scroll-area";
 import { Separator } from "./components/ui/separator";
@@ -76,7 +71,22 @@ import {
 } from "./components/ui/sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./components/ui/tooltip";
+import { ModeSwitch, type AppMode } from "./components/ModeSwitch";
+import { VoiceModePanel, type VoiceModePhase } from "./components/VoiceModePanel";
+import {
+  activateGatewaySession,
+  getGatewayConfig,
+  prepareGatewaySession,
+  stopGatewaySessionBeacon,
+  type GatewayActivateResponse,
+} from "./lib/gateway-client";
 import { cn } from "./lib/utils";
+import {
+  loadAgoraBrowserStack,
+  teardownVoiceSession,
+  type ActiveVoiceResources,
+  type VoiceTranscriptTurn,
+} from "./lib/voice-runtime";
 
 type TaskResultDetail = {
   shortText: string;
@@ -111,12 +121,34 @@ type ConversationTaskEvent = {
 };
 
 type TaskEventAnchorMap = Record<string, string>;
+type ModeSwitchStatus = "booting" | "switching" | "ready" | "error";
+type VoiceModeState = {
+  phase: VoiceModePhase;
+  error: string | null;
+  agentState: string;
+  isMicMuted: boolean;
+  transcript: VoiceTranscriptTurn[];
+  lastTranscriptUpdateAt: string | null;
+  lastToolkitMessage: string | null;
+  activeSession: GatewayActivateResponse | null;
+};
 
 const STARTER_PROMPTS = [
   "Draft a clear release note for the current sprint.",
   "Review the active tasks and tell me what needs attention.",
   "Create a plan for polishing the onboarding experience.",
 ];
+
+const INITIAL_VOICE_MODE_STATE: VoiceModeState = {
+  phase: "idle",
+  error: null,
+  agentState: "idle",
+  isMicMuted: false,
+  transcript: [],
+  lastTranscriptUpdateAt: null,
+  lastToolkitMessage: null,
+  activeSession: null,
+};
 
 function makeRequestId() {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
@@ -703,6 +735,11 @@ function DebugFeedSection({
 
 export default function App() {
   const queryClient = useQueryClient();
+  const [appMode, setAppMode] = useState<AppMode>("voice");
+  const [modeSwitchStatus, setModeSwitchStatus] = useState<ModeSwitchStatus>("booting");
+  const [modeError, setModeError] = useState<string | null>(null);
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const [voiceModeState, setVoiceModeState] = useState<VoiceModeState>(INITIAL_VOICE_MODE_STATE);
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>("booting");
   const [composer, setComposer] = useState("");
   const [actionError, setActionError] = useState<string | null>(null);
@@ -733,49 +770,35 @@ export default function App() {
   const isPageVisibleRef = useRef(isPageVisible);
   const taskSelectionPinnedRef = useRef(false);
   const pendingCommandRequestsRef = useRef<Map<string, string>>(new Map());
-
-  const sessionQuery = useQuery<SessionResponse>({
-    queryKey: ["session"],
-    queryFn: createSession,
-    staleTime: Infinity,
-    retry: false,
-  });
-
-  const sessionId = sessionQuery.data?.session_id ?? null;
+  const activeSessionIdRef = useRef<string | null>(null);
+  const appModeRef = useRef<AppMode>("voice");
+  const modeTransitionRef = useRef(0);
+  const voiceGenerationRef = useRef(0);
+  const voiceResourcesRef = useRef<ActiveVoiceResources | null>(null);
 
   const snapshotQuery = useQuery<SessionSnapshot>({
-    queryKey: ["session", sessionId, "snapshot"],
-    queryFn: () => getSessionSnapshot(sessionId!),
-    enabled: Boolean(sessionId),
+    queryKey: ["session", activeSessionId, "snapshot"],
+    queryFn: () => getSessionSnapshot(activeSessionId!),
+    enabled: Boolean(activeSessionId),
     staleTime: Infinity,
     retry: false,
   });
 
   const conversationQuery = useQuery<ConversationSnapshot>({
-    queryKey: ["session", sessionId, "conversation"],
-    queryFn: () => getConversationSnapshot(sessionId!),
-    enabled: Boolean(sessionId),
+    queryKey: ["session", activeSessionId, "conversation"],
+    queryFn: () => getConversationSnapshot(activeSessionId!),
+    enabled: Boolean(activeSessionId),
     staleTime: Infinity,
     retry: false,
   });
 
   useEffect(() => {
-    if (sessionQuery.error) {
-      setConnectionStatus("error");
-      setActionError(
-        sessionQuery.error instanceof Error ? sessionQuery.error.message : "Failed to create session.",
-      );
-    }
-  }, [sessionQuery.error]);
+    activeSessionIdRef.current = activeSessionId;
+  }, [activeSessionId]);
 
   useEffect(() => {
-    if (!sessionId) {
-      return;
-    }
-    setDiagnosticEvents([]);
-    latestDiagnosticSequenceRef.current = 0;
-    setTaskEventAnchors({});
-  }, [sessionId]);
+    appModeRef.current = appMode;
+  }, [appMode]);
 
   useEffect(() => {
     latestSnapshotRef.current = snapshot;
@@ -799,6 +822,403 @@ export default function App() {
     document.addEventListener("visibilitychange", handleVisibilityChange);
     return () => {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, []);
+
+  function resetShellState() {
+    setSnapshot(null);
+    setConversationSnapshot(null);
+    setDiagnosticEvents([]);
+    setPreviousSnapshot(null);
+    setLastAssistantResponse(null);
+    setLiveAssistant(null);
+    setLastCommandStatus(null);
+    setTaskEventAnchors({});
+    setSelectedTaskId(null);
+    setTaskSelectionPinned(false);
+    setSelectedExecutionSessionId(null);
+    setSelectedRunId(null);
+    setPendingCommand(null);
+    setActionError(null);
+    setIsSending(false);
+    latestSnapshotRef.current = null;
+    latestDiagnosticSequenceRef.current = 0;
+    pendingCommandRequestsRef.current.clear();
+    setConnectionStatus("booting");
+  }
+
+  function closeActiveSocket() {
+    const socket = socketRef.current;
+    socketRef.current = null;
+    if (socket && socket.readyState !== WebSocket.CLOSED) {
+      socket.close();
+    }
+  }
+
+  function resetVoiceModeState() {
+    voiceGenerationRef.current += 1;
+    setVoiceModeState(INITIAL_VOICE_MODE_STATE);
+  }
+
+  async function startVoiceModeSession(transitionId: number): Promise<GatewayActivateResponse> {
+    setVoiceModeState({
+      ...INITIAL_VOICE_MODE_STATE,
+      phase: "loading",
+    });
+
+    const loadedConfig = await getGatewayConfig();
+    if (!loadedConfig.ready) {
+      throw new Error(
+        loadedConfig.missing_requirements.length > 0
+          ? `Voice gateway is missing: ${loadedConfig.missing_requirements.join(", ")}`
+          : "Voice gateway is not ready.",
+      );
+    }
+
+    const prepared = await prepareGatewaySession();
+    const generation = ++voiceGenerationRef.current;
+    const { AgoraRTC, AgoraRTM, AgoraVoiceAI, AgoraVoiceAIEvents, TranscriptHelperMode } =
+      await loadAgoraBrowserStack();
+
+    let rtcClient: any | null = null;
+    let micTrack: any | null = null;
+    let rtmClient: any | null = null;
+    let voiceAi: any | null = null;
+
+    const applyVoiceState = (updater: (current: VoiceModeState) => VoiceModeState) => {
+      if (voiceGenerationRef.current !== generation || modeTransitionRef.current !== transitionId) {
+        return;
+      }
+      setVoiceModeState((current) => updater(current));
+    };
+
+    try {
+      rtcClient = AgoraRTC.createClient({ mode: "rtc", codec: "vp8" });
+      rtcClient.on("user-published", async (user: any, mediaType: string) => {
+        await rtcClient.subscribe(user, mediaType);
+        if (mediaType === "audio") {
+          user.audioTrack?.play();
+        }
+      });
+      rtcClient.on("user-unpublished", (user: any, mediaType: string) => {
+        if (mediaType === "audio") {
+          user.audioTrack?.stop();
+        }
+      });
+
+      rtmClient = new AgoraRTM.RTM(prepared.app_id, prepared.user_rtm_uid);
+      await rtmClient.login({ token: prepared.token });
+      await rtmClient.subscribe(prepared.channel_name, { withMessage: true });
+
+      voiceAi = await AgoraVoiceAI.init({
+        rtcEngine: rtcClient,
+        rtmConfig: { rtmEngine: rtmClient },
+        renderMode: TranscriptHelperMode.AUTO,
+      });
+
+      voiceAi.on(AgoraVoiceAIEvents.TRANSCRIPT_UPDATED, (nextTranscript: VoiceTranscriptTurn[]) => {
+        startTransition(() => {
+          applyVoiceState((current) => ({
+            ...current,
+            transcript: nextTranscript,
+            lastTranscriptUpdateAt: new Date().toISOString(),
+          }));
+        });
+      });
+      voiceAi.on(AgoraVoiceAIEvents.AGENT_STATE_CHANGED, (_agentUserId: string, next: any) => {
+        applyVoiceState((current) => ({
+          ...current,
+          agentState: next?.state ?? "idle",
+        }));
+      });
+      voiceAi.on(AgoraVoiceAIEvents.AGENT_ERROR, (_agentUserId: string, next: any) => {
+        const message = next?.message ?? "Voice agent pipeline error.";
+        applyVoiceState((current) => ({
+          ...current,
+          error: message,
+          lastToolkitMessage: message,
+        }));
+      });
+      voiceAi.on(AgoraVoiceAIEvents.MESSAGE_ERROR, (_agentUserId: string, next: any) => {
+        const message = next?.message ?? "Voice agent message delivery failed.";
+        applyVoiceState((current) => ({
+          ...current,
+          error: message,
+          lastToolkitMessage: message,
+        }));
+      });
+      voiceAi.on(AgoraVoiceAIEvents.AGENT_INTERRUPTED, () => {
+        applyVoiceState((current) => ({
+          ...current,
+          lastToolkitMessage: "Agent speech interrupted.",
+        }));
+      });
+      voiceAi.on(AgoraVoiceAIEvents.DEBUG_LOG, (message: string) => {
+        applyVoiceState((current) => ({
+          ...current,
+          lastToolkitMessage: message,
+        }));
+      });
+
+      await rtcClient.join(prepared.app_id, prepared.channel_name, prepared.token, prepared.uid);
+      micTrack = await AgoraRTC.createMicrophoneAudioTrack();
+      await rtcClient.publish([micTrack]);
+      voiceAi.subscribeMessage(prepared.channel_name);
+
+      const activated = await activateGatewaySession({
+        prepared_session_id: prepared.prepared_session_id,
+      });
+
+      if (modeTransitionRef.current !== transitionId) {
+        await teardownVoiceSession(
+          {
+            bindingId: activated.binding_id,
+            rtcClient,
+            micTrack,
+            rtmClient,
+            voiceAi,
+          },
+          true,
+        );
+        throw new Error("Voice mode startup was superseded.");
+      }
+
+      voiceResourcesRef.current = {
+        bindingId: activated.binding_id,
+        rtcClient,
+        micTrack,
+        rtmClient,
+        voiceAi,
+      };
+      setVoiceModeState((current) => ({
+        ...current,
+        phase: "connected",
+        error: null,
+        isMicMuted: false,
+        activeSession: activated,
+        lastToolkitMessage: current.lastToolkitMessage ?? "Voice toolkit subscribed.",
+      }));
+      return activated;
+    } catch (error) {
+      await teardownVoiceSession(
+        {
+          bindingId: "",
+          rtcClient,
+          micTrack,
+          rtmClient,
+          voiceAi,
+        },
+        false,
+      );
+      const message =
+        error instanceof Error ? error.message : "Failed to start the voice session.";
+      if (modeTransitionRef.current === transitionId) {
+        setVoiceModeState((current) => ({
+          ...current,
+          phase: "error",
+          error: message,
+        }));
+      }
+      throw new Error(message);
+    }
+  }
+
+  async function stopVoiceInteraction(
+    options: { suppressModeError?: boolean; keepVoiceMode?: boolean } = {},
+  ) {
+    const activeVoiceResources = voiceResourcesRef.current;
+    if (!activeVoiceResources) {
+      setVoiceModeState({
+        ...INITIAL_VOICE_MODE_STATE,
+        phase: options.keepVoiceMode === false ? "idle" : "idle",
+      });
+      return;
+    }
+
+    try {
+      await teardownVoiceSession(activeVoiceResources, true);
+      voiceResourcesRef.current = null;
+      closeActiveSocket();
+      resetShellState();
+      setActiveSessionId(null);
+      setVoiceModeState({
+        ...INITIAL_VOICE_MODE_STATE,
+        phase: options.keepVoiceMode === false ? "idle" : "idle",
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to stop the current voice session.";
+      setVoiceModeState((current) => ({
+        ...current,
+        phase: "error",
+        error: message,
+        lastToolkitMessage: message,
+      }));
+      if (!options.suppressModeError) {
+        setModeSwitchStatus("error");
+        setModeError(message);
+      }
+      throw new Error(message);
+    }
+  }
+
+  async function handleStopVoiceInteraction() {
+    setModeSwitchStatus("switching");
+    setModeError(null);
+    try {
+      await stopVoiceInteraction();
+      setModeSwitchStatus("ready");
+    } catch {}
+  }
+
+  async function startVoiceInteraction(options: { force?: boolean } = {}) {
+    if (
+      !options.force &&
+      (modeSwitchStatus === "switching" ||
+        appModeRef.current !== "voice" ||
+        voiceModeState.phase === "loading" ||
+        voiceModeState.phase === "connected")
+    ) {
+      return;
+    }
+
+    const transitionId = modeTransitionRef.current;
+    setModeError(null);
+    setModeSwitchStatus("switching");
+    closeActiveSocket();
+    resetShellState();
+    setActiveSessionId(null);
+
+    try {
+      const activated = await startVoiceModeSession(transitionId);
+      if (modeTransitionRef.current !== transitionId || appModeRef.current !== "voice") {
+        return;
+      }
+      setActiveSessionId(activated.synapse_session_id);
+      setModeSwitchStatus("ready");
+    } catch (error) {
+      if (modeTransitionRef.current !== transitionId || appModeRef.current !== "voice") {
+        return;
+      }
+      const message =
+        error instanceof Error ? error.message : "Failed to start voice interaction.";
+      setModeSwitchStatus("error");
+      setModeError(message);
+      setActiveSessionId(null);
+    }
+  }
+
+  async function toggleVoiceMute() {
+    const resources = voiceResourcesRef.current;
+    const micTrack = resources?.micTrack;
+    if (!micTrack) {
+      return;
+    }
+    const nextMuted = !voiceModeState.isMicMuted;
+    try {
+      await micTrack.setEnabled(!nextMuted);
+      setVoiceModeState((current) => ({
+        ...current,
+        isMicMuted: nextMuted,
+        lastToolkitMessage: nextMuted ? "Microphone muted." : "Microphone unmuted.",
+      }));
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to toggle microphone state.";
+      setVoiceModeState((current) => ({
+        ...current,
+        error: message,
+        lastToolkitMessage: message,
+      }));
+    }
+  }
+
+  async function switchMode(nextMode: AppMode, options: { force?: boolean } = {}) {
+    const previousMode = appModeRef.current;
+    if (
+      !options.force &&
+      modeSwitchStatus === "switching"
+    ) {
+      return;
+    }
+    if (
+      !options.force &&
+      nextMode === previousMode &&
+      (activeSessionIdRef.current || previousMode === "voice") &&
+      modeSwitchStatus !== "error"
+    ) {
+      return;
+    }
+
+    setModeSwitchStatus("switching");
+    setModeError(null);
+    setComposer("");
+
+    if (previousMode === "voice" && nextMode !== "voice") {
+      try {
+        await stopVoiceInteraction({ suppressModeError: true, keepVoiceMode: false });
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Failed to stop the current voice session.";
+        setModeSwitchStatus("error");
+        setModeError(message);
+        return;
+      }
+    }
+
+    const transitionId = modeTransitionRef.current + 1;
+    modeTransitionRef.current = transitionId;
+
+    if (nextMode === "text") {
+      setAppMode("text");
+      resetVoiceModeState();
+      closeActiveSocket();
+      resetShellState();
+      setActiveSessionId(null);
+      try {
+        const session = await createSession();
+        if (modeTransitionRef.current !== transitionId) {
+          return;
+        }
+        setActiveSessionId(session.session_id);
+        setModeSwitchStatus("ready");
+      } catch (error) {
+        if (modeTransitionRef.current !== transitionId) {
+          return;
+        }
+        const message =
+          error instanceof Error ? error.message : "Failed to switch to text mode.";
+        setModeSwitchStatus("error");
+        setModeError(message);
+        setActiveSessionId(null);
+      }
+      return;
+    }
+
+    setAppMode("voice");
+    closeActiveSocket();
+    resetShellState();
+    setActiveSessionId(null);
+    setVoiceModeState(INITIAL_VOICE_MODE_STATE);
+    setModeSwitchStatus("ready");
+  }
+
+  useEffect(() => {
+    setModeSwitchStatus("ready");
+    setVoiceModeState(INITIAL_VOICE_MODE_STATE);
+    const stopVoiceBindingOnPageHide = () => {
+      const bindingId = voiceResourcesRef.current?.bindingId;
+      if (bindingId) {
+        stopGatewaySessionBeacon(bindingId);
+      }
+    };
+    window.addEventListener("pagehide", stopVoiceBindingOnPageHide);
+    return () => {
+      stopVoiceBindingOnPageHide();
+      window.removeEventListener("pagehide", stopVoiceBindingOnPageHide);
+      closeActiveSocket();
+      void teardownVoiceSession(voiceResourcesRef.current, false);
+      voiceResourcesRef.current = null;
     };
   }, []);
 
@@ -845,16 +1265,16 @@ export default function App() {
   }, [conversationQuery.error]);
 
   useEffect(() => {
-    if (!sessionId) {
+    if (!activeSessionId) {
       refreshDiagnosticsRef.current = null;
       return;
     }
-    const activeSessionId = sessionId;
+    const diagnosticSessionId = activeSessionId;
     let active = true;
 
     async function refreshDiagnostics() {
       try {
-        const response = await getDiagnosticTimeline(activeSessionId, {
+        const response = await getDiagnosticTimeline(diagnosticSessionId, {
           afterSequence:
             latestDiagnosticSequenceRef.current > 0
               ? latestDiagnosticSequenceRef.current
@@ -899,7 +1319,7 @@ export default function App() {
         refreshDiagnosticsRef.current = null;
       }
     };
-  }, [sessionId, isPageVisible]);
+  }, [activeSessionId, isPageVisible]);
 
   useEffect(() => {
     if (!isPageVisible || refreshDiagnosticsRef.current === null) {
@@ -930,12 +1350,13 @@ export default function App() {
   }, [liveAssistant, conversationSnapshot]);
 
   useEffect(() => {
-    if (!sessionId) {
+    if (!activeSessionId) {
       return;
     }
     setConnectionStatus("connecting");
     setActionError(null);
-    const socket = openSessionStream(sessionId, {
+    const streamSessionId = activeSessionId;
+    const socket = openSessionStream(streamSessionId, {
       onOpen: () => setConnectionStatus("connecting"),
       onClose: () => {
         socketRef.current = null;
@@ -950,7 +1371,7 @@ export default function App() {
         if (event.type === "snapshot") {
           const nextSnapshot = event.snapshot;
           const previous = latestSnapshotRef.current;
-          queryClient.setQueryData(["session", sessionId, "snapshot"], nextSnapshot);
+          queryClient.setQueryData(["session", streamSessionId, "snapshot"], nextSnapshot);
           startTransition(() => {
             setConnectionStatus("connected");
             setPreviousSnapshot(previous);
@@ -1058,7 +1479,7 @@ export default function App() {
             };
           });
           queryClient.setQueryData(
-            ["session", sessionId, "conversation"],
+            ["session", streamSessionId, "conversation"],
             (current: ConversationSnapshot | undefined) => {
               if (!current) {
                 return current;
@@ -1128,7 +1549,7 @@ export default function App() {
             };
           });
           queryClient.setQueryData(
-            ["session", sessionId, "conversation"],
+            ["session", streamSessionId, "conversation"],
             (current: ConversationSnapshot | undefined) => {
               if (!current) {
                 return current;
@@ -1157,7 +1578,7 @@ export default function App() {
       socketRef.current = null;
       socket.close();
     };
-  }, [sessionId]);
+  }, [activeSessionId]);
 
   useEffect(() => {
     if (!snapshot?.tasks.length) {
@@ -1263,7 +1684,7 @@ export default function App() {
 
   async function handleSendMessage(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!sessionId || !composer.trim()) {
+    if (!activeSessionId || !composer.trim()) {
       return;
     }
     const socket = socketRef.current;
@@ -1292,7 +1713,7 @@ export default function App() {
       };
     });
     queryClient.setQueryData(
-      ["session", sessionId, "conversation"],
+      ["session", activeSessionId, "conversation"],
       (current: ConversationSnapshot | undefined) => {
         if (!current) {
           return current;
@@ -1315,7 +1736,7 @@ export default function App() {
   }
 
   async function handleCommand(taskId: string, commandType: TaskCommandType) {
-    if (!sessionId) {
+    if (!activeSessionId) {
       return;
     }
     const socket = socketRef.current;
@@ -1350,6 +1771,9 @@ export default function App() {
   const conversation = conversationSnapshot?.conversation_history ?? [];
   const isConversationEmpty =
     conversation.length === 0 && !liveAssistant && conversationTaskEvents.length === 0;
+  const isTextMode = appMode === "text";
+  const isVoiceMode = appMode === "voice";
+  const isModeSwitching = modeSwitchStatus === "switching";
   const recentWrites = diagnosticEvents.filter(
     (event) =>
       event.event_name.startsWith("bb.") ||
@@ -1365,8 +1789,20 @@ export default function App() {
             Workbench
           </h2>
           <p className="mt-1 max-w-[22rem] text-sm leading-6 text-[#5f6863]">
-            Task queue first. Execution and diagnostics stay available behind Debug.
+            {isVoiceMode
+              ? activeSessionId
+                ? "Voice mode is live. Tasks, runs, and diagnostics now follow the bound voice session."
+                : "Voice mode is idle. Start voice interaction to bind the workbench to a live session."
+              : "Task queue first. Execution and diagnostics stay available behind Debug."}
           </p>
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-[0.68rem] font-bold uppercase tracking-[0.18em]">
+            <span className="rounded-full bg-white/70 px-2.5 py-1 text-[#607062] shadow-[inset_0_1px_0_rgba(255,255,255,0.84)]">
+              {isVoiceMode ? "Voice mode" : "Text mode"}
+            </span>
+            <span className="rounded-full bg-white/70 px-2.5 py-1 text-[#607062] shadow-[inset_0_1px_0_rgba(255,255,255,0.84)]">
+              {activeSessionId ? `Session ${activeSessionId}` : "No active session"}
+            </span>
+          </div>
         </div>
       </div>
 
@@ -1604,7 +2040,11 @@ export default function App() {
   );
 
   useEffect(() => {
-    if (isConversationEmpty) {
+    if (isVoiceMode) {
+      if (voiceModeState.transcript.length === 0) {
+        return;
+      }
+    } else if (isConversationEmpty) {
       return;
     }
     const viewport = conversationViewportRef.current;
@@ -1612,7 +2052,16 @@ export default function App() {
       return;
     }
     viewport.scrollTo({ top: viewport.scrollHeight, behavior: "smooth" });
-  }, [conversation.length, conversationTaskEvents.length, liveAssistant, isConversationEmpty]);
+  }, [
+    appMode,
+    conversation.length,
+    conversationTaskEvents.length,
+    liveAssistant,
+    isConversationEmpty,
+    isVoiceMode,
+    voiceModeState.transcript.length,
+    voiceModeState.lastTranscriptUpdateAt,
+  ]);
 
   return (
     <TooltipProvider delayDuration={200}>
@@ -1637,9 +2086,19 @@ export default function App() {
           <div className="app-grid relative grid h-full w-full min-w-0 gap-4 xl:grid-cols-[minmax(0,1.08fr)_minmax(420px,0.92fr)]">
             <section
               data-testid="workspace-left-pane"
-              className="relative z-10 flex h-full min-h-0 min-w-0 flex-col px-3 pb-32 pt-5 sm:px-5 sm:pb-36 sm:pt-6 xl:pr-8"
+              className="relative z-10 flex h-full min-h-0 min-w-0 flex-col px-3 pb-32 pt-5 sm:px-5 sm:pb-36 sm:pt-6 xl:pl-24 xl:pr-8"
             >
               <h1 className="sr-only">Conversation</h1>
+
+              <div className="pointer-events-auto relative z-20 mb-4 xl:absolute xl:left-[-1.25rem] xl:top-1/2 xl:mb-0 xl:-translate-y-1/2">
+                <ModeSwitch
+                  mode={appMode}
+                  disabled={isModeSwitching}
+                  onChange={(nextMode) => {
+                    void switchMode(nextMode);
+                  }}
+                />
+              </div>
 
               <div className="absolute right-3 top-4 z-20 sm:right-5 xl:hidden">
                 <Sheet open={mobileWorkbenchOpen} onOpenChange={setMobileWorkbenchOpen}>
@@ -1686,7 +2145,7 @@ export default function App() {
                 <div
                   className={cn(
                     "mx-auto flex min-h-full w-full max-w-3xl flex-col gap-4 pb-14",
-                    isConversationEmpty ? "justify-center py-10" : "justify-start py-8",
+                    isTextMode && isConversationEmpty ? "justify-center py-10" : "justify-start py-8",
                   )}
                 >
                   {actionError ? (
@@ -1695,19 +2154,98 @@ export default function App() {
                     </div>
                   ) : null}
 
-                  {isConversationEmpty ? (
+                  <div className="pointer-events-auto mx-auto w-full max-w-[32rem] pt-2 text-center xl:relative xl:max-w-[34rem]">
+                    <div className="mb-4">
+                      <div className="inline-flex items-center gap-2 rounded-full border border-white/70 bg-white/72 px-3 py-1 text-[0.65rem] font-bold uppercase tracking-[0.22em] text-[#68736c] shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]">
+                        <Sparkles className="size-3.5 text-[#7e9862]" />
+                        {isVoiceMode ? "Voice-first session" : "Text session"}
+                      </div>
+                      <h2 className="mt-4 font-['Noto_Sans_SC','Noto_Sans','Geist_Variable',sans-serif] text-[2rem] leading-[1.02] font-bold tracking-[-0.05em] text-[#1f2521] sm:text-[2.35rem]">
+                        {isVoiceMode ? "Talk to NewBro live." : "Write a clear instruction."}
+                      </h2>
+                      <p className="mx-auto mt-3 max-w-[32rem] text-[0.98rem] leading-7 text-[#5e6761]">
+                        {isVoiceMode
+                          ? "Voice mode is selected by default. Start voice interaction when you want to bind the workbench and begin live transcripts."
+                          : "Text mode keeps the classic prompt-first workflow with task state and execution detail in the workbench."}
+                      </p>
+                    </div>
+
+                  </div>
+
+                  {isVoiceMode ? (
+                    <VoiceModePanel
+                      phase={
+                        modeSwitchStatus === "switching" && !voiceModeState.activeSession
+                          ? "loading"
+                          : voiceModeState.phase
+                      }
+                      agentState={voiceModeState.agentState}
+                      activeSession={voiceModeState.activeSession}
+                      transcript={voiceModeState.transcript}
+                      error={voiceModeState.error ?? modeError}
+                      lastTranscriptUpdateAt={voiceModeState.lastTranscriptUpdateAt}
+                      lastToolkitMessage={voiceModeState.lastToolkitMessage}
+                      isMicMuted={voiceModeState.isMicMuted}
+                      onStart={() => {
+                        void startVoiceInteraction();
+                      }}
+                      onStop={() => {
+                        void handleStopVoiceInteraction();
+                      }}
+                      onToggleMute={() => {
+                        void toggleVoiceMute();
+                      }}
+                      onRetry={
+                        voiceModeState.activeSession
+                          ? () => {
+                              void handleStopVoiceInteraction();
+                            }
+                          : () => {
+                              void startVoiceInteraction({ force: true });
+                            }
+                      }
+                    />
+                  ) : modeError && !activeSessionId ? (
+                    <div className="mx-auto flex min-h-full w-full max-w-[38rem] flex-col justify-center gap-5">
+                      <div className="rounded-[1.3rem] border border-rose-500/18 bg-[linear-gradient(180deg,rgba(255,241,243,0.88),rgba(255,232,236,0.72))] px-5 py-5 text-rose-700 shadow-[0_18px_42px_-34px_rgba(190,24,93,0.3)]">
+                        <div className="text-[0.68rem] font-bold uppercase tracking-[0.18em] text-rose-700/70">
+                          Text session error
+                        </div>
+                        <p className="mt-3 text-sm leading-6">{modeError}</p>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => {
+                            void switchMode("text", { force: true });
+                          }}
+                          className="mt-4 rounded-full bg-white/82 text-[#1c211f] hover:bg-white"
+                        >
+                          <RotateCcw className="size-4" />
+                          Retry text mode
+                        </Button>
+                      </div>
+                    </div>
+                  ) : !activeSessionId || modeSwitchStatus === "booting" || modeSwitchStatus === "switching" ? (
+                    <div className="mx-auto flex min-h-full w-full max-w-[38rem] flex-col justify-center gap-5">
+                      <div className="rounded-[1.3rem] border border-white/68 bg-[linear-gradient(180deg,rgba(255,255,255,0.92),rgba(249,248,246,0.82))] px-5 py-5 text-[#1f2521] shadow-[0_18px_42px_-32px_rgba(15,23,42,0.14)]">
+                        <div className="inline-flex items-center gap-2 text-[0.68rem] font-bold uppercase tracking-[0.18em] text-[#65705a]">
+                          <LoaderCircle className="size-3.5 animate-spin text-[#7e9862]" />
+                          <span>Starting text mode</span>
+                        </div>
+                        <p className="mt-3 text-sm leading-6 text-[#5e6761]">
+                          Creating a fresh Synapse session and rebinding the shell.
+                        </p>
+                      </div>
+                    </div>
+                  ) : isConversationEmpty ? (
                     <div className="flex min-h-full flex-col justify-center gap-7">
                       <div className="mx-auto max-w-[36rem] text-center">
-                        <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-white/70 bg-white/72 px-3 py-1 text-[0.65rem] font-bold uppercase tracking-[0.22em] text-[#68736c] shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]">
-                          <Sparkles className="size-3.5 text-[#7e9862]" />
-                          Fresh session
+                        <div className="text-[0.7rem] font-bold uppercase tracking-[0.2em] text-[#738078]">
+                          Starter prompts
                         </div>
-                        <h3 className="font-['Noto_Sans_SC','Noto_Sans','Geist_Variable',sans-serif] text-[2.15rem] leading-[1.02] font-bold tracking-[-0.05em] text-[#1f2521] sm:text-[2.6rem]">
-                          Start with a clear instruction.
-                        </h3>
-                        <p className="mx-auto mt-4 max-w-[32rem] text-[1rem] leading-7 text-[#5e6761]">
-                          Ask NewBro to plan, draft, review, summarize, or execute. The workbench
-                          will light up as soon as the execution brain opens tasks.
+                        <p className="mx-auto mt-3 max-w-[30rem] text-[0.98rem] leading-7 text-[#5e6761]">
+                          Pick a prompt to seed the new text session or type your own instruction below.
                         </p>
                       </div>
                       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
@@ -1735,6 +2273,7 @@ export default function App() {
                 </div>
               </ScrollArea>
 
+              {isTextMode ? (
               <div className="pointer-events-none absolute inset-x-3 bottom-4 z-20 sm:inset-x-5 sm:bottom-5 xl:right-8">
                 <div className="mx-auto max-w-3xl">
                   <form className="pointer-events-auto" onSubmit={handleSendMessage}>
@@ -1760,7 +2299,7 @@ export default function App() {
                           aria-label="Send"
                           type="submit"
                           variant="secondary"
-                          disabled={!sessionId || !composer.trim() || isSending}
+                          disabled={!activeSessionId || !composer.trim() || isSending}
                           className="size-11 min-h-11 shrink-0 rounded-full bg-[#e9ff77] px-0 text-[#14180c] shadow-[0_18px_36px_-18px_rgba(233,255,119,0.85)] hover:translate-y-0 hover:scale-[1.03] disabled:opacity-100 disabled:bg-[#e9ff77]/82 disabled:text-[#14180c]/70 sm:size-12 sm:min-h-12"
                         >
                           <ArrowUp className="size-5 sm:size-6" />
@@ -1770,6 +2309,7 @@ export default function App() {
                   </form>
                 </div>
               </div>
+              ) : null}
             </section>
 
             <aside
