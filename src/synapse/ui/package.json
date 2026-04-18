@@ -30,7 +30,7 @@
     "@tanstack/react-start": "^1.167.41",
     "agora-agent-client-toolkit": "^1.0.0",
     "agora-rtc-sdk-ng": "^4.24.0",
-    "agora-rtm": "^2.2.2",
+    "agora-rtm": "file:vendor/agora-rtm",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^1.8.0",

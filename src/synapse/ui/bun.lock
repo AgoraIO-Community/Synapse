@@ -20,7 +20,7 @@
         "@tanstack/react-start": "^1.167.41",
         "agora-agent-client-toolkit": "^1.0.0",
         "agora-rtc-sdk-ng": "^4.24.0",
-        "agora-rtm": "^2.2.2",
+        "agora-rtm": "file:vendor/agora-rtm",
         "class-variance-authority": "^0.7.1",
         "clsx": "^2.1.1",
         "lucide-react": "^1.8.0",
@@ -428,7 +428,7 @@
 
     "agora-rte-extension": ["agora-rte-extension@1.2.4", "", {}, "sha512-0ovZz1lbe30QraG1cU+ji7EnQ8aUu+Hf3F+a8xPml3wPOyUQEK6CTdxV9kMecr9t+fIDrGeW7wgJTsM1DQE7Nw=="],
 
-    "agora-rtm": ["agora-rtm@2.2.4", "", { "peerDependencies": { "agora-rtc-sdk-ng": "4.23.0" } }, "sha512-c2BPYiIjAF7I8yMjplD+w8o0SieVGiuIDN0YSOT+Xg7GpGmK60F3IPzHMuWICMpmThcf3CS8NdmxXHIBh62+ug=="],
+    "agora-rtm": ["agora-rtm@file:vendor/agora-rtm", {}],
 
     "ansi-regex": ["ansi-regex@5.0.1", "", {}, "sha512-quJQXlTSUGL2LH9SUXo8VwsY4soanhgo6LNSm84E1LBcE8s3O0wpdiRzyR9z/ZZJMlMWv37qOOb9pdJlMUEKFQ=="],
 

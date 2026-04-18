@@ -67,6 +67,12 @@ used for both HTTPS requests and websocket URL derivation.
 `VITE_GATEWAY_BASE_URL` is consumed by
 `src/synapse/ui/src/lib/gateway-client.ts` for voice gateway calls only.
 
+The frontend workspace now vendors the `agora-rtm` package locally under
+`src/synapse/ui/vendor/agora-rtm/` because the published `agora-rtm` npm
+package still declares an incompatible peer on `agora-rtc-sdk-ng@4.23.0` while
+the Agora voice toolkit requires `agora-rtc-sdk-ng>=4.23.4`. Keep Vercel on the
+default `npm install` path; do not add `--legacy-peer-deps` for this project.
+
 For this repo's GitHub Actions production deploy path, the workflow currently
 injects `VITE_API_BASE_URL=https://newbro.plutoless.com` directly during the
 production build. Keep the Vercel project env aligned with the same value if
