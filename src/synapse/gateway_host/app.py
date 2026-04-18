@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from .config import GatewayHostSettings, load_gateway_host_settings
 from .registry import create_gateway_module_registry
@@ -11,6 +12,13 @@ GATEWAY_HOST_IMPLEMENTATION_VERSION = "headless-gateway-host.v1"
 def create_app(settings: GatewayHostSettings | None = None) -> FastAPI:
     settings = settings or load_gateway_host_settings()
     app = FastAPI(title="Synapse Gateway Host")
+    if settings.cors_allowed_origins:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=list(settings.cors_allowed_origins),
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
 
     @app.get("/health")
     async def health() -> dict[str, object]:

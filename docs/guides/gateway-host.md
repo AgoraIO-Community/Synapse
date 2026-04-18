@@ -93,6 +93,10 @@ after `~/.synapse/.env` is loaded.
 The gateway host only consumes the `host` and `gateways` sections. The main
 Synapse runtime also reads the shared `runtime` section.
 
+For deployed browser voice-mode access, `host` may also include
+`cors_allowed_origins`, which is the list of browser origins allowed to call
+`/gateway/...` routes cross-origin.
+
 The tracked template is:
 
 ```text

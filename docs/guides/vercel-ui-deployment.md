@@ -53,6 +53,15 @@ The main Synapse API should remain the upstream for browser session traffic.
 The gateway host is a separate vendor-facing process and is not the frontend's
 session API origin.
 
+The gateway host must separately allow the deployed frontend origin for browser
+voice-mode requests. In the shared gateway host config:
+
+```yaml
+host:
+  cors_allowed_origins:
+    - https://app.example.com
+```
+
 ## Vercel Configuration
 
 Set the Vercel frontend env var:
@@ -80,10 +89,11 @@ installs can omit the nested Linux native binding and then fail during
 the root so plain `npm install` on Linux runners remains sufficient.
 
 For this repo's GitHub Actions production deploy path, the workflow currently
-injects `VITE_API_BASE_URL=https://newbro.plutoless.com` directly during the
-production build. Keep the Vercel project env aligned with the same value if
-you also use manual Vercel CLI or dashboard-triggered deploys outside GitHub
-Actions.
+injects both `VITE_API_BASE_URL=https://newbro.plutoless.com` and
+`VITE_GATEWAY_BASE_URL=https://newbro.plutoless.com` directly during the
+production build. Keep the Vercel project env aligned with those same values
+if you also use manual Vercel CLI or dashboard-triggered deploys outside
+GitHub Actions.
 
 ## Reverse Proxy Shape
 
