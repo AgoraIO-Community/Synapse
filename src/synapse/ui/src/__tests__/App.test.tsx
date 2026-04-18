@@ -17,6 +17,54 @@ const streamState: {
   handlers: null,
 };
 
+const agoraState = vi.hoisted(() => {
+  const state = {
+    voiceEvents: {} as Record<string, (...args: any[]) => void>,
+    rtcClient: {
+      on: vi.fn(),
+      subscribe: vi.fn(async () => {}),
+      join: vi.fn(async () => {}),
+      publish: vi.fn(async () => {}),
+      leave: vi.fn(async () => {}),
+    },
+    micTrack: {
+      stop: vi.fn(),
+      close: vi.fn(),
+    },
+    rtmClient: {
+      login: vi.fn(async () => {}),
+      subscribe: vi.fn(async () => {}),
+      logout: vi.fn(async () => {}),
+    },
+    voiceAi: {
+      on: vi.fn((event: string, callback: (...args: any[]) => void) => {
+        state.voiceEvents[event] = callback;
+      }),
+      subscribeMessage: vi.fn(),
+      unsubscribe: vi.fn(),
+      destroy: vi.fn(),
+    },
+    reset() {
+      state.voiceEvents = {};
+      state.rtcClient.on.mockClear();
+      state.rtcClient.subscribe.mockClear();
+      state.rtcClient.join.mockClear();
+      state.rtcClient.publish.mockClear();
+      state.rtcClient.leave.mockClear();
+      state.micTrack.stop.mockClear();
+      state.micTrack.close.mockClear();
+      state.rtmClient.login.mockClear();
+      state.rtmClient.subscribe.mockClear();
+      state.rtmClient.logout.mockClear();
+      state.voiceAi.on.mockClear();
+      state.voiceAi.subscribeMessage.mockClear();
+      state.voiceAi.unsubscribe.mockClear();
+      state.voiceAi.destroy.mockClear();
+    },
+  };
+  return state;
+});
+
 const clientMock = vi.hoisted(() => ({
   createSession: vi.fn<() => Promise<SessionResponse>>(async () => ({ session_id: "session-test" })),
   getSessionSnapshot: vi.fn<() => Promise<SessionSnapshot>>(async () => makeSnapshot()),
@@ -38,7 +86,126 @@ const clientMock = vi.hoisted(() => ({
   sendSocketMessage: vi.fn(),
 }));
 
+const gatewayMock = vi.hoisted(() => ({
+  getGatewayConfig: vi.fn<
+    () => Promise<{
+      ready: boolean;
+      service_base_url: string;
+      defaults: Record<string, never>;
+      missing_requirements: string[];
+    }>
+  >(async () => ({
+    ready: true,
+    service_base_url: "https://gateway.example.com",
+    defaults: {},
+    missing_requirements: [],
+  })),
+  prepareGatewaySession: vi.fn(async () => ({
+    prepared_session_id: "prepared-1",
+    app_id: "agora-app",
+    channel_name: "voice-room",
+    token: "voice-token",
+    uid: 101,
+    user_rtm_uid: "101-voice-room",
+    agent: {
+      uid: "9001",
+    },
+    agent_rtm_uid: "9001-voice-room",
+    enable_string_uid: false,
+    profile: "VOICE",
+    display_name: "Synapse Tester",
+    diagnostics: {
+      convoai_area: "US",
+      selected_url: "https://agora.example.com",
+      runtime_session_id: null,
+      asr_vendor: "deepgram",
+      asr_credential_mode: "managed",
+      asr_model: "nova-3",
+      tts_vendor: "minimax",
+      tts_credential_mode: "managed",
+      tts_model: "speech_2_6_turbo",
+      agent_uid: "9001",
+      agent_rtm_uid: "9001-voice-room",
+      rtc_uid: 101,
+      rtm_user_id: "101-voice-room",
+      enable_string_uid: false,
+      enable_rtm: true,
+      data_channel: "rtm",
+      enable_metrics: true,
+      enable_error_message: true,
+    },
+  })),
+  activateGatewaySession: vi.fn(async () => ({
+    prepared_session_id: "prepared-1",
+    binding_id: "binding-1",
+    synapse_session_id: "voice-session-1",
+    runtime_session_id: "runtime-1",
+    chat_completions_url: "https://gateway.example.com/chat",
+    app_id: "agora-app",
+    channel_name: "voice-room",
+    token: "voice-token",
+    uid: 101,
+    user_rtm_uid: "101-voice-room",
+    agent: {
+      uid: "9001",
+    },
+    agent_rtm_uid: "9001-voice-room",
+    enable_string_uid: false,
+    profile: "VOICE",
+    display_name: "Synapse Tester",
+    diagnostics: {
+      convoai_area: "US",
+      selected_url: "https://agora.example.com",
+      runtime_session_id: "runtime-1",
+      asr_vendor: "deepgram",
+      asr_credential_mode: "managed",
+      asr_model: "nova-3",
+      tts_vendor: "minimax",
+      tts_credential_mode: "managed",
+      tts_model: "speech_2_6_turbo",
+      agent_uid: "9001",
+      agent_rtm_uid: "9001-voice-room",
+      rtc_uid: 101,
+      rtm_user_id: "101-voice-room",
+      enable_string_uid: false,
+      enable_rtm: true,
+      data_channel: "rtm",
+      enable_metrics: true,
+      enable_error_message: true,
+    },
+  })),
+  stopGatewaySession: vi.fn(async () => {}),
+}));
+
 vi.mock("../lib/session-client", () => clientMock);
+vi.mock("../lib/gateway-client", () => gatewayMock);
+vi.mock("agora-rtc-sdk-ng", () => ({
+  default: {
+    createClient: vi.fn(() => agoraState.rtcClient),
+    createMicrophoneAudioTrack: vi.fn(async () => agoraState.micTrack),
+  },
+}));
+vi.mock("agora-rtm", () => ({
+  default: {
+    RTM: vi.fn().mockImplementation(function MockRTM() {
+      return agoraState.rtmClient;
+    }),
+  },
+}));
+vi.mock("agora-agent-client-toolkit", () => ({
+  AgoraVoiceAI: {
+    init: vi.fn(async () => agoraState.voiceAi),
+  },
+  AgoraVoiceAIEvents: {
+    TRANSCRIPT_UPDATED: "TRANSCRIPT_UPDATED",
+    AGENT_STATE_CHANGED: "AGENT_STATE_CHANGED",
+    AGENT_ERROR: "AGENT_ERROR",
+    MESSAGE_ERROR: "MESSAGE_ERROR",
+  },
+  TranscriptHelperMode: {
+    TEXT: "TEXT",
+  },
+}));
 
 function makeSnapshot(overrides: Partial<SessionSnapshot> = {}): SessionSnapshot {
   return {
@@ -65,6 +232,13 @@ describe("App shell", () => {
   beforeEach(() => {
     streamState.handlers = null;
     vi.clearAllMocks();
+    agoraState.reset();
+    gatewayMock.getGatewayConfig.mockResolvedValue({
+      ready: true,
+      service_base_url: "https://gateway.example.com",
+      defaults: {},
+      missing_requirements: [],
+    });
     Object.defineProperty(window, "matchMedia", {
       writable: true,
       value: vi.fn().mockImplementation((query: string) => ({
@@ -145,6 +319,63 @@ describe("App shell", () => {
     expect(screen.queryByText("Chat-first runtime control with a live execution workbench.")).not.toBeInTheDocument();
     expect(screen.queryByText("connecting")).not.toBeInTheDocument();
     expect(screen.getByTestId("workspace-left-pane").className).toContain("min-w-0");
+  });
+
+  it("renders the parallel voice accessory near the composer without replacing the text session flow", async () => {
+    renderApp();
+
+    expect(await screen.findByTestId("voice-accessory-shell")).toBeInTheDocument();
+    expect(await screen.findByTestId("voice-accessory-start")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Issue a system directive...")).toBeInTheDocument();
+    expect(screen.getByText("Voice stays parallel to the main workbench session.")).toBeInTheDocument();
+  });
+
+  it("shows a gateway config error in the voice accessory when the Agora gateway is not ready", async () => {
+    gatewayMock.getGatewayConfig.mockImplementationOnce(async () => ({
+      ready: false,
+      service_base_url: "https://gateway.example.com",
+      defaults: {},
+      missing_requirements: ["gateways.agora-convoai.app_id"] as string[],
+    }));
+
+    renderApp();
+
+    expect(await screen.findByTestId("voice-accessory-error")).toHaveTextContent(
+      "gateways.agora-convoai.app_id",
+    );
+    expect(screen.getByTestId("voice-accessory-start")).toBeDisabled();
+  });
+
+  it("starts and stops the compact voice accessory session through the gateway lifecycle", async () => {
+    renderApp();
+
+    const startButton = await screen.findByTestId("voice-accessory-start");
+    await waitFor(() => expect(startButton).toBeEnabled());
+
+    fireEvent.click(startButton);
+
+    await waitFor(() => expect(gatewayMock.prepareGatewaySession).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(gatewayMock.activateGatewaySession).toHaveBeenCalledWith({
+        prepared_session_id: "prepared-1",
+      }),
+    );
+    expect(await screen.findByText("Voice live")).toBeInTheDocument();
+    expect(agoraState.voiceAi.subscribeMessage).toHaveBeenCalledWith("voice-room");
+
+    await act(async () => {
+      agoraState.voiceEvents.TRANSCRIPT_UPDATED?.([
+        { turn_id: "turn-1", uid: "101", text: "Hello from voice mode", status: "final" },
+      ]);
+    });
+
+    expect(await screen.findByText("Hello from voice mode")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("voice-accessory-stop"));
+
+    await waitFor(() => expect(gatewayMock.stopGatewaySession).toHaveBeenCalledWith("binding-1"));
+    expect(agoraState.voiceAi.unsubscribe).toHaveBeenCalled();
+    expect(agoraState.rtcClient.leave).toHaveBeenCalled();
   });
 
   it("shows task update cards in the conversation timeline for important task events", async () => {

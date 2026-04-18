@@ -128,3 +128,4 @@ Short log of important design decisions and changes for Synapse.
 
 - Documented the production Vercel UI deployment contract in stable docs, including `VITE_API_BASE_URL`, backend `SYNAPSE_CORS_ALLOWED_ORIGINS`, and the requirement for an HTTPS reverse proxy to preserve `/sessions` routing plus websocket upgrades to the main `8000` Synapse API.
 - Updated the GitHub Actions Vercel production deploy to inject `VITE_API_BASE_URL=https://newbro.plutoless.com` during the build and accept `VERCEL_ORG_ID` / `VERCEL_PROJECT_ID` from Actions variables with secrets as a fallback, so merge-to-`main` deploys do not depend on one GitHub storage location for those IDs.
+- Added a compact Agora voice accessory to the main frontend that starts and stops gateway-backed ConvoAI sessions through `/gateway/agora-convoai/*`, keeps the main text workbench session separate, and allows a distinct `VITE_GATEWAY_BASE_URL` for browser gateway calls.

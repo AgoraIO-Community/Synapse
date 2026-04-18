@@ -21,9 +21,18 @@ Preferred direction:
 - when `VITE_API_BASE_URL` is used, that public backend origin must terminate
   on the main Synapse API rather than the gateway host and must preserve secure
   websocket upgrades for `WS /sessions/{session_id}/stream`
+- allow Agora voice-mode browser calls to use `VITE_GATEWAY_BASE_URL` for the
+  separate gateway host; if unset, keep using same-origin `/gateway/...`
+  requests
+- keep the main workbench session and the auxiliary voice session separate in
+  the browser unless a future contract explicitly unifies them
 
 User-visible conversation history should contain only:
 
 - user messages
 - assistant replies
 - emitted proactive messages
+
+Voice transcript preview from the Agora toolkit is not part of that durable
+conversation history projection. It is a separate browser-local UI feed for the
+parallel voice session.

@@ -76,6 +76,7 @@ import {
 } from "./components/ui/sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./components/ui/tooltip";
+import { VoiceComposerAccessory } from "./components/VoiceComposerAccessory";
 import { cn } from "./lib/utils";
 
 type TaskResultDetail = {
@@ -1737,6 +1738,9 @@ export default function App() {
 
               <div className="pointer-events-none absolute inset-x-3 bottom-4 z-20 sm:inset-x-5 sm:bottom-5 xl:right-8">
                 <div className="mx-auto max-w-3xl">
+                  <div className="pointer-events-auto">
+                    <VoiceComposerAccessory />
+                  </div>
                   <form className="pointer-events-auto" onSubmit={handleSendMessage}>
                     <div
                       data-testid="conversation-composer-shell"

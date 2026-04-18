@@ -20,7 +20,7 @@ That gateway module owns:
 
 The browser demo remains outside the gateway host under:
 
-- `exmaple-ui/`
+- `example-ui/`
 
 The gateway host runs separately from the main Synapse API server:
 
@@ -89,6 +89,16 @@ This example now mirrors the official sample's split identity model:
 
 The frontend uses the agent RTM uid for toolkit messaging calls and the agent RTC uid for media/transcript identity.
 
+The main workbench under `src/synapse/ui/` now also supports a compact parallel
+voice accessory. That UI path:
+
+- calls the gateway host through `/gateway/agora-convoai/*`
+- keeps the main text workbench session on the main Synapse API
+- treats the Agora voice session as auxiliary rather than replacing the main
+  workbench session
+- uses browser-local transcript/state from the Agora toolkit only for the voice
+  accessory surface
+
 ## Run
 
 Configure `~/.synapse/.env` and `~/.synapse/config.yaml`, then run:
@@ -108,7 +118,7 @@ For development with frontend + gateway together:
 For the example browser test client:
 
 ```bash
-cd exmaple-ui
+cd example-ui
 npm install
 npm run dev
 ```
@@ -123,5 +133,5 @@ For this example, Synapse fixes `gateways.agora-convoai.convoai_area` to `US`.
 
 ## Ownership Note
 
-The browser demo under `exmaple-ui/` is an example
+The browser demo under `example-ui/` is an example
 client only. It is not part of the gateway-host architecture boundary.
