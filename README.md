@@ -246,8 +246,8 @@ This repo also includes a GitHub Actions workflow at
 Before enabling that workflow, configure these GitHub repository settings:
 
 - Actions secret: `VERCEL_TOKEN`
-- Actions variable: `VERCEL_ORG_ID`
-- Actions variable: `VERCEL_PROJECT_ID`
+- Actions variable or secret: `VERCEL_ORG_ID`
+- Actions variable or secret: `VERCEL_PROJECT_ID`
 
 The production GitHub Actions deploy now injects
 `VITE_API_BASE_URL=https://newbro.plutoless.com` directly into the build so the
