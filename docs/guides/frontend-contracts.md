@@ -24,8 +24,13 @@ Preferred direction:
 - allow Agora voice-mode browser calls to use `VITE_GATEWAY_BASE_URL` for the
   separate gateway host; if unset, keep using same-origin `/gateway/...`
   requests
-- keep the main workbench session and the auxiliary voice session separate in
-  the browser unless a future contract explicitly unifies them
+- the whole frontend shell should follow exactly one active session at a time
+- in voice mode, that active session is the gateway-returned
+  `synapse_session_id`
+- voice mode may also exist without an active session binding before the user
+  presses `Start`
+- switching modes abandons the previous frontend-owned session and creates a
+  fresh session for the selected mode
 
 User-visible conversation history should contain only:
 
@@ -33,6 +38,7 @@ User-visible conversation history should contain only:
 - assistant replies
 - emitted proactive messages
 
-Voice transcript preview from the Agora toolkit is not part of that durable
-conversation history projection. It is a separate browser-local UI feed for the
-parallel voice session.
+Voice transcript from the Agora toolkit is not part of that durable conversation
+history projection. It remains a separate browser-local feed for voice mode
+while the workbench and task state come from the active Synapse session
+websocket.

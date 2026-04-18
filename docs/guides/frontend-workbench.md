@@ -29,12 +29,19 @@ The frontend is now chat-first.
 
 The left pane is the primary interaction surface:
 
-- user message history
-- assistant message history
-- streaming assistant output
-- lightweight task event cards attached to the conversation context
-- message composer
-- a compact auxiliary voice accessory backed by the Agora gateway
+- a left-edge attached vertical `Text` / `Voice` mode rail on desktop
+- text mode:
+  - user message history
+  - assistant message history
+  - streaming assistant output
+  - lightweight task event cards attached to the conversation context
+  - message composer
+- voice mode:
+  - live Agora transcript feed
+  - voice session status
+  - explicit `Start` / `Stop` voice-session control
+  - explicit microphone `Mute` / `Unmute` control
+  - no text composer
 
 The right pane is the execution workbench:
 
@@ -67,14 +74,24 @@ Primary reads:
 State ownership:
 
 - TanStack Query owns the durable read models:
-  - session creation result
   - session snapshot
   - conversation snapshot
 - websocket events own live updates and patch the query-backed state in place
 - diagnostics timeline remains a polling-based debug feed
 
 The websocket remains the primary transport for user message submission and task
-control commands.
+control commands for the currently active mode session.
+
+Mode rules:
+
+- the app boots in `Voice`
+- switching modes abandons the current frontend-owned session for that mode
+- switching to `Text` creates a fresh `POST /sessions` session
+- switching to `Voice` enters an idle voice-mode shell first
+- pressing `Start` in voice mode creates a fresh gateway-backed voice session
+  and then rebinds the whole shell to the returned `synapse_session_id`
+- switching away from `Voice` stops the active Agora session through
+  `POST /gateway/agora-convoai/sessions/stop`
 
 By default, the browser client talks to those routes on the current origin so
 local Vite proxying and same-origin backend hosting keep working. Separate UI
@@ -119,4 +136,4 @@ In practice, that means:
 - avoid changing session and websocket protocol contracts for cosmetic reasons
 - avoid making debug-only backend detail part of the primary chat UX
 - keep the workbench useful even when no tasks exist
-- keep voice mode explicitly auxiliary unless the product contract is revised
+- keep text and voice mode switching explicit and visible in the left pane

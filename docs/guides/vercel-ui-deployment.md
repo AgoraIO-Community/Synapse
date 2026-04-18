@@ -32,6 +32,11 @@ That value is used only for browser calls to:
 - `POST /gateway/agora-convoai/sessions/activate`
 - `POST /gateway/agora-convoai/sessions/stop`
 
+The main shell's `Voice` mode now rebinds the whole frontend to the
+gateway-returned `synapse_session_id`, so deployed environments must ensure the
+public main-backend origin and the public gateway origin are both reachable from
+the browser during mode switches.
+
 ## Backend Configuration
 
 The backend must allow the deployed frontend origin through

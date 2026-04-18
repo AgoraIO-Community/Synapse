@@ -89,15 +89,19 @@ This example now mirrors the official sample's split identity model:
 
 The frontend uses the agent RTM uid for toolkit messaging calls and the agent RTC uid for media/transcript identity.
 
-The main workbench under `src/synapse/ui/` now also supports a compact parallel
-voice accessory. That UI path:
+The main workbench under `src/synapse/ui/` now supports an explicit `Text` /
+`Voice` mode switch. That UI path:
 
-- calls the gateway host through `/gateway/agora-convoai/*`
-- keeps the main text workbench session on the main Synapse API
-- treats the Agora voice session as auxiliary rather than replacing the main
-  workbench session
-- uses browser-local transcript/state from the Agora toolkit only for the voice
-  accessory surface
+- calls the gateway host through `/gateway/agora-convoai/*` when entering voice
+  mode
+- recreates a fresh frontend-owned session on every mode switch
+- starts voice mode in an idle shell state first, then rebinds the whole shell
+  to the voice session's returned `synapse_session_id` only after the user
+  presses `Start`
+- returns to a fresh normal `POST /sessions` session when switching back to
+  text mode
+- uses browser-local transcript/state from the Agora toolkit for the left-pane
+  voice transcript feed while the workbench follows the bound Synapse session
 
 ## Run
 
