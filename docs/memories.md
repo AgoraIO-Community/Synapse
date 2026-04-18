@@ -133,3 +133,4 @@ Short log of important design decisions and changes for Synapse.
 - Promoted the left-pane mode switch into a larger hero-adjacent control and changed the main frontend to boot into `Voice` mode by default instead of `Text`.
 - Reworked voice mode so it now boots idle by default, uses an attached left-edge mode rail on desktop, and exposes explicit `Start` / `Stop` plus microphone `Mute` / `Unmute` controls before and during live voice interaction.
 - Vendored `src/synapse/ui/vendor/agora-rtm/` and pointed the frontend workspace at that local package so plain `npm install` works on Vercel without `--legacy-peer-deps` despite the published Agora RTM package's incompatible peer declaration.
+- Added `@rolldown/binding-linux-x64-gnu` as a root optional dependency in `src/synapse/ui/` so Vite 8 builds on Linux/Vercel do not fail when npm skips Rolldown's nested native binding package.

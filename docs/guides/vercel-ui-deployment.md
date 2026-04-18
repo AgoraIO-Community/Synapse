@@ -73,6 +73,12 @@ package still declares an incompatible peer on `agora-rtc-sdk-ng@4.23.0` while
 the Agora voice toolkit requires `agora-rtc-sdk-ng>=4.23.4`. Keep Vercel on the
 default `npm install` path; do not add `--legacy-peer-deps` for this project.
 
+The workspace also declares `@rolldown/binding-linux-x64-gnu` directly in root
+`optionalDependencies`. Vite 8 pulls Rolldown transitively, but some npm/Vercel
+installs can omit the nested Linux native binding and then fail during
+`npm run build` with `Cannot find native binding`. Keep the binding pinned at
+the root so plain `npm install` on Linux runners remains sufficient.
+
 For this repo's GitHub Actions production deploy path, the workflow currently
 injects `VITE_API_BASE_URL=https://newbro.plutoless.com` directly during the
 production build. Keep the Vercel project env aligned with the same value if
