@@ -33,6 +33,7 @@
 
 - [Guides Index](./guides/index.md)
 - [Local Development](./guides/local-dev.md)
+- [Vercel UI Deployment](./guides/vercel-ui-deployment.md)
 - [Ubuntu Systemd](./guides/ubuntu-systemd.md)
 - [Add Executor Adapter](./guides/add-executor-adapter.md)
 - [Add Blackboard Backend](./guides/add-blackboard-backend.md)

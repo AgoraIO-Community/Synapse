@@ -123,3 +123,8 @@ Short log of important design decisions and changes for Synapse.
 
 - Added configurable frontend transport base support through `VITE_API_BASE_URL`, plus backend `SYNAPSE_CORS_ALLOWED_ORIGINS`, so the main UI under `src/synapse/ui/` can be deployed on a separate public origin such as Vercel while keeping local same-origin behavior as the default.
 - Added a first-party GitHub Actions Vercel deployment workflow for `src/synapse/ui/`, with pull-request previews and production deploys from `main`.
+
+## 2026-04-18
+
+- Documented the production Vercel UI deployment contract in stable docs, including `VITE_API_BASE_URL`, backend `SYNAPSE_CORS_ALLOWED_ORIGINS`, and the requirement for an HTTPS reverse proxy to preserve `/sessions` routing plus websocket upgrades to the main `8000` Synapse API.
+- Updated the GitHub Actions Vercel production deploy to inject `VITE_API_BASE_URL=https://newbro.plutoless.com` during the build and accept `VERCEL_ORG_ID` / `VERCEL_PROJECT_ID` from Actions variables with secrets as a fallback, so merge-to-`main` deploys do not depend on one GitHub storage location for those IDs.
