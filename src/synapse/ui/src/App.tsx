@@ -2195,13 +2195,15 @@ export default function App() {
                       onToggleMute={() => {
                         void toggleVoiceMute();
                       }}
-                      onRetry={() => {
-                        if (voiceModeState.activeSession) {
-                          void handleStopVoiceInteraction();
-                          return;
-                        }
-                        void startVoiceInteraction({ force: true });
-                      }}
+                      onRetry={
+                        voiceModeState.activeSession
+                          ? () => {
+                              void handleStopVoiceInteraction();
+                            }
+                          : () => {
+                              void startVoiceInteraction({ force: true });
+                            }
+                      }
                     />
                   ) : modeError && !activeSessionId ? (
                     <div className="mx-auto flex min-h-full w-full max-w-[38rem] flex-col justify-center gap-5">

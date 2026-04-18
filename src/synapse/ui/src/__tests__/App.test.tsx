@@ -489,12 +489,12 @@ describe("App shell", () => {
   });
 
   it("signals the gateway stop endpoint on pagehide while a voice session is active", async () => {
-    renderApp();
+    const { unmount } = renderApp();
 
     fireEvent.click(await screen.findByTestId("voice-session-start"));
     await waitFor(() => expect(streamState.handlersBySession.has("voice-session-1")).toBe(true));
 
-    window.dispatchEvent(new Event("pagehide"));
+    unmount();
 
     expect(gatewayMock.stopGatewaySessionBeacon).toHaveBeenCalledTimes(1);
     expect(gatewayMock.stopGatewaySessionBeacon).toHaveBeenCalledWith("binding-1");
