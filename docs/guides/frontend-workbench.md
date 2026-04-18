@@ -75,6 +75,9 @@ By default, the browser client talks to those routes on the current origin so
 local Vite proxying and same-origin backend hosting keep working. Separate UI
 deployments can set `VITE_API_BASE_URL` to a public backend base URL instead,
 and that URL must support both HTTPS requests and secure websocket upgrades.
+When the backend sits behind an HTTPS reverse proxy such as Nginx, the public
+origin must forward `/sessions` to the main Synapse API and preserve websocket
+upgrade handling for the session stream route.
 
 ## Component and Styling Direction
 

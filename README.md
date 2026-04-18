@@ -203,10 +203,12 @@ npm run build
 The main UI lives under `src/synapse/ui/`.
 
 Before deploying the frontend separately, make sure the backend is reachable on
-its own public HTTPS origin and allow the Vercel frontend origin through CORS:
+its own public HTTPS origin, that the public backend origin preserves secure
+websocket upgrades for `WS /sessions/{session_id}/stream`, and that the backend
+allows the Vercel frontend origin through CORS:
 
 ```env
-SYNAPSE_CORS_ALLOWED_ORIGINS=https://your-project.vercel.app
+SYNAPSE_CORS_ALLOWED_ORIGINS=https://app.example.com,https://your-project.vercel.app
 ```
 
 Then deploy from the UI workspace:
@@ -221,12 +223,18 @@ Set the production `VITE_API_BASE_URL` value to your public backend base URL,
 for example:
 
 ```text
-https://synapse-backend.example.com
+https://api.example.com
 ```
 
 If you also use Vercel preview deployments, add the same variable for the
 `preview` environment and include that preview origin in
 `SYNAPSE_CORS_ALLOWED_ORIGINS`.
+
+If the backend is served behind Nginx on your server, proxy the public session
+routes to the main Synapse API on port `8000` and keep websocket upgrade
+headers intact for `/sessions/{session_id}/stream`. See
+[`docs/guides/vercel-ui-deployment.md`](./docs/guides/vercel-ui-deployment.md)
+for the full deployment contract and an example reverse-proxy shape.
 
 This repo also includes a GitHub Actions workflow at
 `.github/workflows/deploy-ui-vercel.yml`:
@@ -241,5 +249,8 @@ Before enabling that workflow, configure these GitHub repository settings:
 - Actions variable: `VERCEL_ORG_ID`
 - Actions variable: `VERCEL_PROJECT_ID`
 
-The Vercel project should still own runtime frontend env vars such as
-`VITE_API_BASE_URL`.
+The production GitHub Actions deploy now injects
+`VITE_API_BASE_URL=https://newbro.plutoless.com` directly into the build so the
+merge-to-`main` path does not depend on a separate Vercel production env entry.
+If you also use manual Vercel CLI deploys outside GitHub Actions, keep the
+Vercel project env aligned with that same value.

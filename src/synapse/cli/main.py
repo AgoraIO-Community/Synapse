@@ -52,7 +52,7 @@ DEFAULT_ENV_TEMPLATE_LINES = (
     "# SYNAPSE_ACPX_PERMISSION_MODE=approve-all",
     "# SYNAPSE_ACPX_NON_INTERACTIVE_PERMISSIONS=deny",
     "# SYNAPSE_ACPX_TIMEOUT_SECONDS=300",
-    "# SYNAPSE_CORS_ALLOWED_ORIGINS=https://your-synapse-ui.vercel.app",
+    "# SYNAPSE_CORS_ALLOWED_ORIGINS=https://app.example.com,https://your-project.vercel.app",
     "",
     "# Set to true only after the Codex CLI is installed and configured locally.",
     "SYNAPSE_CODEX_EXECUTOR_ENABLED=false",

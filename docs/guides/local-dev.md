@@ -38,6 +38,12 @@ Backend-only and frontend-only commands:
 ./synapse frontend
 ```
 
+Separate frontend production deployments are documented in
+[`./vercel-ui-deployment.md`](./vercel-ui-deployment.md). Local
+`./synapse dev` and `./synapse frontend` do not require `VITE_API_BASE_URL`
+unless you intentionally want the local browser app to target a separate public
+backend.
+
 The repo-root bootstrap launcher keeps first-run setup working even before the
 package is installed. After setup, the installed console script and module entry
 are also available:
