@@ -118,4 +118,24 @@ describe("gateway-client transport base URL handling", () => {
       },
     );
   });
+
+  it("uses sendBeacon for best-effort stop signaling on page teardown", async () => {
+    vi.stubEnv("VITE_GATEWAY_BASE_URL", "https://gateway.example.com/runtime/");
+    const sendBeaconMock = vi.fn(() => true);
+    Object.defineProperty(globalThis.navigator, "sendBeacon", {
+      configurable: true,
+      value: sendBeaconMock,
+    });
+
+    const client = await import("./gateway-client");
+
+    const result = client.stopGatewaySessionBeacon("binding-1");
+
+    expect(result).toBe(true);
+    expect(sendBeaconMock).toHaveBeenCalledTimes(1);
+    const firstCall = sendBeaconMock.mock.calls[0] as unknown as [string, unknown];
+    expect(firstCall[0]).toBe(
+      "https://gateway.example.com/runtime/gateway/agora-convoai/sessions/stop",
+    );
+  });
 });

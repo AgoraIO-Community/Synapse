@@ -178,6 +178,18 @@ export function VoiceModePanel({
                   <span className="ml-1">{isMicMuted ? "Unmute" : "Mute"}</span>
                 </Button>
               </>
+            ) : activeSession ? (
+              <Button
+                data-testid="voice-session-retry-stop"
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={onRetry}
+                className="rounded-full bg-white/8 px-3 text-white hover:bg-white/12"
+              >
+                <RotateCcw className="size-4" />
+                <span className="ml-1">Retry stop</span>
+              </Button>
             ) : (
               <>
                 <Button

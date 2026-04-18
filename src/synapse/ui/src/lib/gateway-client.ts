@@ -154,3 +154,14 @@ export async function stopGatewaySession(bindingId: string): Promise<void> {
   });
   await ensureOk(response);
 }
+
+export function stopGatewaySessionBeacon(bindingId: string): boolean {
+  if (typeof navigator === "undefined" || typeof navigator.sendBeacon !== "function") {
+    return false;
+  }
+  const payload = JSON.stringify({ binding_id: bindingId });
+  return navigator.sendBeacon(
+    buildGatewayHttpUrl("/gateway/agora-convoai/sessions/stop"),
+    new Blob([payload], { type: "application/json" }),
+  );
+}

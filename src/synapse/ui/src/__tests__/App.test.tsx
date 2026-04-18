@@ -185,6 +185,7 @@ const gatewayMock = vi.hoisted(() => ({
     },
   })),
   stopGatewaySession: vi.fn(async () => {}),
+  stopGatewaySessionBeacon: vi.fn(() => true),
 }));
 
 vi.mock("../lib/session-client", () => clientMock);
@@ -249,6 +250,10 @@ describe("App shell", () => {
     vi.clearAllMocks();
     agoraState.reset();
     textSessionCounter = 0;
+    Object.defineProperty(globalThis.navigator, "sendBeacon", {
+      configurable: true,
+      value: vi.fn(() => true),
+    });
 
     clientMock.createSession.mockImplementation(async () => {
       textSessionCounter += 1;
@@ -420,6 +425,27 @@ describe("App shell", () => {
     expect(screen.getByText(/no live session is running yet/i)).toBeInTheDocument();
   });
 
+  it("keeps the binding available so a failed stop can be retried", async () => {
+    gatewayMock.stopGatewaySession
+      .mockRejectedValueOnce(new Error("temporary stop failure"))
+      .mockResolvedValueOnce(undefined);
+
+    renderApp();
+
+    fireEvent.click(await screen.findByTestId("voice-session-start"));
+    await waitFor(() => expect(streamState.handlersBySession.has("voice-session-1")).toBe(true));
+    fireEvent.click(screen.getByTestId("voice-session-stop"));
+
+    expect((await screen.findAllByText("temporary stop failure")).length).toBeGreaterThan(0);
+    expect(await screen.findByTestId("voice-session-retry-stop")).toBeInTheDocument();
+    expect(streamState.handlersBySession.has("voice-session-1")).toBe(true);
+
+    fireEvent.click(screen.getByTestId("voice-session-retry-stop"));
+
+    await waitFor(() => expect(gatewayMock.stopGatewaySession).toHaveBeenCalledTimes(2));
+    expect(await screen.findByTestId("voice-session-start")).toBeInTheDocument();
+  });
+
   it("mutes and unmutes the microphone while the voice session stays live", async () => {
     renderApp();
 
@@ -460,6 +486,18 @@ describe("App shell", () => {
     fireEvent.click(await screen.findByTestId("voice-session-start"));
 
     expect(await screen.findByText(/gateways\.agora-convoai\.app_id/)).toBeInTheDocument();
+  });
+
+  it("signals the gateway stop endpoint on pagehide while a voice session is active", async () => {
+    renderApp();
+
+    fireEvent.click(await screen.findByTestId("voice-session-start"));
+    await waitFor(() => expect(streamState.handlersBySession.has("voice-session-1")).toBe(true));
+
+    window.dispatchEvent(new Event("pagehide"));
+
+    expect(gatewayMock.stopGatewaySessionBeacon).toHaveBeenCalledTimes(1);
+    expect(gatewayMock.stopGatewaySessionBeacon).toHaveBeenCalledWith("binding-1");
   });
 
   it("sends text-mode composer messages through the active text session websocket", async () => {

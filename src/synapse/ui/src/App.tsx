@@ -77,6 +77,7 @@ import {
   activateGatewaySession,
   getGatewayConfig,
   prepareGatewaySession,
+  stopGatewaySessionBeacon,
   type GatewayActivateResponse,
 } from "./lib/gateway-client";
 import { cn } from "./lib/utils";
@@ -1026,13 +1027,20 @@ export default function App() {
     options: { suppressModeError?: boolean; keepVoiceMode?: boolean } = {},
   ) {
     const activeVoiceResources = voiceResourcesRef.current;
-    voiceResourcesRef.current = null;
-    closeActiveSocket();
-    resetShellState();
-    setActiveSessionId(null);
+    if (!activeVoiceResources) {
+      setVoiceModeState({
+        ...INITIAL_VOICE_MODE_STATE,
+        phase: options.keepVoiceMode === false ? "idle" : "idle",
+      });
+      return;
+    }
 
     try {
       await teardownVoiceSession(activeVoiceResources, true);
+      voiceResourcesRef.current = null;
+      closeActiveSocket();
+      resetShellState();
+      setActiveSessionId(null);
       setVoiceModeState({
         ...INITIAL_VOICE_MODE_STATE,
         phase: options.keepVoiceMode === false ? "idle" : "idle",
@@ -1041,9 +1049,10 @@ export default function App() {
       const message =
         error instanceof Error ? error.message : "Failed to stop the current voice session.";
       setVoiceModeState((current) => ({
-        ...INITIAL_VOICE_MODE_STATE,
+        ...current,
         phase: "error",
         error: message,
+        lastToolkitMessage: message,
       }));
       if (!options.suppressModeError) {
         setModeSwitchStatus("error");
@@ -1135,66 +1144,78 @@ export default function App() {
     if (
       !options.force &&
       nextMode === previousMode &&
-      activeSessionIdRef.current &&
+      (activeSessionIdRef.current || previousMode === "voice") &&
       modeSwitchStatus !== "error"
     ) {
       return;
     }
 
-    const transitionId = modeTransitionRef.current + 1;
-    modeTransitionRef.current = transitionId;
-    setAppMode(nextMode);
     setModeSwitchStatus("switching");
     setModeError(null);
     setComposer("");
-    closeActiveSocket();
-    resetShellState();
-    setActiveSessionId(null);
 
-    if (previousMode === "voice") {
+    if (previousMode === "voice" && nextMode !== "voice") {
       try {
         await stopVoiceInteraction({ suppressModeError: true, keepVoiceMode: false });
       } catch (error) {
-        if (modeTransitionRef.current === transitionId) {
-          const message =
-            error instanceof Error ? error.message : "Failed to stop the current voice session.";
-          setModeSwitchStatus("error");
-          setModeError(message);
-        }
+        const message =
+          error instanceof Error ? error.message : "Failed to stop the current voice session.";
+        setModeSwitchStatus("error");
+        setModeError(message);
         return;
       }
-    } else {
-      resetVoiceModeState();
     }
 
-    try {
-      if (nextMode === "text") {
+    const transitionId = modeTransitionRef.current + 1;
+    modeTransitionRef.current = transitionId;
+
+    if (nextMode === "text") {
+      setAppMode("text");
+      resetVoiceModeState();
+      closeActiveSocket();
+      resetShellState();
+      setActiveSessionId(null);
+      try {
         const session = await createSession();
         if (modeTransitionRef.current !== transitionId) {
           return;
         }
         setActiveSessionId(session.session_id);
-      } else {
+        setModeSwitchStatus("ready");
+      } catch (error) {
+        if (modeTransitionRef.current !== transitionId) {
+          return;
+        }
+        const message =
+          error instanceof Error ? error.message : "Failed to switch to text mode.";
+        setModeSwitchStatus("error");
+        setModeError(message);
         setActiveSessionId(null);
-        setVoiceModeState(INITIAL_VOICE_MODE_STATE);
       }
-      setModeSwitchStatus("ready");
-    } catch (error) {
-      if (modeTransitionRef.current !== transitionId) {
-        return;
-      }
-      const message =
-        error instanceof Error ? error.message : `Failed to switch to ${nextMode} mode.`;
-      setModeSwitchStatus("error");
-      setModeError(message);
-      setActiveSessionId(null);
+      return;
     }
+
+    setAppMode("voice");
+    closeActiveSocket();
+    resetShellState();
+    setActiveSessionId(null);
+    setVoiceModeState(INITIAL_VOICE_MODE_STATE);
+    setModeSwitchStatus("ready");
   }
 
   useEffect(() => {
     setModeSwitchStatus("ready");
     setVoiceModeState(INITIAL_VOICE_MODE_STATE);
+    const stopVoiceBindingOnPageHide = () => {
+      const bindingId = voiceResourcesRef.current?.bindingId;
+      if (bindingId) {
+        stopGatewaySessionBeacon(bindingId);
+      }
+    };
+    window.addEventListener("pagehide", stopVoiceBindingOnPageHide);
     return () => {
+      stopVoiceBindingOnPageHide();
+      window.removeEventListener("pagehide", stopVoiceBindingOnPageHide);
       closeActiveSocket();
       void teardownVoiceSession(voiceResourcesRef.current, false);
       voiceResourcesRef.current = null;
@@ -2175,6 +2196,10 @@ export default function App() {
                         void toggleVoiceMute();
                       }}
                       onRetry={() => {
+                        if (voiceModeState.activeSession) {
+                          void handleStopVoiceInteraction();
+                          return;
+                        }
                         void startVoiceInteraction({ force: true });
                       }}
                     />
