@@ -21,6 +21,7 @@ class GatewayHostSettings:
     port: int = 8010
     public_base_url: str = "http://127.0.0.1:8010"
     synapse_base_url: str = "http://127.0.0.1:8000"
+    cors_allowed_origins: list[str] = field(default_factory=list)
     enabled_gateways: list[str] = field(default_factory=list)
 
 
@@ -117,11 +118,16 @@ def _parse_host_settings(raw_host: Any, config_path: Path) -> GatewayHostSetting
     if not isinstance(raw_host, dict):
         raise GatewayConfigError(f"'host' must be a mapping in {config_path}")
 
-    enabled_gateways = raw_host.get("enabled_gateways") or []
-    if not isinstance(enabled_gateways, list) or any(
-        not isinstance(item, str) or not item.strip() for item in enabled_gateways
-    ):
-        raise GatewayConfigError(f"'host.enabled_gateways' must be a list of strings in {config_path}")
+    enabled_gateways = _parse_string_list(
+        raw_host.get("enabled_gateways") or [],
+        field_name="host.enabled_gateways",
+        config_path=config_path,
+    )
+    cors_allowed_origins = _parse_string_list(
+        raw_host.get("cors_allowed_origins") or [],
+        field_name="host.cors_allowed_origins",
+        config_path=config_path,
+    )
 
     return GatewayHostSettings(
         enabled=_parse_bool_value(
@@ -133,7 +139,8 @@ def _parse_host_settings(raw_host: Any, config_path: Path) -> GatewayHostSetting
         port=int(raw_host.get("port", 8010)),
         public_base_url=str(raw_host.get("public_base_url", "http://127.0.0.1:8010")),
         synapse_base_url=str(raw_host.get("synapse_base_url", "http://127.0.0.1:8000")),
-        enabled_gateways=[item.strip() for item in enabled_gateways],
+        cors_allowed_origins=cors_allowed_origins,
+        enabled_gateways=enabled_gateways,
     )
 
 
@@ -147,3 +154,11 @@ def _parse_bool_value(value: Any, *, field_name: str, config_path: Path) -> bool
         if normalized in {"0", "false", "no", "off"}:
             return False
     raise GatewayConfigError(f"'{field_name}' must be a boolean in {config_path}")
+
+
+def _parse_string_list(value: Any, *, field_name: str, config_path: Path) -> list[str]:
+    if not isinstance(value, list) or any(
+        not isinstance(item, str) or not item.strip() for item in value
+    ):
+        raise GatewayConfigError(f"'{field_name}' must be a list of strings in {config_path}")
+    return [item.strip() for item in value]

@@ -43,6 +43,9 @@ That means:
   frontend.
 - If the Codex executor is enabled, set an absolute `runtime.codex_command` in
   `~/.synapse/config.yaml`.
+- If a separately deployed browser UI uses voice mode against this server, add
+  the frontend origin to `host.cors_allowed_origins` in `~/.synapse/config.yaml`
+  so the gateway host can answer cross-origin `/gateway/...` requests.
 
 Runtime config lives in:
 

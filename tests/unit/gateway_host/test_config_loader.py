@@ -3,6 +3,8 @@ from __future__ import annotations
 import builtins
 from pathlib import Path
 
+import pytest
+
 from synapse.gateway_host.config import load_gateway_config
 
 
@@ -118,3 +120,51 @@ def test_load_gateway_config_accepts_legacy_empty_gateways_shape_with_yaml_fallb
 
     assert loaded.host_settings.enabled is False
     assert loaded.gateways == {}
+
+
+def test_load_gateway_config_reads_host_cors_allowed_origins(tmp_path: Path):
+    env_file = tmp_path / ".env"
+    config_file = tmp_path / "config.yaml"
+    env_file.write_text("", encoding="utf-8")
+    config_file.write_text(
+        "\n".join(
+            [
+                "version: 1",
+                "host:",
+                "  enabled: true",
+                "  cors_allowed_origins:",
+                "    - https://app.example.com",
+                "    - http://localhost:5173",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    loaded = load_gateway_config(env_file=env_file)
+
+    assert loaded.host_settings.cors_allowed_origins == [
+        "https://app.example.com",
+        "http://localhost:5173",
+    ]
+
+
+def test_load_gateway_config_rejects_invalid_host_cors_allowed_origins(tmp_path: Path):
+    env_file = tmp_path / ".env"
+    config_file = tmp_path / "config.yaml"
+    env_file.write_text("", encoding="utf-8")
+    config_file.write_text(
+        "\n".join(
+            [
+                "version: 1",
+                "host:",
+                "  enabled: true",
+                "  cors_allowed_origins: https://app.example.com",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(RuntimeError, match="host.cors_allowed_origins"):
+        load_gateway_config(env_file=env_file)

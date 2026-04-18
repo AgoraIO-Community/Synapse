@@ -216,23 +216,35 @@ Then deploy from the UI workspace:
 ```bash
 cd src/synapse/ui
 npx vercel env add VITE_API_BASE_URL production
+npx vercel env add VITE_GATEWAY_BASE_URL production
 npx vercel --prod
 ```
 
-Set the production `VITE_API_BASE_URL` value to your public backend base URL,
-for example:
+Set the production frontend base URLs to your public server origin, for
+example:
 
 ```text
-https://api.example.com
+VITE_API_BASE_URL=https://newbro.plutoless.com
+VITE_GATEWAY_BASE_URL=https://newbro.plutoless.com
 ```
 
 If you also use Vercel preview deployments, add the same variable for the
 `preview` environment and include that preview origin in
 `SYNAPSE_CORS_ALLOWED_ORIGINS`.
 
+If the deployed UI enables voice mode, the gateway host must also allow the
+frontend origin. Configure that in `~/.synapse/config.yaml` under:
+
+```yaml
+host:
+  cors_allowed_origins:
+    - https://newbro.agora-io.czhen.work
+```
+
 If the backend is served behind Nginx on your server, proxy the public session
-routes to the main Synapse API on port `8000` and keep websocket upgrade
-headers intact for `/sessions/{session_id}/stream`. See
+routes to the main Synapse API on port `8000`, proxy `/gateway/...` to the
+gateway host on `8010`, and keep websocket upgrade headers intact for
+`/sessions/{session_id}/stream`. See
 [`docs/guides/vercel-ui-deployment.md`](./docs/guides/vercel-ui-deployment.md)
 for the full deployment contract and an example reverse-proxy shape.
 
@@ -250,7 +262,9 @@ Before enabling that workflow, configure these GitHub repository settings:
 - Actions variable or secret: `VERCEL_PROJECT_ID`
 
 The production GitHub Actions deploy now injects
-`VITE_API_BASE_URL=https://newbro.plutoless.com` directly into the build so the
-merge-to-`main` path does not depend on a separate Vercel production env entry.
+`VITE_API_BASE_URL=https://newbro.plutoless.com` and
+`VITE_GATEWAY_BASE_URL=https://newbro.plutoless.com` directly into the build so
+the merge-to-`main` path does not depend on separate Vercel production env
+entries.
 If you also use manual Vercel CLI deploys outside GitHub Actions, keep the
-Vercel project env aligned with that same value.
+Vercel project env aligned with those same values.

@@ -60,6 +60,32 @@ async def test_gateway_host_skips_disabled_module_routes():
     assert response.status_code == 404
 
 
+@pytest.mark.anyio
+async def test_gateway_host_applies_cors_to_gateway_routes():
+    app = create_app(
+        GatewayHostSettings(
+            enabled=True,
+            enabled_gateways=["agora-convoai"],
+            cors_allowed_origins=["https://app.example.com"],
+        )
+    )
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        response = await client.options(
+            "/gateway/agora-convoai/sessions/prepare",
+            headers={
+                "Origin": "https://app.example.com",
+                "Access-Control-Request-Method": "POST",
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "https://app.example.com"
+
+
 def test_http_synapse_gateway_transport_disables_proxy_env():
     transport = HttpSynapseGatewayTransport("http://127.0.0.1:8000")
     try:
