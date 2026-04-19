@@ -51,7 +51,8 @@ install_macos_dependencies() {
   fi
 
   log "Installing macOS dependencies with Homebrew"
-  brew install python@3.12 bun
+  brew install python@3.12
+  curl -fsSL https://bun.sh/install | bash
 }
 
 install_linux_dependencies() {
