@@ -4,13 +4,15 @@ from dataclasses import dataclass
 
 from synapse.blackboard import BlackboardQueryService, BlackboardStore
 from synapse.executor_core import ExecutorCapabilities
-from synapse.protocol import Task, TaskStatus, TaskSummary
+from synapse.protocol import Task, TaskExecutionDetailEntry, TaskStatus, TaskSummary
 
 from .history import ConversationEntry, InMemoryConversationHistory
 
 DEFAULT_HISTORY_LIMIT = 30
 ACTIVE_CONTEXT_TASK_LIMIT = 5
 RECENT_CONTEXT_TASK_LIMIT = 5
+EXECUTION_DETAIL_TASK_LIMIT = 5
+EXECUTION_DETAIL_ENTRY_LIMIT = 20
 
 
 @dataclass(slots=True)
@@ -43,6 +45,7 @@ class CommunicationContext:
     recent_history: list[ConversationEntry]
     tasks: list[Task]
     summaries: dict[str, TaskSummary | None]
+    task_execution_details: dict[str, list[TaskExecutionDetailEntry]]
     focused_task_ids: list[str]
     focused_tasks: list[CommunicationTaskBrief]
     active_tasks: list[CommunicationTaskBrief]
@@ -79,6 +82,10 @@ class CommunicationContextBuilder:
             task.task_id: await self._store.get_summary(task.task_id)
             for task in tasks
         }
+        task_execution_details = await self._store.list_recent_task_execution_details(
+            task_limit=EXECUTION_DETAIL_TASK_LIMIT,
+            entry_limit=EXECUTION_DETAIL_ENTRY_LIMIT,
+        )
         focused_task_ids = self._history.latest_focused_task_ids(conversation_id)
         focused_tasks = [
             self._build_task_brief(task, summaries.get(task.task_id))
@@ -107,6 +114,7 @@ class CommunicationContextBuilder:
             recent_history=self._history.get_recent(conversation_id, limit=history_limit),
             tasks=tasks,
             summaries=summaries,
+            task_execution_details=task_execution_details,
             focused_task_ids=focused_task_ids,
             focused_tasks=focused_tasks,
             active_tasks=active_tasks,

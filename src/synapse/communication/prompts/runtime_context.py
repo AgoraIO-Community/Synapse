@@ -16,6 +16,10 @@ def build_runtime_context(context: CommunicationContext) -> dict[str, object]:
         "focused_tasks": [_task_brief_payload(task) for task in context.focused_tasks],
         "active_tasks": [_task_brief_payload(task) for task in context.active_tasks],
         "recent_tasks": [_task_brief_payload(task) for task in context.recent_tasks],
+        "task_execution_details": {
+            task_id: [_execution_detail_payload(entry) for entry in entries]
+            for task_id, entries in context.task_execution_details.items()
+        },
         "executor_runtime": {
             "has_real_executor": context.executor_runtime.has_real_executor,
             "available_executor_types": context.executor_runtime.available_executor_types,
@@ -100,6 +104,16 @@ def _task_brief_payload(task: object) -> dict[str, object]:
         "constraint_count": getattr(task, "constraint_count", None),
         "persona_name": getattr(task, "persona_name", None),
         "persona_avatar": getattr(task, "persona_avatar", None),
+    }
+
+
+def _execution_detail_payload(entry: object) -> dict[str, object]:
+    return {
+        "run_id": getattr(entry, "run_id", None),
+        "execution_session_id": getattr(entry, "execution_session_id", None),
+        "event_type": getattr(entry, "event_type", None),
+        "text": getattr(entry, "text", None),
+        "created_at": getattr(entry, "created_at", None),
     }
 
 

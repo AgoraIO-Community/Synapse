@@ -51,6 +51,22 @@ Console formatting defaults:
 - `SYNAPSE_LOG_LLM_DETAILS=false`
   - keep LLM diagnostics summary-only by default and enable verbose prompt/message payloads only when explicitly needed
 
+Communication LLM note:
+
+- `comm.llm.request_built` always includes the exact built `system_messages` for
+  normal message turns so the effective Communication Brain system prompt can be
+  audited without enabling full verbose LLM logging
+- full built `messages` payloads still require `SYNAPSE_LOG_LLM_DETAILS=true`
+
+Execution logging note:
+
+- low-level Codex item chatter such as `reasoning`, `webSearch`, and generic
+  command-execution lifecycle events should not be promoted into normal
+  task-execution detail history
+- repetitive progress-time `bb.run.updated` and `bb.task.updated` refreshes may
+  still exist as debug diagnostics, but normal `INFO` output should stay focused
+  on semantic progress, blocking, and terminal changes
+
 ## Canonical Event Shape
 
 Diagnostic events use one stable schema with:
@@ -103,6 +119,7 @@ Phase 1 prioritizes boundary and decision events:
   - `bb.task.updated`
   - `bb.mutation.appended`
   - `bb.command.appended`
+  - `bb.execution_detail.appended`
   - `bb.run.updated`
   - `bb.summary.updated`
   - `bb.notification.candidate.created`
@@ -153,6 +170,7 @@ Phase 1 rules:
 - do not log secrets or credentials
 - sanitize tool args and long text fields
 - keep LLM diagnostics summary-level by default
+- always allow message-turn `system_messages` audit logging on `comm.llm.request_built`
 - require explicit opt-in for verbose prompt/message payload logging
 - use the diagnostic timeline for tool/blackboard inspection and backend LLM diagnostics
 - keep websocket transport focused on assistant interaction and durable state updates

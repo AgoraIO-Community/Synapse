@@ -15,6 +15,7 @@ from synapse.protocol import (
     Task,
     TaskCommand,
     TaskCommandType,
+    TaskExecutionDetailEntry,
     TaskExecutionMode,
     TaskMutation,
     TaskStatus,
@@ -78,6 +79,17 @@ def test_execution_lineage_models():
 
     execution_mode = TaskExecutionMode(task_id="task_1", mode=ExecutionMode.UNDECIDED)
     assert execution_mode.mode == ExecutionMode.UNDECIDED
+
+    detail = TaskExecutionDetailEntry(
+        detail_id="detail_1",
+        task_id="task_1",
+        run_id="run_1",
+        execution_session_id="sess_1",
+        event_type="progress",
+        text="Working on it.",
+        created_at="2026-04-21T00:00:00+00:00",
+    )
+    assert detail.payload == {}
 
 
 def test_summary_notification_and_interruption_models():

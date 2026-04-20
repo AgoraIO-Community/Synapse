@@ -3,7 +3,7 @@ import pytest
 from synapse.blackboard import InMemoryBlackboard
 from synapse.communication.tools import build_default_tool_registry
 from synapse.communication.tools.base import ToolInputError
-from synapse.protocol import MutationType, TaskCommandType
+from synapse.protocol import MutationType, TaskCommandType, TaskExecutionDetailEntry
 
 
 @pytest.mark.anyio
@@ -59,6 +59,45 @@ async def test_create_update_note_constraint_control_and_query_tools():
         MutationType.ADD_TASK_NOTE,
         MutationType.ADD_CONSTRAINT,
     ]
+    assert [command.command_type for command in detail["commands"]] == [TaskCommandType.PAUSE_TASK]
+    assert detail["execution_detail_entries"] == []
+
+
+@pytest.mark.anyio
+async def test_query_task_detail_returns_bounded_execution_detail_entries():
+    store = InMemoryBlackboard()
+    registry = build_default_tool_registry(store)
+    created = await registry.get("create_task")(
+        title="Draft email",
+        goal="Draft an email reply",
+        mock_safe=True,
+    )
+    await store.append_task_execution_detail(
+        TaskExecutionDetailEntry(
+            detail_id="detail-1",
+            task_id=created.task_id,
+            run_id="run-1",
+            execution_session_id="session-1",
+            event_type="progress",
+            text="one",
+            created_at="2026-04-21T00:00:01+00:00",
+        )
+    )
+    await store.append_task_execution_detail(
+        TaskExecutionDetailEntry(
+            detail_id="detail-2",
+            task_id=created.task_id,
+            run_id="run-1",
+            execution_session_id="session-1",
+            event_type="progress",
+            text="two",
+            created_at="2026-04-21T00:00:02+00:00",
+        )
+    )
+
+    detail = await registry.get("query_task_detail")(task_id=created.task_id, limit=1)
+
+    assert [entry.text for entry in detail["execution_detail_entries"]] == ["two"]
 
 
 @pytest.mark.anyio

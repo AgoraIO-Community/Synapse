@@ -18,6 +18,7 @@ class QueryTaskDetailTool:
         *,
         task_id: str | None = None,
         reference: str | None = None,
+        limit: int = 20,
     ) -> dict[str, object] | None:
         tasks = await self._store.list_tasks()
         resolution = self._resolver.resolve(tasks, task_id=task_id, reference=reference)
@@ -39,6 +40,11 @@ class QueryTaskDetailTool:
             if session.task_id == task.task_id
         ]
         mutations = await self._store.list_mutations(task.task_id)
+        commands = await self._store.list_commands(task.task_id)
+        execution_detail_entries = await self._store.list_task_execution_details(
+            task.task_id,
+            limit=limit,
+        )
         return {
             "task": task,
             "binding": binding,
@@ -46,4 +52,6 @@ class QueryTaskDetailTool:
             "runs": runs,
             "sessions": sessions,
             "mutations": mutations,
+            "commands": commands,
+            "execution_detail_entries": execution_detail_entries,
         }

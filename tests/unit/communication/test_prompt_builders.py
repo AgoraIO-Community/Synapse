@@ -30,6 +30,7 @@ def _build_context(
         ],
         tasks=tasks or [],
         summaries=summaries or {},
+        task_execution_details={},
         focused_task_ids=focused_task_ids or [],
         focused_tasks=[
             CommunicationTaskBrief(
@@ -102,6 +103,7 @@ def test_build_reply_messages_keeps_expected_message_shape():
         "focused_tasks": [],
         "active_tasks": [],
         "recent_tasks": [],
+        "task_execution_details": {},
         "executor_runtime": {
             "has_real_executor": False,
             "available_executor_types": ["mock"],

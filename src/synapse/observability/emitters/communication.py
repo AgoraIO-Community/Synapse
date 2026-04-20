@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from synapse.communication.model import LlmTraceRecord
+if TYPE_CHECKING:
+    from synapse.communication.model import LlmTraceRecord
 
 from ..logger import DiagnosticLogger
 
@@ -146,6 +147,12 @@ def _llm_trace_details(trace: LlmTraceRecord, *, include_details: bool) -> dict[
         "message_count": len(trace.messages),
         "notification_candidate_count": len(trace.notification_candidates),
     }
+    if trace.source == "message" and trace.phase == "request_built":
+        details["system_messages"] = [
+            message
+            for message in trace.messages
+            if isinstance(message, dict) and message.get("role") == "system"
+        ]
     if trace.source == "notification":
         details["notification_key_task_id"] = trace.notification_key_task_id
         details["notification_relevant_task_ids"] = trace.notification_relevant_task_ids

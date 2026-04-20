@@ -9,6 +9,7 @@ class BlackboardWriteKind(StrEnum):
     TASK = "task"
     MUTATION = "mutation"
     COMMAND = "command"
+    EXECUTION_DETAIL = "execution_detail"
     RUN = "run"
     SESSION = "session"
     BINDING = "binding"

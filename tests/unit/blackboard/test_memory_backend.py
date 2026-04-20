@@ -12,10 +12,12 @@ from synapse.protocol import (
     NotificationCandidateType,
     NotificationDeliveryStatus,
     NotificationPriority,
+    RunStatus,
     SessionBinding,
     Task,
     TaskCommand,
     TaskCommandType,
+    TaskExecutionDetailEntry,
     TaskExecutionMode,
     TaskMutation,
     TaskStatus,
@@ -138,6 +140,54 @@ async def test_memory_blackboard_appends_commands_in_order():
 
 
 @pytest.mark.anyio
+async def test_memory_blackboard_appends_execution_details_and_lists_recent_task_windows():
+    store = InMemoryBlackboard()
+    entries = [
+        TaskExecutionDetailEntry(
+            detail_id="detail-1",
+            task_id="task-1",
+            run_id="run-1",
+            execution_session_id="session-1",
+            event_type="progress",
+            text="step 1",
+            created_at="2026-04-21T00:00:01+00:00",
+        ),
+        TaskExecutionDetailEntry(
+            detail_id="detail-2",
+            task_id="task-2",
+            run_id="run-2",
+            execution_session_id="session-2",
+            event_type="progress",
+            text="step 2",
+            created_at="2026-04-21T00:00:02+00:00",
+        ),
+        TaskExecutionDetailEntry(
+            detail_id="detail-3",
+            task_id="task-1",
+            run_id="run-1",
+            execution_session_id="session-1",
+            event_type="blocked",
+            text="waiting",
+            created_at="2026-04-21T00:00:03+00:00",
+        ),
+    ]
+
+    for entry in entries:
+        await store.append_task_execution_detail(entry)
+
+    assert await store.list_task_execution_details("task-1") == [entries[0], entries[2]]
+    assert await store.list_task_execution_details("task-1", limit=1) == [entries[2]]
+    assert await store.list_task_execution_details("task-1", limit=0) == []
+    assert await store.list_task_execution_details("missing") == []
+
+    recent = await store.list_recent_task_execution_details(task_limit=2, entry_limit=1)
+
+    assert list(recent.keys()) == ["task-1", "task-2"]
+    assert recent["task-1"] == [entries[2]]
+    assert recent["task-2"] == [entries[1]]
+
+
+@pytest.mark.anyio
 async def test_memory_blackboard_notifies_subscribers_on_writes():
     store = InMemoryBlackboard()
     queue = store.subscribe()
@@ -156,5 +206,41 @@ async def test_memory_blackboard_notifies_subscribers_on_writes():
     assert event.task_id == "task_1"
     recent_writes = await store.list_recent_writes()
     assert recent_writes[-1].task_id == "task_1"
+    assert recent_writes[-1].payload["change_kind"] == "created"
+    assert recent_writes[-1].payload["status"] == "queued"
 
     store.unsubscribe(queue)
+
+
+@pytest.mark.anyio
+async def test_memory_blackboard_put_run_and_put_task_publish_change_metadata():
+    store = InMemoryBlackboard()
+    task = Task(
+        task_id="task_1",
+        root_task_id="task_1",
+        title="Draft email",
+        goal="Draft email",
+    )
+    run = ExecutionRun(
+        run_id="run_1",
+        task_id="task_1",
+        execution_session_id="sess_1",
+        executor_type="codex",
+    )
+
+    await store.put_task(task)
+    await store.put_run(run)
+
+    task.status = TaskStatus.RUNNING
+    run.status = RunStatus.RUNNING
+    run.latest_progress_message = "Working through step 1."
+
+    await store.put_task(task)
+    await store.put_run(run)
+
+    recent_writes = await store.list_recent_writes(limit=4)
+    assert recent_writes[-2].payload["change_kind"] == "status_change"
+    assert recent_writes[-2].payload["previous_status"] == "created"
+    assert recent_writes[-1].payload["change_kind"] == "status_change"
+    assert recent_writes[-1].payload["previous_status"] == "created"
+    assert recent_writes[-1].payload["latest_progress_message"] == "Working through step 1."

@@ -42,6 +42,10 @@ Core communication policy:
 - if only the mock executor is available, ordinary task requests should be blocked by default unless they are explicitly mock-safe
 - mock-only capability-limit replies should explain the missing real executor naturally and should not fall back to generic self-service advice unless the user explicitly asks for alternatives
 - there is no standalone message interpreter in the primary `v2` design; interpretation is part of Communication Brain tool use
+- recent execution progress should be grounded through bounded `TaskExecutionDetailEntry` context rather than only a single latest-progress field
+- automatic execution-detail context should be limited to the 5 tasks with the most recent execution-detail activity and the last 20 entries per included task
+- older tasks should be inspected on demand through `query_task_detail`
+- executor-native low-level transport chatter should be filtered before it reaches execution-detail context so Communication Brain sees only user-meaningful task progress
 
 Primary tool surface:
 
@@ -76,5 +80,6 @@ rather than `resume`.
 Related docs:
 
 - [../protocol/task.md](../protocol/task.md)
+- [../protocol/task-execution-detail.md](../protocol/task-execution-detail.md)
 - [../protocol/mutation-and-command.md](../protocol/mutation-and-command.md)
 - [Notifications and Interruptions](./notifications-and-interruptions.md)

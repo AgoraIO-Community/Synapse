@@ -12,6 +12,7 @@ from synapse.protocol import (
     SessionBinding,
     Task,
     TaskCommand,
+    TaskExecutionDetailEntry,
     TaskExecutionMode,
     TaskMutation,
     TaskSummary,
@@ -26,12 +27,16 @@ from ..subscriptions import SubscriptionManager
 class InMemoryBlackboard(BlackboardStore):
     def __init__(self) -> None:
         self._tasks: dict[str, Task] = {}
+        self._task_snapshots: dict[str, Task] = {}
         self._mutations_by_task: dict[str, list[TaskMutation]] = defaultdict(list)
         self._commands_by_task: dict[str, list[TaskCommand]] = defaultdict(list)
         self._mutations: list[TaskMutation] = []
         self._commands: list[TaskCommand] = []
+        self._task_execution_details_by_task: dict[str, list[TaskExecutionDetailEntry]] = defaultdict(list)
+        self._task_execution_details: list[TaskExecutionDetailEntry] = []
         self._sessions: dict[str, ExecutionSession] = {}
         self._runs: dict[str, ExecutionRun] = {}
+        self._run_snapshots: dict[str, ExecutionRun] = {}
         self._bindings_by_task: dict[str, SessionBinding] = {}
         self._summaries_by_task: dict[str, TaskSummary] = {}
         self._execution_modes_by_task: dict[str, TaskExecutionMode] = {}
@@ -43,13 +48,16 @@ class InMemoryBlackboard(BlackboardStore):
         self._lock = asyncio.Lock()
 
     async def put_task(self, task: Task) -> None:
+        previous = self._task_snapshots.get(task.task_id)
         async with self._lock:
             self._tasks[task.task_id] = task
+            self._task_snapshots[task.task_id] = task.model_copy(deep=True)
         await self._publish(
             BlackboardWriteEvent(
                 kind=BlackboardWriteKind.TASK,
                 entity_id=task.task_id,
                 task_id=task.task_id,
+                payload=_task_write_payload(previous, task),
             )
         )
 
@@ -117,14 +125,69 @@ class InMemoryBlackboard(BlackboardStore):
     async def list_all_commands(self) -> list[TaskCommand]:
         return list(self._commands)
 
+    async def append_task_execution_detail(self, entry: TaskExecutionDetailEntry) -> None:
+        async with self._lock:
+            self._task_execution_details_by_task[entry.task_id].append(entry)
+            self._task_execution_details.append(entry)
+        await self._publish(
+            BlackboardWriteEvent(
+                kind=BlackboardWriteKind.EXECUTION_DETAIL,
+                entity_id=entry.detail_id,
+                task_id=entry.task_id,
+                payload={
+                    "run_id": entry.run_id,
+                    "execution_session_id": entry.execution_session_id,
+                    "event_type": entry.event_type,
+                    "text": entry.text,
+                    "created_at": entry.created_at,
+                },
+            )
+        )
+
+    async def list_task_execution_details(
+        self,
+        task_id: str,
+        limit: int | None = None,
+    ) -> list[TaskExecutionDetailEntry]:
+        entries = list(self._task_execution_details_by_task.get(task_id, []))
+        if limit is None:
+            return entries
+        if limit <= 0:
+            return []
+        return entries[-limit:]
+
+    async def list_recent_task_execution_details(
+        self,
+        task_limit: int = 5,
+        entry_limit: int = 20,
+    ) -> dict[str, list[TaskExecutionDetailEntry]]:
+        if task_limit <= 0 or entry_limit <= 0:
+            return {}
+        ordered_task_ids: list[str] = []
+        seen_task_ids: set[str] = set()
+        for entry in reversed(self._task_execution_details):
+            if entry.task_id in seen_task_ids:
+                continue
+            seen_task_ids.add(entry.task_id)
+            ordered_task_ids.append(entry.task_id)
+            if len(ordered_task_ids) >= task_limit:
+                break
+        return {
+            task_id: self._task_execution_details_by_task.get(task_id, [])[-entry_limit:]
+            for task_id in ordered_task_ids
+        }
+
     async def put_run(self, run: ExecutionRun) -> None:
+        previous = self._run_snapshots.get(run.run_id)
         async with self._lock:
             self._runs[run.run_id] = run
+            self._run_snapshots[run.run_id] = run.model_copy(deep=True)
         await self._publish(
             BlackboardWriteEvent(
                 kind=BlackboardWriteKind.RUN,
                 entity_id=run.run_id,
                 task_id=run.task_id,
+                payload=_run_write_payload(previous, run),
             )
         )
 
@@ -270,3 +333,75 @@ class InMemoryBlackboard(BlackboardStore):
             event.request_id = get_diagnostic_context().request_id
         self._recent_writes.append(event)
         await self._subscriptions.publish(event)
+
+
+def _task_write_payload(previous: Task | None, current: Task) -> dict[str, object]:
+    payload: dict[str, object] = {"status": current.status.value}
+    if previous is None:
+        payload["change_kind"] = "created"
+        return payload
+    if previous.status != current.status:
+        payload["change_kind"] = "status_change"
+        payload["previous_status"] = previous.status.value
+        return payload
+
+    changed_fields = [
+        field
+        for field in (
+            "title",
+            "goal",
+            "priority",
+            "interruptible",
+            "requires_confirmation",
+            "preferred_executor",
+            "session_affinity",
+            "latest_instruction",
+            "metadata",
+        )
+        if getattr(previous, field) != getattr(current, field)
+    ]
+    if changed_fields:
+        payload["change_kind"] = "fields_updated"
+        payload["changed_fields"] = changed_fields[:5]
+        return payload
+    payload["change_kind"] = "refresh"
+    return payload
+
+
+def _run_write_payload(previous: ExecutionRun | None, current: ExecutionRun) -> dict[str, object]:
+    payload: dict[str, object] = {"status": current.status.value}
+    if previous is None:
+        payload["change_kind"] = "created"
+        if current.latest_progress_message:
+            payload["latest_progress_message"] = current.latest_progress_message
+        return payload
+    if previous.status != current.status:
+        payload["change_kind"] = "status_change"
+        payload["previous_status"] = previous.status.value
+        if current.latest_progress_message:
+            payload["latest_progress_message"] = current.latest_progress_message
+        return payload
+    if previous.latest_progress_message != current.latest_progress_message:
+        payload["change_kind"] = "progress_update"
+        if current.latest_progress_message:
+            payload["latest_progress_message"] = current.latest_progress_message
+        return payload
+
+    changed_fields = [
+        field
+        for field in (
+            "output_summary",
+            "block_reason",
+            "failure_reason",
+            "claimed_by",
+            "run_revision",
+            "metadata",
+        )
+        if getattr(previous, field) != getattr(current, field)
+    ]
+    if changed_fields:
+        payload["change_kind"] = "fields_updated"
+        payload["changed_fields"] = changed_fields[:5]
+        return payload
+    payload["change_kind"] = "refresh"
+    return payload
