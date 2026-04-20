@@ -174,3 +174,52 @@ export function sendSocketCommand(
     }),
   );
 }
+
+
+// --- Persona API ---
+
+export interface PersonaCreatePayload {
+  name: string;
+  avatar?: string;
+  base_prompt?: string;
+}
+
+export interface PersonaUpdatePayload {
+  name?: string;
+  avatar?: string;
+  base_prompt?: string;
+}
+
+export async function listPersonas(sessionId: string) {
+  const response = await fetch(buildHttpUrl(`/sessions/${sessionId}/personas`));
+  return (await ensureOk(response)).json();
+}
+
+export async function createPersona(sessionId: string, payload: PersonaCreatePayload) {
+  const response = await fetch(buildHttpUrl(`/sessions/${sessionId}/personas`), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return (await ensureOk(response)).json();
+}
+
+export async function updatePersona(
+  sessionId: string,
+  personaId: string,
+  payload: PersonaUpdatePayload,
+) {
+  const response = await fetch(buildHttpUrl(`/sessions/${sessionId}/personas/${personaId}`), {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return (await ensureOk(response)).json();
+}
+
+export async function deletePersona(sessionId: string, personaId: string) {
+  const response = await fetch(buildHttpUrl(`/sessions/${sessionId}/personas/${personaId}`), {
+    method: "DELETE",
+  });
+  return (await ensureOk(response)).json();
+}

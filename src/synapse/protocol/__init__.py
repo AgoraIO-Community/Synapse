@@ -20,6 +20,7 @@ from .execution_mode import TaskExecutionMode
 from .interruption import Interruption
 from .mutation import TaskMutation
 from .notification import NotificationCandidate
+from .persona import Persona
 from .run import ExecutionRun
 from .session import AgentResumeHandle, ExecutionSession, QueuedRunRequest, SessionBinding
 from .summary import TaskSummary
@@ -40,6 +41,7 @@ __all__ = [
     "NotificationCandidateType",
     "NotificationDeliveryStatus",
     "NotificationPriority",
+    "Persona",
     "QueuedRunRequest",
     "RunStatus",
     "SessionBinding",

@@ -63,6 +63,14 @@ class ReconcileLoop:
         return completed_run_ids
 
     async def _execute_task(self, task: Task, claimed) -> str | None:
+        # Inject persona base_prompt into the task if assigned.
+        persona_id = task.metadata.get("persona_id")
+        if isinstance(persona_id, str):
+            persona = await self._store.get_persona(persona_id)
+            if persona is not None and persona.base_prompt:
+                existing = task.latest_instruction or ""
+                task.latest_instruction = f"{persona.base_prompt}\n\n{existing}".strip()
+
         executor_type = task.preferred_executor or self._default_executor_type
         try:
             executor = self._registry.get(executor_type)
@@ -96,6 +104,9 @@ class ReconcileLoop:
         await self._sync_executor_session(executor, session, executor_session)
         summary = self._summaries.build_summary(task, run)
         await self._store.put_summary(summary)
+        # Release persona when task reaches terminal state.
+        if run.status in {RunStatus.COMPLETED, RunStatus.FAILED, RunStatus.CANCELLED}:
+            await self._release_persona(task)
         if run.status == RunStatus.COMPLETED:
             return run.run_id
         return None
@@ -146,4 +157,14 @@ class ReconcileLoop:
                     "binding_status": BindingStatus.RELEASED,
                 }
             )
+        )
+    async def _release_persona(self, task: Task) -> None:
+        persona_id = task.metadata.get("persona_id")
+        if not isinstance(persona_id, str):
+            return
+        persona = await self._store.get_persona(persona_id)
+        if persona is None:
+            return
+        await self._store.put_persona(
+            persona.model_copy(update={"status": "idle", "current_task_id": None})
         )

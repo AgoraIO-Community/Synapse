@@ -170,6 +170,16 @@ export interface SessionSnapshot {
   bindings: SessionBinding[];
   summaries: TaskSummary[];
   notification_candidates: NotificationCandidate[];
+  personas: Persona[];
+}
+
+export interface Persona {
+  persona_id: string;
+  name: string;
+  avatar: string;
+  base_prompt: string;
+  status: "idle" | "busy";
+  current_task_id: string | null;
 }
 
 export interface ConversationSnapshot {

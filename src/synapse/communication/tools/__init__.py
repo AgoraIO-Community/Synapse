@@ -61,14 +61,12 @@ def build_default_tool_registry(
     executor_types: list[str] | None = None,
     default_executor_type: str = "mock",
     apply_task_command=None,
-    persona_assigner=None,
 ) -> ToolRegistry:
     resolved_executor_types = sorted(set(executor_types or ["mock"]))
     create_task = CreateTaskTool(
         store,
         valid_executor_types=resolved_executor_types,
         default_executor_type=default_executor_type,
-        persona_assigner=persona_assigner,
     )
     add_constraint = AddConstraintTool(store)
     add_task_note = AddTaskNoteTool(store)
@@ -132,12 +130,14 @@ def build_default_tool_registry(
             ),
             "create_task": ToolSpec(
                 name="create_task",
-                description="Create a new task on the blackboard.",
+                description="Create a new task on the blackboard. Must specify persona_name to assign a worker.",
                 input_schema={
                     "type": "object",
                     "properties": {
                         "title": {"type": "string"},
                         "goal": {"type": "string"},
+                        "persona_name": {"type": ["string", "null"], "description": "Name of the persona to assign this task to."},
+                        "continue_from_task_id": {"type": ["string", "null"], "description": "Task ID to continue from. Reuses that task's workspace so the executor can see prior files."},
                         "preferred_executor": {
                             "anyOf": [
                                 {"type": "string", "enum": create_task.valid_executor_types},

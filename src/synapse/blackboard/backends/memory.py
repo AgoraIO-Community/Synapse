@@ -8,6 +8,7 @@ from synapse.protocol import (
     ExecutionRun,
     ExecutionSession,
     NotificationCandidate,
+    Persona,
     SessionBinding,
     Task,
     TaskCommand,
@@ -36,6 +37,7 @@ class InMemoryBlackboard(BlackboardStore):
         self._execution_modes_by_task: dict[str, TaskExecutionMode] = {}
         self._notification_candidates: dict[str, NotificationCandidate] = {}
         self._notification_candidate_order: list[str] = []
+        self._personas: dict[str, Persona] = {}
         self._recent_writes: list[BlackboardWriteEvent] = []
         self._subscriptions = SubscriptionManager()
         self._lock = asyncio.Lock()
@@ -224,6 +226,35 @@ class InMemoryBlackboard(BlackboardStore):
             for candidate_id in self._notification_candidate_order
             if candidate_id in self._notification_candidates
         ]
+
+    async def put_persona(self, persona: Persona) -> None:
+        async with self._lock:
+            self._personas[persona.persona_id] = persona
+        await self._publish(
+            BlackboardWriteEvent(
+                kind=BlackboardWriteKind.PERSONA,
+                entity_id=persona.persona_id,
+            )
+        )
+
+    async def get_persona(self, persona_id: str) -> Persona | None:
+        return self._personas.get(persona_id)
+
+    async def list_personas(self) -> list[Persona]:
+        return list(self._personas.values())
+
+    async def delete_persona(self, persona_id: str) -> bool:
+        async with self._lock:
+            removed = self._personas.pop(persona_id, None)
+        if removed is not None:
+            await self._publish(
+                BlackboardWriteEvent(
+                    kind=BlackboardWriteKind.PERSONA,
+                    entity_id=persona_id,
+                )
+            )
+            return True
+        return False
 
     async def list_recent_writes(self, limit: int = 50) -> list[BlackboardWriteEvent]:
         return list(self._recent_writes[-limit:])

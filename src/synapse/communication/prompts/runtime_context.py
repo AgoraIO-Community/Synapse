@@ -24,6 +24,8 @@ def build_runtime_context(context: CommunicationContext) -> dict[str, object]:
         },
         "available_tools": context.available_tools,
     }
+    if context.personas:
+        result["personas"] = context.personas
     return result
 
 

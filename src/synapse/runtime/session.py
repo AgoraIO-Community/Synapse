@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 
 from synapse.blackboard import InMemoryBlackboard
 from synapse.communication import CommunicationBrain
-from synapse.communication.persona_pool import PersonaAssigner
+from synapse.communication.persona_pool import load_personas_from_file
 from synapse.communication.history import InMemoryConversationHistory
 from synapse.communication.model import CommunicationModel, LlmTraceRecord, ToolCallRecord
 from synapse.communication.tools import build_default_tool_registry
@@ -105,6 +105,7 @@ class SessionRuntime:
             bindings=bindings,
             summaries=summaries,
             notification_candidates=notification_candidates,
+            personas=await self.blackboard.list_personas(),
         )
 
     async def conversation_snapshot(self) -> ConversationSnapshot:
@@ -713,12 +714,11 @@ def create_session_runtime(
         if settings.acpx_executor_enabled
         else "codex" if settings.codex_executor_enabled else "mock"
     )
-    persona_assigner = PersonaAssigner()
+    # Load user-defined personas from ~/.synapse/personas.yaml into the blackboard.
     tool_registry = build_default_tool_registry(
         blackboard,
         executor_types=registry.list_executor_types(),
         default_executor_type=default_executor_type,
-        persona_assigner=persona_assigner,
     )
     communication_brain = CommunicationBrain(
         blackboard,
@@ -759,4 +759,7 @@ def create_session_runtime(
     notification_manager.set_conversation_event_callback(runtime._broadcast_conversation_append)
     runtime.start_notification_processing()
     runtime._ensure_diagnostic_pump()
+    # Load personas from persistent config into the blackboard.
+    for persona in load_personas_from_file():
+        blackboard._personas[persona.persona_id] = persona
     return runtime

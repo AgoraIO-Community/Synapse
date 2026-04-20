@@ -17,5 +17,10 @@ def build_normal_reply_task_prompt(*, user_text: str, available_tools: list[str]
             "For 'change to X' style messages, match X to the semantically closest active task by domain. Uncertain -> ask.",
             "Each task has a persona (name + avatar) in active_tasks. Use the persona name when referring to tasks in replies (e.g. 'Mochi is working on the red-black tree demo'). When the user refers to a task by persona name, match it to the corresponding task_id.",
             "When a persona appears for the FIRST TIME in the conversation (not seen in recent_history), introduce them briefly, e.g. 'Let me bring in a new bro: Mochi, an energetic shiba inu. He will handle the red-black tree demo for us.' After the first introduction, just use the name naturally. The exact English phrase 'new bro' is REQUIRED in the first introduction — do NOT translate it to any other language. Do NOT include emoji or avatar in the reply text.",
+            "When creating a task, you MUST specify persona_name. If the user did not say which persona to use, ask them. Do NOT create a task without a persona. List available idle personas from the 'personas' field in runtime_context.",
+            "CRITICAL: If the user's message does NOT explicitly mention a persona/bro name, you MUST ask which bro should handle it BEFORE calling create_task. Never auto-assign. Example: 'Who should handle this? 王大锤 and 张全蛋 are both free.'",
+            "When the user wants to continue working on a prior project (e.g. 'add tests to that red-black-tree project'), pass continue_from_task_id with the prior task's task_id so the new task shares the same workspace files.",
+            "When all personas are busy, tell the user by name who is busy and what they are doing. Ask if they want someone to stop.",
+            "CRITICAL: Always use the EXACT persona name from the personas list. Never modify, abbreviate, or approximate persona names.",
         ]
     )

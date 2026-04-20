@@ -15,6 +15,7 @@ class BlackboardWriteKind(StrEnum):
     SUMMARY = "summary"
     EXECUTION_MODE = "execution_mode"
     NOTIFICATION = "notification"
+    PERSONA = "persona"
 
 
 @dataclass(slots=True)

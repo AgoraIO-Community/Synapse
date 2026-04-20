@@ -1,69 +1,102 @@
-"""Task-level persona pool.
+"""User-defined persona persistence and session loading.
 
-Each task gets a unique persona assigned at creation time.
-Personas are recycled when tasks reach terminal states.
+Personas are stored in ~/.synapse/personas.yaml and loaded into the
+blackboard at session start. Runtime state (status, current_task_id)
+lives on the blackboard only.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import re
+from pathlib import Path
 
-# Pre-defined persona pool. Avatar is an emoji for now;
-# the frontend can map these to pixel-art sprites.
-_PERSONAS = [
-    ("Mochi", "🐕", "An energetic shiba inu"),
-    ("Pixel", "🐱", "A curious calico cat"),
-    ("Biscuit", "🐶", "A loyal golden retriever"),
-    ("Nori", "🐾", "A clever black cat"),
-    ("Tofu", "🐰", "A speedy white rabbit"),
-    ("Mango", "🦊", "A crafty little fox"),
-    ("Pudding", "🐻", "A steady brown bear"),
-    ("Sesame", "🐧", "A focused penguin"),
-    ("Waffle", "🐹", "A cheerful hamster"),
-    ("Dumpling", "🐼", "A calm panda"),
-]
+from synapse.config_home import SYNAPSE_HOME_DIR
+from synapse.protocol import Persona
+
+PERSONAS_FILE = SYNAPSE_HOME_DIR / "personas.yaml"
+WORKSPACES_DIR = SYNAPSE_HOME_DIR / "workspaces"
 
 
-@dataclass(slots=True, frozen=True)
-class TaskPersona:
-    name: str
-    avatar: str
-    tagline: str
+def create_workspace(task_id: str) -> Path:
+    """Create a new isolated workspace directory for a task."""
+    workspace_id = f"ws-{task_id.replace('task-', '')}"
+    workspace = WORKSPACES_DIR / workspace_id
+    workspace.mkdir(parents=True, exist_ok=True)
+    return workspace
 
 
-PERSONA_POOL: list[TaskPersona] = [
-    TaskPersona(name=n, avatar=a, tagline=t) for n, a, t in _PERSONAS
-]
+def load_personas_from_file(path: Path | None = None) -> list[Persona]:
+    """Load persona definitions from YAML. Returns empty list if file missing or malformed."""
+    resolved = path or PERSONAS_FILE
+    if not resolved.exists():
+        return []
+    try:
+        text = resolved.read_text(encoding="utf-8")
+    except OSError:
+        return []
+    return _parse_personas_yaml(text)
 
 
-class PersonaAssigner:
-    """Assigns personas to tasks from a fixed pool, recycling on terminal tasks."""
+def save_personas_to_file(personas: list[Persona], path: Path | None = None) -> None:
+    """Write persona definitions to YAML."""
+    resolved = path or PERSONAS_FILE
+    resolved.parent.mkdir(parents=True, exist_ok=True)
+    lines = ["personas:"]
+    for p in personas:
+        lines.append(f"  - name: {_yaml_quote(p.name)}")
+        lines.append(f"    avatar: {_yaml_quote(p.avatar)}")
+        lines.append(f"    base_prompt: {_yaml_quote(p.base_prompt)}")
+    resolved.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
-    def __init__(self, pool: list[TaskPersona] | None = None) -> None:
-        self._pool = list(pool or PERSONA_POOL)
-        self._assigned: dict[str, TaskPersona] = {}  # task_id -> persona
 
-    def assign(self, task_id: str) -> TaskPersona:
-        """Assign a persona to a task. Returns existing if already assigned."""
-        if task_id in self._assigned:
-            return self._assigned[task_id]
-        used = set(id(p) for p in self._assigned.values())
-        for persona in self._pool:
-            if id(persona) not in used:
-                self._assigned[task_id] = persona
-                return persona
-        # Pool exhausted — wrap around with index.
-        idx = len(self._assigned) % len(self._pool)
-        persona = self._pool[idx]
-        self._assigned[task_id] = persona
-        return persona
+def _parse_personas_yaml(text: str) -> list[Persona]:
+    """Minimal parser for the personas.yaml format we generate."""
+    personas: list[Persona] = []
+    current: dict[str, str] = {}
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or stripped == "personas:":
+            continue
+        # New list item: "- name: ..."
+        match = re.match(r'^-\s+(\w+):\s*(.*)', stripped)
+        if match:
+            if current.get("name"):
+                personas.append(_build_persona(current))
+            current = {match.group(1): _unquote(match.group(2))}
+            continue
+        # Continuation field: "  key: value"
+        match = re.match(r'^(\w+):\s*(.*)', stripped)
+        if match:
+            current[match.group(1)] = _unquote(match.group(2))
+    if current.get("name"):
+        personas.append(_build_persona(current))
+    return personas
 
-    def get(self, task_id: str) -> TaskPersona | None:
-        return self._assigned.get(task_id)
 
-    def release(self, task_id: str) -> None:
-        """Release a persona back to the pool (task completed/cancelled/failed)."""
-        self._assigned.pop(task_id, None)
+def _build_persona(fields: dict[str, str]) -> Persona:
+    name = fields.get("name", "")
+    persona_id = f"persona-{name.lower().replace(' ', '-')}"
+    return Persona(
+        persona_id=persona_id,
+        name=name,
+        avatar=fields.get("avatar", ""),
+        base_prompt=fields.get("base_prompt", ""),
+    )
 
-    def to_metadata(self, persona: TaskPersona) -> dict[str, str]:
-        return {"persona_name": persona.name, "persona_avatar": persona.avatar, "persona_tagline": persona.tagline}
+
+def _unquote(value: str) -> str:
+    s = value.strip()
+    if len(s) >= 2 and s[0] == '"' and s[-1] == '"':
+        return s[1:-1].replace('\\"', '"').replace("\\\\", "\\")
+    if len(s) >= 2 and s[0] == "'" and s[-1] == "'":
+        return s[1:-1]
+    return s
+
+
+def _yaml_quote(value: str) -> str:
+    if not value:
+        return '""'
+    if any(c in value for c in ":#{}[]&*!|>'\"%@`\n"):
+        escaped = value.replace("\\", "\\\\").replace('"', '\\"')
+        return f'"{escaped}"'
+    return f'"{value}"'

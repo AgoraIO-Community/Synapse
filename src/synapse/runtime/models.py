@@ -9,6 +9,7 @@ from synapse.protocol import (
     ExecutionRun,
     ExecutionSession,
     NotificationCandidate,
+    Persona,
     SessionBinding,
     Task,
     TaskSummary,
@@ -30,6 +31,7 @@ class SessionSnapshot(BaseModel):
     bindings: list[SessionBinding] = Field(default_factory=list)
     summaries: list[TaskSummary] = Field(default_factory=list)
     notification_candidates: list[NotificationCandidate] = Field(default_factory=list)
+    personas: list[Persona] = Field(default_factory=list)
  
 
 class ConversationSnapshot(BaseModel):
