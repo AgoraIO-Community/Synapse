@@ -8,6 +8,7 @@ from synapse.protocol import (
     NotificationCandidateType,
     NotificationPriority,
     Task,
+    TaskExecutionDetailEntry,
     TaskStatus,
     TaskSummary,
 )
@@ -19,6 +20,7 @@ def _build_context(
     recent_history: list[ConversationEntry] | None = None,
     tasks: list[Task] | None = None,
     summaries: dict[str, TaskSummary | None] | None = None,
+    task_execution_details: dict[str, list[TaskExecutionDetailEntry]] | None = None,
     focused_task_ids: list[str] | None = None,
 ) -> CommunicationContext:
     return CommunicationContext(
@@ -30,7 +32,7 @@ def _build_context(
         ],
         tasks=tasks or [],
         summaries=summaries or {},
-        task_execution_details={},
+        task_execution_details=task_execution_details or {},
         focused_task_ids=focused_task_ids or [],
         focused_tasks=[
             CommunicationTaskBrief(
@@ -140,6 +142,41 @@ def test_build_reply_messages_switches_tool_policy_for_real_executor():
     assert "fact-check whether this quote is authentic" not in real_executor_messages[5]["content"]
     assert "help me draft an email reply" not in mock_only_messages[5]["content"]
     assert "What is the weather in Shanghai today?" not in mock_only_messages[5]["content"]
+
+
+def test_build_reply_messages_serializes_execution_details():
+    messages = build_reply_messages(
+        user_text="status?",
+        context=_build_context(
+            has_real_executor=True,
+            task_execution_details={
+                "task-1": [
+                    TaskExecutionDetailEntry(
+                        detail_id="detail-1",
+                        task_id="task-1",
+                        run_id="run-1",
+                        execution_session_id="session-1",
+                        event_type="progress",
+                        text="meaningful progress",
+                        created_at="2026-04-21T00:00:01+00:00",
+                    )
+                ]
+            },
+        ),
+    )
+
+    runtime_context = json.loads(messages[6]["content"])
+    assert runtime_context["task_execution_details"] == {
+        "task-1": [
+            {
+                "run_id": "run-1",
+                "execution_session_id": "session-1",
+                "event_type": "progress",
+                "text": "meaningful progress",
+                "created_at": "2026-04-21T00:00:01+00:00",
+            }
+        ]
+    }
 
 
 def test_build_reply_messages_uses_clarification_examples_for_missing_live_data_operands():

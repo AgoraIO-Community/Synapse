@@ -45,6 +45,8 @@ class InMemoryBlackboard(BlackboardStore):
         self._personas: dict[str, Persona] = {}
         self._recent_writes: list[BlackboardWriteEvent] = []
         self._subscriptions = SubscriptionManager()
+        # Writes are serialized under this lock; read accessors intentionally stay
+        # await-free and return best-effort snapshots of the current in-memory state.
         self._lock = asyncio.Lock()
 
     async def put_task(self, task: Task) -> None:

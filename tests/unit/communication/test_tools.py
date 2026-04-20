@@ -1,9 +1,15 @@
 import pytest
 
 from synapse.blackboard import InMemoryBlackboard
+from synapse.communication import persona_pool
 from synapse.communication.tools import build_default_tool_registry
 from synapse.communication.tools.base import ToolInputError
 from synapse.protocol import MutationType, TaskCommandType, TaskExecutionDetailEntry
+
+
+@pytest.fixture(autouse=True)
+def workspace_root(tmp_path, monkeypatch):
+    monkeypatch.setattr(persona_pool, "WORKSPACES_DIR", tmp_path / "workspaces")
 
 
 @pytest.mark.anyio

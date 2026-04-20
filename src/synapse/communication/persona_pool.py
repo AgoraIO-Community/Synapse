@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from tempfile import gettempdir
 
 from synapse.config_home import SYNAPSE_HOME_DIR
 from synapse.protocol import Persona
@@ -21,22 +20,9 @@ WORKSPACES_DIR = SYNAPSE_HOME_DIR / "workspaces"
 def create_workspace(task_id: str) -> Path:
     """Create a new isolated workspace directory for a task."""
     workspace_id = f"ws-{task_id.replace('task-', '')}"
-    roots = [
-        WORKSPACES_DIR,
-        Path(gettempdir()) / "synapse" / "workspaces",
-    ]
-    last_error: OSError | None = None
-    for root in roots:
-        workspace = root / workspace_id
-        try:
-            workspace.mkdir(parents=True, exist_ok=True)
-            return workspace
-        except OSError as exc:
-            last_error = exc
-            continue
-    if last_error is not None:
-        raise last_error
-    raise RuntimeError("Unable to create workspace directory.")
+    workspace = WORKSPACES_DIR / workspace_id
+    workspace.mkdir(parents=True, exist_ok=True)
+    return workspace
 
 
 def load_personas_from_file(path: Path | None = None) -> list[Persona]:

@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from synapse.communication.context import CommunicationContext
-from synapse.protocol import NotificationCandidate, Task, TaskSummary
+from synapse.protocol import NotificationCandidate, Task, TaskExecutionDetailEntry, TaskSummary
 
 
 NOTIFICATION_CHAT_HISTORY_LIMIT = 6
@@ -107,13 +107,13 @@ def _task_brief_payload(task: object) -> dict[str, object]:
     }
 
 
-def _execution_detail_payload(entry: object) -> dict[str, object]:
+def _execution_detail_payload(entry: TaskExecutionDetailEntry) -> dict[str, object]:
     return {
-        "run_id": getattr(entry, "run_id", None),
-        "execution_session_id": getattr(entry, "execution_session_id", None),
-        "event_type": getattr(entry, "event_type", None),
-        "text": getattr(entry, "text", None),
-        "created_at": getattr(entry, "created_at", None),
+        "run_id": entry.run_id,
+        "execution_session_id": entry.execution_session_id,
+        "event_type": entry.event_type,
+        "text": entry.text,
+        "created_at": entry.created_at,
     }
 
 
