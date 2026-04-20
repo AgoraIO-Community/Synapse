@@ -64,6 +64,18 @@ class DiagnosticTimelineResponse(BaseModel):
     events: list[DiagnosticEvent] = Field(default_factory=list)
 
 
+class PersonaCreateRequest(BaseModel):
+    name: str
+    avatar: str = ""
+    base_prompt: str = ""
+
+
+class PersonaUpdateRequest(BaseModel):
+    name: str | None = None
+    avatar: str | None = None
+    base_prompt: str | None = None
+
+
 __all__ = [
     "CommandRequest",
     "CommandResponse",

@@ -188,6 +188,10 @@ const gatewayMock = vi.hoisted(() => ({
   stopGatewaySessionBeacon: vi.fn(() => true),
 }));
 
+type SessionSnapshotOverrides = Partial<Omit<SessionSnapshot, "session_id" | "personas">> & {
+  personas?: SessionSnapshot["personas"];
+};
+
 vi.mock("../lib/session-client", () => clientMock);
 vi.mock("../lib/gateway-client", () => gatewayMock);
 vi.mock("agora-rtc-sdk-ng", () => ({
@@ -220,7 +224,8 @@ vi.mock("agora-agent-client-toolkit", () => ({
   },
 }));
 
-function makeSnapshot(sessionId: string, overrides: Partial<SessionSnapshot> = {}): SessionSnapshot {
+function makeSnapshot(sessionId: string, overrides: SessionSnapshotOverrides = {}): SessionSnapshot {
+  const personas = overrides.personas ?? [];
   return {
     session_id: sessionId,
     tasks: [],
@@ -231,6 +236,7 @@ function makeSnapshot(sessionId: string, overrides: Partial<SessionSnapshot> = {
     summaries: [],
     notification_candidates: [],
     ...overrides,
+    personas,
   };
 }
 

@@ -49,6 +49,7 @@ class CommunicationContext:
     recent_tasks: list[CommunicationTaskBrief]
     executor_runtime: ExecutorRuntimeSummary
     available_tools: list[str]
+    personas: list[dict[str, object]] | None = None
 
 
 class CommunicationContextBuilder:
@@ -112,6 +113,7 @@ class CommunicationContextBuilder:
             recent_tasks=recent_tasks,
             executor_runtime=self._build_executor_runtime_summary(),
             available_tools=available_tools,
+            personas=await self._build_persona_context(),
         )
 
     def _build_task_brief(
@@ -162,3 +164,17 @@ class CommunicationContextBuilder:
                 for capability in self._executor_capabilities
             ],
         )
+    async def _build_persona_context(self) -> list[dict[str, object]] | None:
+        personas = await self._store.list_personas()
+        if not personas:
+            return None
+        return [
+            {
+                "persona_id": p.persona_id,
+                "name": p.name,
+                "avatar": p.avatar,
+                "status": p.status,
+                "current_task_id": p.current_task_id,
+            }
+            for p in personas
+        ]

@@ -87,6 +87,8 @@ import {
   type ActiveVoiceResources,
   type VoiceTranscriptTurn,
 } from "./lib/voice-runtime";
+import { PixelPersona, taskStatusToPersonaState } from "./components/PixelPersona";
+import { PersonaPanel } from "./components/PersonaPanel";
 
 type TaskResultDetail = {
   shortText: string;
@@ -118,6 +120,8 @@ type ConversationTaskEvent = {
   summary: string;
   tone: "success" | "warning" | "destructive" | "default";
   status: Task["status"];
+  personaName: string | null;
+  personaAvatar: string | null;
 };
 
 type TaskEventAnchorMap = Record<string, string>;
@@ -511,6 +515,8 @@ function buildConversationTaskEvents(
         "The execution brain is tracking this task.",
       tone: statusTone(task.status),
       status: task.status,
+      personaName: (task.metadata?.persona_name as string) || null,
+      personaAvatar: (task.metadata?.persona_avatar as string) || null,
     };
   });
 }
@@ -595,12 +601,21 @@ function TaskEventCard({
       <div className="rounded-[1.05rem] border border-[rgba(214,255,100,0.1)] bg-[linear-gradient(180deg,rgba(29,31,35,0.96),rgba(24,26,30,0.92))] px-4 py-3 text-white shadow-[0_22px_40px_-32px_rgba(0,0,0,0.55)] transition hover:-translate-y-0.5 hover:border-[rgba(214,255,100,0.18)]">
         <div className="mb-2 flex items-start justify-between gap-3">
           <div className="flex min-w-0 items-start gap-2.5">
-            <span className="inline-flex size-8 shrink-0 items-center justify-center rounded-full bg-white/8 text-[#d6ff64]">
-              <Icon className={cn("size-4", event.status === "running" && "animate-spin")} />
-            </span>
+            {event.personaName ? (
+              <PixelPersona
+                name={event.personaName}
+                avatar={event.personaAvatar ?? ""}
+                state={taskStatusToPersonaState(event.status)}
+                size={28}
+              />
+            ) : (
+              <span className="inline-flex size-8 shrink-0 items-center justify-center rounded-full bg-white/8 text-[#d6ff64]">
+                <Icon className={cn("size-4", event.status === "running" && "animate-spin")} />
+              </span>
+            )}
             <div className="min-w-0">
               <div className="text-[0.62rem] font-bold uppercase tracking-[0.18em] text-white/40">
-                Task update
+                {event.personaName ? `${event.personaName}` : "Task update"}
               </div>
               <h3 className="mt-0.5 text-sm font-semibold tracking-tight text-white">{event.title}</h3>
             </div>
@@ -653,6 +668,9 @@ function QueueCard({
   onSelect: () => void;
 }) {
   const progress = statusProgress(task.status);
+  const personaName = (task.metadata?.persona_name as string) || null;
+  const personaAvatar = (task.metadata?.persona_avatar as string) || null;
+  const personaTagline = (task.metadata?.persona_tagline as string) || null;
   return (
     <button type="button" className="w-full text-left" onClick={onSelect}>
       <div
@@ -664,13 +682,27 @@ function QueueCard({
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0 space-y-1">
             <div className="flex items-center gap-2 text-[0.62rem] font-bold uppercase tracking-[0.18em] text-white/40">
-              <Workflow className="size-3.5 text-[#d7ff1f]" />
-              <span>{task.preferred_executor ?? "executor:auto"}</span>
+              {personaName ? (
+                <>
+                  <PixelPersona
+                    name={personaName}
+                    avatar={personaAvatar ?? ""}
+                    state={taskStatusToPersonaState(task.status)}
+                    size={32}
+                  />
+                </>
+              ) : (
+                <Workflow className="size-3.5 text-[#d7ff1f]" />
+              )}
+              <span>{personaName ?? (task.preferred_executor ?? "executor:auto")}</span>
               <span className="h-1 w-1 rounded-full bg-white/25" />
               <span>rev {task.task_revision}</span>
             </div>
             <h4 className="text-sm font-semibold text-white">{task.title}</h4>
             <p className="line-clamp-2 text-sm leading-5 text-slate-300">{task.goal}</p>
+            {personaTagline && (
+              <p className="text-[0.6rem] italic text-white/30">{personaTagline}</p>
+            )}
           </div>
           <span className="rounded-full bg-[#d7ff1f]/10 px-2.5 py-1 text-[0.6rem] font-black uppercase tracking-[0.18em] text-[#d7ff1f]">
             {statusLabel(task.status)}
@@ -1095,6 +1127,7 @@ export default function App() {
         return;
       }
       setActiveSessionId(activated.synapse_session_id);
+      getSessionSnapshot(activated.synapse_session_id).then(setSnapshot);
       setModeSwitchStatus("ready");
     } catch (error) {
       if (modeTransitionRef.current !== transitionId || appModeRef.current !== "voice") {
@@ -1834,6 +1867,20 @@ export default function App() {
       <TabsContent value="overview" className="mt-0 flex-1 min-h-0 overflow-hidden">
         <ScrollArea className="h-full min-h-0 pr-2">
           <div className="space-y-6 pb-10">
+            {/* Persona team panel */}
+            {activeSessionId && (
+              <section className="space-y-3">
+                <PersonaPanel
+                  sessionId={activeSessionId}
+                  personas={snapshot?.personas ?? []}
+                  onRefresh={() => {
+                    if (activeSessionId) {
+                      getSessionSnapshot(activeSessionId).then(setSnapshot);
+                    }
+                  }}
+                />
+              </section>
+            )}
             <section className="space-y-3">
               <div className="flex items-center justify-between">
                 <h3 className="text-lg font-bold tracking-tight text-[#212723]">Active Tasks</h3>
@@ -2173,7 +2220,21 @@ export default function App() {
                   </div>
 
                   {isVoiceMode ? (
-                    <VoiceModePanel
+                    <>
+                      {activeSessionId && (
+                        <div className="mb-4">
+                          <PersonaPanel
+                            sessionId={activeSessionId}
+                            personas={snapshot?.personas ?? []}
+                            onRefresh={() => {
+                              if (activeSessionId) {
+                                getSessionSnapshot(activeSessionId).then(setSnapshot);
+                              }
+                            }}
+                          />
+                        </div>
+                      )}
+                      <VoiceModePanel
                       phase={
                         modeSwitchStatus === "switching" && !voiceModeState.activeSession
                           ? "loading"
@@ -2205,6 +2266,7 @@ export default function App() {
                             }
                       }
                     />
+                    </>
                   ) : modeError && !activeSessionId ? (
                     <div className="mx-auto flex min-h-full w-full max-w-[38rem] flex-col justify-center gap-5">
                       <div className="rounded-[1.3rem] border border-rose-500/18 bg-[linear-gradient(180deg,rgba(255,241,243,0.88),rgba(255,232,236,0.72))] px-5 py-5 text-rose-700 shadow-[0_18px_42px_-34px_rgba(190,24,93,0.3)]">

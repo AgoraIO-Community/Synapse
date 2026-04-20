@@ -7,6 +7,7 @@ from synapse.protocol import (
     ExecutionRun,
     ExecutionSession,
     NotificationCandidate,
+    Persona,
     SessionBinding,
     Task,
     TaskCommand,
@@ -98,6 +99,18 @@ class BlackboardStore(Protocol):
 
     async def list_notification_candidates(self) -> list[NotificationCandidate]:
         """List notification candidates across the session."""
+
+    async def put_persona(self, persona: Persona) -> None:
+        """Store or replace a persona."""
+
+    async def get_persona(self, persona_id: str) -> Persona | None:
+        """Fetch one persona by id."""
+
+    async def list_personas(self) -> list[Persona]:
+        """List all personas."""
+
+    async def delete_persona(self, persona_id: str) -> bool:
+        """Delete a persona. Returns True if it existed."""
 
     async def list_recent_writes(self, limit: int = 50) -> list[BlackboardWriteEvent]:
         """List recent blackboard write events for debugging."""

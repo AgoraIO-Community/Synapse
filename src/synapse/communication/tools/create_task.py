@@ -3,6 +3,7 @@ from __future__ import annotations
 from uuid import uuid4
 
 from synapse.blackboard import BlackboardStore
+from synapse.communication.persona_pool import create_workspace
 from synapse.protocol import ExecutionMode, MutationType, Task, TaskExecutionMode, TaskMutation
 
 from .base import ToolInputError
@@ -17,12 +18,10 @@ class CreateTaskTool:
         *,
         valid_executor_types: list[str],
         default_executor_type: str,
-        persona_assigner=None,
     ) -> None:
         self._store = store
         self._valid_executor_types = list(valid_executor_types)
         self._default_executor_type = default_executor_type
-        self._persona_assigner = persona_assigner
 
     @property
     def valid_executor_types(self) -> list[str]:
@@ -33,6 +32,8 @@ class CreateTaskTool:
         *,
         title: str,
         goal: str,
+        persona_name: str | None = None,
+        continue_from_task_id: str | None = None,
         preferred_executor: str | None = None,
         requires_confirmation: bool = False,
         mock_safe: bool = False,
@@ -46,15 +47,51 @@ class CreateTaskTool:
             )
         if resolved_executor == "mock" and not mock_safe:
             raise ToolInputError(
-                "A real executor is required for normal task execution, but only the mock executor is available right now.",
+                "A real executor is required but only the mock executor is available.",
                 code="real_executor_required",
             )
 
-        task_id = f"task-{uuid4().hex[:8]}"
+        # Resolve persona
         metadata: dict[str, object] = {"mock_safe": True} if mock_safe else {}
-        if self._persona_assigner is not None:
-            persona = self._persona_assigner.assign(task_id)
-            metadata.update(self._persona_assigner.to_metadata(persona))
+        persona = None
+        if persona_name:
+            personas = await self._store.list_personas()
+            for p in personas:
+                if p.name.lower() == persona_name.lower():
+                    persona = p
+                    break
+            if persona is None:
+                available = ", ".join(p.name for p in personas) or "none"
+                raise ToolInputError(
+                    f"Persona '{persona_name}' not found. Available: {available}.",
+                    code="persona_not_found",
+                )
+            if persona.status == "busy":
+                raise ToolInputError(
+                    f"{persona.name} is busy with another task right now.",
+                    code="persona_busy",
+                )
+
+        task_id = f"task-{uuid4().hex[:8]}"
+
+        # Resolve workspace: continue from prior task or create new
+        session_affinity: str | None = None
+        if continue_from_task_id:
+            prior_task = await self._store.get_task(continue_from_task_id)
+            if prior_task is not None and prior_task.session_affinity:
+                session_affinity = prior_task.session_affinity
+                metadata["continue_from_task_id"] = continue_from_task_id
+        if session_affinity is None:
+            session_affinity = str(create_workspace(task_id))
+
+        if persona is not None:
+            metadata["persona_id"] = persona.persona_id
+            metadata["persona_name"] = persona.name
+            metadata["persona_avatar"] = persona.avatar
+            await self._store.put_persona(
+                persona.model_copy(update={"status": "busy", "current_task_id": task_id})
+            )
+
         task = Task(
             task_id=task_id,
             root_task_id=task_id,
@@ -62,14 +99,12 @@ class CreateTaskTool:
             goal=goal,
             preferred_executor=resolved_executor,
             requires_confirmation=requires_confirmation,
+            session_affinity=session_affinity,
             metadata=metadata,
         )
         await self._store.put_task(task)
         await self._store.put_execution_mode(
-            TaskExecutionMode(
-                task_id=task_id,
-                mode=ExecutionMode.UNDECIDED,
-            )
+            TaskExecutionMode(task_id=task_id, mode=ExecutionMode.UNDECIDED)
         )
         await self._store.append_mutation(
             TaskMutation(
@@ -80,7 +115,8 @@ class CreateTaskTool:
                     "title": title,
                     "goal": goal,
                     "preferred_executor": resolved_executor,
-                    "mock_safe": mock_safe,
+                    "persona_name": persona.name if persona else None,
+                    "continue_from_task_id": continue_from_task_id,
                 },
                 created_by="communication_brain",
             )
