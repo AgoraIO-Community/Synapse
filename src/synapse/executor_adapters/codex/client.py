@@ -145,7 +145,20 @@ def _build_request_response(
 ) -> dict[str, object]:
     normalized = method.lower()
     if normalized in {"item/commandexecution/requestapproval", "execcommandapproval"}:
-        return {"decision": "acceptForSession" if action == "approve" else "decline"}
+        if action == "approve":
+            amendment = params.get("proposedExecpolicyAmendment")
+            if isinstance(amendment, list) and amendment and all(
+                isinstance(item, str) for item in amendment
+            ):
+                return {
+                    "decision": {
+                        "acceptWithExecpolicyAmendment": {
+                            "execpolicy_amendment": amendment,
+                        }
+                    }
+                }
+            return {"decision": "acceptForSession"}
+        return {"decision": "decline"}
     if normalized in {"item/filechange/requestapproval", "applypatchapproval"}:
         return {"decision": "acceptForSession" if action == "approve" else "decline"}
     if normalized == "item/permissions/requestapproval":

@@ -6,6 +6,8 @@ from synapse.blackboard import InMemoryBlackboard
 from synapse.blackboard.store import BlackboardWriteEvent, BlackboardWriteKind
 from synapse.interaction import InteractionManager
 from synapse.protocol import (
+    AttentionItemKind,
+    AttentionItemStatus,
     ExecutionRun,
     InteractionRequestKind,
     InteractionRequestStatus,
@@ -184,3 +186,60 @@ async def test_interaction_manager_rejects_invalid_resolution_action():
 
     with pytest.raises(ValueError, match="not allowed"):
         await manager.resolve_request(request.request_id, action="answer", answer_text="yes")
+
+
+@pytest.mark.anyio
+async def test_interaction_manager_cancel_requests_for_task_marks_request_and_attention():
+    store = InMemoryBlackboard()
+    manager = InteractionManager(store)
+    task = Task(
+        task_id="task-1",
+        root_task_id="task-1",
+        title="Permission task",
+        goal="Permission task",
+    )
+    run = ExecutionRun(
+        run_id="run-1",
+        task_id="task-1",
+        execution_session_id="exec-1",
+        executor_type="codex",
+        status=RunStatus.BLOCKED,
+        block_reason="Allow network access?",
+        metadata={"blocked_event": {"interaction_kind": "permission"}},
+    )
+    await store.put_task(task)
+    await store.put_run(run)
+    await manager.handle_blackboard_write(
+        BlackboardWriteEvent(kind=BlackboardWriteKind.RUN, entity_id="run-1", task_id="task-1")
+    )
+
+    await manager.cancel_requests_for_task("task-1")
+
+    request = (await store.list_interaction_requests())[0]
+    attention = (await store.list_attention_items())[0]
+    assert request.status == InteractionRequestStatus.CANCELLED
+    assert attention.status == AttentionItemStatus.DISMISSED
+
+
+@pytest.mark.anyio
+async def test_interaction_manager_add_task_signal_attention_creates_attention_item():
+    store = InMemoryBlackboard()
+    manager = InteractionManager(store)
+    task = Task(
+        task_id="task-1",
+        root_task_id="task-1",
+        title="Pause task",
+        goal="Pause task",
+    )
+    await store.put_task(task)
+
+    item = await manager.add_task_signal_attention(
+        task=task,
+        kind=AttentionItemKind.TASK_PAUSED,
+        body="Pause task is paused.",
+    )
+
+    saved = await store.get_attention_item(item.attention_id)
+    assert saved is not None
+    assert saved.kind == AttentionItemKind.TASK_PAUSED
+    assert saved.body == "Pause task is paused."

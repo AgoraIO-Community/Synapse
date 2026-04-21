@@ -195,6 +195,30 @@ class ManagedPauseExecutor:
         )
 
 
+class FakeNativeClient:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, object]] = []
+
+    async def respond_to_request(self, **kwargs) -> None:
+        self.calls.append(kwargs)
+
+
+class FakeNativeCodexSession:
+    def __init__(self) -> None:
+        from synapse.executor_adapters.codex.session import CodexExecutorSession
+
+        self.session = CodexExecutorSession(
+            session_id="codex-session-native",
+            executor_type="codex",
+        )
+        self.client = FakeNativeClient()
+        self.session._client = self.client  # noqa: SLF001
+        self.session._blocked_resolution_event = asyncio.Event()  # noqa: SLF001
+
+    def mark_blocked_resolved(self) -> None:
+        self.session.mark_blocked_resolved()
+
+
 @pytest.mark.anyio
 async def test_session_runtime_snapshot_pump_publishes_background_execution_updates():
     session = create_session_runtime(
@@ -323,6 +347,51 @@ async def test_session_runtime_snapshot_includes_interaction_requests_and_attent
 
     assert snapshot.interaction_requests[0].request_id == "ireq-1"
     assert snapshot.attention_items[0].attention_id == "attention-1"
+
+
+@pytest.mark.anyio
+async def test_session_runtime_snapshot_sanitizes_interaction_request_opaque():
+    session = create_session_runtime(
+        "session-5c",
+        model=ScriptedCommunicationModel(
+            {"__default__": ScriptedPlan(conversational_act="request_clarification")}
+        ),
+        settings=Settings(),
+    )
+    await session.blackboard.put_interaction_request(
+        InteractionRequest(
+            request_id="ireq-2",
+            task_id="task-2",
+            kind=InteractionRequestKind.PERMISSION,
+            status=InteractionRequestStatus.PENDING,
+            prompt="Allow deleting the folder?",
+            available_actions=["approve", "deny"],
+            opaque={
+                "native_response": {
+                    "request_id": 9,
+                    "method": "item/commandExecution/requestApproval",
+                    "params": {
+                        "threadId": "thread-1",
+                        "turnId": "turn-1",
+                        "itemId": "call-1",
+                        "command": "rm -rf /tmp/x",
+                        "cwd": "/secret/path",
+                        "proposedExecpolicyAmendment": ["rm", "-rf", "/tmp/x"],
+                    },
+                }
+            },
+            created_at="2026-04-06T00:00:00+00:00",
+        )
+    )
+
+    snapshot = await session.snapshot()
+    opaque = snapshot.interaction_requests[0].opaque["native_response"]
+
+    assert opaque["request_id"] == 9
+    assert opaque["method"] == "item/commandExecution/requestApproval"
+    assert opaque["params"]["command"] == "rm -rf /tmp/x"
+    assert "cwd" not in opaque["params"]
+    assert "proposedExecpolicyAmendment" not in opaque["params"]
 
 
 @pytest.mark.anyio
@@ -536,3 +605,60 @@ async def test_session_runtime_pause_captures_resume_handle_for_managed_pause_ex
     assert execution_session.latest_resume_handle.session_handle == "managed-pause-session"
     assert task is not None and task.status == TaskStatus.PAUSED
     assert executor.paused_runs == ["run-managed-pause"]
+
+
+@pytest.mark.anyio
+async def test_session_runtime_native_interaction_resolution_sets_native_resume_strategy():
+    session = create_session_runtime(
+        "session-6d",
+        model=ScriptedCommunicationModel(
+            {"__default__": ScriptedPlan(conversational_act="request_clarification")}
+        ),
+        settings=Settings(),
+    )
+    native = FakeNativeCodexSession()
+    session.execution_brain._loop._sessions._live_sessions["exec-session-native"] = native.session
+    await session.blackboard.put_task(
+        Task(
+            task_id="task-native",
+            root_task_id="task-native",
+            title="Native interaction task",
+            goal="Native interaction task",
+            status=TaskStatus.WAITING_USER_INPUT,
+            preferred_executor="codex",
+        )
+    )
+    await session.blackboard.put_interaction_request(
+        InteractionRequest(
+            request_id="ireq-native",
+            task_id="task-native",
+            execution_session_id="exec-session-native",
+            run_id="run-native",
+            executor_type="codex",
+            kind=InteractionRequestKind.PERMISSION,
+            status=InteractionRequestStatus.PENDING,
+            prompt="Allow deleting the folder?",
+            available_actions=["approve", "deny"],
+            opaque={
+                "native_response": {
+                    "request_id": 3,
+                    "method": "item/commandExecution/requestApproval",
+                    "params": {
+                        "threadId": "thread-1",
+                        "turnId": "turn-1",
+                        "itemId": "call-1",
+                        "command": "rm -rf /tmp/x",
+                        "proposedExecpolicyAmendment": ["rm", "-rf", "/tmp/x"],
+                    },
+                }
+            },
+            created_at="2026-04-06T00:00:00+00:00",
+        )
+    )
+
+    affected = await session.resolve_interaction_request("ireq-native", action="approve")
+    request = await session.blackboard.get_interaction_request("ireq-native")
+
+    assert affected == ["task-native"]
+    assert request is not None and request.resume_strategy == "native_response"
+    assert native.client.calls

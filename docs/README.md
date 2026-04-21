@@ -70,6 +70,6 @@
 - [0005 Synapse x acpx Execution Runtime Integration](./rfcs/0005-acpx-execution-runtime-integration.md)
 - [0006 User-Defined Persona System](./rfcs/0006-user-defined-persona-system.md)
 - [0007 Persona Workspace and Session Continuity](./rfcs/0007-persona-workspace-and-session-continuity.md)
-- [0008 Interaction Harness and Mode Profiles](./rfcs/0008-interaction-harness-and-mode-profiles.md)
+- [Interaction Harness and Mode Profiles](./rfcs/0008-interaction-harness-and-mode-profiles.md)
 - [0009 Interaction Requests and Attention Items](./rfcs/0009-interaction-requests-and-attention-items.md)
 - [0008 Execution Detail Context And System-Prompt Audit](./rfcs/0008-execution-detail-context-and-system-prompt-audit.md)

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 from .enums import (
@@ -23,7 +25,7 @@ class InteractionRequest(BaseModel):
     details: dict[str, object] = Field(default_factory=dict)
     available_actions: list[str] = Field(default_factory=list)
     answer_schema: dict[str, object] | None = None
-    resume_strategy: str = "follow_up_run"
+    resume_strategy: Literal["follow_up_run", "native_response"] = "follow_up_run"
     opaque: dict[str, object] = Field(default_factory=dict)
     created_at: str
     resolved_at: str | None = None

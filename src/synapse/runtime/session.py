@@ -96,6 +96,10 @@ class SessionRuntime:
         notification_candidates = await self.blackboard.list_notification_candidates()
         bindings = await self.blackboard.list_bindings()
         interaction_requests = await self.blackboard.list_interaction_requests()
+        sanitized_interaction_requests = [
+            request.model_copy(update={"opaque": _sanitize_interaction_request_opaque(request.opaque)})
+            for request in interaction_requests
+        ]
         attention_items = await self.blackboard.list_attention_items()
         summaries = [
             summary
@@ -112,7 +116,7 @@ class SessionRuntime:
             summaries=summaries,
             notification_candidates=notification_candidates,
             personas=await self.blackboard.list_personas(),
-            interaction_requests=interaction_requests,
+            interaction_requests=sanitized_interaction_requests,
             attention_items=attention_items,
             executor_capabilities=self._executor_capabilities_snapshot(),
         )
@@ -406,6 +410,9 @@ class SessionRuntime:
             answer_text=answer_text,
         )
         if native_resolved:
+            await self.blackboard.put_interaction_request(
+                resolution.request.model_copy(update={"resume_strategy": "native_response"})
+            )
             return [resolution.request.task_id]
         task = await self.blackboard.get_task(resolution.request.task_id)
         if task is None:
@@ -1003,3 +1010,24 @@ def create_session_runtime(
     for persona in load_personas_from_file():
         blackboard._personas[persona.persona_id] = persona
     return runtime
+
+
+def _sanitize_interaction_request_opaque(opaque: dict[str, object]) -> dict[str, object]:
+    native_response = opaque.get("native_response")
+    if not isinstance(native_response, dict):
+        return {}
+    sanitized: dict[str, object] = {}
+    for key in ("request_id", "method"):
+        value = native_response.get(key)
+        if value is not None:
+            sanitized[key] = value
+    params = native_response.get("params")
+    if isinstance(params, dict):
+        sanitized_params: dict[str, object] = {}
+        for key in ("threadId", "turnId", "itemId", "reason", "command"):
+            value = params.get(key)
+            if isinstance(value, str) and value:
+                sanitized_params[key] = value
+        if sanitized_params:
+            sanitized["params"] = sanitized_params
+    return {"native_response": sanitized} if sanitized else {}

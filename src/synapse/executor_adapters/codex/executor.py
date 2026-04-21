@@ -66,6 +66,9 @@ class CodexExecutor:
             await session.close()
 
     async def pause_run(self, run_id: str) -> None:
+        # Managed pause: we end the current live app-server process and later
+        # resume through the persisted thread resume handle rather than relying
+        # on a native in-place pause primitive from Codex.
         await self.cancel_run(run_id)
 
     async def run_task(

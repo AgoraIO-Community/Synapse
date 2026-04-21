@@ -15,6 +15,7 @@ from synapse.protocol import (
     InteractionRequest,
     InteractionRequestKind,
     InteractionRequestStatus,
+    RunStatus,
     Task,
     TaskSummary,
 )
@@ -33,7 +34,7 @@ class InteractionManager:
     async def handle_blackboard_write(self, event: BlackboardWriteEvent) -> bool:
         if event.kind == BlackboardWriteKind.RUN and event.entity_id:
             run = await self._store.get_run(event.entity_id)
-            if run is None or run.status.value != "blocked":
+            if run is None or run.status != RunStatus.BLOCKED:
                 return False
             task = await self._store.get_task(run.task_id)
             if task is None:
@@ -251,7 +252,20 @@ def _request_opaque(*, blocked_event: object) -> dict[str, object]:
     if isinstance(blocked_event, dict):
         native_response = blocked_event.get("native_response")
         if isinstance(native_response, dict):
-            return {"native_response": native_response}
+            sanitized: dict[str, object] = {
+                "request_id": native_response.get("request_id"),
+                "method": native_response.get("method"),
+            }
+            params = native_response.get("params")
+            if isinstance(params, dict):
+                sanitized_params: dict[str, object] = {}
+                for key in ("threadId", "turnId", "itemId", "reason", "command"):
+                    value = params.get(key)
+                    if isinstance(value, str) and value:
+                        sanitized_params[key] = value
+                if sanitized_params:
+                    sanitized["params"] = sanitized_params
+            return {"native_response": sanitized}
     return {}
 
 
@@ -345,6 +359,7 @@ def _build_follow_up_instruction(
             "The user cancelled the pending action. Do not perform it. "
             "Continue only if there is another safe path."
         )
+    assert answer_text is not None
     return f"The user answered the pending question: {answer_text.strip()}. Continue from where you left off."
 
 

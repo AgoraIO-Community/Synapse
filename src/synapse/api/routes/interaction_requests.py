@@ -40,8 +40,11 @@ async def resolve_interaction_request(
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
-    session.schedule_execution()
-    await session.publish_snapshot()
+        try:
+            session.schedule_execution()
+            await session.publish_snapshot()
+        except Exception:
+            pass
     return ResolveInteractionRequestResponse(
         request_id=request_id,
         affected_task_ids=affected_task_ids,
