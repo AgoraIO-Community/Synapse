@@ -143,3 +143,9 @@ Short log of important design decisions and changes for Synapse.
 - Filtered low-value Codex progress chatter out of task execution detail, made run/task projection writes change-aware, and demoted repetitive progress-refresh blackboard logs out of normal `INFO` output.
 - Cut real executor runtime over to a detached executor-host process with a dedicated `/executors/control` websocket, keeping Synapse as the durable control plane while `mock` remains the only in-process executor.
 - Added executor-host-aware execution state including `waiting_executor`, persisted `executor_host_id` on execution lineage/binding objects, opaque workspace ids for `session_affinity`, and dedicated `synapse executor setup` / `synapse executor run` CLI flows.
+
+## 2026-04-22
+
+- Removed detached executor host-token auth and the unused control-channel heartbeat from the adopted V1 contract, leaving websocket connect/disconnect as the only liveness signal.
+- Made detached-executor enablement and executor-family selection control-plane config under `synapse setup`, while `synapse executor setup` now owns only executor-side host config and generates a stable local `host_id`.
+- Changed `synapse start` / systemd deployment so the main FastAPI origin now serves the built frontend UI from `/`, while same-origin `/gateway/...` requests are proxied back to the separate gateway host.

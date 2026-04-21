@@ -1034,8 +1034,6 @@ def create_session_runtime(
     executor_host_manager: ExecutorHostManager | None = None,
 ) -> SessionRuntime:
     executor_host_manager = executor_host_manager or ExecutorHostManager(
-        expected_host_id=settings.executor_host_id,
-        expected_host_token=settings.executor_host_token,
         detached_executor_types=settings.detached_executor_types,
     )
     blackboard = InMemoryBlackboard()

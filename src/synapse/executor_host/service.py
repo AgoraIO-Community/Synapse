@@ -59,20 +59,13 @@ class ExecutorHostService:
                         websocket,
                         RegisterHostMessage(
                             host_id=self._settings.host_id,
-                            host_token=self._settings.host_token,
                             executors=[self._descriptor(name, executor) for name, executor in self._executors.items()],
                         ).model_dump(mode="json"),
                     )
                     await self._recv_json(websocket)
-                    heartbeat_task = asyncio.create_task(self._heartbeat_loop(websocket))
-                    try:
-                        while True:
-                            payload = await self._recv_json(websocket)
-                            await self._handle_message(websocket, payload)
-                    finally:
-                        heartbeat_task.cancel()
-                        with contextlib.suppress(asyncio.CancelledError):
-                            await heartbeat_task
+                    while True:
+                        payload = await self._recv_json(websocket)
+                        await self._handle_message(websocket, payload)
             except asyncio.CancelledError:
                 raise
             except Exception:
@@ -211,17 +204,6 @@ class ExecutorHostService:
             _hydrate_resume_handle(session, command.latest_resume_handle.model_dump(mode="json"))
         self._live_sessions[command.execution_session_id] = session
         return session
-
-    async def _heartbeat_loop(self, websocket: Any) -> None:
-        while True:
-            await asyncio.sleep(self._settings.heartbeat_seconds)
-            await self._send_json(
-                websocket,
-                {
-                    "type": "heartbeat",
-                    "host_id": self._settings.host_id,
-                },
-            )
 
     def _build_executors(self, executors_config: dict[str, Any]) -> dict[str, Any]:
         built: dict[str, Any] = {}

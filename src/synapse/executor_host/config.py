@@ -4,6 +4,7 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from synapse.config_home import SYNAPSE_ENV_FILE, SYNAPSE_GATEWAY_CONFIG_FILE
 from synapse.envfile import load_env_file
@@ -18,9 +19,7 @@ class ExecutorHostConfigError(RuntimeError):
 class ExecutorHostSettings:
     enabled: bool = False
     synapse_base_url: str = "http://127.0.0.1:8000"
-    host_id: str = "default-host"
-    host_token: str = ""
-    heartbeat_seconds: float = 15.0
+    host_id: str = ""
     enabled_executors: list[str] = field(default_factory=list)
 
 
@@ -78,6 +77,10 @@ def load_executor_host_settings(*, env_file: Path | None = None) -> ExecutorHost
     return load_executor_host_config(env_file=env_file).host_settings
 
 
+def generate_executor_host_id() -> str:
+    return f"host-{uuid4().hex[:8]}"
+
+
 def _resolve_env_placeholders(value: Any, config_path: Path) -> Any:
     if isinstance(value, dict):
         return {key: _resolve_env_placeholders(next_value, config_path) for key, next_value in value.items()}
@@ -104,18 +107,19 @@ def _parse_host_settings(raw_host: Any, config_path: Path) -> ExecutorHostSettin
         field_name="executor_host.enabled_executors",
         config_path=config_path,
     )
-    return ExecutorHostSettings(
+    settings = ExecutorHostSettings(
         enabled=_parse_bool_value(
             raw_host.get("enabled", bool(enabled_executors)),
             field_name="executor_host.enabled",
             config_path=config_path,
         ),
         synapse_base_url=str(raw_host.get("synapse_base_url", "http://127.0.0.1:8000")),
-        host_id=str(raw_host.get("host_id", "default-host")),
-        host_token=str(raw_host.get("host_token", "")),
-        heartbeat_seconds=float(raw_host.get("heartbeat_seconds", 15.0)),
+        host_id=str(raw_host.get("host_id", "")),
         enabled_executors=enabled_executors,
     )
+    if settings.enabled and not settings.host_id.strip():
+        raise ExecutorHostConfigError(f"'executor_host.host_id' must be set in {config_path}")
+    return settings
 
 
 def _parse_bool_value(value: Any, *, field_name: str, config_path: Path) -> bool:

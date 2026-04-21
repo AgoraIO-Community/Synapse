@@ -46,12 +46,8 @@ class ExecutorHostManager:
     def __init__(
         self,
         *,
-        expected_host_id: str | None,
-        expected_host_token: str | None,
         detached_executor_types: tuple[str, ...],
     ) -> None:
-        self._expected_host_id = expected_host_id
-        self._expected_host_token = expected_host_token
         self._detached_executor_types = detached_executor_types
         self._connection: Any = None
         self._connection_state = HostConnectionState()
@@ -65,7 +61,7 @@ class ExecutorHostManager:
 
     @property
     def host_id(self) -> str | None:
-        return self._connection_state.host_id or self._expected_host_id
+        return self._connection_state.host_id
 
     @property
     def connected(self) -> bool:
@@ -102,10 +98,6 @@ class ExecutorHostManager:
     async def register_connection(self, websocket: Any, register: RegisterHostMessage) -> AckMessage:
         if self._connection is not None and self._connection is not websocket and self.connected:
             raise ExecutorHostAuthError("An executor host is already connected.")
-        if self._expected_host_id and register.host_id != self._expected_host_id:
-            raise ExecutorHostAuthError("Executor host id does not match configured runtime host id.")
-        if self._expected_host_token and register.host_token != self._expected_host_token:
-            raise ExecutorHostAuthError("Executor host token is invalid.")
         self._connection = websocket
         self._connection_state = HostConnectionState(
             host_id=register.host_id,
@@ -117,7 +109,7 @@ class ExecutorHostManager:
 
     async def disconnect(self, *, reason: str) -> None:
         self._connection = None
-        host_id = self._connection_state.host_id or self._expected_host_id
+        host_id = self._connection_state.host_id
         self._connection_state = HostConnectionState(host_id=host_id, connected=False)
         for run_id, queue in list(self._run_queues.items()):
             state = self._run_states.get(run_id)
@@ -129,7 +121,11 @@ class ExecutorHostManager:
                         run_id=run_id,
                         session_id=state.execution_session_id,
                         event_type=ExecutorEventType.WAITING_EXECUTOR,
-                        message=f"Waiting for executor host '{host_id or 'default-host'}' to reconnect.",
+                        message=(
+                            f"Waiting for executor host '{host_id}' to reconnect."
+                            if host_id
+                            else "Waiting for detached executor host to reconnect."
+                        ),
                         metadata={
                             "executor_host_id": host_id,
                             "availability_reason": reason,
@@ -160,13 +156,14 @@ class ExecutorHostManager:
             executor_type=executor_type,
         )
         if not self.is_executor_connected(executor_type):
+            host_label = self.host_id or "detached executor host"
             await queue.put(
                 HostRunEnvelope(
                     event=ExecutorEvent(
                         run_id=run_id,
                         session_id=execution_session_id,
                         event_type=ExecutorEventType.WAITING_EXECUTOR,
-                        message=f"Waiting for executor host '{self.host_id or 'default-host'}' to connect.",
+                        message=f"Waiting for {host_label} to connect.",
                         metadata={
                             "executor_host_id": self.host_id,
                             "availability_reason": self.executor_availability(executor_type)["availability_reason"],

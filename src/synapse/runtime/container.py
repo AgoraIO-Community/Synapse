@@ -19,8 +19,6 @@ class RuntimeContainer:
 
     def __post_init__(self) -> None:
         self.executor_host_manager = ExecutorHostManager(
-            expected_host_id=self.settings.executor_host_id,
-            expected_host_token=self.settings.executor_host_token,
             detached_executor_types=self.settings.detached_executor_types,
         )
 

@@ -5,7 +5,6 @@ from pydantic import ValidationError
 
 from synapse.protocol import (
     AckMessage,
-    HeartbeatMessage,
     HostStatusMessage,
     InteractionStateMessage,
     RegisterHostMessage,
@@ -48,9 +47,6 @@ async def _handle_control_message(container, payload: object) -> AckMessage:
     if not isinstance(payload, dict):
         return AckMessage(message_type="unknown", ok=False, detail="invalid_payload")
     message_type = payload.get("type")
-    if message_type == "heartbeat":
-        HeartbeatMessage.model_validate(payload)
-        return AckMessage(message_type="heartbeat", detail="ok")
     if message_type == "run_event":
         return await container.executor_host_manager.publish_run_event(
             RunEventMessage.model_validate(payload)

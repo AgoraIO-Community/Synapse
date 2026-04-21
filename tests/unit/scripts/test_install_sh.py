@@ -67,9 +67,7 @@ gateways: {}
 executor_host:
   enabled: false
   synapse_base_url: "http://127.0.0.1:8000"
-  host_id: default-host
-  host_token: ""
-  heartbeat_seconds: 15.0
+  host_id: host-bootstrap
   enabled_executors: []
 
 executors: {}

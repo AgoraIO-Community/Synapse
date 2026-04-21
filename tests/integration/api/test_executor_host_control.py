@@ -40,8 +40,6 @@ def _build_app():
     return create_app(
         settings=Settings(
             detached_executor_enabled=True,
-            executor_host_id="host-1",
-            executor_host_token="secret-token",
         )
     )
 
@@ -109,7 +107,6 @@ async def test_executor_host_registration_requeues_waiting_task_and_completes():
                 {
                     "type": "register_host",
                     "host_id": "host-1",
-                    "host_token": "secret-token",
                     "executors": [
                         {
                             "executor_type": "codex",
@@ -240,7 +237,6 @@ async def test_resolve_interaction_request_routes_native_response_to_executor_ho
                 {
                     "type": "register_host",
                     "host_id": "host-1",
-                    "host_token": "secret-token",
                     "executors": [
                         {
                             "executor_type": "codex",

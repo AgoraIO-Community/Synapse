@@ -45,8 +45,6 @@ class Settings:
     openai_timeout_seconds: float = 30.0
     openai_base_url: str | None = None
     detached_executor_enabled: bool = False
-    executor_host_id: str | None = None
-    executor_host_token: str | None = None
     detached_executor_types: tuple[str, ...] = ("codex", "acpx")
     acpx_executor_enabled: bool = False
     acpx_command: str = "acpx"
@@ -108,8 +106,6 @@ def load_settings() -> Settings:
     load_local_env()
     runtime_config = _load_runtime_config()
     yaml_detached_executor_enabled = runtime_config.get("detached_executor_enabled")
-    yaml_executor_host_id = runtime_config.get("executor_host_id")
-    yaml_executor_host_token = runtime_config.get("executor_host_token")
     yaml_detached_executor_types = runtime_config.get("detached_executor_types")
     yaml_codex_command = runtime_config.get("codex_command")
     yaml_acpx_command = runtime_config.get("acpx_command")
@@ -179,16 +175,6 @@ def load_settings() -> Settings:
         or os.getenv("OPENAI_BASE_URL")
         or None,
         detached_executor_enabled=detached_executor_enabled,
-        executor_host_id=(
-            str(yaml_executor_host_id)
-            if yaml_executor_host_id not in (None, "")
-            else os.getenv("SYNAPSE_EXECUTOR_HOST_ID") or None
-        ),
-        executor_host_token=(
-            str(yaml_executor_host_token)
-            if yaml_executor_host_token not in (None, "")
-            else os.getenv("SYNAPSE_EXECUTOR_HOST_TOKEN") or None
-        ),
         detached_executor_types=detached_executor_types or ("codex", "acpx"),
         acpx_executor_enabled=_get_bool("SYNAPSE_ACPX_EXECUTOR_ENABLED", False),
         acpx_command=acpx_command,

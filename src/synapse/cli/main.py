@@ -13,6 +13,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from uuid import uuid4
 
 from synapse.config_home import (
     SYNAPSE_ENV_FILE,
@@ -54,6 +55,7 @@ LEGACY_REAL_EXECUTOR_ENV_KEYS = {
 }
 SYSTEMD_UNIT_NAME = "synapse.service"
 SYSTEMD_SERVICE_DIR = Path("/etc/systemd/system")
+REMOVED_RUNTIME_KEYS = {"executor_host_id", "executor_host_token"}
 DEFAULT_ENV_TEMPLATE_LINES = (
     "OPENAI_API_KEY=your_openai_api_key_here",
     "SYNAPSE_OPENAI_MODEL=gpt-4o-mini",
@@ -271,6 +273,7 @@ def cmd_backend(args: argparse.Namespace) -> int:
 
 def cmd_start(args: argparse.Namespace) -> int:
     venv_python = require_venv_python()
+    ensure_frontend_build_ready()
     commands = [("backend", backend_command(venv_python, args.host, args.port, reload=False), ROOT)]
     gateway_settings = load_gateway_settings_if_enabled()
     if gateway_settings is not None:
@@ -497,6 +500,13 @@ def frontend_install_command() -> list[str]:
     return ["npm", "install"]
 
 
+def frontend_build_command() -> list[str]:
+    frontend_tool = preferred_frontend_tool()
+    if frontend_tool == "bun":
+        return ["bun", "run", "build"]
+    return ["npm", "run", "build"]
+
+
 def frontend_dev_command(host: str, port: int) -> list[str]:
     frontend_tool = preferred_frontend_tool()
     if frontend_tool == "bun":
@@ -538,6 +548,24 @@ def service_unit_path() -> Path:
     return SYSTEMD_SERVICE_DIR / SYSTEMD_UNIT_NAME
 
 
+def frontend_dist_dir() -> Path:
+    return FRONTEND / "dist"
+
+
+def frontend_build_index_path() -> Path:
+    return frontend_dist_dir() / "index.html"
+
+
+def ensure_frontend_build_ready() -> Path:
+    index_path = frontend_build_index_path()
+    if index_path.exists():
+        return index_path
+    raise CliError(
+        f"Frontend production build is missing at {index_path}. "
+        "Run `./synapse service install` or build the frontend first."
+    )
+
+
 def ensure_service_runtime_ready() -> Path:
     venv_python = require_venv_python(allow_missing=True)
     if not venv_python.exists():
@@ -552,6 +580,8 @@ def ensure_service_runtime_ready() -> Path:
         print(
             f"[warn] env: OPENAI_API_KEY is not configured in {format_user_path(ENV_LOCAL)}"
         )
+    run_checked(frontend_install_command(), cwd=FRONTEND)
+    run_checked(frontend_build_command(), cwd=FRONTEND)
 
     return venv_python
 
@@ -863,7 +893,20 @@ def resolve_setup_values(
             )
         resolved[OPENAI_KEY] = openai_default
 
-    return SetupValuesResult(env_values=resolved, runtime_values={})
+    runtime_values: dict[str, object] = {}
+    if interactive:
+        detached_enabled = prompt_bool_value(
+            "Enable detached executors",
+            default=_runtime_detached_executor_enabled(existing_config_yaml),
+        )
+        runtime_values["detached_executor_enabled"] = detached_enabled
+        runtime_values["detached_executor_types"] = (
+            prompt_executor_selection(default_selected=_runtime_detached_executor_types(existing_config_yaml))
+            if detached_enabled
+            else None
+        )
+
+    return SetupValuesResult(env_values=resolved, runtime_values=runtime_values)
 
 
 def resolve_bootstrap_values(
@@ -989,7 +1032,15 @@ def resolve_executor_setup_values(
 ) -> GatewaySetupResult:
     del environ  # reserved for future env-backed defaults
     config_path = gateway_config_path()
-    enabled_executors = prompt_executor_selection()
+    runtime_values = _existing_runtime_config(existing_config_yaml)
+    if not runtime_values.get("detached_executor_enabled"):
+        raise CliError("Detached executors are disabled. Run `./synapse setup` first.")
+    runtime_executor_types = _runtime_detached_executor_types(existing_config_yaml)
+    if not runtime_executor_types:
+        raise CliError("No detached executor types are configured. Run `./synapse setup` first.")
+    enabled_executors = prompt_executor_selection(
+        default_selected=_existing_executor_enabled_types(existing_config_yaml) or runtime_executor_types
+    )
     synapse_base_url = prompt_text_value(
         "Synapse API base URL for executor host",
         default_value=_existing_yaml_value(existing_config_yaml, "executor_host", "synapse_base_url")
@@ -998,30 +1049,10 @@ def resolve_executor_setup_values(
     )
     host_id = prompt_text_value(
         "Executor host id",
-        default_value=_existing_yaml_value(existing_config_yaml, "executor_host", "host_id")
-        or "default-host",
-        required=True,
-    )
-    host_token = prompt_secret_value(
-        "Executor host token",
-        default_value=_existing_yaml_value(existing_config_yaml, "executor_host", "host_token"),
-    )
-    heartbeat_seconds = prompt_text_value(
-        "Executor heartbeat seconds",
-        default_value=_existing_yaml_value(existing_config_yaml, "executor_host", "heartbeat_seconds")
-        or "15",
+        default_value=_executor_host_id_default(existing_config_yaml),
         required=True,
     )
     executors_block = _existing_executors_config(existing_config_yaml)
-    runtime_values = _existing_runtime_config(existing_config_yaml)
-    runtime_values.update(
-        {
-            "detached_executor_enabled": True,
-            "executor_host_id": host_id,
-            "executor_host_token": host_token,
-            "detached_executor_types": enabled_executors,
-        }
-    )
     for executor_type in enabled_executors:
         existing_block = executors_block.get(executor_type, {})
         if executor_type == "codex":
@@ -1072,8 +1103,6 @@ def resolve_executor_setup_values(
             "enabled": True,
             "synapse_base_url": synapse_base_url,
             "host_id": host_id,
-            "host_token": host_token,
-            "heartbeat_seconds": float(heartbeat_seconds),
             "enabled_executors": enabled_executors,
         },
         executors={
@@ -1429,16 +1458,20 @@ def prompt_gateway_selection() -> list[str]:
         return deduped
 
 
-def prompt_executor_selection() -> list[str]:
+def prompt_executor_selection(*, default_selected: list[str] | None = None) -> list[str]:
     executors = ["codex", "acpx"]
     print("Available detached executors:")
     for index, executor_type in enumerate(executors, start=1):
         print(f"  {index}. {executor_type}")
+    default_selected = [item for item in (default_selected or [executors[0]]) if item in executors]
+    if not default_selected:
+        default_selected = [executors[0]]
+    default_indices = ",".join(str(executors.index(executor_type) + 1) for executor_type in default_selected)
 
     while True:
-        entered = input("Select detached executors [1]: ").strip()
+        entered = input(f"Select detached executors [{default_indices}]: ").strip()
         if not entered:
-            return [executors[0]]
+            return list(default_selected)
         selected: list[str] = []
         try:
             for part in entered.split(","):
@@ -1591,11 +1624,80 @@ def _existing_nested_value(raw_gateway: dict[str, object], *path: str) -> str | 
     return str(value)
 
 
+def _generated_executor_host_id() -> str:
+    return f"host-{uuid4().hex[:8]}"
+
+
+def _runtime_detached_executor_enabled(raw_gateway_yaml: dict[str, object]) -> bool:
+    raw_runtime = raw_gateway_yaml.get("runtime")
+    if not isinstance(raw_runtime, dict):
+        return False
+    raw_value = raw_runtime.get("detached_executor_enabled")
+    if isinstance(raw_value, bool):
+        return raw_value
+    if isinstance(raw_value, str):
+        parsed = parse_bool_value(raw_value)
+        if parsed is not None:
+            return parsed
+    return False
+
+
+def _runtime_detached_executor_types(raw_gateway_yaml: dict[str, object]) -> list[str]:
+    raw_runtime = raw_gateway_yaml.get("runtime")
+    if not isinstance(raw_runtime, dict):
+        return []
+    raw_types = raw_runtime.get("detached_executor_types")
+    if isinstance(raw_types, str):
+        return [item.strip() for item in raw_types.split(",") if item.strip()]
+    if not isinstance(raw_types, list):
+        return []
+    return [
+        item.strip()
+        for item in raw_types
+        if isinstance(item, str) and item.strip()
+    ]
+
+
+def _existing_executor_enabled_types(raw_gateway_yaml: dict[str, object]) -> list[str]:
+    raw_executor_host = raw_gateway_yaml.get("executor_host")
+    if not isinstance(raw_executor_host, dict):
+        return []
+    raw_types = raw_executor_host.get("enabled_executors")
+    if not isinstance(raw_types, list):
+        return []
+    return [
+        item.strip()
+        for item in raw_types
+        if isinstance(item, str) and item.strip()
+    ]
+
+
+def _executor_host_id_default(raw_gateway_yaml: dict[str, object]) -> str:
+    existing = _existing_yaml_value(raw_gateway_yaml, "executor_host", "host_id")
+    if existing and existing != "default-host":
+        return existing
+    return _generated_executor_host_id()
+
+
+def _coerce_bool_config_value(value: object, *, default: bool) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        parsed = parse_bool_value(value)
+        if parsed is not None:
+            return parsed
+    return default
+
+
 def _existing_runtime_config(raw_gateway_yaml: dict[str, object]) -> dict[str, object]:
     raw_runtime = raw_gateway_yaml.get("runtime")
     if not isinstance(raw_runtime, dict):
         return {}
-    return dict(raw_runtime)
+    return {
+        key: value
+        for key, value in raw_runtime.items()
+        if key not in REMOVED_RUNTIME_KEYS
+    }
 
 
 def _existing_host_config(raw_gateway_yaml: dict[str, object]) -> dict[str, object]:
@@ -1619,7 +1721,12 @@ def _existing_gateways_config(raw_gateway_yaml: dict[str, object]) -> dict[str, 
 def _existing_executor_host_config(raw_gateway_yaml: dict[str, object]) -> dict[str, object]:
     raw_executor_host = raw_gateway_yaml.get("executor_host")
     if isinstance(raw_executor_host, dict):
-        return dict(raw_executor_host)
+        return {
+            "enabled": _coerce_bool_config_value(raw_executor_host.get("enabled", False), default=False),
+            "synapse_base_url": raw_executor_host.get("synapse_base_url", "http://127.0.0.1:8000"),
+            "host_id": _executor_host_id_default(raw_gateway_yaml),
+            "enabled_executors": _existing_executor_enabled_types(raw_gateway_yaml),
+        }
     return _default_executor_host_config()
 
 
@@ -1662,9 +1769,7 @@ def _default_executor_host_config() -> dict[str, object]:
     return {
         "enabled": False,
         "synapse_base_url": "http://127.0.0.1:8000",
-        "host_id": "default-host",
-        "host_token": "",
-        "heartbeat_seconds": 15.0,
+        "host_id": _generated_executor_host_id(),
         "enabled_executors": [],
     }
 

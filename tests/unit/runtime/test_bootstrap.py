@@ -23,24 +23,10 @@ def test_bootstrap_uses_openai_model_when_key_present():
     assert isinstance(container.communication_model, OpenAICommunicationModel)
 
 
-def test_bootstrap_fails_when_detached_executor_host_auth_is_missing():
-    try:
-        build_runtime_container(
-            settings=Settings(detached_executor_enabled=True),
-        )
-    except RuntimeError as exc:
-        assert "executor_host_id" in str(exc)
-        assert "executor_host_token" in str(exc)
-    else:
-        raise AssertionError("Expected bootstrap to fail when detached executor auth is missing.")
-
-
-def test_bootstrap_allows_detached_executor_mode_with_host_auth():
+def test_bootstrap_allows_detached_executor_mode_without_host_auth():
     container = build_runtime_container(
         settings=Settings(
             detached_executor_enabled=True,
-            executor_host_id="host-1",
-            executor_host_token="secret-token",
         )
     )
-    assert container.executor_host_manager.host_id == "host-1"
+    assert container.executor_host_manager.host_id is None

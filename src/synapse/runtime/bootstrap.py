@@ -14,14 +14,6 @@ def build_runtime_container(
     provider: OpenAIProvider | None = None,
 ) -> RuntimeContainer:
     settings = settings or load_settings()
-    if settings.detached_executor_enabled and (
-        not settings.executor_host_id or not settings.executor_host_token
-    ):
-        raise RuntimeError(
-            "Detached executor mode requires runtime.executor_host_id and "
-            "runtime.executor_host_token."
-        )
-
     if settings.communication_backend != "scripted" and settings.openai_api_key:
         model = OpenAICommunicationModel(provider or OpenAIProvider(settings))
         return RuntimeContainer(communication_model=model, settings=settings)

@@ -18,14 +18,8 @@ class ExecutorHostExecutor(BaseModel):
 class RegisterHostMessage(BaseModel):
     type: Literal["register_host"] = "register_host"
     host_id: str
-    host_token: str
     executors: list[ExecutorHostExecutor] = Field(default_factory=list)
     metadata: dict[str, object] = Field(default_factory=dict)
-
-
-class HeartbeatMessage(BaseModel):
-    type: Literal["heartbeat"] = "heartbeat"
-    host_id: str
 
 
 class RunEventMessage(BaseModel):

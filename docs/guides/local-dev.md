@@ -36,9 +36,12 @@ Typical local real-executor flow:
 ./synapse executor run
 ```
 
-`./synapse setup` configures the main control plane only.
-`./synapse executor setup` configures the detached executor host, including the
-Synapse base URL, host id/token, and local Codex or ACPX command settings.
+`./synapse setup` configures the main control plane, including whether detached
+executors are enabled and which executor families the control plane should
+expect.
+`./synapse executor setup` configures the detached executor host itself,
+including the Synapse base URL, a generated executor-node host id, and local
+Codex or ACPX command settings.
 
 `./synapse dev` and `./synapse start` do not auto-start the executor host.
 Run `./synapse executor run` explicitly when you want local real execution.
@@ -49,6 +52,10 @@ Backend-only and frontend-only commands:
 ./synapse backend
 ./synapse frontend
 ```
+
+`./synapse start` is the production-style runtime entrypoint used by the
+systemd service path. It now expects an existing frontend production build and
+serves that built UI from the same origin as the main backend.
 
 Separate frontend production deployments are documented in
 [`./vercel-ui-deployment.md`](./vercel-ui-deployment.md). Local
