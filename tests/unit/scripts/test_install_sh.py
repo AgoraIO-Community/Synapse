@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import os
+import pytest
 import stat
 import subprocess
 import textwrap
@@ -116,6 +117,17 @@ fi
 """
 
 
+def fake_brew_installing_python_script() -> str:
+    return """#!/usr/bin/env bash
+set -euo pipefail
+echo "brew $*" >> "$FAKE_LOG"
+if [[ "${1-}" == "install" && "${2-}" == "python@3.12" ]]; then
+  cp "$FAKE_PYTHON_REPLACEMENT" "$FAKE_PYTHON_TARGET"
+  chmod +x "$FAKE_PYTHON_TARGET"
+fi
+"""
+
+
 def test_install_sh_macos_skips_existing_system_dependencies(tmp_path: Path):
     repo_root = tmp_path / "repo"
     fake_bin = tmp_path / "bin"
@@ -212,6 +224,71 @@ def test_install_sh_macos_installs_only_missing_bun(tmp_path: Path):
     assert "bun install" in log_text
     assert "[install] Skipping Python install;" in completed.stdout
     assert "[install] Installing Bun" in completed.stdout
+
+
+@pytest.mark.parametrize(
+    ("venv_ok", "pip_ok"),
+    [
+        (False, True),
+        (True, False),
+    ],
+)
+def test_install_sh_macos_reinstalls_python_when_capabilities_missing(
+    tmp_path: Path,
+    venv_ok: bool,
+    pip_ok: bool,
+):
+    repo_root = tmp_path / "repo"
+    fake_bin = tmp_path / "bin"
+    home = tmp_path / "home"
+    log_file = tmp_path / "install.log"
+    replacement_python = tmp_path / "python3.12.good"
+    prepare_repo_root(repo_root)
+    fake_bin.mkdir()
+    home.mkdir()
+
+    write_executable(
+        fake_bin / "brew",
+        fake_brew_installing_python_script(),
+    )
+    write_executable(
+        fake_bin / "python3.12",
+        fake_python_script(venv_ok=venv_ok, pip_ok=pip_ok),
+    )
+    write_executable(replacement_python, fake_python_script())
+    write_executable(fake_bin / "bun", fake_bun_script())
+
+    env = os.environ.copy()
+    env.update(
+        {
+            "FAKE_LOG": str(log_file),
+            "HOME": str(home),
+            "PATH": f"{fake_bin}:/usr/bin:/bin",
+            "FAKE_PYTHON_REPLACEMENT": str(replacement_python),
+            "FAKE_PYTHON_TARGET": str(fake_bin / "python3.12"),
+            "SYNAPSE_INSTALL_ROOT": str(repo_root),
+            "SYNAPSE_INSTALL_TEST_UNAME": "Darwin",
+        }
+    )
+
+    completed = subprocess.run(
+        ["bash", str(INSTALL_SCRIPT)],
+        cwd=repo_root,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    log_text = log_file.read_text(encoding="utf-8")
+    assert "brew install python@3.12" in log_text
+    assert f"python3.12 -m venv {repo_root / '.venv'}" in log_text
+    assert "venv-python -m pip install --upgrade pip" in log_text
+    assert "venv-python -m synapse setup --bootstrap-defaults" in log_text
+    assert "[install] Installing Python 3.12+ with Homebrew" in completed.stdout
+    assert "[install] Skipping Python install;" not in completed.stdout
+    assert "[install] Skipping Bun install;" in completed.stdout
 
 
 def test_install_sh_ubuntu_skips_existing_system_dependencies(tmp_path: Path):
@@ -329,6 +406,7 @@ fi
     assert "venv-python -m synapse setup --bootstrap-defaults" in log_text
     assert "curl -fsSL https://bun.sh/install" not in log_text
     assert "[install] Installing missing apt prerequisites" in completed.stdout
+    assert "[install] Installing Ubuntu/Debian dependencies with apt-get" not in completed.stdout
     assert "[install] Skipping Bun install;" in completed.stdout
 
 
@@ -409,6 +487,7 @@ fi
     assert "curl -fsSL https://bun.sh/install" in log_text
     assert f"python3.12 -m venv {repo_root / '.venv'}" in log_text
     assert "bun install" in log_text
+    assert "[install] Skipping Python install;" in completed.stdout
     assert "[install] Installing missing apt prerequisites" in completed.stdout
-    assert "[install] Installing Python prerequisites with apt-get" not in completed.stdout
+    assert "[install] Installing Ubuntu/Debian dependencies with apt-get" not in completed.stdout
     assert "[install] Installing Bun" in completed.stdout

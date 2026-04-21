@@ -105,7 +105,7 @@ install_macos_dependencies() {
   add_user_bun_to_path
   python_bin="$(find_supported_python || true)"
 
-  if [[ -n "$python_bin" ]]; then
+  if [[ -n "$python_bin" ]] && python_supports_venv "$python_bin" && python_supports_pip "$python_bin"; then
     log "Skipping Python install; found supported interpreter at $python_bin"
   else
     if ! have_cmd brew; then
@@ -157,7 +157,6 @@ install_linux_dependencies() {
     fi
 
     log "Installing missing apt prerequisites"
-    log "Installing Ubuntu/Debian dependencies with apt-get"
     run_as_root apt-get update
     run_as_root apt-get install -y python3 python3-venv python3-pip curl ca-certificates
   fi
