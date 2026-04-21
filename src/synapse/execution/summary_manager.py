@@ -1,10 +1,26 @@
 from __future__ import annotations
 
-from synapse.protocol import ExecutionRun, RunStatus, Task, TaskSummary
+from synapse.protocol import ExecutionRun, RunStatus, Task, TaskStatus, TaskSummary
 
 
 class SummaryManager:
     def build_summary(self, task: Task, run: ExecutionRun) -> TaskSummary:
+        if task.status == TaskStatus.QUEUED:
+            return TaskSummary(
+                task_id=task.task_id,
+                operational_summary=f"Queued: {task.title}",
+                conversational_summary=f"I queued {task.title} again.",
+                latest_user_visible_status="queued",
+                needs_user_input=False,
+            )
+        if task.status == TaskStatus.PAUSED:
+            return TaskSummary(
+                task_id=task.task_id,
+                operational_summary=f"Paused: {task.title}",
+                conversational_summary=f"I paused {task.title}.",
+                latest_user_visible_status="paused",
+                needs_user_input=False,
+            )
         if run.status == RunStatus.BLOCKED:
             return TaskSummary(
                 task_id=task.task_id,

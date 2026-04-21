@@ -4,7 +4,6 @@ from dataclasses import dataclass
 
 from synapse.blackboard import BlackboardQueryService, BlackboardStore
 from synapse.executor_core import ExecutorCapabilities
-from synapse.protocol import Task, TaskExecutionDetailEntry, TaskStatus, TaskSummary
 from synapse.protocol import InteractionRequest, Task, TaskExecutionDetailEntry, TaskStatus, TaskSummary
 
 from .history import ConversationEntry, InMemoryConversationHistory

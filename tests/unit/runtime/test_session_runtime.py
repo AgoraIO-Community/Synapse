@@ -198,9 +198,13 @@ class ManagedPauseExecutor:
 class FakeNativeClient:
     def __init__(self) -> None:
         self.calls: list[dict[str, object]] = []
+        self.closed = False
 
     async def respond_to_request(self, **kwargs) -> None:
         self.calls.append(kwargs)
+
+    async def close(self) -> None:
+        self.closed = True
 
 
 class FakeNativeCodexSession:
@@ -366,6 +370,24 @@ async def test_session_runtime_snapshot_sanitizes_interaction_request_opaque():
             status=InteractionRequestStatus.PENDING,
             prompt="Allow deleting the folder?",
             available_actions=["approve", "deny"],
+            details={
+                "blocked_event": {
+                    "interaction_kind": "permission",
+                    "blocked_method": "item/commandExecution/requestApproval",
+                    "native_response": {
+                        "request_id": 9,
+                        "method": "item/commandExecution/requestApproval",
+                        "params": {
+                            "threadId": "thread-1",
+                            "turnId": "turn-1",
+                            "itemId": "call-1",
+                            "command": "rm -rf /tmp/x",
+                            "cwd": "/secret/path",
+                            "proposedExecpolicyAmendment": ["rm", "-rf", "/tmp/x"],
+                        },
+                    },
+                }
+            },
             opaque={
                 "native_response": {
                     "request_id": 9,
@@ -392,6 +414,11 @@ async def test_session_runtime_snapshot_sanitizes_interaction_request_opaque():
     assert opaque["params"]["command"] == "rm -rf /tmp/x"
     assert "cwd" not in opaque["params"]
     assert "proposedExecpolicyAmendment" not in opaque["params"]
+    blocked_event = snapshot.interaction_requests[0].details["blocked_event"]
+    assert blocked_event["interaction_kind"] == "permission"
+    assert blocked_event["native_response"]["params"]["command"] == "rm -rf /tmp/x"
+    assert "cwd" not in blocked_event["native_response"]["params"]
+    assert "proposedExecpolicyAmendment" not in blocked_event["native_response"]["params"]
 
 
 @pytest.mark.anyio
@@ -662,3 +689,153 @@ async def test_session_runtime_native_interaction_resolution_sets_native_resume_
     assert affected == ["task-native"]
     assert request is not None and request.resume_strategy == "native_response"
     assert native.client.calls
+
+
+@pytest.mark.anyio
+async def test_session_runtime_native_interaction_resolution_preserves_permissions_payload():
+    session = create_session_runtime(
+        "session-6e",
+        model=ScriptedCommunicationModel(
+            {"__default__": ScriptedPlan(conversational_act="request_clarification")}
+        ),
+        settings=Settings(),
+    )
+    native = FakeNativeCodexSession()
+    session.execution_brain._loop._sessions._live_sessions["exec-session-permissions"] = (
+        native.session
+    )
+    await session.blackboard.put_task(
+        Task(
+            task_id="task-permissions",
+            root_task_id="task-permissions",
+            title="Permission task",
+            goal="Permission task",
+            status=TaskStatus.WAITING_USER_INPUT,
+            preferred_executor="codex",
+        )
+    )
+    await session.blackboard.put_interaction_request(
+        InteractionRequest(
+            request_id="ireq-permissions",
+            task_id="task-permissions",
+            execution_session_id="exec-session-permissions",
+            run_id="run-permissions",
+            executor_type="codex",
+            kind=InteractionRequestKind.PERMISSION,
+            status=InteractionRequestStatus.PENDING,
+            prompt="Allow more permissions?",
+            available_actions=["approve", "deny"],
+            opaque={
+                "native_response": {
+                    "request_id": 4,
+                    "method": "item/permissions/requestApproval",
+                    "params": {
+                        "threadId": "thread-1",
+                        "turnId": "turn-1",
+                        "permissions": {"fileSystem": {"writeRoots": ["/tmp"]}},
+                    },
+                }
+            },
+            created_at="2026-04-06T00:00:00+00:00",
+        )
+    )
+
+    await session.resolve_interaction_request("ireq-permissions", action="approve")
+
+    assert native.client.calls[0]["params"]["permissions"] == {
+        "fileSystem": {"writeRoots": ["/tmp"]}
+    }
+
+
+@pytest.mark.anyio
+async def test_session_runtime_follow_up_resolution_detaches_live_codex_session():
+    session = create_session_runtime(
+        "session-6f",
+        model=ScriptedCommunicationModel(
+            {"__default__": ScriptedPlan(conversational_act="request_clarification")}
+        ),
+        settings=Settings(codex_executor_enabled=True),
+    )
+    native = FakeNativeCodexSession()
+    native.session.thread_id = "thread-follow-up"
+    session.execution_brain._loop._sessions._live_sessions["exec-session-follow-up"] = (
+        native.session
+    )
+    await session.blackboard.put_task(
+        Task(
+            task_id="task-follow-up",
+            root_task_id="task-follow-up",
+            title="Follow-up task",
+            goal="Follow-up task",
+            status=TaskStatus.WAITING_USER_INPUT,
+            preferred_executor="codex",
+        )
+    )
+    await session.blackboard.put_session(
+        RuntimeExecutionSession(
+            execution_session_id="exec-session-follow-up",
+            task_id="task-follow-up",
+            base_executor_id="codex",
+            active_run_id="run-follow-up",
+            latest_run_id="run-follow-up",
+            run_ids=["run-follow-up"],
+        )
+    )
+    await session.blackboard.put_binding(
+        SessionBinding(
+            task_id="task-follow-up",
+            execution_session_id="exec-session-follow-up",
+            session_id="codex-session-native",
+            claimed_by="worker-session-6f",
+            claim_expires_at="2026-04-16T00:10:00+00:00",
+            binding_status=BindingStatus.ACTIVE,
+        )
+    )
+    await session.blackboard.put_run(
+        ExecutionRun(
+            run_id="run-follow-up",
+            task_id="task-follow-up",
+            execution_session_id="exec-session-follow-up",
+            executor_type="codex",
+            status=RunStatus.BLOCKED,
+            block_reason="Need more input.",
+        )
+    )
+    await session.blackboard.put_interaction_request(
+        InteractionRequest(
+            request_id="ireq-follow-up",
+            task_id="task-follow-up",
+            execution_session_id="exec-session-follow-up",
+            run_id="run-follow-up",
+            executor_type="codex",
+            kind=InteractionRequestKind.QUESTION,
+            status=InteractionRequestStatus.PENDING,
+            prompt="Need more input.",
+            available_actions=["answer"],
+            opaque={},
+            created_at="2026-04-06T00:00:00+00:00",
+        )
+    )
+
+    await session.resolve_interaction_request(
+        "ireq-follow-up",
+        action="answer",
+        answer_text="Use the same thread.",
+    )
+
+    execution_session = await session.blackboard.get_session("exec-session-follow-up")
+    binding = await session.blackboard.get_binding("task-follow-up")
+    task = await session.blackboard.get_task("task-follow-up")
+    summary = await session.blackboard.get_summary("task-follow-up")
+
+    assert execution_session is not None
+    assert execution_session.active_run_id is None
+    assert execution_session.latest_resume_handle is not None
+    assert execution_session.latest_resume_handle.session_handle == "thread-follow-up"
+    assert binding is not None and binding.binding_status == BindingStatus.RELEASED
+    assert task is not None and task.status == TaskStatus.QUEUED
+    assert summary is not None and summary.latest_user_visible_status == "queued"
+    assert native.client.closed is True
+    assert (
+        session.execution_brain.get_live_session("exec-session-follow-up") is None
+    )

@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, HTTPException, Request
 
 from synapse.api.models import ResolveInteractionRequest, ResolveInteractionRequestResponse
 from synapse.observability.context import bind_diagnostic_context
 
 router = APIRouter()
+LOGGER = logging.getLogger(__name__)
 
 
 @router.post(
@@ -44,7 +47,12 @@ async def resolve_interaction_request(
             session.schedule_execution()
             await session.publish_snapshot()
         except Exception:
-            pass
+            LOGGER.warning(
+                "Resolved interaction request %s in session %s, but follow-up scheduling failed.",
+                request_id,
+                session_id,
+                exc_info=True,
+            )
     return ResolveInteractionRequestResponse(
         request_id=request_id,
         affected_task_ids=affected_task_ids,

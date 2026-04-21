@@ -20,6 +20,11 @@ from synapse.protocol import (
     TaskSummary,
 )
 
+from .sanitization import (
+    build_interaction_request_opaque,
+    sanitize_blocked_event_for_client,
+)
+
 
 @dataclass(slots=True)
 class InteractionResolution:
@@ -193,7 +198,7 @@ def _build_request_from_run(
         details=_request_details(task=task, blocked_event=run.metadata.get("blocked_event")),
         available_actions=_actions_for_kind(kind),
         answer_schema={"type": "string"} if kind == InteractionRequestKind.QUESTION else None,
-        opaque=_request_opaque(blocked_event=run.metadata.get("blocked_event")),
+        opaque=build_interaction_request_opaque(blocked_event=run.metadata.get("blocked_event")),
         created_at=_now_iso(),
     )
 
@@ -243,30 +248,10 @@ def _request_details(*, task: Task, blocked_event: object) -> dict[str, object]:
     persona_name = task.metadata.get("persona_name")
     if isinstance(persona_name, str) and persona_name:
         details["persona_name"] = persona_name
-    if isinstance(blocked_event, dict):
-        details["blocked_event"] = blocked_event
+    sanitized_blocked_event = sanitize_blocked_event_for_client(blocked_event)
+    if sanitized_blocked_event is not None:
+        details["blocked_event"] = sanitized_blocked_event
     return details
-
-
-def _request_opaque(*, blocked_event: object) -> dict[str, object]:
-    if isinstance(blocked_event, dict):
-        native_response = blocked_event.get("native_response")
-        if isinstance(native_response, dict):
-            sanitized: dict[str, object] = {
-                "request_id": native_response.get("request_id"),
-                "method": native_response.get("method"),
-            }
-            params = native_response.get("params")
-            if isinstance(params, dict):
-                sanitized_params: dict[str, object] = {}
-                for key in ("threadId", "turnId", "itemId", "reason", "command"):
-                    value = params.get(key)
-                    if isinstance(value, str) and value:
-                        sanitized_params[key] = value
-                if sanitized_params:
-                    sanitized["params"] = sanitized_params
-            return {"native_response": sanitized}
-    return {}
 
 
 def _classify_prompt(prompt: str, blocked_event: object) -> InteractionRequestKind:
@@ -359,7 +344,8 @@ def _build_follow_up_instruction(
             "The user cancelled the pending action. Do not perform it. "
             "Continue only if there is another safe path."
         )
-    assert answer_text is not None
+    if answer_text is None:
+        raise ValueError("answer_text is required for answer actions.")
     return f"The user answered the pending question: {answer_text.strip()}. Continue from where you left off."
 
 

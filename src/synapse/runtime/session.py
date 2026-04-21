@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from dataclasses import replace
 from dataclasses import dataclass, field
 
@@ -17,6 +18,10 @@ from synapse.executor_adapters.codex import CodexExecutor, CodexExecutorSession
 from synapse.executor_adapters.mock import MockExecutor
 from synapse.executor_core import ExecutorRegistry, UnknownExecutorError
 from synapse.interaction import InteractionManager
+from synapse.interaction.sanitization import (
+    sanitize_interaction_request_details,
+    sanitize_interaction_request_opaque,
+)
 from synapse.notification import NotificationManager
 from synapse.observability.bootstrap import SessionObservability, build_session_observability
 from synapse.observability.context import bind_diagnostic_context
@@ -26,6 +31,7 @@ from synapse.protocol import (
     BindingStatus,
     ExecutionRun,
     ExecutionSession,
+    InteractionRequest,
     NotificationDeliveryStatus,
     RunStatus,
     TaskCommand,
@@ -53,6 +59,8 @@ from .models import (
 
 
 FALLBACK_ASSISTANT_ERROR_MESSAGE = "Sorry, something went wrong while generating the reply."
+LOGGER = logging.getLogger(__name__)
+MAX_TASK_INSTRUCTION_CHARS = 4000
 
 
 @dataclass(slots=True)
@@ -97,7 +105,12 @@ class SessionRuntime:
         bindings = await self.blackboard.list_bindings()
         interaction_requests = await self.blackboard.list_interaction_requests()
         sanitized_interaction_requests = [
-            request.model_copy(update={"opaque": _sanitize_interaction_request_opaque(request.opaque)})
+            request.model_copy(
+                update={
+                    "opaque": sanitize_interaction_request_opaque(request.opaque),
+                    "details": sanitize_interaction_request_details(request.details),
+                }
+            )
             for request in interaction_requests
         ]
         attention_items = await self.blackboard.list_attention_items()
@@ -249,7 +262,7 @@ class SessionRuntime:
         # double-execution of the same task.
         self._execution_task = asyncio.create_task(self._run_execution_loop())
 
-    def validate_task_command(self, task: Task, command_type: TaskCommandType) -> str | None:
+    async def validate_task_command(self, task: Task, command_type: TaskCommandType) -> str | None:
         if command_type not in {TaskCommandType.PAUSE_TASK, TaskCommandType.PREEMPT_TASK}:
             if command_type == TaskCommandType.RESUME_TASK:
                 if task.status == TaskStatus.WAITING_USER_INPUT:
@@ -262,7 +275,7 @@ class SessionRuntime:
             return None
         if task.status in {TaskStatus.CREATED, TaskStatus.QUEUED}:
             return None
-        run, executor_type = self._resolve_task_command_target(task)
+        run, executor_type = await self._resolve_task_command_target(task)
         if run is None and executor_type is None:
             return "Task is not actively running."
         if executor_type is None:
@@ -279,7 +292,7 @@ class SessionRuntime:
         task = await self.blackboard.get_task(command.task_id)
         if task is None:
             return []
-        validation_error = self.validate_task_command(task, command.command_type)
+        validation_error = await self.validate_task_command(task, command.command_type)
         if validation_error is not None:
             raise ValueError(validation_error)
 
@@ -418,6 +431,7 @@ class SessionRuntime:
         if task is None:
             raise KeyError(f"Task '{resolution.request.task_id}' not found.")
 
+        await self._detach_follow_up_live_session(resolution.request)
         task.latest_instruction = self._merge_follow_up_instruction(
             task.latest_instruction,
             resolution.follow_up_instruction,
@@ -536,7 +550,7 @@ class SessionRuntime:
 
     async def _respond_to_native_interaction_request(
         self,
-        request,
+        request: InteractionRequest,
         *,
         action: str,
         answer_text: str | None,
@@ -566,9 +580,40 @@ class SessionRuntime:
                 answer_text=answer_text,
             )
         except Exception:
+            LOGGER.warning(
+                "Failed to send native interaction response for %s in session %s.",
+                request.request_id,
+                execution_session_id,
+                exc_info=True,
+            )
             return False
         live_session.mark_blocked_resolved()
         return True
+
+    async def _detach_follow_up_live_session(self, request: InteractionRequest) -> None:
+        execution_session_id = request.execution_session_id
+        if not isinstance(execution_session_id, str) or not execution_session_id:
+            return
+        live_session = self.execution_brain.get_live_session(execution_session_id)
+        if not isinstance(live_session, CodexExecutorSession):
+            return
+        execution_session = await self.blackboard.get_session(execution_session_id)
+        run = (
+            await self.blackboard.get_run(request.run_id)
+            if isinstance(request.run_id, str) and request.run_id
+            else None
+        )
+        await self._capture_pause_resume_handle(execution_session, run)
+        try:
+            await live_session.close()
+        except Exception:
+            LOGGER.warning(
+                "Failed to close blocked Codex session %s while preparing follow-up run.",
+                execution_session_id,
+                exc_info=True,
+            )
+        finally:
+            self.execution_brain.drop_live_session(execution_session_id)
 
     async def _suppress_pending_notifications(self, task_id: str) -> None:
         candidates = await self.blackboard.list_notification_candidates()
@@ -583,12 +628,12 @@ class SessionRuntime:
                     )
                 )
 
-    def _resolve_task_command_target(
+    async def _resolve_task_command_target(
         self,
         task: Task,
     ) -> tuple[ExecutionRun | None, str | None]:
         execution_session = None
-        for session in self.blackboard._sessions.values():
+        for session in await self.blackboard.list_sessions():
             if session.task_id == task.task_id:
                 execution_session = session
                 break
@@ -603,7 +648,7 @@ class SessionRuntime:
             ):
                 candidate_run_ids.append(execution_session.latest_run_id)
             for run_id in candidate_run_ids:
-                run = self.blackboard._runs.get(run_id)
+                run = await self.blackboard.get_run(run_id)
                 if run is not None and run.status in {
                     RunStatus.CREATED,
                     RunStatus.ASSIGNED,
@@ -633,8 +678,18 @@ class SessionRuntime:
         follow_up: str,
     ) -> str:
         if existing and existing.strip():
-            return f"{existing.strip()}\n\nFollow-up:\n{follow_up}"
-        return follow_up
+            merged = f"{existing.strip()}\n\nFollow-up:\n{follow_up}"
+        else:
+            merged = follow_up
+        if len(merged) <= MAX_TASK_INSTRUCTION_CHARS:
+            return merged
+        marker = "[Earlier instructions truncated]\n\n"
+        suffix = f"\n\nFollow-up:\n{follow_up}"
+        available = MAX_TASK_INSTRUCTION_CHARS - len(marker) - len(suffix)
+        if available <= 0:
+            return merged[-MAX_TASK_INSTRUCTION_CHARS:]
+        preserved_existing = (existing or "").strip()[-available:].lstrip()
+        return f"{marker}{preserved_existing}{suffix}"
 
     async def _run_execution_loop(self) -> None:
         with bind_diagnostic_context(conversation_id=self.session_id):
@@ -949,7 +1004,12 @@ def create_session_runtime(
             )
         )
     if settings.codex_executor_enabled:
-        registry.register(CodexExecutor(command=settings.codex_command))
+        registry.register(
+            CodexExecutor(
+                command=settings.codex_command,
+                blocked_wait_timeout_seconds=settings.codex_blocked_wait_timeout_seconds,
+            )
+        )
     default_executor_type = (
         "acpx"
         if settings.acpx_executor_enabled
@@ -1010,24 +1070,3 @@ def create_session_runtime(
     for persona in load_personas_from_file():
         blackboard._personas[persona.persona_id] = persona
     return runtime
-
-
-def _sanitize_interaction_request_opaque(opaque: dict[str, object]) -> dict[str, object]:
-    native_response = opaque.get("native_response")
-    if not isinstance(native_response, dict):
-        return {}
-    sanitized: dict[str, object] = {}
-    for key in ("request_id", "method"):
-        value = native_response.get(key)
-        if value is not None:
-            sanitized[key] = value
-    params = native_response.get("params")
-    if isinstance(params, dict):
-        sanitized_params: dict[str, object] = {}
-        for key in ("threadId", "turnId", "itemId", "reason", "command"):
-            value = params.get(key)
-            if isinstance(value, str) and value:
-                sanitized_params[key] = value
-        if sanitized_params:
-            sanitized["params"] = sanitized_params
-    return {"native_response": sanitized} if sanitized else {}

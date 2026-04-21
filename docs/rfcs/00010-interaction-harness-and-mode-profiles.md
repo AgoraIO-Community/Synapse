@@ -1,4 +1,4 @@
-# RFC 0008: Interaction Harness and Mode Profiles
+# RFC 0010: Interaction Harness and Mode Profiles
 
 ## Summary
 

@@ -52,6 +52,7 @@ class Settings:
     acpx_timeout_seconds: float | None = None
     codex_executor_enabled: bool = False
     codex_command: str = "codex"
+    codex_blocked_wait_timeout_seconds: float = 900.0
     log_level: str = "INFO"
     log_format: str = "auto"
     log_color: str = "auto"
@@ -110,6 +111,9 @@ def load_settings() -> Settings:
         "acpx_non_interactive_permissions"
     )
     yaml_acpx_timeout_seconds = runtime_config.get("acpx_timeout_seconds")
+    yaml_codex_blocked_wait_timeout_seconds = runtime_config.get(
+        "codex_blocked_wait_timeout_seconds"
+    )
     codex_command = (
         str(yaml_codex_command)
         if yaml_codex_command not in (None, "")
@@ -142,6 +146,11 @@ def load_settings() -> Settings:
         if os.getenv("SYNAPSE_ACPX_TIMEOUT_SECONDS")
         else None
     )
+    codex_blocked_wait_timeout_seconds = (
+        float(yaml_codex_blocked_wait_timeout_seconds)
+        if yaml_codex_blocked_wait_timeout_seconds not in (None, "")
+        else float(os.getenv("SYNAPSE_CODEX_BLOCKED_WAIT_TIMEOUT_SECONDS", "900"))
+    )
     return Settings(
         app_name=os.getenv("SYNAPSE_APP_NAME", "Synapse v2"),
         communication_backend=os.getenv("SYNAPSE_COMMUNICATION_BACKEND", "auto"),
@@ -159,6 +168,7 @@ def load_settings() -> Settings:
         acpx_timeout_seconds=acpx_timeout_seconds,
         codex_executor_enabled=_get_bool("SYNAPSE_CODEX_EXECUTOR_ENABLED", False),
         codex_command=codex_command,
+        codex_blocked_wait_timeout_seconds=codex_blocked_wait_timeout_seconds,
         log_level=os.getenv("SYNAPSE_LOG_LEVEL", "INFO").upper(),
         log_format=os.getenv("SYNAPSE_LOG_FORMAT", "auto").lower(),
         log_color=os.getenv("SYNAPSE_LOG_COLOR", "auto").lower(),

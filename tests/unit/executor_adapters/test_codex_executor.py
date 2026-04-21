@@ -342,6 +342,34 @@ async def test_codex_executor_blocks_when_user_input_is_requested(tmp_path):
 
 
 @pytest.mark.anyio
+async def test_codex_executor_fails_when_blocked_wait_times_out(tmp_path):
+    command = _write_fake_codex(tmp_path)
+    executor = CodexExecutor(
+        command=str(command),
+        blocked_wait_timeout_seconds=0.01,
+    )
+    session = await executor.create_session(str(tmp_path))
+    task = Task(
+        task_id="task-timeout",
+        root_task_id="task-timeout",
+        title="Blocked task",
+        goal="Need confirmation",
+    )
+    run = ExecutionRun(
+        run_id="run-timeout",
+        task_id="task-timeout",
+        execution_session_id="exec-timeout",
+        executor_type="codex",
+    )
+
+    events = [event async for event in executor.run_task(run, task, session)]
+
+    assert [event.event_type.value for event in events] == ["blocked", "failed"]
+    assert events[-1].message == "Timed out waiting for user input."
+    await session.close()
+
+
+@pytest.mark.anyio
 async def test_codex_executor_blocks_when_permission_approval_is_requested(tmp_path):
     command = _write_fake_codex(tmp_path)
     executor = CodexExecutor(command=str(command))

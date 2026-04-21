@@ -58,6 +58,62 @@ async def test_interaction_manager_builds_permission_request_from_blocked_run_me
 
 
 @pytest.mark.anyio
+async def test_interaction_manager_keeps_full_native_response_in_opaque_but_sanitizes_details():
+    store = InMemoryBlackboard()
+    manager = InteractionManager(store)
+    task = Task(
+        task_id="task-native",
+        root_task_id="task-native",
+        title="Permission task",
+        goal="Permission task",
+    )
+    run = ExecutionRun(
+        run_id="run-native",
+        task_id="task-native",
+        execution_session_id="exec-native",
+        executor_type="codex",
+        status=RunStatus.BLOCKED,
+        block_reason="Allow more access?",
+        metadata={
+            "blocked_event": {
+                "interaction_kind": "permission",
+                "blocked_method": "item/permissions/requestApproval",
+                "native_response": {
+                    "request_id": 7,
+                    "method": "item/permissions/requestApproval",
+                    "params": {
+                        "threadId": "thread-1",
+                        "turnId": "turn-1",
+                        "permissions": {"fileSystem": {"writeRoots": ["/tmp"]}},
+                        "cwd": "/secret/path",
+                    },
+                },
+            }
+        },
+    )
+    await store.put_task(task)
+    await store.put_run(run)
+
+    await manager.handle_blackboard_write(
+        BlackboardWriteEvent(
+            kind=BlackboardWriteKind.RUN,
+            entity_id="run-native",
+            task_id="task-native",
+        )
+    )
+
+    request = (await store.list_interaction_requests())[0]
+
+    assert request.opaque["native_response"]["params"]["permissions"] == {
+        "fileSystem": {"writeRoots": ["/tmp"]}
+    }
+    blocked_event = request.details["blocked_event"]
+    assert blocked_event["interaction_kind"] == "permission"
+    assert "permissions" not in blocked_event["native_response"]["params"]
+    assert "cwd" not in blocked_event["native_response"]["params"]
+
+
+@pytest.mark.anyio
 async def test_interaction_manager_suppresses_duplicate_pending_request_for_same_run():
     store = InMemoryBlackboard()
     manager = InteractionManager(store)
@@ -186,6 +242,39 @@ async def test_interaction_manager_rejects_invalid_resolution_action():
 
     with pytest.raises(ValueError, match="not allowed"):
         await manager.resolve_request(request.request_id, action="answer", answer_text="yes")
+
+
+@pytest.mark.anyio
+async def test_interaction_manager_requires_answer_text_for_answer_action():
+    store = InMemoryBlackboard()
+    manager = InteractionManager(store)
+    task = Task(
+        task_id="task-question",
+        root_task_id="task-question",
+        title="Question task",
+        goal="Question task",
+    )
+    run = ExecutionRun(
+        run_id="run-question",
+        task_id="task-question",
+        execution_session_id="exec-question",
+        executor_type="codex",
+        status=RunStatus.BLOCKED,
+        block_reason="Which project name should I use?",
+    )
+    await store.put_task(task)
+    await store.put_run(run)
+    await manager.handle_blackboard_write(
+        BlackboardWriteEvent(
+            kind=BlackboardWriteKind.RUN,
+            entity_id="run-question",
+            task_id="task-question",
+        )
+    )
+    request = (await store.list_interaction_requests())[0]
+
+    with pytest.raises(ValueError, match="answer_text is required"):
+        await manager.resolve_request(request.request_id, action="answer", answer_text=None)
 
 
 @pytest.mark.anyio

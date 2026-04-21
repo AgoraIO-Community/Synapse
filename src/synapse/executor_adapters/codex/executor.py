@@ -18,8 +18,14 @@ from .session import CodexExecutorSession
 
 
 class CodexExecutor:
-    def __init__(self, *, command: str = "codex") -> None:
+    def __init__(
+        self,
+        *,
+        command: str = "codex",
+        blocked_wait_timeout_seconds: float | None = 900.0,
+    ) -> None:
         self._command = command
+        self._blocked_wait_timeout_seconds = blocked_wait_timeout_seconds
         self._capabilities = ExecutorCapabilities(
             executor_type="codex",
             supports_resume=True,
@@ -158,8 +164,20 @@ class CodexExecutor:
                         message=blocked_request["message"],
                         metadata=blocked_request["metadata"],
                     )
-                    await session.wait_for_blocked_resolution()
-                    continue
+                    resolution = await session.wait_for_blocked_resolution(
+                        timeout_seconds=self._blocked_wait_timeout_seconds,
+                    )
+                    if resolution == "resolved":
+                        continue
+                    if resolution == "timed_out":
+                        yield ExecutorEvent(
+                            run_id=run.run_id,
+                            session_id=session.session_id,
+                            event_type=ExecutorEventType.FAILED,
+                            message="Timed out waiting for user input.",
+                            metadata={"thread_id": session.thread_id or ""},
+                        )
+                    return
 
                 if method == "thread/status/changed":
                     status_type = _get_nested(params, "status", "type")

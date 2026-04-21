@@ -1,4 +1,5 @@
 import asyncio
+import logging
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -168,3 +169,42 @@ async def test_resolve_interaction_request_returns_409_when_already_resolved():
             json={"action": "approve"},
         )
         assert second.status_code == 409
+
+
+@pytest.mark.anyio
+async def test_resolve_interaction_request_logs_snapshot_failures(caplog, monkeypatch):
+    app = _build_app()
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+        session_id = (await client.post("/sessions")).json()["session_id"]
+        session = app.state.runtime_container.get_session(session_id)
+        session.registry.register(BlockingExecutor())
+        await session.blackboard.put_task(
+            Task(
+                task_id="task-log",
+                root_task_id="task-log",
+                title="Delete folder",
+                goal="Delete folder",
+                status=TaskStatus.QUEUED,
+                preferred_executor="blocking",
+            )
+        )
+        session.schedule_execution()
+        waiting = await _wait_for_snapshot(
+            client,
+            session_id,
+            lambda snap: len(snap["interaction_requests"]) == 1,
+        )
+        request_id = waiting["interaction_requests"][0]["request_id"]
+
+        async def _boom(_self):
+            raise RuntimeError("snapshot failed")
+
+        monkeypatch.setattr(type(session), "publish_snapshot", _boom)
+        with caplog.at_level(logging.WARNING):
+            response = await client.post(
+                f"/sessions/{session_id}/interaction-requests/{request_id}/resolve",
+                json={"action": "approve"},
+            )
+
+        assert response.status_code == 200
+        assert "follow-up scheduling failed" in caplog.text

@@ -224,7 +224,7 @@ async def _handle_send_command(session, queue: asyncio.Queue, payload: dict[str,
             ),
         )
         return
-    validation_error = session.validate_task_command(task, action.command_type)
+    validation_error = await session.validate_task_command(task, action.command_type)
     if validation_error is not None:
         session.observability.api.ws_action_rejected(
             conversation_id=session.session_id,

@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 from pathlib import Path
+from typing import Literal
 
 from pydantic import PrivateAttr
 
@@ -21,6 +22,7 @@ class CodexExecutorSession(ExecutorSession):
     _stderr_task: asyncio.Task[None] | None = PrivateAttr(default=None)
     _thread_id: str | None = PrivateAttr(default=None)
     _blocked_resolution_event: asyncio.Event | None = PrivateAttr(default=None)
+    _blocked_wait_result: Literal["resolved", "aborted"] | None = PrivateAttr(default=None)
 
     def attach(
         self,
@@ -60,7 +62,7 @@ class CodexExecutorSession(ExecutorSession):
         return self._process is not None and self._process.returncode is None
 
     async def close(self) -> None:
-        self.mark_blocked_resolved()
+        self.abort_blocked_wait()
         if self._process is not None and self._process.returncode is None:
             self._process.terminate()
             try:
@@ -89,13 +91,34 @@ class CodexExecutorSession(ExecutorSession):
 
     def begin_blocked_wait(self) -> None:
         self._blocked_resolution_event = asyncio.Event()
+        self._blocked_wait_result = None
 
-    async def wait_for_blocked_resolution(self) -> None:
+    async def wait_for_blocked_resolution(
+        self,
+        timeout_seconds: float | None = None,
+    ) -> Literal["resolved", "aborted", "timed_out"]:
         if self._blocked_resolution_event is None:
-            return
-        await self._blocked_resolution_event.wait()
+            return "resolved"
+        try:
+            if timeout_seconds is None:
+                await self._blocked_resolution_event.wait()
+            else:
+                await asyncio.wait_for(self._blocked_resolution_event.wait(), timeout_seconds)
+        except asyncio.TimeoutError:
+            self._blocked_resolution_event = None
+            self._blocked_wait_result = None
+            return "timed_out"
+        result = self._blocked_wait_result or "resolved"
         self._blocked_resolution_event = None
+        self._blocked_wait_result = None
+        return result
 
     def mark_blocked_resolved(self) -> None:
         if self._blocked_resolution_event is not None:
+            self._blocked_wait_result = "resolved"
+            self._blocked_resolution_event.set()
+
+    def abort_blocked_wait(self) -> None:
+        if self._blocked_resolution_event is not None:
+            self._blocked_wait_result = "aborted"
             self._blocked_resolution_event.set()
