@@ -135,3 +135,9 @@ Short log of important design decisions and changes for Synapse.
 - Reworked voice mode so it now boots idle by default, uses an attached left-edge mode rail on desktop, and exposes explicit `Start` / `Stop` plus microphone `Mute` / `Unmute` controls before and during live voice interaction.
 - Vendored `src/synapse/ui/vendor/agora-rtm/` and pointed the frontend workspace at that local package so plain `npm install` works on Vercel without `--legacy-peer-deps` despite the published Agora RTM package's incompatible peer declaration.
 - Added `@rolldown/binding-linux-x64-gnu` as a root optional dependency in `src/synapse/ui/` so Vite 8 builds on Linux/Vercel do not fail when npm skips Rolldown's nested native binding package.
+
+## 2026-04-21
+
+- Added append-only `TaskExecutionDetailEntry` blackboard storage plus bounded communication-context injection for the 5 most recently detail-active tasks, with the last 20 execution-detail entries per included task.
+- Extended `query_task_detail` to return bounded execution detail and command history, and added always-on `system_messages` audit logging on `comm.llm.request_built` for Communication Brain message turns.
+- Filtered low-value Codex progress chatter out of task execution detail, made run/task projection writes change-aware, and demoted repetitive progress-refresh blackboard logs out of normal `INFO` output.
