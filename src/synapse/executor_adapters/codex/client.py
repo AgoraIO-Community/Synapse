@@ -36,7 +36,7 @@ class CodexAppServerClient:
         self,
         *,
         cwd: str,
-        approval_policy: str = "never",
+        approval_policy: str = "on-request",
         sandbox: str = "workspace-write",
     ) -> dict[str, object]:
         result = await self._peer.request(
@@ -54,7 +54,7 @@ class CodexAppServerClient:
         *,
         thread_id: str,
         cwd: str,
-        approval_policy: str = "never",
+        approval_policy: str = "on-request",
         sandbox: str = "workspace-write",
     ) -> dict[str, object]:
         result = await self._peer.request(
@@ -110,8 +110,60 @@ class CodexAppServerClient:
     async def close(self) -> None:
         await self._peer.close()
 
+    async def respond_to_request(
+        self,
+        *,
+        request_id: object,
+        method: str,
+        params: dict[str, object],
+        action: str,
+        answer_text: str | None = None,
+    ) -> None:
+        await self._peer.respond(
+            request_id,
+            _build_request_response(
+                method=method,
+                params=params,
+                action=action,
+                answer_text=answer_text,
+            ),
+        )
+
 
 def _as_dict(value: object) -> dict[str, object]:
     if isinstance(value, dict):
         return value
+    return {}
+
+
+def _build_request_response(
+    *,
+    method: str,
+    params: dict[str, object],
+    action: str,
+    answer_text: str | None,
+) -> dict[str, object]:
+    normalized = method.lower()
+    if normalized in {"item/commandexecution/requestapproval", "execcommandapproval"}:
+        return {"decision": "acceptForSession" if action == "approve" else "decline"}
+    if normalized in {"item/filechange/requestapproval", "applypatchapproval"}:
+        return {"decision": "acceptForSession" if action == "approve" else "decline"}
+    if normalized == "item/permissions/requestapproval":
+        permissions = params.get("permissions")
+        if not isinstance(permissions, dict):
+            permissions = {}
+        if action == "approve":
+            return {"permissions": permissions, "scope": "session"}
+        return {"permissions": {}, "scope": "turn"}
+    if "user_input" in normalized or ("request" in normalized and "question" in normalized):
+        answers: dict[str, object] = {}
+        questions = params.get("questions")
+        if isinstance(questions, list):
+            for question in questions:
+                if isinstance(question, dict):
+                    question_id = question.get("id")
+                    if isinstance(question_id, str) and question_id:
+                        answers[question_id] = {"answers": [answer_text or ""]}
+                        break
+        return {"answers": answers}
     return {}

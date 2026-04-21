@@ -68,9 +68,12 @@ class ControlTaskTool:
             reason=reason,
         )
         if self._apply_callback is not None:
-            maybe_awaitable = self._apply_callback(command)
-            if inspect.isawaitable(maybe_awaitable):
-                await maybe_awaitable
+            try:
+                maybe_awaitable = self._apply_callback(command)
+                if inspect.isawaitable(maybe_awaitable):
+                    await maybe_awaitable
+            except ValueError as exc:
+                raise ToolInputError(str(exc), code="unsupported_command") from exc
         else:
             await self._store.append_command(command)
         return {

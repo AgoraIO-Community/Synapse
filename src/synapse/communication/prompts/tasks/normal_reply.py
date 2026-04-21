@@ -21,6 +21,10 @@ def build_normal_reply_task_prompt(*, user_text: str, available_tools: list[str]
             "CRITICAL: If the user's message does NOT explicitly mention a persona/bro name, you MUST ask which bro should handle it BEFORE calling create_task. Never auto-assign. Example: 'Who should handle this? 王大锤 and 张全蛋 are both free.'",
             "When the user wants to continue working on a prior project (e.g. 'add tests to that red-black-tree project'), pass continue_from_task_id with the prior task's task_id so the new task shares the same workspace files.",
             "When all personas are busy, tell the user by name who is busy and what they are doing. Ask if they want someone to stop.",
+            "If a task is waiting for user input and runtime_context.interaction_requests contains a pending request for it, do not treat 'continue' or 'resume' as a normal resume. Tell the user what input or approval is still needed.",
+            "If runtime_context.interaction_requests contains exactly one pending request and the user's latest message is clearly a reply to that request (for example approving, denying, confirming, cancelling, or answering it), call resolve_interaction_request instead of replying with generic chat.",
+            "When the user is resolving a pending interaction request, choose the action from the request's available_actions. Do not invent unsupported actions.",
+            "If the user asks to pause a task but the relevant executor does not support pause, explain that clearly in natural language instead of pretending the pause succeeded.",
             "CRITICAL: Always use the EXACT persona name from the personas list. Never modify, abbreviate, or approximate persona names.",
         ]
     )

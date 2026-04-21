@@ -4,10 +4,17 @@ import pytest
 
 from synapse.blackboard.backends import InMemoryBlackboard
 from synapse.protocol import (
+    AttentionItem,
+    AttentionItemKind,
+    AttentionItemStatus,
+    AttentionPriority,
     BindingStatus,
     ExecutionMode,
     ExecutionRun,
     ExecutionSession,
+    InteractionRequest,
+    InteractionRequestKind,
+    InteractionRequestStatus,
     NotificationCandidate,
     NotificationCandidateType,
     NotificationDeliveryStatus,
@@ -68,6 +75,27 @@ async def test_memory_blackboard_round_trip_for_core_objects():
         delivery_status=NotificationDeliveryStatus.PENDING,
         merge_key="completed_digest",
     )
+    interaction_request = InteractionRequest(
+        request_id="ireq_1",
+        task_id="task_1",
+        kind=InteractionRequestKind.QUESTION,
+        status=InteractionRequestStatus.PENDING,
+        prompt="Need confirmation?",
+        available_actions=["answer"],
+        created_at="2026-04-06T00:00:00+00:00",
+    )
+    attention_item = AttentionItem(
+        attention_id="attention_1",
+        source="interaction_request",
+        kind=AttentionItemKind.QUESTION_REQUEST,
+        priority=AttentionPriority.P0,
+        status=AttentionItemStatus.ACTIVE,
+        title="Need your input",
+        body="Need confirmation?",
+        task_id="task_1",
+        request_id="ireq_1",
+        created_at="2026-04-06T00:00:00+00:00",
+    )
 
     await store.put_task(task)
     await store.put_session(session)
@@ -76,6 +104,8 @@ async def test_memory_blackboard_round_trip_for_core_objects():
     await store.put_summary(summary)
     await store.put_execution_mode(execution_mode)
     await store.put_notification_candidate(candidate)
+    await store.put_interaction_request(interaction_request)
+    await store.put_attention_item(attention_item)
 
     assert await store.get_task("task_1") == task
     assert await store.get_session("sess_1") == session
@@ -84,6 +114,8 @@ async def test_memory_blackboard_round_trip_for_core_objects():
     assert await store.get_summary("task_1") == summary
     assert await store.get_execution_mode("task_1") == execution_mode
     assert await store.get_notification_candidate("notif_1") == candidate
+    assert await store.get_interaction_request("ireq_1") == interaction_request
+    assert await store.get_attention_item("attention_1") == attention_item
 
 
 @pytest.mark.anyio

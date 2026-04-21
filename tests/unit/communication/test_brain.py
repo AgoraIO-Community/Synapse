@@ -7,7 +7,14 @@ from synapse.communication.tools import build_default_tool_registry
 from synapse.communication.models import ScriptedCommunicationModel
 from synapse.communication.models.scripted import ScriptedPlan
 from synapse.communication.history import InMemoryConversationHistory
-from synapse.protocol import Task, TaskStatus, TaskCommandType
+from synapse.protocol import (
+    InteractionRequest,
+    InteractionRequestKind,
+    InteractionRequestStatus,
+    Task,
+    TaskStatus,
+    TaskCommandType,
+)
 
 
 @pytest.mark.anyio
@@ -85,11 +92,40 @@ def _build_brain_with_runtime_like_control(
         await store.put_task(task)
         return [task.task_id]
 
+    async def apply_interaction_request(
+        request_id,
+        *,
+        action,
+        answer_text=None,
+        option_id=None,
+        reason=None,
+    ):
+        request = await store.get_interaction_request(request_id)
+        if request is None:
+            return []
+        updated = request.model_copy(
+            update={
+                "status": InteractionRequestStatus.APPROVED
+                if action == "approve"
+                else InteractionRequestStatus.DENIED
+                if action == "deny"
+                else InteractionRequestStatus.ANSWERED
+                if action == "answer"
+                else InteractionRequestStatus.RESOLVED
+                if action == "confirm"
+                else InteractionRequestStatus.CANCELLED,
+            }
+        )
+        await store.put_interaction_request(updated)
+        task = await store.get_task(request.task_id)
+        return [task.task_id] if task is not None else []
+
     registry = build_default_tool_registry(
         store,
         executor_types=["codex", "mock"],
         default_executor_type="codex",
         apply_task_command=apply_command,
+        apply_interaction_request=apply_interaction_request,
     )
     if model is None:
         model = ScriptedCommunicationModel(
@@ -260,6 +296,60 @@ async def test_communication_brain_continue_recreates_cancelled_task():
 
 
 @pytest.mark.anyio
+async def test_communication_brain_model_can_resolve_pending_interaction_request_via_tool():
+    store = InMemoryBlackboard()
+    task = Task(
+        task_id="task-delete",
+        root_task_id="task-delete",
+        title="Delete folder",
+        goal="Delete folder",
+        status=TaskStatus.WAITING_USER_INPUT,
+        preferred_executor="codex",
+    )
+    await store.put_task(task)
+    await store.put_interaction_request(
+        InteractionRequest(
+            request_id="ireq-delete",
+            task_id="task-delete",
+            kind=InteractionRequestKind.PERMISSION,
+            status=InteractionRequestStatus.PENDING,
+            prompt="Allow deleting the folder?",
+            available_actions=["approve", "deny"],
+            created_at="2026-04-21T00:00:00+00:00",
+        )
+    )
+    model = ScriptedCommunicationModel(
+        {
+            "确认执行": ScriptedPlan(
+                conversational_act="acknowledge_and_start",
+                tool_calls=[
+                    ToolCall(
+                        name="resolve_interaction_request",
+                        args={"request_id": "ireq-delete", "action": "approve"},
+                    )
+                ],
+                reply_override="好的，我继续执行。",
+            )
+        }
+    )
+    brain, history = _build_brain_with_runtime_like_control(store, model)
+    history.append_assistant(
+        "conv-1",
+        "I need your confirmation before I continue.",
+        focused_task_id=task.task_id,
+        affected_task_ids=[task.task_id],
+    )
+
+    result = await brain.handle_user_message("conv-1", "确认执行")
+
+    resolved = await store.get_interaction_request("ireq-delete")
+    assert result.conversational_act == "acknowledge_and_start"
+    assert result.reply_text == "好的，我继续执行。"
+    assert result.affected_task_ids == ["task-delete"]
+    assert resolved is not None and resolved.status == InteractionRequestStatus.APPROVED
+
+
+@pytest.mark.anyio
 async def test_communication_brain_current_work_reports_active_task_not_cancelled_one():
     store = InMemoryBlackboard()
     cancelled = Task(
@@ -296,7 +386,7 @@ async def test_communication_brain_current_work_reports_active_task_not_cancelle
 
     assert result.conversational_act == "inform_progress"
     assert result.reply_text == "I'm working on Check Shanghai's Weather right now."
-    assert result.affected_task_ids == []
+    assert result.affected_task_ids == ["task-weather"]
 
 
 @pytest.mark.anyio

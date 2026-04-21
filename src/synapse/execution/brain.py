@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from synapse.blackboard import BlackboardQueryService, BlackboardStore
-from synapse.executor_core import ExecutorRegistry
+from synapse.executor_core import ExecutorRegistry, ExecutorSession
 from synapse.observability.emitters.execution import ExecutionDiagnosticEmitter
 
 from .assignment import AssignmentManager
@@ -37,3 +37,9 @@ class ExecutionBrain:
 
     async def tick(self) -> list[str]:
         return await self._loop.tick()
+
+    def get_live_session(self, execution_session_id: str) -> ExecutorSession | None:
+        return self._loop._sessions.get_live_session(execution_session_id)
+
+    def drop_live_session(self, execution_session_id: str) -> None:
+        self._loop._sessions.drop_live_session(execution_session_id)

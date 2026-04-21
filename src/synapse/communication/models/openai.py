@@ -161,6 +161,11 @@ def _extract_task_id(result: object) -> str | None:
     if isinstance(task_id, str):
         return task_id
     if isinstance(result, dict):
+        affected_task_ids = result.get("affected_task_ids")
+        if isinstance(affected_task_ids, list):
+            for item in affected_task_ids:
+                if isinstance(item, str):
+                    return item
         task = result.get("task")
         task_id = getattr(task, "task_id", None)
         if isinstance(task_id, str):

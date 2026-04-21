@@ -5,9 +5,11 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from synapse.protocol import (
+    AttentionItem,
     TaskExecutionMode,
     ExecutionRun,
     ExecutionSession,
+    InteractionRequest,
     NotificationCandidate,
     Persona,
     SessionBinding,
@@ -32,6 +34,9 @@ class SessionSnapshot(BaseModel):
     summaries: list[TaskSummary] = Field(default_factory=list)
     notification_candidates: list[NotificationCandidate] = Field(default_factory=list)
     personas: list[Persona] = Field(default_factory=list)
+    interaction_requests: list[InteractionRequest] = Field(default_factory=list)
+    attention_items: list[AttentionItem] = Field(default_factory=list)
+    executor_capabilities: list[dict[str, object]] = Field(default_factory=list)
  
 
 class ConversationSnapshot(BaseModel):

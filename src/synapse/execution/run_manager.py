@@ -64,6 +64,8 @@ class RunManager:
         elif event.event_type == ExecutorEventType.BLOCKED:
             run.status = RunStatus.BLOCKED
             run.block_reason = event.message
+            if event.metadata:
+                run.metadata["blocked_event"] = dict(event.metadata)
             task.status = TaskStatus.WAITING_USER_INPUT
             if self._observability is not None:
                 self._observability.run_terminal(

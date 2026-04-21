@@ -11,6 +11,9 @@ Important rules:
 
 - blackboard update does not directly equal assistant speech
 - user-visible updates first become notification candidates
+- blocked execution may also create `InteractionRequest` and `AttentionItem`
+  objects when the runtime needs an explicit user action rather than passive
+  awareness
 - only emitted proactive messages enter user-visible conversation history
 - digest-first delivery is preferred over one-event-one-message
 - notification policy decides whether to send, merge, or defer before any wording is generated
@@ -20,6 +23,19 @@ Important rules:
 - emitted notification wording should stay plain-text and spoken-style, without markdown or list formatting
 - first-version delivery focuses on `completed`, `blocked`, and `needs_input`
 - first-version turn-taking is basic: defer while assistant output is active and prefer a short merge window for ordinary completion updates
+
+Interaction-request rules:
+
+- `waiting_user_input` is not itself an action surface
+- `InteractionRequest` is the actionable representation of executor questions,
+  permission prompts, and confirmations
+- `AttentionItem` is the presentation-facing object for workbench, toast,
+  island, and optional voice surfaces
+- for Codex approval-style callbacks, the current implementation prefers native
+  callback continuation in the same live session instead of always re-queuing a
+  follow-up run
+- fallback follow-up-run continuation still exists for executors without native
+  callback response support
 
 Interruption rules:
 

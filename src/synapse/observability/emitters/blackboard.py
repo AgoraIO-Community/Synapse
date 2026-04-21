@@ -57,4 +57,8 @@ def _event_name(kind: BlackboardWriteKind, *, created: bool) -> str | None:
         return "bb.execution_mode.updated"
     if kind == BlackboardWriteKind.NOTIFICATION:
         return "bb.notification.candidate.created" if created else "bb.notification.candidate.updated"
+    if kind == BlackboardWriteKind.INTERACTION_REQUEST:
+        return "bb.interaction_request.created" if created else "bb.interaction_request.updated"
+    if kind == BlackboardWriteKind.ATTENTION:
+        return "bb.attention_item.created" if created else "bb.attention_item.updated"
     return None

@@ -10,4 +10,5 @@ Use these docs when you need object-level clarity rather than broad architecture
 - [Execution Mode](./execution-mode.md)
 - [Session Stream](./session-stream.md)
 - [Summary and Notification](./summary-notification.md)
+- [Interaction Request and Attention](./interaction-request-and-attention.md)
 - [Interruption](./interruption.md)

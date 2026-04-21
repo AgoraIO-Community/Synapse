@@ -235,6 +235,9 @@ function makeSnapshot(sessionId: string, overrides: SessionSnapshotOverrides = {
     bindings: [],
     summaries: [],
     notification_candidates: [],
+    interaction_requests: [],
+    attention_items: [],
+    executor_capabilities: [],
     ...overrides,
     personas,
   };

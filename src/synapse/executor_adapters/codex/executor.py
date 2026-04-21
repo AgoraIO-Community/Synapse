@@ -24,7 +24,7 @@ class CodexExecutor:
             executor_type="codex",
             supports_resume=True,
             supports_follow_up=True,
-            supports_pause=False,
+            supports_pause=True,
             supports_cancel=True,
             supports_setup=False,
         )
@@ -66,7 +66,7 @@ class CodexExecutor:
             await session.close()
 
     async def pause_run(self, run_id: str) -> None:
-        return None
+        await self.cancel_run(run_id)
 
     async def run_task(
         self,
@@ -159,16 +159,22 @@ class CodexExecutor:
                             )
                     continue
 
-                if "user_input" in method.lower() or "request" in method.lower() and "question" in method.lower():
-                    question_text = _extract_question_text(params)
+                blocked_request = _extract_blocked_request(
+                    request_id=event.get("id"),
+                    method=method,
+                    params=params,
+                )
+                if blocked_request is not None:
+                    session.begin_blocked_wait()
                     yield ExecutorEvent(
                         run_id=run.run_id,
                         session_id=session.session_id,
                         event_type=ExecutorEventType.BLOCKED,
-                        message=question_text or "Codex is waiting for user input.",
-                        metadata={"thread_id": session.thread_id or ""},
+                        message=blocked_request["message"],
+                        metadata=blocked_request["metadata"],
                     )
-                    return
+                    await session.wait_for_blocked_resolution()
+                    continue
 
                 if method == "thread/status/changed":
                     status_type = _get_nested(params, "status", "type")
@@ -305,6 +311,111 @@ def _extract_question_text(params: dict[str, object]) -> str | None:
                 if isinstance(prompt, str) and prompt.strip():
                     return prompt.strip()
     return None
+
+
+def _extract_blocked_request(
+    request_id: object,
+    *,
+    method: str,
+    params: dict[str, object],
+) -> dict[str, object] | None:
+    normalized = method.lower()
+    if "user_input" in normalized or ("request" in normalized and "question" in normalized):
+        question_text = _extract_question_text(params) or "Codex is waiting for user input."
+        return {
+            "message": question_text,
+            "metadata": {
+                "thread_id": str(params.get("threadId") or ""),
+                "prompt": question_text,
+                "interaction_kind": _classify_blocked_prompt(question_text),
+                "blocked_method": method,
+                "native_response": {
+                    "request_id": request_id,
+                    "method": method,
+                    "params": params,
+                },
+            },
+        }
+
+    approval_methods = {
+        "item/commandexecution/requestapproval",
+        "item/filechange/requestapproval",
+        "item/permissions/requestapproval",
+        "execcommandapproval",
+        "applypatchapproval",
+    }
+    if normalized not in approval_methods:
+        return None
+
+    approval_text = _extract_approval_text(method, params)
+    return {
+        "message": approval_text,
+        "metadata": {
+            "thread_id": str(params.get("threadId") or params.get("conversationId") or ""),
+            "prompt": approval_text,
+            "interaction_kind": "permission",
+            "blocked_method": method,
+            "native_response": {
+                "request_id": request_id,
+                "method": method,
+                "params": params,
+            },
+        },
+    }
+
+
+def _extract_approval_text(method: str, params: dict[str, object]) -> str:
+    reason = params.get("reason")
+    if isinstance(reason, str) and reason.strip():
+        return reason.strip()
+
+    normalized = method.lower()
+    if normalized in {"item/commandexecution/requestapproval", "execcommandapproval"}:
+        command = params.get("command")
+        if isinstance(command, str) and command.strip():
+            return f"Allow command execution? {command.strip()}"
+        if isinstance(command, list):
+            parts = [part for part in command if isinstance(part, str) and part.strip()]
+            if parts:
+                return f"Allow command execution? {' '.join(parts)}"
+        return "Codex needs approval to run a command."
+
+    if normalized in {"item/filechange/requestapproval", "applypatchapproval"}:
+        grant_root = params.get("grantRoot")
+        if isinstance(grant_root, str) and grant_root.strip():
+            return f"Allow file changes under {grant_root.strip()}?"
+        file_changes = params.get("fileChanges")
+        if isinstance(file_changes, dict) and file_changes:
+            names = list(file_changes.keys())[:3]
+            joined = ", ".join(str(name) for name in names)
+            suffix = "..." if len(file_changes) > 3 else ""
+            return f"Allow file changes to {joined}{suffix}?"
+        return "Codex needs approval to change files."
+
+    if normalized == "item/permissions/requestapproval":
+        permissions = params.get("permissions")
+        if isinstance(permissions, dict):
+            file_system = permissions.get("fileSystem")
+            network = permissions.get("network")
+            parts: list[str] = []
+            if isinstance(file_system, dict):
+                parts.append("file system access")
+            if isinstance(network, dict):
+                parts.append("network access")
+            if parts:
+                return f"Allow additional permissions: {', '.join(parts)}?"
+        return "Codex needs additional permissions to continue."
+
+    return "Codex needs approval to continue."
+
+
+def _classify_blocked_prompt(prompt: str) -> str:
+    normalized = prompt.lower()
+    if any(token in normalized for token in ("allow", "permission", "approve", "grant access")):
+        return "permission"
+    if any(token in normalized for token in ("confirm", "confirmation", "are you sure")):
+        return "confirmation"
+    return "question"
 
 
 def _extract_assistant_text_from_thread(

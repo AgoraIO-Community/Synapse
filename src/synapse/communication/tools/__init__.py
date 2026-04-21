@@ -12,6 +12,7 @@ from .create_task import CreateTaskTool
 from .list_tasks import ListTasksTool
 from .query_task_detail import QueryTaskDetailTool
 from .query_task_summary import QueryTaskSummaryTool
+from .resolve_interaction_request import ResolveInteractionRequestTool
 from .update_task import UpdateTaskTool
 
 
@@ -61,6 +62,7 @@ def build_default_tool_registry(
     executor_types: list[str] | None = None,
     default_executor_type: str = "mock",
     apply_task_command=None,
+    apply_interaction_request=None,
 ) -> ToolRegistry:
     resolved_executor_types = sorted(set(executor_types or ["mock"]))
     create_task = CreateTaskTool(
@@ -71,6 +73,10 @@ def build_default_tool_registry(
     add_constraint = AddConstraintTool(store)
     add_task_note = AddTaskNoteTool(store)
     control_task = ControlTaskTool(store, apply_callback=apply_task_command)
+    resolve_interaction_request = ResolveInteractionRequestTool(
+        store,
+        apply_callback=apply_interaction_request,
+    )
     list_tasks = ListTasksTool(store)
     query_task_detail = QueryTaskDetailTool(store)
     query_task_summary = QueryTaskSummaryTool(store)
@@ -151,6 +157,26 @@ def build_default_tool_registry(
                     "additionalProperties": False,
                 },
                 handler=create_task,
+            ),
+            "resolve_interaction_request": ToolSpec(
+                name="resolve_interaction_request",
+                description="Resolve a pending interaction request such as allow, deny, answer, confirm, or cancel.",
+                input_schema={
+                    "type": "object",
+                    "properties": {
+                        "request_id": {"type": "string"},
+                        "action": {
+                            "type": "string",
+                            "enum": ["approve", "deny", "answer", "confirm", "cancel"],
+                        },
+                        "answer_text": {"type": ["string", "null"]},
+                        "option_id": {"type": ["string", "null"]},
+                        "reason": {"type": ["string", "null"]},
+                    },
+                    "required": ["request_id", "action"],
+                    "additionalProperties": False,
+                },
+                handler=resolve_interaction_request,
             ),
             "list_tasks": ToolSpec(
                 name="list_tasks",

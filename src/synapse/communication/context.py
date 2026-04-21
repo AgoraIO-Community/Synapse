@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 from synapse.blackboard import BlackboardQueryService, BlackboardStore
 from synapse.executor_core import ExecutorCapabilities
-from synapse.protocol import Task, TaskStatus, TaskSummary
+from synapse.protocol import InteractionRequest, Task, TaskStatus, TaskSummary
 
 from .history import ConversationEntry, InMemoryConversationHistory
 
@@ -50,6 +50,7 @@ class CommunicationContext:
     executor_runtime: ExecutorRuntimeSummary
     available_tools: list[str]
     personas: list[dict[str, object]] | None = None
+    interaction_requests: list[dict[str, object]] | None = None
 
 
 class CommunicationContextBuilder:
@@ -114,6 +115,7 @@ class CommunicationContextBuilder:
             executor_runtime=self._build_executor_runtime_summary(),
             available_tools=available_tools,
             personas=await self._build_persona_context(),
+            interaction_requests=await self._build_interaction_request_context(),
         )
 
     def _build_task_brief(
@@ -178,3 +180,24 @@ class CommunicationContextBuilder:
             }
             for p in personas
         ]
+
+    async def _build_interaction_request_context(self) -> list[dict[str, object]] | None:
+        requests = await self._store.list_interaction_requests()
+        pending_requests = [request for request in requests if request.status.value == "pending"]
+        if not pending_requests:
+            return None
+        return [
+            _interaction_request_payload(request)
+            for request in pending_requests
+        ]
+
+
+def _interaction_request_payload(request: InteractionRequest) -> dict[str, object]:
+    return {
+        "request_id": request.request_id,
+        "task_id": request.task_id,
+        "kind": request.kind.value,
+        "status": request.status.value,
+        "prompt": request.prompt,
+        "available_actions": list(request.available_actions),
+    }

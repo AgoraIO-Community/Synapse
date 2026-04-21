@@ -26,6 +26,8 @@ def build_runtime_context(context: CommunicationContext) -> dict[str, object]:
     }
     if context.personas:
         result["personas"] = context.personas
+    if context.interaction_requests:
+        result["interaction_requests"] = context.interaction_requests
     return result
 
 

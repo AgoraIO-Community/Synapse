@@ -20,9 +20,21 @@ WORKSPACES_DIR = SYNAPSE_HOME_DIR / "workspaces"
 def create_workspace(task_id: str) -> Path:
     """Create a new isolated workspace directory for a task."""
     workspace_id = f"ws-{task_id.replace('task-', '')}"
-    workspace = WORKSPACES_DIR / workspace_id
-    workspace.mkdir(parents=True, exist_ok=True)
-    return workspace
+    candidates = [
+        WORKSPACES_DIR / workspace_id,
+        Path.cwd() / ".synapse" / "workspaces" / workspace_id,
+    ]
+    last_error: OSError | None = None
+    for workspace in candidates:
+        try:
+            workspace.mkdir(parents=True, exist_ok=True)
+            return workspace
+        except OSError as exc:
+            last_error = exc
+            continue
+    if last_error is not None:
+        raise last_error
+    raise RuntimeError("Failed to create a workspace directory.")
 
 
 def load_personas_from_file(path: Path | None = None) -> list[Persona]:

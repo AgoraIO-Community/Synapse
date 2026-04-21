@@ -20,6 +20,7 @@ class CodexExecutorSession(ExecutorSession):
     _stderr_lines: list[str] = PrivateAttr(default_factory=list)
     _stderr_task: asyncio.Task[None] | None = PrivateAttr(default=None)
     _thread_id: str | None = PrivateAttr(default=None)
+    _blocked_resolution_event: asyncio.Event | None = PrivateAttr(default=None)
 
     def attach(
         self,
@@ -59,6 +60,7 @@ class CodexExecutorSession(ExecutorSession):
         return self._process is not None and self._process.returncode is None
 
     async def close(self) -> None:
+        self.mark_blocked_resolved()
         if self._process is not None and self._process.returncode is None:
             self._process.terminate()
             try:
@@ -84,3 +86,16 @@ class CodexExecutorSession(ExecutorSession):
             if not line:
                 return
             self._stderr_lines.append(line.decode("utf-8", errors="replace").rstrip())
+
+    def begin_blocked_wait(self) -> None:
+        self._blocked_resolution_event = asyncio.Event()
+
+    async def wait_for_blocked_resolution(self) -> None:
+        if self._blocked_resolution_event is None:
+            return
+        await self._blocked_resolution_event.wait()
+        self._blocked_resolution_event = None
+
+    def mark_blocked_resolved(self) -> None:
+        if self._blocked_resolution_event is not None:
+            self._blocked_resolution_event.set()

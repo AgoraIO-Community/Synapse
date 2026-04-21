@@ -4,8 +4,10 @@ import asyncio
 from typing import Protocol
 
 from synapse.protocol import (
+    AttentionItem,
     ExecutionRun,
     ExecutionSession,
+    InteractionRequest,
     NotificationCandidate,
     Persona,
     SessionBinding,
@@ -111,6 +113,24 @@ class BlackboardStore(Protocol):
 
     async def delete_persona(self, persona_id: str) -> bool:
         """Delete a persona. Returns True if it existed."""
+
+    async def put_interaction_request(self, request: InteractionRequest) -> None:
+        """Store or replace an interaction request."""
+
+    async def get_interaction_request(self, request_id: str) -> InteractionRequest | None:
+        """Fetch one interaction request by id."""
+
+    async def list_interaction_requests(self) -> list[InteractionRequest]:
+        """List interaction requests across the session."""
+
+    async def put_attention_item(self, item: AttentionItem) -> None:
+        """Store or replace an attention item."""
+
+    async def get_attention_item(self, attention_id: str) -> AttentionItem | None:
+        """Fetch one attention item by id."""
+
+    async def list_attention_items(self) -> list[AttentionItem]:
+        """List attention items across the session."""
 
     async def list_recent_writes(self, limit: int = 50) -> list[BlackboardWriteEvent]:
         """List recent blackboard write events for debugging."""
