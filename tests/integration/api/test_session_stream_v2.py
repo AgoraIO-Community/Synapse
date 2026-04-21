@@ -254,6 +254,7 @@ async def test_openai_message_flow_logs_summary_llm_diagnostics_without_trace_ui
     assert diagnostics[0]["details"]["phase"] == "request_built"
     assert diagnostics[0]["details"]["message_count"] > 0
     assert "prompt_sections" in diagnostics[0]["details"]
+    assert diagnostics[0]["details"]["system_messages"][0]["role"] == "system"
     assert "messages" not in diagnostics[0]["details"]
     assert "user_text" not in diagnostics[0]["details"]
     assert diagnostics[1]["details"]["reply_preview"] == "OpenAI reply."
@@ -291,6 +292,7 @@ async def test_openai_message_flow_can_log_verbose_llm_diagnostics_when_enabled(
         ).json()["events"]
 
     assert diagnostics[0]["details"]["user_text"] == "what is today's weather"
+    assert diagnostics[0]["details"]["system_messages"][0]["role"] == "system"
     assert diagnostics[0]["details"]["messages"][0]["role"] == "system"
     assert diagnostics[1]["details"]["reply_text"] == "OpenAI reply."
     assert diagnostics[1]["details"]["tool_invocations"][0]["args"]["title"] == "Check flights"

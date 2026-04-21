@@ -79,6 +79,7 @@ async def test_openai_model_maps_payload_to_model_result():
             )
         ],
         summaries={},
+        task_execution_details={},
         focused_task_ids=[],
         focused_tasks=[],
         active_tasks=[],
@@ -113,6 +114,7 @@ async def test_openai_model_maps_payload_to_model_result():
         "focused_tasks": [],
         "active_tasks": [],
         "recent_tasks": [],
+        "task_execution_details": {},
         "executor_runtime": {
             "has_real_executor": False,
             "available_executor_types": [],
@@ -137,6 +139,7 @@ async def test_openai_model_emits_tool_call_record_for_successful_invocation():
         recent_history=[ConversationEntry(role="user", text="hi")],
         tasks=[],
         summaries={},
+        task_execution_details={},
         focused_task_ids=[],
         focused_tasks=[],
         active_tasks=[],
@@ -173,6 +176,7 @@ async def test_openai_model_blocks_real_executor_request_when_only_mock_is_avail
         recent_history=[ConversationEntry(role="user", text="check my pc cpu usage")],
         tasks=[],
         summaries={},
+        task_execution_details={},
         focused_task_ids=[],
         focused_tasks=[],
         active_tasks=[],

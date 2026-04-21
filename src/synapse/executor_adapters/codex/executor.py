@@ -121,16 +121,6 @@ class CodexExecutor:
                     return
 
                 if method == "error":
-                    message = _get_nested(params, "error", "message")
-                    will_retry = params.get("willRetry")
-                    if will_retry:
-                        yield ExecutorEvent(
-                            run_id=run.run_id,
-                            session_id=session.session_id,
-                            event_type=ExecutorEventType.PROGRESS,
-                            message=str(message or "Codex retrying."),
-                            metadata={"thread_id": session.thread_id or ""},
-                        )
                     continue
 
                 if method in {"item/started", "item/completed"}:
@@ -149,14 +139,6 @@ class CodexExecutor:
                                     metadata={"thread_id": session.thread_id or ""},
                                 )
                                 continue
-                        if item_type not in {None, "userMessage"}:
-                            yield ExecutorEvent(
-                                run_id=run.run_id,
-                                session_id=session.session_id,
-                                event_type=ExecutorEventType.PROGRESS,
-                                message=f"Codex {method.replace('/', ' ')}: {item_type}",
-                                metadata={"thread_id": session.thread_id or ""},
-                            )
                     continue
 
                 blocked_request = _extract_blocked_request(

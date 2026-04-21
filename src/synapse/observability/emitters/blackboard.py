@@ -20,8 +20,9 @@ class BlackboardDiagnosticEmitter:
         event_name = _event_name(event.kind, created=created)
         if event_name is None:
             return
+        level = _event_level(event)
         self.logger.emit_event(
-            level="INFO",
+            level=level,
             event_name=event_name,
             component="blackboard.store",
             summary="Blackboard projection updated",
@@ -45,6 +46,8 @@ def _event_name(kind: BlackboardWriteKind, *, created: bool) -> str | None:
         return "bb.mutation.appended"
     if kind == BlackboardWriteKind.COMMAND:
         return "bb.command.appended"
+    if kind == BlackboardWriteKind.EXECUTION_DETAIL:
+        return "bb.execution_detail.appended"
     if kind == BlackboardWriteKind.RUN:
         return "bb.run.updated"
     if kind == BlackboardWriteKind.SESSION:
@@ -62,3 +65,12 @@ def _event_name(kind: BlackboardWriteKind, *, created: bool) -> str | None:
     if kind == BlackboardWriteKind.ATTENTION:
         return "bb.attention_item.created" if created else "bb.attention_item.updated"
     return None
+
+
+def _event_level(event: BlackboardWriteEvent) -> str:
+    change_kind = event.payload.get("change_kind") if isinstance(event.payload, dict) else None
+    if event.kind == BlackboardWriteKind.RUN and change_kind in {"progress_update", "refresh"}:
+        return "DEBUG"
+    if event.kind == BlackboardWriteKind.TASK and change_kind == "refresh":
+        return "DEBUG"
+    return "INFO"

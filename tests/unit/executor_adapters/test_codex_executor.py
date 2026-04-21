@@ -217,6 +217,51 @@ def _write_fake_codex(tmp_path, *, auth_ok: bool = True):
     return script
 
 
+def _write_noisy_fake_codex(tmp_path):
+    script = tmp_path / "fake-codex-noisy"
+    script.write_text(
+        textwrap.dedent(
+            f"""\
+            #!{sys.executable}
+            import json
+            import sys
+
+            def send(payload):
+                sys.stdout.write(json.dumps(payload) + "\\n")
+                sys.stdout.flush()
+
+            for raw in sys.stdin:
+                if not raw.strip():
+                    continue
+                msg = json.loads(raw)
+                method = msg.get("method")
+                request_id = msg.get("id")
+                if method == "initialize":
+                    send({{"id": request_id, "result": {{"ok": True}}}})
+                elif method == "initialized":
+                    continue
+                elif method == "account/read":
+                    send({{"id": request_id, "result": {{"account": {{"type": "apiKey"}}, "requiresOpenaiAuth": True}}}})
+                elif method == "thread/start":
+                    send({{"id": request_id, "result": {{"thread": {{"id": "thread-1"}}}}}})
+                elif method == "turn/start":
+                    send({{"id": request_id, "result": {{"turn": {{"id": "turn-1", "status": "inProgress"}}}}}})
+                    send({{"method": "item/started", "params": {{"turnId": "turn-1", "item": {{"type": "reasoning"}}}}}})
+                    send({{"method": "item/completed", "params": {{"turnId": "turn-1", "item": {{"type": "webSearch"}}}}}})
+                    send({{"method": "item/started", "params": {{"turnId": "turn-1", "item": {{"type": "agentMessage"}}}}}})
+                    send({{"method": "item/completed", "params": {{"turnId": "turn-1", "item": {{"type": "agentMessage", "text": "Useful answer from Codex."}}}}}})
+                    send({{"method": "turn/completed", "params": {{"turn": {{"id": "turn-1", "status": "completed", "error": None}}}}}})
+                elif method == "thread/read":
+                    send({{"id": request_id, "result": {{"thread": {{"id": "thread-1", "turns": [{{"id": "turn-1", "items": [{{"type": "agentMessage", "text": "Useful answer from Codex."}}]}}]}}}}}})
+                else:
+                    send({{"id": request_id, "error": {{"message": "unknown"}}}})
+            """
+        )
+    )
+    script.chmod(script.stat().st_mode | stat.S_IEXEC)
+    return script
+
+
 @pytest.mark.anyio
 async def test_codex_executor_completes_task_with_fake_app_server(tmp_path):
     command = _write_fake_codex(tmp_path)
@@ -346,4 +391,30 @@ async def test_codex_executor_reads_final_text_from_thread_when_no_live_assistan
 
     assert events[-1].event_type.value == "completed"
     assert events[-1].message == "Final text from thread read."
+    await session.close()
+
+
+@pytest.mark.anyio
+async def test_codex_executor_drops_low_value_item_lifecycle_progress(tmp_path):
+    command = _write_noisy_fake_codex(tmp_path)
+    executor = CodexExecutor(command=str(command))
+    session = await executor.create_session(str(tmp_path))
+    task = Task(
+        task_id="task-4",
+        root_task_id="task-4",
+        title="Noisy task",
+        goal="Filter noisy progress",
+    )
+    run = ExecutionRun(
+        run_id="run-5",
+        task_id="task-4",
+        execution_session_id="exec-4",
+        executor_type="codex",
+    )
+
+    events = [event async for event in executor.run_task(run, task, session)]
+
+    assert [event.event_type.value for event in events] == ["progress", "completed"]
+    assert events[0].message == "Useful answer from Codex."
+    assert events[1].message == "Useful answer from Codex."
     await session.close()

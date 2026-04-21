@@ -200,6 +200,7 @@ def build_default_tool_registry(
                     "properties": {
                         "task_id": {"type": ["string", "null"]},
                         "reference": {"type": ["string", "null"]},
+                        "limit": {"type": "integer", "minimum": 1, "maximum": 100},
                     },
                     "additionalProperties": False,
                 },

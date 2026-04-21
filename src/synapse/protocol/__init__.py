@@ -31,6 +31,7 @@ from .run import ExecutionRun
 from .session import AgentResumeHandle, ExecutionSession, QueuedRunRequest, SessionBinding
 from .summary import TaskSummary
 from .task import Task
+from .task_execution_detail import TaskExecutionDetailEntry
 
 __all__ = [
     "AgentResumeHandle",
@@ -61,6 +62,7 @@ __all__ = [
     "SessionStatus",
     "Task",
     "TaskCommand",
+    "TaskExecutionDetailEntry",
     "TaskExecutionMode",
     "TaskCommandType",
     "TaskMutation",

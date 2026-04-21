@@ -14,6 +14,7 @@ Primary object groups:
 - tasks
 - task mutations
 - task commands
+- task execution detail entries
 - execution sessions
 - execution runs
 - session bindings
@@ -39,6 +40,7 @@ It should not become:
 Related docs:
 
 - [../protocol/task.md](../protocol/task.md)
+- [../protocol/task-execution-detail.md](../protocol/task-execution-detail.md)
 - [../protocol/mutation-and-command.md](../protocol/mutation-and-command.md)
 - [../protocol/execution-session-and-run.md](../protocol/execution-session-and-run.md)
 - [../protocol/summary-notification.md](../protocol/summary-notification.md)

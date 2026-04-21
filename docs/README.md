@@ -23,6 +23,7 @@
 
 - [Protocol Index](./protocol/index.md)
 - [Task](./protocol/task.md)
+- [Task Execution Detail](./protocol/task-execution-detail.md)
 - [Mutation and Command](./protocol/mutation-and-command.md)
 - [Execution Session and Run](./protocol/execution-session-and-run.md)
 - [Execution Mode](./protocol/execution-mode.md)
@@ -71,3 +72,4 @@
 - [0007 Persona Workspace and Session Continuity](./rfcs/0007-persona-workspace-and-session-continuity.md)
 - [0008 Interaction Harness and Mode Profiles](./rfcs/0008-interaction-harness-and-mode-profiles.md)
 - [0009 Interaction Requests and Attention Items](./rfcs/0009-interaction-requests-and-attention-items.md)
+- [0008 Execution Detail Context And System-Prompt Audit](./rfcs/0008-execution-detail-context-and-system-prompt-audit.md)

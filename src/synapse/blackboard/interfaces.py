@@ -13,6 +13,7 @@ from synapse.protocol import (
     SessionBinding,
     Task,
     TaskCommand,
+    TaskExecutionDetailEntry,
     TaskExecutionMode,
     TaskMutation,
     TaskSummary,
@@ -50,6 +51,23 @@ class BlackboardStore(Protocol):
 
     async def list_all_commands(self) -> list[TaskCommand]:
         """List task commands across the session in append order."""
+
+    async def append_task_execution_detail(self, entry: TaskExecutionDetailEntry) -> None:
+        """Append one execution-detail entry for a task."""
+
+    async def list_task_execution_details(
+        self,
+        task_id: str,
+        limit: int | None = None,
+    ) -> list[TaskExecutionDetailEntry]:
+        """List execution-detail entries for one task in append order."""
+
+    async def list_recent_task_execution_details(
+        self,
+        task_limit: int = 5,
+        entry_limit: int = 20,
+    ) -> dict[str, list[TaskExecutionDetailEntry]]:
+        """List bounded execution-detail entries for the most recently active tasks."""
 
     async def put_run(self, run: ExecutionRun) -> None:
         """Store or replace a run projection written primarily by Execution Brain."""

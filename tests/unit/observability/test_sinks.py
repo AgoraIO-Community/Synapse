@@ -77,6 +77,68 @@ def test_pretty_sink_renders_colored_compact_line():
     assert "\n" not in rendered
 
 
+def test_pretty_sink_renders_multiline_block_for_comm_llm_request_built():
+    event = DiagnosticEvent(
+        level="INFO",
+        event_name="comm.llm.request_built",
+        component="communication.llm",
+        summary="LLM interaction recorded",
+        conversation_id="session-1",
+        request_id="req-1",
+        details={
+            "prompt_sections": ["identity", "runtime_context"],
+            "available_tools": ["create_task", "query_task_detail"],
+            "system_messages": [
+                {
+                    "role": "system",
+                    "content": "You are the Communication Brain for Synapse.",
+                },
+                {
+                    "role": "system",
+                    "content": '{"conversation_id":"conv-1","task_execution_details":{"task-1":[{"text":"meaningful progress"}]}}',
+                },
+            ],
+        },
+    )
+
+    rendered = render_pretty_event(event, color_enabled=False)
+
+    assert "comm.llm.request_built" in rendered
+    assert "conversation=session-1" in rendered
+    assert "\n" in rendered
+    assert "prompt_sections: identity, runtime_context" in rendered
+    assert "available_tools: create_task, query_task_detail" in rendered
+    assert "system[0:identity]:" in rendered
+    assert "You are the Communication Brain for Synapse." in rendered
+    assert "system[1:runtime_context]:" in rendered
+    assert '"conversation_id": "conv-1"' in rendered
+    assert '"task_execution_details"' in rendered
+    assert "meaningful progress" in rendered
+
+
+def test_pretty_sink_renders_raw_runtime_context_when_not_valid_json():
+    event = DiagnosticEvent(
+        level="INFO",
+        event_name="comm.llm.request_built",
+        component="communication.llm",
+        summary="LLM interaction recorded",
+        details={
+            "prompt_sections": ["runtime_context"],
+            "system_messages": [
+                {
+                    "role": "system",
+                    "content": "{not valid json but should still be shown fully}",
+                }
+            ],
+        },
+    )
+
+    rendered = render_pretty_event(event, color_enabled=False)
+
+    assert "system[0:runtime_context]:" in rendered
+    assert "{not valid json but should still be shown fully}" in rendered
+
+
 def test_pretty_sink_can_disable_color():
     event = DiagnosticEvent(
         level="WARNING",

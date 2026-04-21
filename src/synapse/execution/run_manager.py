@@ -1,11 +1,19 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from uuid import uuid4
 
 from synapse.blackboard import BlackboardStore
 from synapse.executor_core import ExecutorEvent, ExecutorEventType
 from synapse.observability.emitters.execution import ExecutionDiagnosticEmitter
-from synapse.protocol import ExecutionRun, ExecutionSession, RunStatus, Task, TaskStatus
+from synapse.protocol import (
+    ExecutionRun,
+    ExecutionSession,
+    RunStatus,
+    Task,
+    TaskExecutionDetailEntry,
+    TaskStatus,
+)
 
 
 class RunManager:
@@ -53,20 +61,31 @@ class RunManager:
         event: ExecutorEvent,
     ) -> None:
         if task.status == TaskStatus.CANCELLED and event.event_type != ExecutorEventType.CANCELLED:
-            await store.put_run(run)
-            await store.put_task(task)
             return
 
+        previous_run = run.model_copy(deep=True)
+        previous_task = task.model_copy(deep=True)
+        detail_text = _detail_text(task, event)
+        should_append_detail = False
         if event.event_type == ExecutorEventType.PROGRESS:
-            run.status = RunStatus.RUNNING
-            run.latest_progress_message = event.message
-            task.status = TaskStatus.RUNNING
+            if run.status != RunStatus.RUNNING:
+                run.status = RunStatus.RUNNING
+            if (
+                isinstance(event.message, str)
+                and event.message.strip()
+                and event.message != previous_run.latest_progress_message
+            ):
+                run.latest_progress_message = event.message
+                should_append_detail = True
+            if task.status != TaskStatus.RUNNING:
+                task.status = TaskStatus.RUNNING
         elif event.event_type == ExecutorEventType.BLOCKED:
             run.status = RunStatus.BLOCKED
             run.block_reason = event.message
             if event.metadata:
                 run.metadata["blocked_event"] = dict(event.metadata)
             task.status = TaskStatus.WAITING_USER_INPUT
+            should_append_detail = True
             if self._observability is not None:
                 self._observability.run_terminal(
                     event_name="exec.run.blocked",
@@ -80,6 +99,7 @@ class RunManager:
             run.status = RunStatus.COMPLETED
             run.output_summary = event.message
             task.status = TaskStatus.COMPLETED
+            should_append_detail = True
             if self._observability is not None:
                 self._observability.run_terminal(
                     event_name="exec.run.completed",
@@ -93,6 +113,7 @@ class RunManager:
             run.status = RunStatus.FAILED
             run.failure_reason = event.message
             task.status = TaskStatus.FAILED
+            should_append_detail = True
             if self._observability is not None:
                 self._observability.run_terminal(
                     event_name="exec.run.failed",
@@ -106,6 +127,48 @@ class RunManager:
         elif event.event_type == ExecutorEventType.CANCELLED:
             run.status = RunStatus.CANCELLED
             task.status = TaskStatus.CANCELLED
+            should_append_detail = True
 
-        await store.put_run(run)
-        await store.put_task(task)
+        if should_append_detail:
+            await store.append_task_execution_detail(
+                TaskExecutionDetailEntry(
+                    detail_id=f"detail-{uuid4().hex[:8]}",
+                    task_id=task.task_id,
+                    run_id=run.run_id,
+                    execution_session_id=run.execution_session_id,
+                    event_type=event.event_type.value,
+                    text=detail_text,
+                    created_at=datetime.now(UTC).isoformat(),
+                    payload={
+                        "session_id": event.session_id,
+                        "message": event.message,
+                        "metadata": event.metadata,
+                    },
+                )
+            )
+        if _run_changed(previous_run, run):
+            await store.put_run(run)
+        if _task_changed(previous_task, task):
+            await store.put_task(task)
+
+
+def _detail_text(task: Task, event: ExecutorEvent) -> str:
+    if isinstance(event.message, str) and event.message.strip():
+        return event.message.strip()
+    if event.event_type == ExecutorEventType.PROGRESS:
+        return f"Running: {task.title}"
+    if event.event_type == ExecutorEventType.BLOCKED:
+        return f"Blocked: {task.title}"
+    if event.event_type == ExecutorEventType.COMPLETED:
+        return f"Completed: {task.title}"
+    if event.event_type == ExecutorEventType.FAILED:
+        return f"Failed: {task.title}"
+    return f"Cancelled: {task.title}"
+
+
+def _run_changed(previous: ExecutionRun, current: ExecutionRun) -> bool:
+    return previous != current
+
+
+def _task_changed(previous: Task, current: Task) -> bool:
+    return previous != current
