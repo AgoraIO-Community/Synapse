@@ -282,10 +282,10 @@ function canRunCommand(
   latestRunByTaskId: Map<string, ExecutionRun>,
 ) {
   if (command === "pause_task") {
-    if (!["created", "queued", "running", "waiting_user_input"].includes(task.status)) {
+    if (!["created", "queued", "waiting_executor", "running", "waiting_user_input"].includes(task.status)) {
       return false;
     }
-    if (["created", "queued"].includes(task.status)) {
+    if (["created", "queued", "waiting_executor"].includes(task.status)) {
       return true;
     }
     const executorType = latestRunByTaskId.get(task.task_id)?.executor_type ?? task.preferred_executor;
@@ -411,7 +411,7 @@ function pickAutoSelectedTask(
   currentSelectedTaskId: string | null,
 ) {
   const previousTasks = new Map(previous?.tasks.map((task) => [task.task_id, task]) ?? []);
-  const promotedStatuses = new Set(["completed", "failed", "waiting_user_input", "running"]);
+  const promotedStatuses = new Set(["completed", "failed", "waiting_executor", "waiting_user_input", "running"]);
   const transitioned = nextSnapshot.tasks.find((task) => {
     const prev = previousTasks.get(task.task_id);
     return prev && prev.status !== task.status && promotedStatuses.has(task.status);
@@ -448,14 +448,17 @@ function statusTone(status: Task["status"]): ConversationTaskEvent["tone"] {
   if (status === "failed" || status === "cancelled") {
     return "destructive";
   }
-  if (status === "waiting_user_input" || status === "paused") {
+  if (status === "waiting_executor" || status === "waiting_user_input" || status === "paused") {
     return "warning";
   }
   return "default";
 }
 
 function statusLabel(status: Task["status"]) {
-  if (status === "running" || status === "queued" || status === "created") {
+  if (status === "waiting_executor") {
+    return "Waiting for host";
+  }
+  if (status === "running" || status === "queued" || status === "waiting_executor" || status === "created") {
     return "In progress";
   }
   if (status === "waiting_user_input") {
@@ -467,6 +470,7 @@ function statusLabel(status: Task["status"]) {
 function statusProgress(status: Task["status"]) {
   if (status === "created") return 12;
   if (status === "queued") return 28;
+  if (status === "waiting_executor") return 44;
   if (status === "running") return 62;
   if (status === "waiting_user_input") return 76;
   if (status === "paused") return 58;
@@ -483,7 +487,7 @@ function taskStatusVariant(status: Task["status"]): "default" | "secondary" | "s
   if (status === "failed" || status === "cancelled") {
     return "destructive";
   }
-  if (status === "waiting_user_input" || status === "paused") {
+  if (status === "waiting_executor" || status === "waiting_user_input" || status === "paused") {
     return "warning";
   }
   if (status === "running") {
@@ -499,7 +503,7 @@ function eventIcon(status: Task["status"]) {
   if (status === "failed" || status === "cancelled") {
     return XCircle;
   }
-  if (status === "waiting_user_input" || status === "paused") {
+  if (status === "waiting_executor" || status === "waiting_user_input" || status === "paused") {
     return AlertCircle;
   }
   return LoaderCircle;
@@ -519,12 +523,13 @@ function buildConversationTaskEvents(
       ({
         running: 0,
         waiting_user_input: 1,
-        failed: 2,
-        completed: 3,
-        paused: 4,
-        queued: 5,
-        created: 6,
-        cancelled: 7,
+        waiting_executor: 2,
+        failed: 3,
+        completed: 4,
+        paused: 5,
+        queued: 6,
+        created: 7,
+        cancelled: 8,
       })[status];
     return rank(a.status) - rank(b.status);
   });
@@ -1851,7 +1856,7 @@ export default function App() {
   );
   const completedTasks = tasks.filter((task) => task.status === "completed");
   const blockedTasks = tasks.filter((task) =>
-    ["failed", "paused", "waiting_user_input"].includes(task.status),
+    ["failed", "paused", "waiting_executor", "waiting_user_input"].includes(task.status),
   );
   const conversation = conversationSnapshot?.conversation_history ?? [];
   const isConversationEmpty =

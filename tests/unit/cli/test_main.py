@@ -54,48 +54,48 @@ def test_setup_interactive_updates_env_file(monkeypatch, tmp_path: Path):
     configure_repo_paths(monkeypatch, root)
     monkeypatch.setattr(cli_main, "setup_can_prompt", lambda: True)
     monkeypatch.setattr(cli_main.getpass, "getpass", lambda _prompt: "sk-test")
-    responses = iter(["yes", "/custom/codex", ""])
-    monkeypatch.setattr("builtins.input", lambda _prompt: next(responses))
-    monkeypatch.setattr(cli_main, "_codex_command_available", lambda command: command == "/custom/codex")
+    monkeypatch.setattr("builtins.input", lambda _prompt: "")
 
     assert cli_main.main(["setup"]) == 0
 
     configured = (root / ".synapse" / ".env").read_text(encoding="utf-8")
     assert "OPENAI_API_KEY=sk-test" in configured
     assert "SYNAPSE_OPENAI_MODEL=gpt-4.1-mini" in configured
-    assert "SYNAPSE_CODEX_EXECUTOR_ENABLED=true" in configured
-    assert "SYNAPSE_CODEX_COMMAND=/custom/codex" not in configured
     assert configured.strip().endswith("EXTRA_FLAG=keep-me")
 
     configured_runtime = (root / ".synapse" / "config.yaml").read_text(encoding="utf-8")
-    assert "runtime:" in configured_runtime
-    assert "codex_command: /custom/codex" in configured_runtime
+    assert "runtime: {}" in configured_runtime
+    assert "executor_host:" in configured_runtime
+    assert "executors: {}" in configured_runtime
 
 
-def test_setup_interactive_uses_detected_codex_command_default(monkeypatch, tmp_path: Path):
+def test_executor_setup_uses_detected_codex_command_default(monkeypatch, tmp_path: Path):
     root = tmp_path
     (root / "src" / "synapse" / "ui").mkdir(parents=True)
     (root / ".synapse").mkdir(parents=True, exist_ok=True)
 
     configure_repo_paths(monkeypatch, root)
     monkeypatch.setattr(cli_main, "setup_can_prompt", lambda: True)
-    monkeypatch.setattr(cli_main.getpass, "getpass", lambda _prompt: "sk-test")
+    monkeypatch.setattr(cli_main.getpass, "getpass", lambda _prompt: "host-secret")
     monkeypatch.setattr(cli_main, "_detected_codex_command", lambda: "/detected/codex")
     monkeypatch.setattr(
         cli_main,
         "_codex_command_available",
         lambda command: command == "/detected/codex",
     )
-    responses = iter(["yes", "", ""])
+    responses = iter(["", "", "", "", ""])
     monkeypatch.setattr("builtins.input", lambda _prompt: next(responses))
 
-    assert cli_main.main(["setup"]) == 0
+    assert cli_main.main(["executor", "setup"]) == 0
 
     configured_runtime = (root / ".synapse" / "config.yaml").read_text(encoding="utf-8")
-    assert "codex_command: /detected/codex" in configured_runtime
+    assert "detached_executor_enabled: true" in configured_runtime
+    assert "executor_host_id: default-host" in configured_runtime
+    assert "executor_host_token: host-secret" in configured_runtime
+    assert "command: /detected/codex" in configured_runtime
 
 
-def test_setup_interactive_preserves_legacy_codex_command_over_detected_default(
+def test_executor_setup_migrates_legacy_codex_command_over_detected_default(
     monkeypatch,
     tmp_path: Path,
 ):
@@ -116,21 +116,23 @@ def test_setup_interactive_preserves_legacy_codex_command_over_detected_default(
 
     configure_repo_paths(monkeypatch, root)
     monkeypatch.setattr(cli_main, "setup_can_prompt", lambda: True)
-    monkeypatch.setattr(cli_main.getpass, "getpass", lambda _prompt: "")
+    monkeypatch.setattr(cli_main.getpass, "getpass", lambda _prompt: "host-secret")
     monkeypatch.setattr(cli_main, "_detected_codex_command", lambda: "/detected/codex")
     monkeypatch.setattr(
         cli_main,
         "_codex_command_available",
         lambda command: command in {"/legacy/codex", "/detected/codex"},
     )
-    responses = iter(["", "", ""])
+    responses = iter(["", "", "", "", ""])
     monkeypatch.setattr("builtins.input", lambda _prompt: next(responses))
 
-    assert cli_main.main(["setup"]) == 0
+    assert cli_main.main(["executor", "setup"]) == 0
 
+    configured_env = (root / ".synapse" / ".env").read_text(encoding="utf-8")
     configured_runtime = (root / ".synapse" / "config.yaml").read_text(encoding="utf-8")
-    assert "codex_command: /legacy/codex" in configured_runtime
-    assert "codex_command: /detected/codex" not in configured_runtime
+    assert "command: /legacy/codex" in configured_runtime
+    assert "command: /detected/codex" not in configured_runtime
+    assert "SYNAPSE_CODEX_COMMAND=/legacy/codex" not in configured_env
 
 
 def test_gateway_setup_writes_gateway_module_env(monkeypatch, tmp_path: Path):
@@ -341,11 +343,15 @@ def test_setup_non_interactive_uses_existing_and_env(monkeypatch, tmp_path: Path
 
     configured = (root / ".synapse" / ".env").read_text(encoding="utf-8")
     assert "OPENAI_API_KEY=sk-env" in configured
-    assert "SYNAPSE_CODEX_EXECUTOR_ENABLED=false" in configured
-    assert "# SYNAPSE_CODEX_COMMAND=codex" in configured
+    assert "SYNAPSE_CODEX_EXECUTOR_ENABLED" not in configured
+    assert "SYNAPSE_CODEX_COMMAND" not in configured
+    configured_runtime = (root / ".synapse" / "config.yaml").read_text(encoding="utf-8")
+    assert "runtime: {}" in configured_runtime
+    assert "executor_host:" in configured_runtime
+    assert "executors: {}" in configured_runtime
 
 
-def test_setup_non_interactive_migrates_legacy_codex_command_to_config(monkeypatch, tmp_path: Path):
+def test_executor_setup_migrates_legacy_codex_command_to_config(monkeypatch, tmp_path: Path):
     root = tmp_path
     (root / "src" / "synapse" / "ui").mkdir(parents=True)
     (root / ".synapse").mkdir(parents=True, exist_ok=True)
@@ -362,15 +368,21 @@ def test_setup_non_interactive_migrates_legacy_codex_command_to_config(monkeypat
     )
 
     configure_repo_paths(monkeypatch, root)
+    monkeypatch.setattr(cli_main, "setup_can_prompt", lambda: True)
+    monkeypatch.setattr(cli_main.getpass, "getpass", lambda _prompt: "host-secret")
+    monkeypatch.setattr(cli_main, "_codex_command_available", lambda command: command == "/legacy/codex")
+    responses = iter(["", "", "", "", ""])
+    monkeypatch.setattr("builtins.input", lambda _prompt: next(responses))
 
-    assert cli_main.main(["setup", "--non-interactive"]) == 0
+    assert cli_main.main(["executor", "setup"]) == 0
 
     configured_env = (root / ".synapse" / ".env").read_text(encoding="utf-8")
-    assert "SYNAPSE_CODEX_EXECUTOR_ENABLED=true" in configured_env
     assert "SYNAPSE_CODEX_COMMAND=/legacy/codex" not in configured_env
+    assert "SYNAPSE_CODEX_EXECUTOR_ENABLED=true" not in configured_env
 
     configured_runtime = (root / ".synapse" / "config.yaml").read_text(encoding="utf-8")
-    assert "codex_command: /legacy/codex" in configured_runtime
+    assert "command: /legacy/codex" in configured_runtime
+    assert "executor_host_token: host-secret" in configured_runtime
 
 
 def test_setup_non_interactive_tolerates_malformed_existing_config(monkeypatch, tmp_path: Path, capsys):
@@ -399,7 +411,8 @@ def test_setup_non_interactive_tolerates_malformed_existing_config(monkeypatch, 
 
     configured_runtime = (root / ".synapse" / "config.yaml").read_text(encoding="utf-8")
     assert "runtime:" in configured_runtime
-    assert "codex_command: /legacy/codex" in configured_runtime
+    assert "executor_host:" in configured_runtime
+    assert "executors: {}" in configured_runtime
 
 
 def test_setup_non_interactive_requires_openai(monkeypatch, tmp_path: Path, capsys):
@@ -427,7 +440,6 @@ def test_setup_bootstrap_defaults_creates_env_and_gateway_config(monkeypatch, tm
     configured_env = (root / ".synapse" / ".env").read_text(encoding="utf-8")
     assert "OPENAI_API_KEY=\n" in configured_env
     assert "SYNAPSE_OPENAI_MODEL=gpt-4o-mini" in configured_env
-    assert "SYNAPSE_CODEX_EXECUTOR_ENABLED=false" in configured_env
     assert "sk-shell-secret" not in configured_env
     assert "agora-shell-app" not in configured_env
     assert "/shell/codex" not in configured_env
@@ -439,6 +451,9 @@ def test_setup_bootstrap_defaults_creates_env_and_gateway_config(monkeypatch, tm
     assert "enabled_gateways: []" in configured_gateway
     assert "gateways: {}" in configured_gateway
     assert "gateways:\n  {}" not in configured_gateway
+    assert "executor_host:" in configured_gateway
+    assert "enabled_executors: []" in configured_gateway
+    assert "executors: {}" in configured_gateway
 
 
 def test_setup_bootstrap_defaults_preserves_existing_files(monkeypatch, tmp_path: Path):
@@ -465,7 +480,7 @@ def test_setup_bootstrap_defaults_ignores_malformed_codex_shell_env(monkeypatch,
     assert cli_main.main(["setup", "--bootstrap-defaults"]) == 0
 
     configured_env = (root / ".synapse" / ".env").read_text(encoding="utf-8")
-    assert "SYNAPSE_CODEX_EXECUTOR_ENABLED=false" in configured_env
+    assert "SYNAPSE_CODEX_EXECUTOR_ENABLED" not in configured_env
 
 
 def test_backend_requires_setup(monkeypatch, tmp_path: Path):

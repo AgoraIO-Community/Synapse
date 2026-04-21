@@ -43,12 +43,7 @@ OPENAI_API_KEY=
 SYNAPSE_OPENAI_MODEL=gpt-4o-mini
 SYNAPSE_OPENAI_TIMEOUT_SECONDS=30
 # SYNAPSE_OPENAI_BASE_URL=
-# Set to true only after the Codex CLI is installed and configured locally.
-SYNAPSE_CODEX_EXECUTOR_ENABLED=false
-# Legacy fallback only; prefer runtime.codex_command in ~/.synapse/config.yaml.
-# SYNAPSE_CODEX_COMMAND=codex
-
-# Runtime and gateway credentials written by `synapse setup` to ~/.synapse/.env
+# Shared Synapse credentials written by `synapse setup` to ~/.synapse/.env
 # AGORA_APP_ID=
 # AGORA_APP_CERTIFICATE=
 # DEEPGRAM_API_KEY=
@@ -68,6 +63,16 @@ host:
   enabled_gateways: []
 
 gateways: {}
+
+executor_host:
+  enabled: false
+  synapse_base_url: "http://127.0.0.1:8000"
+  host_id: default-host
+  host_token: ""
+  heartbeat_seconds: 15.0
+  enabled_executors: []
+
+executors: {}
 BOOTSTRAP_CONFIG
 fi
 exit 0
@@ -90,6 +95,21 @@ def test_install_sh_macos_bootstraps_repo(tmp_path: Path):
         fake_bin / "brew",
         """#!/usr/bin/env bash
 echo "brew $*" >> "$FAKE_LOG"
+""",
+    )
+    write_executable(
+        fake_bin / "curl",
+        """#!/usr/bin/env bash
+echo "curl $*" >> "$FAKE_LOG"
+cat <<'INNER'
+mkdir -p "$HOME/.bun/bin"
+cat > "$HOME/.bun/bin/bun" <<'BUN'
+#!/usr/bin/env bash
+set -euo pipefail
+echo "bun $*" >> "$FAKE_LOG"
+BUN
+chmod +x "$HOME/.bun/bin/bun"
+INNER
 """,
     )
     write_executable(fake_bin / "python3.12", fake_python_script())
@@ -126,7 +146,8 @@ echo "bun $*" >> "$FAKE_LOG"
 
     assert completed.returncode == 0, completed.stderr
     log_text = log_file.read_text(encoding="utf-8")
-    assert "brew install python@3.12 bun" in log_text
+    assert "brew install python@3.12" in log_text
+    assert "curl -fsSL https://bun.sh/install" in log_text
     assert f"python3.12 -m venv {repo_root / '.venv'}" in log_text
     assert "venv-python -m pip install --upgrade pip" in log_text
     assert "venv-python -m pip install -e .[dev]" in log_text
@@ -138,7 +159,7 @@ echo "bun $*" >> "$FAKE_LOG"
     assert "sk-shell-secret" not in env_text
     assert "agora-shell-app" not in env_text
     assert "/shell/codex" not in env_text
-    assert "SYNAPSE_CODEX_EXECUTOR_ENABLED=false" in env_text
+    assert "SYNAPSE_CODEX_EXECUTOR_ENABLED" not in env_text
     assert "./synapse setup" in completed.stdout
 
 
@@ -230,4 +251,4 @@ INNER
     assert "sk-shell-secret" not in env_text
     assert "agora-shell-app" not in env_text
     assert "/shell/codex" not in env_text
-    assert "SYNAPSE_CODEX_EXECUTOR_ENABLED=false" in env_text
+    assert "SYNAPSE_CODEX_EXECUTOR_ENABLED" not in env_text

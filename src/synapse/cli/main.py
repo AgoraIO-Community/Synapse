@@ -31,13 +31,27 @@ FALSY_VALUES = {"0", "false", "no", "off", "n"}
 OPENAI_KEY = "OPENAI_API_KEY"
 CODEX_ENABLED_KEY = "SYNAPSE_CODEX_EXECUTOR_ENABLED"
 CODEX_COMMAND_KEY = "SYNAPSE_CODEX_COMMAND"
-INTERACTIVE_SETUP_KEYS = {OPENAI_KEY, CODEX_ENABLED_KEY, CODEX_COMMAND_KEY}
+INTERACTIVE_SETUP_KEYS = {OPENAI_KEY}
 GATEWAY_ENABLED_KEY = "SYNAPSE_GATEWAY_ENABLED"
 GATEWAY_HOST_KEY = "SYNAPSE_GATEWAY_HOST"
 GATEWAY_PORT_KEY = "SYNAPSE_GATEWAY_PORT"
 GATEWAY_PUBLIC_BASE_URL_KEY = "SYNAPSE_GATEWAY_PUBLIC_BASE_URL"
 GATEWAY_SYNAPSE_BASE_URL_KEY = "SYNAPSE_GATEWAY_SYNAPSE_BASE_URL"
 GATEWAY_MODULES_KEY = "SYNAPSE_GATEWAY_MODULES"
+ACPX_COMMAND_KEY = "SYNAPSE_ACPX_COMMAND"
+ACPX_AGENT_KEY = "SYNAPSE_ACPX_AGENT"
+ACPX_PERMISSION_MODE_KEY = "SYNAPSE_ACPX_PERMISSION_MODE"
+ACPX_NON_INTERACTIVE_PERMISSIONS_KEY = "SYNAPSE_ACPX_NON_INTERACTIVE_PERMISSIONS"
+ACPX_TIMEOUT_SECONDS_KEY = "SYNAPSE_ACPX_TIMEOUT_SECONDS"
+LEGACY_REAL_EXECUTOR_ENV_KEYS = {
+    CODEX_ENABLED_KEY,
+    CODEX_COMMAND_KEY,
+    ACPX_COMMAND_KEY,
+    ACPX_AGENT_KEY,
+    ACPX_PERMISSION_MODE_KEY,
+    ACPX_NON_INTERACTIVE_PERMISSIONS_KEY,
+    ACPX_TIMEOUT_SECONDS_KEY,
+}
 SYSTEMD_UNIT_NAME = "synapse.service"
 SYSTEMD_SERVICE_DIR = Path("/etc/systemd/system")
 DEFAULT_ENV_TEMPLATE_LINES = (
@@ -45,21 +59,9 @@ DEFAULT_ENV_TEMPLATE_LINES = (
     "SYNAPSE_OPENAI_MODEL=gpt-4o-mini",
     "SYNAPSE_OPENAI_TIMEOUT_SECONDS=30",
     "# SYNAPSE_OPENAI_BASE_URL=",
-    "# Optional ACPX-backed executor (install first with: npm install -g acpx@latest).",
-    "# SYNAPSE_ACPX_EXECUTOR_ENABLED=true",
-    "# SYNAPSE_ACPX_COMMAND=acpx",
-    "# SYNAPSE_ACPX_AGENT=codex",
-    "# SYNAPSE_ACPX_PERMISSION_MODE=approve-all",
-    "# SYNAPSE_ACPX_NON_INTERACTIVE_PERMISSIONS=deny",
-    "# SYNAPSE_ACPX_TIMEOUT_SECONDS=300",
     "# SYNAPSE_CORS_ALLOWED_ORIGINS=https://app.example.com,https://your-project.vercel.app",
     "",
-    "# Set to true only after the Codex CLI is installed and configured locally.",
-    "SYNAPSE_CODEX_EXECUTOR_ENABLED=false",
-    "# Legacy fallback only; prefer runtime.codex_command in ~/.synapse/config.yaml.",
-    "# SYNAPSE_CODEX_COMMAND=codex",
-    "",
-    f"# Runtime and gateway credentials written by `synapse setup` to {format_user_path(ENV_LOCAL)}",
+    f"# Shared Synapse credentials written by `synapse setup` to {format_user_path(ENV_LOCAL)}",
     "# AGORA_APP_ID=",
     "# AGORA_APP_CERTIFICATE=",
     "# DEEPGRAM_API_KEY=",
@@ -136,6 +138,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Run the gateway host with reload enabled.",
     )
 
+    executor_parser = subparsers.add_parser("executor", help="Configure and run the detached executor host.")
+    executor_subparsers = executor_parser.add_subparsers(dest="executor_command", required=True)
+    executor_subparsers.add_parser("setup", help="Interactively configure the detached executor host.")
+    executor_subparsers.add_parser("run", help="Run the detached executor host.")
+
     service_parser = subparsers.add_parser("service", help="Install and control the Ubuntu systemd service.")
     service_subparsers = service_parser.add_subparsers(dest="service_command", required=True)
     service_install_parser = service_subparsers.add_parser(
@@ -170,6 +177,7 @@ def main(argv: list[str] | None = None) -> int:
             "doctor": cmd_doctor,
             "start": cmd_start,
             "gateway": cmd_gateway,
+            "executor": cmd_executor,
             "service": cmd_service,
         }
         return handlers[args.command](args)
@@ -201,34 +209,24 @@ def cmd_setup(_args: argparse.Namespace) -> int:
         interactive=not args.non_interactive,
         existing_config_yaml=existing_config_yaml,
     )
-    resolved_values = setup_values.env_values
-    gateway_setup = resolve_gateway_setup_values(
-        existing_values=existing_values,
-        environ=os.environ,
-        interactive=not args.non_interactive,
-        force_prompt=False,
-        existing_config_yaml=existing_config_yaml,
-        runtime_values=setup_values.runtime_values,
-    )
-    resolved_values.update(gateway_setup.env_values)
     write_env_file(
         template_lines=template_lines,
-        resolved_values=resolved_values,
+        resolved_values=setup_values.env_values,
         existing_values=existing_values,
         existing_order=existing_order,
         destination=ENV_LOCAL,
     )
-    config_setup = gateway_setup
-    if config_setup.config_text is None and (
-        setup_values.runtime_values or not config_path.exists()
-    ):
+    config_setup = GatewaySetupResult(env_values={})
+    if config_load_error is not None or setup_values.runtime_values or not config_path.exists():
         config_setup = GatewaySetupResult(
-            env_values=gateway_setup.env_values,
+            env_values={},
             config_path=config_path,
             config_text=render_gateway_config(
                 runtime=_resolved_runtime_config(existing_config_yaml, setup_values.runtime_values),
                 host=_existing_host_config(existing_config_yaml),
                 gateways=_existing_gateways_config(existing_config_yaml),
+                executor_host=_existing_executor_host_config(existing_config_yaml),
+                executors=_existing_executors_config(existing_config_yaml),
             ),
         )
     _write_gateway_config_if_needed(config_setup)
@@ -339,6 +337,14 @@ def cmd_gateway(args: argparse.Namespace) -> int:
     raise CliError(f"Unknown gateway command: {args.gateway_command}")
 
 
+def cmd_executor(args: argparse.Namespace) -> int:
+    if args.executor_command == "setup":
+        return cmd_executor_setup(args)
+    if args.executor_command == "run":
+        return cmd_executor_run(args)
+    raise CliError(f"Unknown executor command: {args.executor_command}")
+
+
 def cmd_service(args: argparse.Namespace) -> int:
     if args.service_command == "install":
         return cmd_service_install(args)
@@ -380,6 +386,43 @@ def cmd_gateway_run(args: argparse.Namespace) -> int:
     host = args.host or settings.host
     port = args.port or settings.port
     return run_checked(gateway_command(venv_python, host, port, reload=args.reload), cwd=ROOT)
+
+
+def cmd_executor_setup(_args: argparse.Namespace) -> int:
+    if not setup_can_prompt():
+        raise CliError("synapse executor setup requires a TTY.")
+
+    template_lines = load_env_template()
+    existing_values, existing_order = load_env_assignments(ENV_LOCAL)
+    existing_config_yaml = _load_existing_gateway_yaml(gateway_config_path())
+    executor_setup = resolve_executor_setup_values(
+        existing_values=existing_values,
+        environ=os.environ,
+        existing_config_yaml=existing_config_yaml,
+    )
+    filtered_existing_values = {
+        key: value
+        for key, value in existing_values.items()
+        if key not in LEGACY_REAL_EXECUTOR_ENV_KEYS
+    }
+    filtered_existing_order = [
+        key for key in existing_order if key not in LEGACY_REAL_EXECUTOR_ENV_KEYS
+    ]
+    write_env_file(
+        template_lines=template_lines,
+        resolved_values={**filtered_existing_values, **executor_setup.env_values},
+        existing_values=filtered_existing_values,
+        existing_order=filtered_existing_order,
+        destination=ENV_LOCAL,
+    )
+    _write_gateway_config_if_needed(executor_setup)
+    print(f"[write] configured {format_user_path(ENV_LOCAL)}")
+    return 0
+
+
+def cmd_executor_run(_args: argparse.Namespace) -> int:
+    venv_python = require_venv_python()
+    return run_checked(executor_host_command(venv_python), cwd=ROOT)
 
 
 def cmd_service_install(args: argparse.Namespace) -> int:
@@ -437,6 +480,14 @@ def gateway_command(venv_python: Path, host: str, port: int, *, reload: bool) ->
     if reload:
         command.append("--reload")
     return command
+
+
+def executor_host_command(venv_python: Path) -> list[str]:
+    return [
+        str(venv_python),
+        "-m",
+        "synapse.executor_host",
+    ]
 
 
 def frontend_install_command() -> list[str]:
@@ -789,7 +840,6 @@ def resolve_setup_values(
     interactive: bool,
     existing_config_yaml: dict[str, object],
 ) -> SetupValuesResult:
-    template_values = {line.key: line.value for line in template_lines if line.key is not None}
     resolved: dict[str, str | None] = {}
 
     for line in template_lines:
@@ -802,7 +852,7 @@ def resolve_setup_values(
 
     openai_default = normalize_required_value(
         pick_env_value(OPENAI_KEY, existing_values, environ),
-        placeholder=template_values.get(OPENAI_KEY),
+        placeholder="your_openai_api_key_here",
     )
     if interactive:
         resolved[OPENAI_KEY] = prompt_secret_value(OPENAI_KEY, default_value=openai_default)
@@ -813,49 +863,7 @@ def resolve_setup_values(
             )
         resolved[OPENAI_KEY] = openai_default
 
-    explicit_codex_enabled = pick_env_value(CODEX_ENABLED_KEY, existing_values, environ)
-    codex_enabled = resolve_codex_enabled(explicit_codex_enabled, interactive=interactive)
-    resolved[CODEX_ENABLED_KEY] = format_bool(codex_enabled)
-
-    existing_yaml_codex_command = _existing_yaml_value(
-        existing_config_yaml,
-        "runtime",
-        "codex_command",
-    )
-    legacy_codex_command = pick_env_value(CODEX_COMMAND_KEY, existing_values, environ)
-    discovered_codex_command = _detected_codex_command()
-    prompt_default_codex_command = (
-        existing_yaml_codex_command
-        or legacy_codex_command
-        or discovered_codex_command
-        or template_values.get(CODEX_COMMAND_KEY)
-        or "codex"
-    )
-    resolved_codex_command = (
-        existing_yaml_codex_command
-        or legacy_codex_command
-        or discovered_codex_command
-        or template_values.get(CODEX_COMMAND_KEY)
-        or "codex"
-    )
-    runtime_values: dict[str, object] = {}
-    if interactive and codex_enabled:
-        codex_command = prompt_text_value(
-            "Codex command",
-            default_value=prompt_default_codex_command,
-            required=True,
-        )
-        if not _codex_command_available(codex_command):
-            print(f"[warn] command '{codex_command}' is not currently available on PATH")
-        runtime_values["codex_command"] = codex_command
-    elif codex_enabled:
-        runtime_values["codex_command"] = resolved_codex_command
-    elif existing_yaml_codex_command:
-        runtime_values["codex_command"] = existing_yaml_codex_command
-    elif legacy_codex_command:
-        runtime_values["codex_command"] = legacy_codex_command
-
-    return SetupValuesResult(env_values=resolved, runtime_values=runtime_values)
+    return SetupValuesResult(env_values=resolved, runtime_values={})
 
 
 def resolve_bootstrap_values(
@@ -863,7 +871,6 @@ def resolve_bootstrap_values(
     template_lines: list[EnvTemplateLine],
     existing_values: dict[str, str],
 ) -> dict[str, str | None]:
-    template_values = {line.key: line.value for line in template_lines if line.key is not None}
     resolved: dict[str, str | None] = {}
 
     for line in template_lines:
@@ -875,16 +882,6 @@ def resolve_bootstrap_values(
         resolved[line.key] = normalize_optional_value(current_value)
 
     resolved[OPENAI_KEY] = normalize_optional_value(existing_values.get(OPENAI_KEY))
-
-    explicit_codex_enabled = existing_values.get(CODEX_ENABLED_KEY)
-    parsed_codex_enabled = (
-        parse_bool_value(explicit_codex_enabled)
-        if explicit_codex_enabled not in (None, "")
-        else None
-    )
-    codex_enabled = parsed_codex_enabled if parsed_codex_enabled is not None else False
-    resolved[CODEX_ENABLED_KEY] = format_bool(codex_enabled)
-
     return resolved
 
 
@@ -913,6 +910,8 @@ def resolve_gateway_setup_values(
                 runtime=_resolved_runtime_config(existing_config_yaml, runtime_values),
                 host=_default_host_config(),
                 gateways={},
+                executor_host=_existing_executor_host_config(existing_config_yaml),
+                executors=_existing_executors_config(existing_config_yaml),
             ),
         )
 
@@ -972,9 +971,119 @@ def resolve_gateway_setup_values(
             "enabled_gateways": gateways,
         },
         gateways=gateway_blocks,
+        executor_host=_existing_executor_host_config(existing_config_yaml),
+        executors=_existing_executors_config(existing_config_yaml),
     )
     return GatewaySetupResult(
         env_values=resolved_env,
+        config_path=config_path,
+        config_text=config_text,
+    )
+
+
+def resolve_executor_setup_values(
+    *,
+    existing_values: dict[str, str],
+    environ: os._Environ[str],
+    existing_config_yaml: dict[str, object],
+) -> GatewaySetupResult:
+    del environ  # reserved for future env-backed defaults
+    config_path = gateway_config_path()
+    enabled_executors = prompt_executor_selection()
+    synapse_base_url = prompt_text_value(
+        "Synapse API base URL for executor host",
+        default_value=_existing_yaml_value(existing_config_yaml, "executor_host", "synapse_base_url")
+        or "http://127.0.0.1:8000",
+        required=True,
+    )
+    host_id = prompt_text_value(
+        "Executor host id",
+        default_value=_existing_yaml_value(existing_config_yaml, "executor_host", "host_id")
+        or "default-host",
+        required=True,
+    )
+    host_token = prompt_secret_value(
+        "Executor host token",
+        default_value=_existing_yaml_value(existing_config_yaml, "executor_host", "host_token"),
+    )
+    heartbeat_seconds = prompt_text_value(
+        "Executor heartbeat seconds",
+        default_value=_existing_yaml_value(existing_config_yaml, "executor_host", "heartbeat_seconds")
+        or "15",
+        required=True,
+    )
+    executors_block = _existing_executors_config(existing_config_yaml)
+    runtime_values = _existing_runtime_config(existing_config_yaml)
+    runtime_values.update(
+        {
+            "detached_executor_enabled": True,
+            "executor_host_id": host_id,
+            "executor_host_token": host_token,
+            "detached_executor_types": enabled_executors,
+        }
+    )
+    for executor_type in enabled_executors:
+        existing_block = executors_block.get(executor_type, {})
+        if executor_type == "codex":
+            command = prompt_text_value(
+                "Codex command",
+                default_value=str(
+                    existing_block.get("command")
+                    or existing_values.get(CODEX_COMMAND_KEY)
+                    or _detected_codex_command()
+                    or "codex"
+                ),
+                required=True,
+            )
+            if not _codex_command_available(command):
+                print(f"[warn] command '{command}' is not currently available on PATH")
+            executors_block["codex"] = {
+                "command": command,
+                "blocked_wait_timeout_seconds": float(
+                    existing_block.get("blocked_wait_timeout_seconds") or 900.0
+                ),
+            }
+        elif executor_type == "acpx":
+            executors_block["acpx"] = {
+                "command": prompt_text_value(
+                    "ACPX command",
+                    default_value=str(existing_block.get("command") or existing_values.get(ACPX_COMMAND_KEY) or "acpx"),
+                    required=True,
+                ),
+                "agent": str(existing_block.get("agent") or existing_values.get(ACPX_AGENT_KEY) or "codex"),
+                "permission_mode": str(
+                    existing_block.get("permission_mode")
+                    or existing_values.get(ACPX_PERMISSION_MODE_KEY)
+                    or "approve-all"
+                ),
+                "non_interactive_permissions": str(
+                    existing_block.get("non_interactive_permissions")
+                    or existing_values.get(ACPX_NON_INTERACTIVE_PERMISSIONS_KEY)
+                    or "deny"
+                ),
+                "timeout_seconds": existing_block.get("timeout_seconds") or existing_values.get(ACPX_TIMEOUT_SECONDS_KEY),
+            }
+
+    config_text = render_gateway_config(
+        runtime=runtime_values,
+        host=_existing_host_config(existing_config_yaml),
+        gateways=_existing_gateways_config(existing_config_yaml),
+        executor_host={
+            "enabled": True,
+            "synapse_base_url": synapse_base_url,
+            "host_id": host_id,
+            "host_token": host_token,
+            "heartbeat_seconds": float(heartbeat_seconds),
+            "enabled_executors": enabled_executors,
+        },
+        executors={
+            key: value
+            for key, value in executors_block.items()
+            if key in enabled_executors
+        },
+    )
+    return GatewaySetupResult(
+        env_values={},
         config_path=config_path,
         config_text=config_text,
     )
@@ -1007,6 +1116,8 @@ def bootstrap_setup_files() -> None:
                     runtime=resolve_bootstrap_runtime_values(existing_values),
                     host=_default_host_config(),
                     gateways={},
+                    executor_host=_default_executor_host_config(),
+                    executors={},
                 ),
             )
         )
@@ -1318,6 +1429,31 @@ def prompt_gateway_selection() -> list[str]:
         return deduped
 
 
+def prompt_executor_selection() -> list[str]:
+    executors = ["codex", "acpx"]
+    print("Available detached executors:")
+    for index, executor_type in enumerate(executors, start=1):
+        print(f"  {index}. {executor_type}")
+
+    while True:
+        entered = input("Select detached executors [1]: ").strip()
+        if not entered:
+            return [executors[0]]
+        selected: list[str] = []
+        try:
+            for part in entered.split(","):
+                index = int(part.strip())
+                selected.append(executors[index - 1])
+        except (ValueError, IndexError):
+            print("Enter one or more numeric choices separated by commas.")
+            continue
+        deduped: list[str] = []
+        for executor_type in selected:
+            if executor_type not in deduped:
+                deduped.append(executor_type)
+        return deduped
+
+
 def prompt_text_value(label: str, *, default_value: str | None, required: bool = False) -> str:
     while True:
         suffix = f" [{default_value}]" if default_value else ""
@@ -1351,6 +1487,13 @@ def load_gateway_settings():
     import importlib
     gateway_config_module = importlib.import_module("synapse.gateway_host.config")
     return gateway_config_module.load_gateway_host_settings(env_file=ENV_LOCAL)
+
+
+def load_executor_host_settings():
+    import importlib
+
+    executor_host_config_module = importlib.import_module("synapse.executor_host.config")
+    return executor_host_config_module.load_executor_host_settings(env_file=ENV_LOCAL)
 
 
 def load_gateway_settings_if_enabled():
@@ -1473,6 +1616,24 @@ def _existing_gateways_config(raw_gateway_yaml: dict[str, object]) -> dict[str, 
     }
 
 
+def _existing_executor_host_config(raw_gateway_yaml: dict[str, object]) -> dict[str, object]:
+    raw_executor_host = raw_gateway_yaml.get("executor_host")
+    if isinstance(raw_executor_host, dict):
+        return dict(raw_executor_host)
+    return _default_executor_host_config()
+
+
+def _existing_executors_config(raw_gateway_yaml: dict[str, object]) -> dict[str, dict[str, object]]:
+    raw_executors = raw_gateway_yaml.get("executors")
+    if not isinstance(raw_executors, dict):
+        return {}
+    return {
+        key: value
+        for key, value in raw_executors.items()
+        if isinstance(key, str) and isinstance(value, dict)
+    }
+
+
 def _resolved_runtime_config(
     raw_gateway_yaml: dict[str, object],
     runtime_values: dict[str, object] | None,
@@ -1497,21 +1658,19 @@ def _default_host_config() -> dict[str, object]:
     }
 
 
+def _default_executor_host_config() -> dict[str, object]:
+    return {
+        "enabled": False,
+        "synapse_base_url": "http://127.0.0.1:8000",
+        "host_id": "default-host",
+        "host_token": "",
+        "heartbeat_seconds": 15.0,
+        "enabled_executors": [],
+    }
+
+
 def resolve_bootstrap_runtime_values(existing_values: dict[str, str]) -> dict[str, object]:
-    explicit_codex_enabled = existing_values.get(CODEX_ENABLED_KEY)
-    parsed_codex_enabled = (
-        parse_bool_value(explicit_codex_enabled)
-        if explicit_codex_enabled not in (None, "")
-        else None
-    )
-    codex_enabled = parsed_codex_enabled if parsed_codex_enabled is not None else False
-    existing_codex_command = existing_values.get(CODEX_COMMAND_KEY)
-    if codex_enabled:
-        return {
-            "codex_command": existing_codex_command or _detected_codex_command() or "codex"
-        }
-    if existing_codex_command:
-        return {"codex_command": existing_codex_command}
+    del existing_values
     return {}
 
 
@@ -1520,6 +1679,8 @@ def render_gateway_config(
     runtime: dict[str, object],
     host: dict[str, object],
     gateways: dict[str, dict[str, object]],
+    executor_host: dict[str, object] | None = None,
+    executors: dict[str, dict[str, object]] | None = None,
 ) -> str:
     lines = ["version: 1", ""]
     if runtime:
@@ -1535,6 +1696,14 @@ def render_gateway_config(
         lines.extend(_render_yaml_mapping(gateways, indent=2))
     else:
         lines.append("gateways: {}")
+    lines.extend(["", "executor_host:"])
+    lines.extend(_render_yaml_mapping(executor_host or _default_executor_host_config(), indent=2))
+    lines.append("")
+    if executors:
+        lines.append("executors:")
+        lines.extend(_render_yaml_mapping(executors, indent=2))
+    else:
+        lines.append("executors: {}")
     return "\n".join(lines) + "\n"
 
 

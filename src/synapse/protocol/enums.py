@@ -6,6 +6,7 @@ from enum import StrEnum
 class TaskStatus(StrEnum):
     CREATED = "created"
     QUEUED = "queued"
+    WAITING_EXECUTOR = "waiting_executor"
     RUNNING = "running"
     WAITING_USER_INPUT = "waiting_user_input"
     PAUSED = "paused"
@@ -17,6 +18,7 @@ class TaskStatus(StrEnum):
 class RunStatus(StrEnum):
     CREATED = "created"
     ASSIGNED = "assigned"
+    WAITING_EXECUTOR = "waiting_executor"
     RUNNING = "running"
     BLOCKED = "blocked"
     PAUSED = "paused"

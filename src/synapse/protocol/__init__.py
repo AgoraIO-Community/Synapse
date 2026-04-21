@@ -21,6 +21,19 @@ from .enums import (
     TaskCommandType,
     TaskStatus,
 )
+from .executor_host import (
+    AckMessage,
+    CancelRunCommand,
+    DispatchRunCommand,
+    ExecutorHostExecutor,
+    HeartbeatMessage,
+    HostStatusMessage,
+    InteractionStateMessage,
+    RegisterHostMessage,
+    ReleaseRunCommand,
+    RunEventMessage,
+    SupplyInteractionResponseCommand,
+)
 from .execution_mode import TaskExecutionMode
 from .interaction import AttentionItem, InteractionRequest
 from .interruption import Interruption
@@ -42,12 +55,18 @@ __all__ = [
     "AssignmentLease",
     "BindingStatus",
     "ConversationEffect",
+    "CancelRunCommand",
+    "DispatchRunCommand",
     "ExecutionMode",
     "ExecutionRun",
     "ExecutionSession",
+    "ExecutorHostExecutor",
+    "HeartbeatMessage",
+    "HostStatusMessage",
     "InteractionRequest",
     "InteractionRequestKind",
     "InteractionRequestStatus",
+    "InteractionStateMessage",
     "Interruption",
     "InterruptionType",
     "MutationType",
@@ -57,9 +76,13 @@ __all__ = [
     "NotificationPriority",
     "Persona",
     "QueuedRunRequest",
+    "RegisterHostMessage",
+    "ReleaseRunCommand",
     "RunStatus",
+    "RunEventMessage",
     "SessionBinding",
     "SessionStatus",
+    "SupplyInteractionResponseCommand",
     "Task",
     "TaskCommand",
     "TaskExecutionDetailEntry",
@@ -68,4 +91,5 @@ __all__ = [
     "TaskMutation",
     "TaskStatus",
     "TaskSummary",
+    "AckMessage",
 ]

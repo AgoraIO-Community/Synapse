@@ -101,6 +101,7 @@ class CommunicationContextBuilder:
             in {
                 TaskStatus.CREATED,
                 TaskStatus.QUEUED,
+                TaskStatus.WAITING_EXECUTOR,
                 TaskStatus.RUNNING,
                 TaskStatus.WAITING_USER_INPUT,
                 TaskStatus.PAUSED,

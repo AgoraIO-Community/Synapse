@@ -25,11 +25,23 @@ Current test command:
 .venv/bin/python -m pytest
 ```
 
-To use the Codex executor locally, make sure the `codex` CLI is installed, keep
-`SYNAPSE_CODEX_EXECUTOR_ENABLED=true` in `~/.synapse/.env`, and set
-`runtime.codex_command` in `~/.synapse/config.yaml`. `./synapse setup` will
-prompt for the Codex command path and default it to the current `which codex`
-result when available.
+Real executors now run through the detached executor host.
+
+Typical local real-executor flow:
+
+```bash
+./synapse setup
+./synapse executor setup
+./synapse backend
+./synapse executor run
+```
+
+`./synapse setup` configures the main control plane only.
+`./synapse executor setup` configures the detached executor host, including the
+Synapse base URL, host id/token, and local Codex or ACPX command settings.
+
+`./synapse dev` and `./synapse start` do not auto-start the executor host.
+Run `./synapse executor run` explicitly when you want local real execution.
 
 Backend-only and frontend-only commands:
 

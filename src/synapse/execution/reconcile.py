@@ -4,11 +4,9 @@ import asyncio
 import time
 
 from synapse.blackboard import BlackboardQueryService, BlackboardStore
-from synapse.executor_adapters.acpx import AcpxExecutor, AcpxExecutorSession
-from synapse.executor_adapters.codex import CodexExecutor, CodexExecutorSession
 from synapse.executor_core import ExecutorRegistry, UnknownExecutorError
 from synapse.observability.emitters.execution import ExecutionDiagnosticEmitter
-from synapse.protocol import BindingStatus, RunStatus, Task, TaskStatus, TaskSummary
+from synapse.protocol import AgentResumeHandle, BindingStatus, RunStatus, Task, TaskStatus, TaskSummary
 
 from .assignment import AssignmentManager
 from .mode_manager import ExecutionModeManager
@@ -104,6 +102,18 @@ class ReconcileLoop:
         await self._sync_executor_session(executor, session, executor_session)
         summary = self._summaries.build_summary(task, run)
         await self._store.put_summary(summary)
+        if run.status == RunStatus.WAITING_EXECUTOR:
+            session.active_run_id = None
+            await self._store.put_session(session)
+            await self._store.put_binding(
+                claimed.model_copy(
+                    update={
+                        "claimed_by": None,
+                        "claim_expires_at": None,
+                        "binding_status": BindingStatus.RELEASED,
+                    }
+                )
+            )
         # Release persona when task reaches terminal state.
         if run.status in {RunStatus.COMPLETED, RunStatus.FAILED, RunStatus.CANCELLED}:
             await self._release_persona(task)
@@ -117,15 +127,13 @@ class ReconcileLoop:
         session,
         executor_session,
     ) -> None:
-        if isinstance(executor, AcpxExecutor) and isinstance(executor_session, AcpxExecutorSession):
-            session.latest_resume_handle = executor.build_resume_handle(executor_session)
+        serialized_resume_handle = executor_session.metadata.get("latest_resume_handle")
+        if isinstance(serialized_resume_handle, dict):
+            try:
+                session.latest_resume_handle = AgentResumeHandle.model_validate(serialized_resume_handle)
+            except Exception:
+                session.latest_resume_handle = None
             await self._store.put_session(session)
-            return
-        if isinstance(executor, CodexExecutor) and isinstance(executor_session, CodexExecutorSession):
-            session.latest_resume_handle = executor.build_resume_handle(executor_session)
-            await self._store.put_session(session)
-            if not executor_session.is_alive():
-                self._sessions.drop_live_session(session.execution_session_id)
 
     async def _fail_unknown_executor(
         self,

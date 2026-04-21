@@ -44,6 +44,10 @@ class Settings:
     openai_model: str = "gpt-4o-mini"
     openai_timeout_seconds: float = 30.0
     openai_base_url: str | None = None
+    detached_executor_enabled: bool = False
+    executor_host_id: str | None = None
+    executor_host_token: str | None = None
+    detached_executor_types: tuple[str, ...] = ("codex", "acpx")
     acpx_executor_enabled: bool = False
     acpx_command: str = "acpx"
     acpx_agent: str = "codex"
@@ -103,6 +107,10 @@ def _load_runtime_config() -> dict[str, Any]:
 def load_settings() -> Settings:
     load_local_env()
     runtime_config = _load_runtime_config()
+    yaml_detached_executor_enabled = runtime_config.get("detached_executor_enabled")
+    yaml_executor_host_id = runtime_config.get("executor_host_id")
+    yaml_executor_host_token = runtime_config.get("executor_host_token")
+    yaml_detached_executor_types = runtime_config.get("detached_executor_types")
     yaml_codex_command = runtime_config.get("codex_command")
     yaml_acpx_command = runtime_config.get("acpx_command")
     yaml_acpx_agent = runtime_config.get("acpx_agent")
@@ -151,6 +159,16 @@ def load_settings() -> Settings:
         if yaml_codex_blocked_wait_timeout_seconds not in (None, "")
         else float(os.getenv("SYNAPSE_CODEX_BLOCKED_WAIT_TIMEOUT_SECONDS", "900"))
     )
+    detached_executor_enabled = (
+        _parse_bool(yaml_detached_executor_enabled)
+        if yaml_detached_executor_enabled not in (None, "")
+        else _get_bool("SYNAPSE_DETACHED_EXECUTOR_ENABLED", False)
+    )
+    detached_executor_types = _parse_string_list(
+        yaml_detached_executor_types
+        if yaml_detached_executor_types is not None
+        else os.getenv("SYNAPSE_DETACHED_EXECUTOR_TYPES", "codex,acpx")
+    )
     return Settings(
         app_name=os.getenv("SYNAPSE_APP_NAME", "Synapse v2"),
         communication_backend=os.getenv("SYNAPSE_COMMUNICATION_BACKEND", "auto"),
@@ -160,6 +178,18 @@ def load_settings() -> Settings:
         openai_base_url=os.getenv("SYNAPSE_OPENAI_BASE_URL")
         or os.getenv("OPENAI_BASE_URL")
         or None,
+        detached_executor_enabled=detached_executor_enabled,
+        executor_host_id=(
+            str(yaml_executor_host_id)
+            if yaml_executor_host_id not in (None, "")
+            else os.getenv("SYNAPSE_EXECUTOR_HOST_ID") or None
+        ),
+        executor_host_token=(
+            str(yaml_executor_host_token)
+            if yaml_executor_host_token not in (None, "")
+            else os.getenv("SYNAPSE_EXECUTOR_HOST_TOKEN") or None
+        ),
+        detached_executor_types=detached_executor_types or ("codex", "acpx"),
         acpx_executor_enabled=_get_bool("SYNAPSE_ACPX_EXECUTOR_ENABLED", False),
         acpx_command=acpx_command,
         acpx_agent=acpx_agent,
@@ -178,3 +208,27 @@ def load_settings() -> Settings:
         cors_allowed_origins=_get_csv("SYNAPSE_CORS_ALLOWED_ORIGINS"),
         git_sha=os.getenv("SYNAPSE_GIT_SHA") or None,
     )
+
+
+def _parse_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"1", "true", "yes", "on"}:
+            return True
+        if normalized in {"0", "false", "no", "off"}:
+            return False
+    raise RuntimeError(f"Invalid boolean value in runtime config: {value!r}")
+
+
+def _parse_string_list(value: Any) -> tuple[str, ...]:
+    if isinstance(value, str):
+        return tuple(part.strip() for part in value.split(",") if part.strip())
+    if isinstance(value, list):
+        if any(not isinstance(item, str) or not item.strip() for item in value):
+            raise RuntimeError("runtime.detached_executor_types must be a list of strings.")
+        return tuple(item.strip() for item in value)
+    if value in (None, ""):
+        return ()
+    raise RuntimeError(f"Invalid string-list value in runtime config: {value!r}")

@@ -75,6 +75,7 @@ export function taskStatusToPersonaState(status: string): PersonaState {
     case "cancelled":
       return "failed";
     case "waiting_user_input":
+    case "waiting_executor":
     case "paused":
       return "waiting";
     default:

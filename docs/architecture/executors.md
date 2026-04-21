@@ -12,6 +12,7 @@ Stable core concepts:
 - `ExecutorEvent`
 - `ExecutorResult`
 - `ExecutorCapabilities`
+- `Executor Host`
 
 Important capability directions:
 
@@ -19,10 +20,18 @@ Important capability directions:
 - `supports_follow_up`
 - `supports_setup`
 
-Codex note:
+Current deployment direction:
 
-- when enabled, Synapse can register a real Codex app-server executor beside the mock adapter
-- Codex follow-ups should reuse durable runtime session lineage plus executor-native thread handles when available
+- `mock` remains an in-process adapter
+- real executors such as `codex` and `acpx` run inside the detached executor
+  host
+- the main Synapse API process registers hosted executor proxies rather than
+  launching real executor subprocesses directly
+
+Executor-host note:
+
+- the detached host owns live executor-native session continuity
+- Synapse keeps durable execution lineage and user-facing control semantics
 - executor-native continuity still remains optional across executor families
 
 Adapter direction:
@@ -34,6 +43,8 @@ This is why:
 
 - `AgentResumeHandle` must stay optional
 - runtime continuity and executor-native continuity must remain distinct concepts
+- `session_affinity` should be treated as an opaque workspace id that the
+  detached host resolves into a host-local directory
 
 Related docs:
 

@@ -17,24 +17,18 @@ PERSONAS_FILE = SYNAPSE_HOME_DIR / "personas.yaml"
 WORKSPACES_DIR = SYNAPSE_HOME_DIR / "workspaces"
 
 
-def create_workspace(task_id: str) -> Path:
-    """Create a new isolated workspace directory for a task."""
-    workspace_id = f"ws-{task_id.replace('task-', '')}"
-    candidates = [
-        WORKSPACES_DIR / workspace_id,
-        Path.cwd() / ".synapse" / "workspaces" / workspace_id,
-    ]
-    last_error: OSError | None = None
-    for workspace in candidates:
-        try:
-            workspace.mkdir(parents=True, exist_ok=True)
-            return workspace
-        except OSError as exc:
-            last_error = exc
-            continue
-    if last_error is not None:
-        raise last_error
-    raise RuntimeError("Failed to create a workspace directory.")
+def create_workspace(task_id: str) -> str:
+    """Create a durable workspace id for a task.
+
+    The detached executor host resolves this id to a local filesystem path.
+    """
+    return f"ws-{task_id.replace('task-', '')}"
+
+
+def resolve_workspace(workspace_id: str) -> Path:
+    workspace = WORKSPACES_DIR / workspace_id
+    workspace.mkdir(parents=True, exist_ok=True)
+    return workspace
 
 
 def load_personas_from_file(path: Path | None = None) -> list[Persona]:

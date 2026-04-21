@@ -12,9 +12,9 @@ from synapse.communication.history import InMemoryConversationHistory
 from synapse.communication.model import CommunicationModel, LlmTraceRecord, ToolCallRecord
 from synapse.communication.tools import build_default_tool_registry
 from synapse.communication.types import CommunicationTurnResult
-from synapse.executor_adapters.acpx import AcpxExecutor
+from synapse.executor_adapters.hosted import HostedExecutor
+from synapse.executor_adapters.codex.session import CodexExecutorSession
 from synapse.execution import ExecutionBrain
-from synapse.executor_adapters.codex import CodexExecutor, CodexExecutorSession
 from synapse.executor_adapters.mock import MockExecutor
 from synapse.executor_core import ExecutorRegistry, UnknownExecutorError
 from synapse.interaction import InteractionManager
@@ -27,6 +27,7 @@ from synapse.observability.bootstrap import SessionObservability, build_session_
 from synapse.observability.context import bind_diagnostic_context
 from synapse.observability.reason_codes import COMMUNICATION_MODEL_FAILURE
 from synapse.protocol import (
+    AgentResumeHandle,
     AttentionItemKind,
     BindingStatus,
     ExecutionRun,
@@ -42,6 +43,7 @@ from synapse.protocol import (
 )
 
 from .config import Settings
+from .executor_host_manager import ExecutorHostManager
 from .models import (
     ActionAcceptedStreamEvent,
     ActionRejectedStreamEvent,
@@ -81,6 +83,7 @@ class SessionRuntime:
     notification_manager: NotificationManager
     interaction_manager: InteractionManager
     observability: SessionObservability
+    executor_host_manager: ExecutorHostManager
     subscribers: list[asyncio.Queue[SessionStreamEventBase]] = field(default_factory=list)
     _message_queue: asyncio.Queue[PendingMessageRequest] = field(default_factory=asyncio.Queue)
     _execution_task: asyncio.Task[None] | None = field(default=None, init=False, repr=False)
@@ -468,6 +471,31 @@ class SessionRuntime:
         await self.blackboard.put_task(task)
         return [task.task_id]
 
+    async def requeue_waiting_executor_tasks(
+        self,
+        available_executor_types: set[str],
+    ) -> list[str]:
+        changed_task_ids: list[str] = []
+        for task in await self.blackboard.list_tasks():
+            preferred_executor = task.preferred_executor
+            if task.status != TaskStatus.WAITING_EXECUTOR:
+                continue
+            if not isinstance(preferred_executor, str) or preferred_executor not in available_executor_types:
+                continue
+            task.status = TaskStatus.QUEUED
+            await self.blackboard.put_task(task)
+            await self.blackboard.put_summary(
+                TaskSummary(
+                    task_id=task.task_id,
+                    operational_summary=f"Queued: {task.title}",
+                    conversational_summary=f"I queued {task.title} again.",
+                    latest_user_visible_status="queued",
+                    needs_user_input=False,
+                )
+            )
+            changed_task_ids.append(task.task_id)
+        return changed_task_ids
+
     async def _select_command_run(
         self,
         execution_session: ExecutionSession | None,
@@ -536,9 +564,18 @@ class SessionRuntime:
         if live_session is None:
             return
         resume_handle = None
-        if isinstance(executor, CodexExecutor) and isinstance(live_session, CodexExecutorSession):
-            resume_handle = executor.build_resume_handle(live_session)
-        elif hasattr(executor, "build_resume_handle"):
+        if isinstance(live_session, CodexExecutorSession) and live_session.thread_id:
+            resume_handle = AgentResumeHandle(
+                executor_id="codex",
+                session_handle=live_session.thread_id,
+            )
+        serialized_resume_handle = live_session.metadata.get("latest_resume_handle")
+        if resume_handle is None and isinstance(serialized_resume_handle, dict):
+            try:
+                resume_handle = AgentResumeHandle.model_validate(serialized_resume_handle)
+            except Exception:
+                resume_handle = None
+        elif resume_handle is None and hasattr(executor, "build_resume_handle"):
             try:
                 resume_handle = executor.build_resume_handle(live_session)
             except Exception:
@@ -555,6 +592,12 @@ class SessionRuntime:
         action: str,
         answer_text: str | None,
     ) -> bool:
+        if await self.executor_host_manager.supply_interaction_response(
+            request,
+            action=action,
+            answer_text=answer_text,
+        ):
+            return True
         native_response = request.opaque.get("native_response")
         if not isinstance(native_response, dict):
             return False
@@ -668,6 +711,7 @@ class SessionRuntime:
                 "supports_cancel": capability.supports_cancel,
                 "supports_resume": capability.supports_resume,
                 "supports_follow_up": capability.supports_follow_up,
+                **self.executor_host_manager.executor_availability(capability.executor_type),
             }
             for capability in self.registry.list_capabilities()
         ]
@@ -987,33 +1031,64 @@ def create_session_runtime(
     *,
     model: CommunicationModel,
     settings: Settings,
+    executor_host_manager: ExecutorHostManager | None = None,
 ) -> SessionRuntime:
+    executor_host_manager = executor_host_manager or ExecutorHostManager(
+        expected_host_id=settings.executor_host_id,
+        expected_host_token=settings.executor_host_token,
+        detached_executor_types=settings.detached_executor_types,
+    )
     blackboard = InMemoryBlackboard()
     history = InMemoryConversationHistory()
     registry = ExecutorRegistry()
     observability = build_session_observability(settings)
     registry.register(MockExecutor())
-    if settings.acpx_executor_enabled:
+    if settings.detached_executor_enabled:
+        for executor_type in settings.detached_executor_types:
+            if executor_type == "codex":
+                registry.register(
+                    HostedExecutor(
+                        executor_type="codex",
+                        manager=executor_host_manager,
+                        supports_resume=True,
+                        supports_follow_up=True,
+                        supports_pause=True,
+                    )
+                )
+            elif executor_type == "acpx":
+                registry.register(
+                    HostedExecutor(
+                        executor_type="acpx",
+                        manager=executor_host_manager,
+                        supports_resume=True,
+                        supports_follow_up=True,
+                        supports_pause=False,
+                    )
+                )
+    elif settings.acpx_executor_enabled:
         registry.register(
-            AcpxExecutor(
-                command=settings.acpx_command,
-                agent=settings.acpx_agent,
-                permission_mode=settings.acpx_permission_mode,
-                non_interactive_permissions=settings.acpx_non_interactive_permissions,
-                timeout_seconds=settings.acpx_timeout_seconds,
+            HostedExecutor(
+                executor_type="acpx",
+                manager=executor_host_manager,
+                supports_resume=True,
+                supports_follow_up=True,
+                supports_pause=False,
             )
         )
     if settings.codex_executor_enabled:
         registry.register(
-            CodexExecutor(
-                command=settings.codex_command,
-                blocked_wait_timeout_seconds=settings.codex_blocked_wait_timeout_seconds,
+            HostedExecutor(
+                executor_type="codex",
+                manager=executor_host_manager,
+                supports_resume=True,
+                supports_follow_up=True,
+                supports_pause=True,
             )
         )
     default_executor_type = (
-        "acpx"
-        if settings.acpx_executor_enabled
-        else "codex" if settings.codex_executor_enabled else "mock"
+        settings.detached_executor_types[0]
+        if settings.detached_executor_enabled and settings.detached_executor_types
+        else "mock"
     )
     # Load user-defined personas from ~/.synapse/personas.yaml into the blackboard.
     tool_registry = build_default_tool_registry(
@@ -1055,6 +1130,7 @@ def create_session_runtime(
         notification_manager=notification_manager,
         interaction_manager=interaction_manager,
         observability=observability,
+        executor_host_manager=executor_host_manager,
     )
     control_task_handler = tool_registry.get("control_task").handler
     if hasattr(control_task_handler, "set_apply_callback"):

@@ -20,6 +20,7 @@ The design goal is not a single-threaded assistant that thinks, talks, and execu
 - `ExecutionSession` is executor-side lineage or runtime context for a task.
 - `ExecutionRun` is one concrete execution attempt inside a session.
 - `SessionBinding` is the current lease or active binding projection between a task and an execution session.
+- `Executor Host` is the detached worker process that owns live real-executor sessions and connects back to Synapse over the executor-control websocket.
 - `list_tasks` in this document means the Communication Brain's task-retrieval and disambiguation tool. It does not mean "dump every stored task without intent."
 
 ## Design Goal
@@ -64,6 +65,7 @@ Execution Brain owns execution runtime behavior:
 - status and result projection
 - summary maintenance
 - interruption handling on the execution side
+- host-availability handling for detached real executors
 
 It should not:
 
@@ -154,6 +156,13 @@ The first-version classification rule is:
 - mode transitions only upgrade; they do not automatically downgrade
 
 The important boundary is that executors provide execution signals, while Execution Brain owns classification decisions and writes the resulting projection back to blackboard-facing state.
+
+Real executors now run outside the main Synapse API process.
+
+- the control plane keeps durable `Task`, `ExecutionSession`, `ExecutionRun`, and `SessionBinding` state
+- a detached `Executor Host` owns live Codex and ACPX runtime sessions
+- the control plane talks to that host through a dedicated executor-control websocket
+- `mock` remains in-process for mock-safe flows and deterministic tests
 
 ## Observability
 

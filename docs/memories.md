@@ -141,3 +141,5 @@ Short log of important design decisions and changes for Synapse.
 - Added append-only `TaskExecutionDetailEntry` blackboard storage plus bounded communication-context injection for the 5 most recently detail-active tasks, with the last 20 execution-detail entries per included task.
 - Extended `query_task_detail` to return bounded execution detail and command history, and added always-on `system_messages` audit logging on `comm.llm.request_built` for Communication Brain message turns.
 - Filtered low-value Codex progress chatter out of task execution detail, made run/task projection writes change-aware, and demoted repetitive progress-refresh blackboard logs out of normal `INFO` output.
+- Cut real executor runtime over to a detached executor-host process with a dedicated `/executors/control` websocket, keeping Synapse as the durable control plane while `mock` remains the only in-process executor.
+- Added executor-host-aware execution state including `waiting_executor`, persisted `executor_host_id` on execution lineage/binding objects, opaque workspace ids for `session_affinity`, and dedicated `synapse executor setup` / `synapse executor run` CLI flows.

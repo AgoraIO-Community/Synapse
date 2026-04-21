@@ -23,29 +23,24 @@ def test_bootstrap_uses_openai_model_when_key_present():
     assert isinstance(container.communication_model, OpenAICommunicationModel)
 
 
-def test_bootstrap_fails_when_codex_is_enabled_but_missing(monkeypatch):
-    monkeypatch.setattr(bootstrap_module, "_command_available", lambda command: False)
-
+def test_bootstrap_fails_when_detached_executor_host_auth_is_missing():
     try:
         build_runtime_container(
-            settings=Settings(codex_executor_enabled=True, codex_command="missing-codex"),
+            settings=Settings(detached_executor_enabled=True),
         )
     except RuntimeError as exc:
-        assert "missing-codex" in str(exc)
-        assert "Install Codex CLI" in str(exc)
+        assert "executor_host_id" in str(exc)
+        assert "executor_host_token" in str(exc)
     else:
-        raise AssertionError("Expected bootstrap to fail for missing codex command.")
+        raise AssertionError("Expected bootstrap to fail when detached executor auth is missing.")
 
 
-def test_bootstrap_fails_when_acpx_is_enabled_but_missing(monkeypatch):
-    monkeypatch.setattr(bootstrap_module, "_command_available", lambda command: False)
-
-    try:
-        build_runtime_container(
-            settings=Settings(acpx_executor_enabled=True, acpx_command="missing-acpx"),
+def test_bootstrap_allows_detached_executor_mode_with_host_auth():
+    container = build_runtime_container(
+        settings=Settings(
+            detached_executor_enabled=True,
+            executor_host_id="host-1",
+            executor_host_token="secret-token",
         )
-    except RuntimeError as exc:
-        assert "missing-acpx" in str(exc)
-        assert "npm install -g acpx@latest" in str(exc)
-    else:
-        raise AssertionError("Expected bootstrap to fail for missing acpx command.")
+    )
+    assert container.executor_host_manager.host_id == "host-1"
