@@ -9,10 +9,13 @@ Preferred local bootstrap and run flow:
 ./synapse dev
 ```
 
-`./install.sh` owns local dependency bootstrap and creates starter
-`~/.synapse/.env` plus `~/.synapse/config.yaml` files when they do not already
-exist. `./synapse setup` owns interactive runtime configuration for
-`~/.synapse/.env` plus the shared `~/.synapse/config.yaml`.
+`./install.sh` owns local dependency bootstrap. On reruns it skips system
+prerequisite installs when a supported Python 3.12+ interpreter and `bun` are
+already available, but it still refreshes the repo virtualenv and frontend
+dependencies. It also creates starter `~/.synapse/.env` plus
+`~/.synapse/config.yaml` files when they do not already exist. `./synapse
+setup` owns interactive runtime configuration for `~/.synapse/.env` plus the
+shared `~/.synapse/config.yaml`.
 
 By default, diagnostics timeline polling requests from the frontend inspector are
 filtered out of `uvicorn.access` output so local access logs are less noisy. Set
