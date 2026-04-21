@@ -328,5 +328,87 @@ fi
     assert "bun install" in log_text
     assert "venv-python -m synapse setup --bootstrap-defaults" in log_text
     assert "curl -fsSL https://bun.sh/install" not in log_text
-    assert "[install] Installing Python prerequisites with apt-get" in completed.stdout
+    assert "[install] Installing missing apt prerequisites" in completed.stdout
     assert "[install] Skipping Bun install;" in completed.stdout
+
+
+def test_install_sh_ubuntu_installs_curl_before_bun_when_curl_missing(tmp_path: Path):
+    repo_root = tmp_path / "repo"
+    fake_bin = tmp_path / "bin"
+    home = tmp_path / "home"
+    log_file = tmp_path / "install.log"
+    os_release = tmp_path / "os-release"
+    replacement_curl = tmp_path / "curl.good"
+    prepare_repo_root(repo_root)
+    fake_bin.mkdir()
+    home.mkdir()
+    os_release.write_text("ID=ubuntu\n", encoding="utf-8")
+    for command_name, target in {
+        "bash": "/bin/bash",
+        "basename": "/usr/bin/basename",
+        "cat": "/usr/bin/cat",
+        "chmod": "/usr/bin/chmod",
+        "cp": "/usr/bin/cp",
+        "mkdir": "/usr/bin/mkdir",
+    }.items():
+        (fake_bin / command_name).symlink_to(target)
+
+    write_executable(
+        fake_bin / "id",
+        """#!/usr/bin/env bash
+echo "1000"
+""",
+    )
+    write_executable(
+        fake_bin / "sudo",
+        """#!/usr/bin/env bash
+echo "sudo $*" >> "$FAKE_LOG"
+"$@"
+""",
+    )
+    write_executable(
+        fake_bin / "apt-get",
+        """#!/usr/bin/env bash
+echo "apt-get $*" >> "$FAKE_LOG"
+if [[ "${1-}" == "install" ]]; then
+  cp "$FAKE_CURL_REPLACEMENT" "$FAKE_CURL_TARGET"
+  chmod +x "$FAKE_CURL_TARGET"
+fi
+""",
+    )
+    write_executable(fake_bin / "python3.12", fake_python_script())
+    write_executable(replacement_curl, fake_curl_installing_bun_script())
+
+    env = os.environ.copy()
+    env.update(
+        {
+            "FAKE_LOG": str(log_file),
+            "HOME": str(home),
+            "PATH": str(fake_bin),
+            "FAKE_CURL_REPLACEMENT": str(replacement_curl),
+            "FAKE_CURL_TARGET": str(fake_bin / "curl"),
+            "SYNAPSE_INSTALL_ROOT": str(repo_root),
+            "SYNAPSE_INSTALL_TEST_UNAME": "Linux",
+            "SYNAPSE_INSTALL_TEST_OS_RELEASE": str(os_release),
+        }
+    )
+
+    completed = subprocess.run(
+        ["bash", str(INSTALL_SCRIPT)],
+        cwd=repo_root,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    log_text = log_file.read_text(encoding="utf-8")
+    assert "sudo apt-get update" in log_text
+    assert "apt-get install -y python3 python3-venv python3-pip curl ca-certificates" in log_text
+    assert "curl -fsSL https://bun.sh/install" in log_text
+    assert f"python3.12 -m venv {repo_root / '.venv'}" in log_text
+    assert "bun install" in log_text
+    assert "[install] Installing missing apt prerequisites" in completed.stdout
+    assert "[install] Installing Python prerequisites with apt-get" not in completed.stdout
+    assert "[install] Installing Bun" in completed.stdout

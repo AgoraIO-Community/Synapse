@@ -141,7 +141,6 @@ install_linux_dependencies() {
   if [[ -n "$python_bin" ]] && python_supports_venv "$python_bin" && python_supports_pip "$python_bin"; then
     log "Skipping Python install; found supported interpreter at $python_bin"
   else
-    log "Installing Python prerequisites with apt-get"
     needs_apt=1
   fi
 
@@ -157,6 +156,7 @@ install_linux_dependencies() {
       die "Only Ubuntu/Debian apt-get environments are supported by install.sh for automatic dependency installation."
     fi
 
+    log "Installing missing apt prerequisites"
     log "Installing Ubuntu/Debian dependencies with apt-get"
     run_as_root apt-get update
     run_as_root apt-get install -y python3 python3-venv python3-pip curl ca-certificates
