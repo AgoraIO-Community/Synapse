@@ -127,12 +127,17 @@ class AcpxExecutor:
                         if terminal_emitted:
                             continue
                         terminal_emitted = True
+                        blocked_message = str(parsed["message"])
                         yield ExecutorEvent(
                             run_id=run.run_id,
                             session_id=session.session_id,
                             event_type=ExecutorEventType.BLOCKED,
-                            message=str(parsed["message"]),
-                            metadata={"source": "acpx"},
+                            message=blocked_message,
+                            metadata={
+                                "source": "acpx",
+                                "prompt": blocked_message,
+                                "interaction_kind": _classify_blocked_prompt(blocked_message),
+                            },
                         )
                         continue
 
@@ -583,6 +588,15 @@ def _extract_question_text(params: dict[str, object]) -> str | None:
                 if prompt:
                     return prompt
     return None
+
+
+def _classify_blocked_prompt(prompt: str) -> str:
+    normalized = prompt.lower()
+    if any(token in normalized for token in ("allow", "permission", "approve", "grant access")):
+        return "permission"
+    if any(token in normalized for token in ("confirm", "confirmation", "are you sure")):
+        return "confirmation"
+    return "question"
 
 
 def _optional_string(value: object) -> str | None:

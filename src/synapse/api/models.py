@@ -44,6 +44,19 @@ class CommandResponse(BaseModel):
     affected_task_ids: list[str] = Field(default_factory=list)
 
 
+class ResolveInteractionRequest(BaseModel):
+    action: Literal["approve", "deny", "answer", "confirm", "cancel"]
+    answer_text: str | None = None
+    option_id: str | None = None
+    reason: str | None = None
+
+
+class ResolveInteractionRequestResponse(BaseModel):
+    request_id: str
+    status: str = "accepted"
+    affected_task_ids: list[str] = Field(default_factory=list)
+
+
 class SendMessageSocketAction(BaseModel):
     type: Literal["send_message"] = "send_message"
     request_id: str
@@ -57,6 +70,16 @@ class SendCommandSocketAction(BaseModel):
     task_id: str | None = None
     reference: str | None = None
     payload: dict[str, object] = Field(default_factory=dict)
+    reason: str | None = None
+
+
+class ResolveInteractionRequestSocketAction(BaseModel):
+    type: Literal["resolve_interaction_request"] = "resolve_interaction_request"
+    request_id: str
+    interaction_request_id: str
+    action: Literal["approve", "deny", "answer", "confirm", "cancel"]
+    answer_text: str | None = None
+    option_id: str | None = None
     reason: str | None = None
 
 
@@ -82,6 +105,9 @@ __all__ = [
     "DiagnosticTimelineResponse",
     "MessageRequest",
     "MessageResponse",
+    "ResolveInteractionRequest",
+    "ResolveInteractionRequestResponse",
+    "ResolveInteractionRequestSocketAction",
     "SendCommandSocketAction",
     "SendMessageSocketAction",
     "SessionResponse",

@@ -25,6 +25,7 @@ def clear_runtime_env(monkeypatch) -> None:
         "SYNAPSE_ACPX_TIMEOUT_SECONDS",
         "SYNAPSE_CODEX_EXECUTOR_ENABLED",
         "SYNAPSE_CODEX_COMMAND",
+        "SYNAPSE_CODEX_BLOCKED_WAIT_TIMEOUT_SECONDS",
         "SYNAPSE_LOG_FORMAT",
         "SYNAPSE_LOG_COLOR",
         "SYNAPSE_QUIET_DIAGNOSTICS_ACCESS_LOGS",
@@ -198,3 +199,18 @@ def test_load_settings_falls_back_to_legacy_env_codex_command(monkeypatch, tmp_p
 
     assert settings.codex_executor_enabled is True
     assert settings.codex_command == "/env/codex"
+
+
+def test_load_settings_reads_codex_blocked_wait_timeout(monkeypatch, tmp_path: Path):
+    env_file = tmp_path / ".env"
+    config_file = tmp_path / "config.yaml"
+    clear_runtime_env(monkeypatch)
+    env_file.write_text(
+        "SYNAPSE_CODEX_BLOCKED_WAIT_TIMEOUT_SECONDS=42\n",
+        encoding="utf-8",
+    )
+    configure_runtime_paths(monkeypatch, env_file=env_file, config_file=config_file)
+
+    settings = config_module.load_settings()
+
+    assert settings.codex_blocked_wait_timeout_seconds == 42.0

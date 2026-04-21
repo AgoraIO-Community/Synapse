@@ -35,6 +35,7 @@ import {
   getDiagnosticTimeline,
   getSessionSnapshot,
   openSessionStream,
+  resolveInteractionRequest,
   sendSocketCommand,
   sendSocketMessage,
 } from "./lib/session-client";
@@ -44,6 +45,7 @@ import type {
   ConversationSnapshot,
   ConversationHistoryEntry,
   DiagnosticEvent,
+  ExecutorCapability,
   ExecutionRun,
   ExecutionSession,
   SessionBinding,
@@ -89,6 +91,7 @@ import {
 } from "./lib/voice-runtime";
 import { PixelPersona, taskStatusToPersonaState } from "./components/PixelPersona";
 import { PersonaPanel } from "./components/PersonaPanel";
+import { AttentionPanel } from "./components/AttentionPanel";
 
 type TaskResultDetail = {
   shortText: string;
@@ -272,9 +275,24 @@ function commandIcon(command: TaskCommandType) {
   return XCircle;
 }
 
-function canRunCommand(task: Task, command: TaskCommandType) {
+function canRunCommand(
+  task: Task,
+  command: TaskCommandType,
+  executorCapabilityByType: Map<string, ExecutorCapability>,
+  latestRunByTaskId: Map<string, ExecutionRun>,
+) {
   if (command === "pause_task") {
-    return ["created", "queued", "running", "waiting_user_input"].includes(task.status);
+    if (!["created", "queued", "running", "waiting_user_input"].includes(task.status)) {
+      return false;
+    }
+    if (["created", "queued"].includes(task.status)) {
+      return true;
+    }
+    const executorType = latestRunByTaskId.get(task.task_id)?.executor_type ?? task.preferred_executor;
+    if (!executorType) {
+      return false;
+    }
+    return executorCapabilityByType.get(executorType)?.supports_pause === true;
   }
   if (command === "cancel_task") {
     return !["completed", "cancelled", "failed"].includes(task.status);
@@ -286,6 +304,15 @@ function canRunCommand(task: Task, command: TaskCommandType) {
     return task.status === "paused";
   }
   return false;
+}
+
+function buildExecutorCapabilityMap(snapshot: SessionSnapshot | null) {
+  return new Map(
+    (snapshot?.executor_capabilities ?? []).map((capability) => [
+      capability.executor_type,
+      capability,
+    ]),
+  );
 }
 
 function buildTaskSummaryMap(snapshot: SessionSnapshot | null) {
@@ -1632,6 +1659,10 @@ export default function App() {
   );
   const summaryByTaskId = useMemo(() => buildTaskSummaryMap(snapshot), [snapshot]);
   const latestRunByTaskId = useMemo(() => buildLatestRunMap(snapshot), [snapshot]);
+  const executorCapabilityByType = useMemo(
+    () => buildExecutorCapabilityMap(snapshot),
+    [snapshot],
+  );
   const conversationTaskEvents = useMemo(
     () => buildConversationTaskEvents(snapshot, summaryByTaskId, latestRunByTaskId),
     [snapshot, summaryByTaskId, latestRunByTaskId],
@@ -1785,6 +1816,27 @@ export default function App() {
     sendSocketCommand(socket, requestId, commandType, taskId);
   }
 
+  async function handleResolveInteractionRequest(
+    interactionRequestId: string,
+    action: "approve" | "deny" | "answer" | "confirm" | "cancel",
+    options: { answerText?: string } = {},
+  ) {
+    if (!activeSessionId) {
+      return;
+    }
+    setActionError(null);
+    try {
+      await resolveInteractionRequest(activeSessionId, interactionRequestId, {
+        action,
+        answer_text: options.answerText,
+      });
+      const nextSnapshot = await getSessionSnapshot(activeSessionId);
+      setSnapshot(nextSnapshot);
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "Failed to resolve interaction request.");
+    }
+  }
+
   function focusTask(taskId: string) {
     setSelectedTaskId(taskId);
     setTaskSelectionPinned(true);
@@ -1881,6 +1933,15 @@ export default function App() {
                 />
               </section>
             )}
+            <AttentionPanel
+              attentionItems={snapshot?.attention_items ?? []}
+              interactionRequests={snapshot?.interaction_requests ?? []}
+              onResolve={handleResolveInteractionRequest}
+              onJump={(taskId) => {
+                setSelectedTaskId(taskId);
+                setTaskSelectionPinned(true);
+              }}
+            />
             <section className="space-y-3">
               <div className="flex items-center justify-between">
                 <h3 className="text-lg font-bold tracking-tight text-[#212723]">Active Tasks</h3>
@@ -1970,7 +2031,12 @@ export default function App() {
                     {(["pause_task", "resume_task", "retry_task", "cancel_task"] as TaskCommandType[])
                       .filter(
                         (command) =>
-                          canRunCommand(selectedTask, command) ||
+                          canRunCommand(
+                            selectedTask,
+                            command,
+                            executorCapabilityByType,
+                            latestRunByTaskId,
+                          ) ||
                           pendingCommand === `${selectedTask.task_id}:${command}`,
                       )
                       .map((command) => {

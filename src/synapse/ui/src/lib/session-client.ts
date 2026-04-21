@@ -175,6 +175,51 @@ export function sendSocketCommand(
   );
 }
 
+export function sendSocketInteractionResolution(
+  socket: WebSocket,
+  requestId: string,
+  interactionRequestId: string,
+  action: "approve" | "deny" | "answer" | "confirm" | "cancel",
+  options: {
+    answerText?: string;
+    optionId?: string;
+    reason?: string;
+  } = {},
+) {
+  socket.send(
+    JSON.stringify({
+      type: "resolve_interaction_request",
+      request_id: requestId,
+      interaction_request_id: interactionRequestId,
+      action,
+      answer_text: options.answerText,
+      option_id: options.optionId,
+      reason: options.reason,
+    }),
+  );
+}
+
+export async function resolveInteractionRequest(
+  sessionId: string,
+  interactionRequestId: string,
+  payload: {
+    action: "approve" | "deny" | "answer" | "confirm" | "cancel";
+    answer_text?: string;
+    option_id?: string;
+    reason?: string;
+  },
+) {
+  const response = await fetch(
+    buildHttpUrl(`/sessions/${sessionId}/interaction-requests/${interactionRequestId}/resolve`),
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    },
+  );
+  return (await ensureOk(response)).json();
+}
+
 
 // --- Persona API ---
 

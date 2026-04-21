@@ -3,9 +3,14 @@
 from .assignment import AssignmentLease
 from .command import TaskCommand
 from .enums import (
+    AttentionItemKind,
+    AttentionItemStatus,
+    AttentionPriority,
     BindingStatus,
     ConversationEffect,
     ExecutionMode,
+    InteractionRequestKind,
+    InteractionRequestStatus,
     InterruptionType,
     MutationType,
     NotificationCandidateType,
@@ -17,6 +22,7 @@ from .enums import (
     TaskStatus,
 )
 from .execution_mode import TaskExecutionMode
+from .interaction import AttentionItem, InteractionRequest
 from .interruption import Interruption
 from .mutation import TaskMutation
 from .notification import NotificationCandidate
@@ -29,12 +35,19 @@ from .task_execution_detail import TaskExecutionDetailEntry
 
 __all__ = [
     "AgentResumeHandle",
+    "AttentionItem",
+    "AttentionItemKind",
+    "AttentionItemStatus",
+    "AttentionPriority",
     "AssignmentLease",
     "BindingStatus",
     "ConversationEffect",
     "ExecutionMode",
     "ExecutionRun",
     "ExecutionSession",
+    "InteractionRequest",
+    "InteractionRequestKind",
+    "InteractionRequestStatus",
     "Interruption",
     "InterruptionType",
     "MutationType",

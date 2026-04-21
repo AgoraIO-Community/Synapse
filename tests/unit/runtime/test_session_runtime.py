@@ -5,10 +5,18 @@ import pytest
 from synapse.communication.models import ScriptedCommunicationModel
 from synapse.communication.models.scripted import ScriptedPlan
 from synapse.protocol import (
+    AgentResumeHandle,
+    AttentionItem,
+    AttentionItemKind,
+    AttentionItemStatus,
+    AttentionPriority,
     BindingStatus,
     ExecutionMode,
     ExecutionRun,
     ExecutionSession as RuntimeExecutionSession,
+    InteractionRequest,
+    InteractionRequestKind,
+    InteractionRequestStatus,
     NotificationCandidate,
     NotificationCandidateType,
     NotificationDeliveryStatus,
@@ -120,6 +128,101 @@ class CancelTrackingExecutor:
         )
 
 
+class NoPauseExecutor:
+    def __init__(self) -> None:
+        self._capabilities = ExecutorCapabilities(
+            executor_type="no-pause",
+            supports_pause=False,
+            supports_cancel=True,
+        )
+
+    def get_capabilities(self) -> ExecutorCapabilities:
+        return self._capabilities
+
+    async def create_session(self, workspace_id: str | None = None) -> ExecutorSession:
+        return ExecutorSession(session_id="no-pause-session", executor_type="no-pause")
+
+    async def cancel_run(self, run_id: str) -> None:
+        return None
+
+    async def pause_run(self, run_id: str) -> None:
+        return None
+
+    async def run_task(self, run, task, session):
+        yield ExecutorEvent(
+            run_id=run.run_id,
+            session_id=session.session_id,
+            event_type=ExecutorEventType.PROGRESS,
+            message="working",
+        )
+
+
+class ManagedPauseExecutor:
+    def __init__(self) -> None:
+        self._capabilities = ExecutorCapabilities(
+            executor_type="managed-pause",
+            supports_pause=True,
+            supports_resume=True,
+            supports_cancel=True,
+        )
+        self.paused_runs: list[str] = []
+
+    def get_capabilities(self) -> ExecutorCapabilities:
+        return self._capabilities
+
+    async def create_session(self, workspace_id: str | None = None) -> ExecutorSession:
+        return ExecutorSession(session_id="managed-pause-session", executor_type="managed-pause")
+
+    async def cancel_run(self, run_id: str) -> None:
+        return None
+
+    async def pause_run(self, run_id: str) -> None:
+        self.paused_runs.append(run_id)
+
+    async def run_task(self, run, task, session):
+        yield ExecutorEvent(
+            run_id=run.run_id,
+            session_id=session.session_id,
+            event_type=ExecutorEventType.PROGRESS,
+            message="working",
+        )
+
+    def build_resume_handle(self, session: ExecutorSession) -> AgentResumeHandle:
+        return AgentResumeHandle(
+            executor_id="managed-pause",
+            session_handle=session.session_id,
+            opaque={"mode": "managed-pause"},
+        )
+
+
+class FakeNativeClient:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, object]] = []
+        self.closed = False
+
+    async def respond_to_request(self, **kwargs) -> None:
+        self.calls.append(kwargs)
+
+    async def close(self) -> None:
+        self.closed = True
+
+
+class FakeNativeCodexSession:
+    def __init__(self) -> None:
+        from synapse.executor_adapters.codex.session import CodexExecutorSession
+
+        self.session = CodexExecutorSession(
+            session_id="codex-session-native",
+            executor_type="codex",
+        )
+        self.client = FakeNativeClient()
+        self.session._client = self.client  # noqa: SLF001
+        self.session._blocked_resolution_event = asyncio.Event()  # noqa: SLF001
+
+    def mark_blocked_resolved(self) -> None:
+        self.session.mark_blocked_resolved()
+
+
 @pytest.mark.anyio
 async def test_session_runtime_snapshot_pump_publishes_background_execution_updates():
     session = create_session_runtime(
@@ -210,6 +313,115 @@ async def test_session_runtime_snapshot_includes_notification_candidates():
 
 
 @pytest.mark.anyio
+async def test_session_runtime_snapshot_includes_interaction_requests_and_attention_items():
+    session = create_session_runtime(
+        "session-5b",
+        model=ScriptedCommunicationModel(
+            {"__default__": ScriptedPlan(conversational_act="request_clarification")}
+        ),
+        settings=Settings(),
+    )
+    await session.blackboard.put_interaction_request(
+        InteractionRequest(
+            request_id="ireq-1",
+            task_id="task-1",
+            kind=InteractionRequestKind.QUESTION,
+            status=InteractionRequestStatus.PENDING,
+            prompt="Need confirmation?",
+            available_actions=["answer"],
+            created_at="2026-04-06T00:00:00+00:00",
+        )
+    )
+    await session.blackboard.put_attention_item(
+        AttentionItem(
+            attention_id="attention-1",
+            source="interaction_request",
+            kind=AttentionItemKind.QUESTION_REQUEST,
+            priority=AttentionPriority.P0,
+            status=AttentionItemStatus.ACTIVE,
+            title="Need your input",
+            body="Need confirmation?",
+            task_id="task-1",
+            request_id="ireq-1",
+            created_at="2026-04-06T00:00:00+00:00",
+        )
+    )
+
+    snapshot = await session.snapshot()
+
+    assert snapshot.interaction_requests[0].request_id == "ireq-1"
+    assert snapshot.attention_items[0].attention_id == "attention-1"
+
+
+@pytest.mark.anyio
+async def test_session_runtime_snapshot_sanitizes_interaction_request_opaque():
+    session = create_session_runtime(
+        "session-5c",
+        model=ScriptedCommunicationModel(
+            {"__default__": ScriptedPlan(conversational_act="request_clarification")}
+        ),
+        settings=Settings(),
+    )
+    await session.blackboard.put_interaction_request(
+        InteractionRequest(
+            request_id="ireq-2",
+            task_id="task-2",
+            kind=InteractionRequestKind.PERMISSION,
+            status=InteractionRequestStatus.PENDING,
+            prompt="Allow deleting the folder?",
+            available_actions=["approve", "deny"],
+            details={
+                "blocked_event": {
+                    "interaction_kind": "permission",
+                    "blocked_method": "item/commandExecution/requestApproval",
+                    "native_response": {
+                        "request_id": 9,
+                        "method": "item/commandExecution/requestApproval",
+                        "params": {
+                            "threadId": "thread-1",
+                            "turnId": "turn-1",
+                            "itemId": "call-1",
+                            "command": "rm -rf /tmp/x",
+                            "cwd": "/secret/path",
+                            "proposedExecpolicyAmendment": ["rm", "-rf", "/tmp/x"],
+                        },
+                    },
+                }
+            },
+            opaque={
+                "native_response": {
+                    "request_id": 9,
+                    "method": "item/commandExecution/requestApproval",
+                    "params": {
+                        "threadId": "thread-1",
+                        "turnId": "turn-1",
+                        "itemId": "call-1",
+                        "command": "rm -rf /tmp/x",
+                        "cwd": "/secret/path",
+                        "proposedExecpolicyAmendment": ["rm", "-rf", "/tmp/x"],
+                    },
+                }
+            },
+            created_at="2026-04-06T00:00:00+00:00",
+        )
+    )
+
+    snapshot = await session.snapshot()
+    opaque = snapshot.interaction_requests[0].opaque["native_response"]
+
+    assert opaque["request_id"] == 9
+    assert opaque["method"] == "item/commandExecution/requestApproval"
+    assert opaque["params"]["command"] == "rm -rf /tmp/x"
+    assert "cwd" not in opaque["params"]
+    assert "proposedExecpolicyAmendment" not in opaque["params"]
+    blocked_event = snapshot.interaction_requests[0].details["blocked_event"]
+    assert blocked_event["interaction_kind"] == "permission"
+    assert blocked_event["native_response"]["params"]["command"] == "rm -rf /tmp/x"
+    assert "cwd" not in blocked_event["native_response"]["params"]
+    assert "proposedExecpolicyAmendment" not in blocked_event["native_response"]["params"]
+
+
+@pytest.mark.anyio
 async def test_session_runtime_apply_command_cancels_live_run_and_suppresses_pending_notifications():
     session = create_session_runtime(
         "session-6",
@@ -295,3 +507,335 @@ async def test_session_runtime_apply_command_cancels_live_run_and_suppresses_pen
     assert binding is not None and binding.binding_status == BindingStatus.RELEASED
     assert summary is not None and summary.latest_user_visible_status == "cancelled"
     assert candidate is not None and candidate.delivery_status == NotificationDeliveryStatus.SUPPRESSED
+
+
+@pytest.mark.anyio
+async def test_session_runtime_apply_command_rejects_pause_when_executor_cannot_pause():
+    session = create_session_runtime(
+        "session-6b",
+        model=ScriptedCommunicationModel(
+            {"__default__": ScriptedPlan(conversational_act="request_clarification")}
+        ),
+        settings=Settings(),
+    )
+    session.registry.register(NoPauseExecutor())
+    await session.blackboard.put_task(
+        Task(
+            task_id="task-no-pause",
+            root_task_id="task-no-pause",
+            title="No pause task",
+            goal="No pause task",
+            status=TaskStatus.RUNNING,
+            preferred_executor="no-pause",
+        )
+    )
+    await session.blackboard.put_session(
+        RuntimeExecutionSession(
+            execution_session_id="exec-session-no-pause",
+            task_id="task-no-pause",
+            base_executor_id="no-pause",
+            active_run_id="run-no-pause",
+            latest_run_id="run-no-pause",
+            run_ids=["run-no-pause"],
+        )
+    )
+    await session.blackboard.put_run(
+        ExecutionRun(
+            run_id="run-no-pause",
+            task_id="task-no-pause",
+            execution_session_id="exec-session-no-pause",
+            executor_type="no-pause",
+            status=RunStatus.RUNNING,
+        )
+    )
+
+    with pytest.raises(ValueError, match="does not support pause"):
+        await session.apply_command(
+            TaskCommand(
+                command_id="cmd-no-pause",
+                task_id="task-no-pause",
+                command_type=TaskCommandType.PAUSE_TASK,
+                created_by="test",
+            )
+        )
+
+
+@pytest.mark.anyio
+async def test_session_runtime_pause_captures_resume_handle_for_managed_pause_executor():
+    session = create_session_runtime(
+        "session-6c",
+        model=ScriptedCommunicationModel(
+            {"__default__": ScriptedPlan(conversational_act="request_clarification")}
+        ),
+        settings=Settings(),
+    )
+    executor = ManagedPauseExecutor()
+    session.registry.register(executor)
+    await session.blackboard.put_task(
+        Task(
+            task_id="task-managed-pause",
+            root_task_id="task-managed-pause",
+            title="Managed pause task",
+            goal="Managed pause task",
+            status=TaskStatus.RUNNING,
+            preferred_executor="managed-pause",
+        )
+    )
+    await session.blackboard.put_session(
+        RuntimeExecutionSession(
+            execution_session_id="exec-session-managed-pause",
+            task_id="task-managed-pause",
+            base_executor_id="managed-pause",
+            active_run_id="run-managed-pause",
+            latest_run_id="run-managed-pause",
+            run_ids=["run-managed-pause"],
+        )
+    )
+    await session.blackboard.put_binding(
+        SessionBinding(
+            task_id="task-managed-pause",
+            execution_session_id="exec-session-managed-pause",
+            session_id="managed-pause-session",
+            claimed_by="worker-session-6c",
+            claim_expires_at="2026-04-16T00:10:00+00:00",
+            binding_status=BindingStatus.ACTIVE,
+        )
+    )
+    await session.blackboard.put_run(
+        ExecutionRun(
+            run_id="run-managed-pause",
+            task_id="task-managed-pause",
+            execution_session_id="exec-session-managed-pause",
+            executor_type="managed-pause",
+            status=RunStatus.RUNNING,
+        )
+    )
+    session.execution_brain._loop._sessions._live_sessions["exec-session-managed-pause"] = (
+        ExecutorSession(
+            session_id="managed-pause-session",
+            executor_type="managed-pause",
+        )
+    )
+
+    await session.apply_command(
+        TaskCommand(
+            command_id="cmd-managed-pause",
+            task_id="task-managed-pause",
+            command_type=TaskCommandType.PAUSE_TASK,
+            created_by="test",
+        )
+    )
+
+    execution_session = await session.blackboard.get_session("exec-session-managed-pause")
+    task = await session.blackboard.get_task("task-managed-pause")
+    assert execution_session is not None and execution_session.latest_resume_handle is not None
+    assert execution_session.latest_resume_handle.session_handle == "managed-pause-session"
+    assert task is not None and task.status == TaskStatus.PAUSED
+    assert executor.paused_runs == ["run-managed-pause"]
+
+
+@pytest.mark.anyio
+async def test_session_runtime_native_interaction_resolution_sets_native_resume_strategy():
+    session = create_session_runtime(
+        "session-6d",
+        model=ScriptedCommunicationModel(
+            {"__default__": ScriptedPlan(conversational_act="request_clarification")}
+        ),
+        settings=Settings(),
+    )
+    native = FakeNativeCodexSession()
+    session.execution_brain._loop._sessions._live_sessions["exec-session-native"] = native.session
+    await session.blackboard.put_task(
+        Task(
+            task_id="task-native",
+            root_task_id="task-native",
+            title="Native interaction task",
+            goal="Native interaction task",
+            status=TaskStatus.WAITING_USER_INPUT,
+            preferred_executor="codex",
+        )
+    )
+    await session.blackboard.put_interaction_request(
+        InteractionRequest(
+            request_id="ireq-native",
+            task_id="task-native",
+            execution_session_id="exec-session-native",
+            run_id="run-native",
+            executor_type="codex",
+            kind=InteractionRequestKind.PERMISSION,
+            status=InteractionRequestStatus.PENDING,
+            prompt="Allow deleting the folder?",
+            available_actions=["approve", "deny"],
+            opaque={
+                "native_response": {
+                    "request_id": 3,
+                    "method": "item/commandExecution/requestApproval",
+                    "params": {
+                        "threadId": "thread-1",
+                        "turnId": "turn-1",
+                        "itemId": "call-1",
+                        "command": "rm -rf /tmp/x",
+                        "proposedExecpolicyAmendment": ["rm", "-rf", "/tmp/x"],
+                    },
+                }
+            },
+            created_at="2026-04-06T00:00:00+00:00",
+        )
+    )
+
+    affected = await session.resolve_interaction_request("ireq-native", action="approve")
+    request = await session.blackboard.get_interaction_request("ireq-native")
+
+    assert affected == ["task-native"]
+    assert request is not None and request.resume_strategy == "native_response"
+    assert native.client.calls
+
+
+@pytest.mark.anyio
+async def test_session_runtime_native_interaction_resolution_preserves_permissions_payload():
+    session = create_session_runtime(
+        "session-6e",
+        model=ScriptedCommunicationModel(
+            {"__default__": ScriptedPlan(conversational_act="request_clarification")}
+        ),
+        settings=Settings(),
+    )
+    native = FakeNativeCodexSession()
+    session.execution_brain._loop._sessions._live_sessions["exec-session-permissions"] = (
+        native.session
+    )
+    await session.blackboard.put_task(
+        Task(
+            task_id="task-permissions",
+            root_task_id="task-permissions",
+            title="Permission task",
+            goal="Permission task",
+            status=TaskStatus.WAITING_USER_INPUT,
+            preferred_executor="codex",
+        )
+    )
+    await session.blackboard.put_interaction_request(
+        InteractionRequest(
+            request_id="ireq-permissions",
+            task_id="task-permissions",
+            execution_session_id="exec-session-permissions",
+            run_id="run-permissions",
+            executor_type="codex",
+            kind=InteractionRequestKind.PERMISSION,
+            status=InteractionRequestStatus.PENDING,
+            prompt="Allow more permissions?",
+            available_actions=["approve", "deny"],
+            opaque={
+                "native_response": {
+                    "request_id": 4,
+                    "method": "item/permissions/requestApproval",
+                    "params": {
+                        "threadId": "thread-1",
+                        "turnId": "turn-1",
+                        "permissions": {"fileSystem": {"writeRoots": ["/tmp"]}},
+                    },
+                }
+            },
+            created_at="2026-04-06T00:00:00+00:00",
+        )
+    )
+
+    await session.resolve_interaction_request("ireq-permissions", action="approve")
+
+    assert native.client.calls[0]["params"]["permissions"] == {
+        "fileSystem": {"writeRoots": ["/tmp"]}
+    }
+
+
+@pytest.mark.anyio
+async def test_session_runtime_follow_up_resolution_detaches_live_codex_session():
+    session = create_session_runtime(
+        "session-6f",
+        model=ScriptedCommunicationModel(
+            {"__default__": ScriptedPlan(conversational_act="request_clarification")}
+        ),
+        settings=Settings(codex_executor_enabled=True),
+    )
+    native = FakeNativeCodexSession()
+    native.session.thread_id = "thread-follow-up"
+    session.execution_brain._loop._sessions._live_sessions["exec-session-follow-up"] = (
+        native.session
+    )
+    await session.blackboard.put_task(
+        Task(
+            task_id="task-follow-up",
+            root_task_id="task-follow-up",
+            title="Follow-up task",
+            goal="Follow-up task",
+            status=TaskStatus.WAITING_USER_INPUT,
+            preferred_executor="codex",
+        )
+    )
+    await session.blackboard.put_session(
+        RuntimeExecutionSession(
+            execution_session_id="exec-session-follow-up",
+            task_id="task-follow-up",
+            base_executor_id="codex",
+            active_run_id="run-follow-up",
+            latest_run_id="run-follow-up",
+            run_ids=["run-follow-up"],
+        )
+    )
+    await session.blackboard.put_binding(
+        SessionBinding(
+            task_id="task-follow-up",
+            execution_session_id="exec-session-follow-up",
+            session_id="codex-session-native",
+            claimed_by="worker-session-6f",
+            claim_expires_at="2026-04-16T00:10:00+00:00",
+            binding_status=BindingStatus.ACTIVE,
+        )
+    )
+    await session.blackboard.put_run(
+        ExecutionRun(
+            run_id="run-follow-up",
+            task_id="task-follow-up",
+            execution_session_id="exec-session-follow-up",
+            executor_type="codex",
+            status=RunStatus.BLOCKED,
+            block_reason="Need more input.",
+        )
+    )
+    await session.blackboard.put_interaction_request(
+        InteractionRequest(
+            request_id="ireq-follow-up",
+            task_id="task-follow-up",
+            execution_session_id="exec-session-follow-up",
+            run_id="run-follow-up",
+            executor_type="codex",
+            kind=InteractionRequestKind.QUESTION,
+            status=InteractionRequestStatus.PENDING,
+            prompt="Need more input.",
+            available_actions=["answer"],
+            opaque={},
+            created_at="2026-04-06T00:00:00+00:00",
+        )
+    )
+
+    await session.resolve_interaction_request(
+        "ireq-follow-up",
+        action="answer",
+        answer_text="Use the same thread.",
+    )
+
+    execution_session = await session.blackboard.get_session("exec-session-follow-up")
+    binding = await session.blackboard.get_binding("task-follow-up")
+    task = await session.blackboard.get_task("task-follow-up")
+    summary = await session.blackboard.get_summary("task-follow-up")
+
+    assert execution_session is not None
+    assert execution_session.active_run_id is None
+    assert execution_session.latest_resume_handle is not None
+    assert execution_session.latest_resume_handle.session_handle == "thread-follow-up"
+    assert binding is not None and binding.binding_status == BindingStatus.RELEASED
+    assert task is not None and task.status == TaskStatus.QUEUED
+    assert summary is not None and summary.latest_user_visible_status == "queued"
+    assert native.client.closed is True
+    assert (
+        session.execution_brain.get_live_session("exec-session-follow-up") is None
+    )

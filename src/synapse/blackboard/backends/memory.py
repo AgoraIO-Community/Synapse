@@ -5,8 +5,10 @@ from collections import defaultdict
 
 from synapse.observability.context import get_diagnostic_context
 from synapse.protocol import (
+    AttentionItem,
     ExecutionRun,
     ExecutionSession,
+    InteractionRequest,
     NotificationCandidate,
     Persona,
     SessionBinding,
@@ -43,6 +45,10 @@ class InMemoryBlackboard(BlackboardStore):
         self._notification_candidates: dict[str, NotificationCandidate] = {}
         self._notification_candidate_order: list[str] = []
         self._personas: dict[str, Persona] = {}
+        self._interaction_requests: dict[str, InteractionRequest] = {}
+        self._interaction_request_order: list[str] = []
+        self._attention_items: dict[str, AttentionItem] = {}
+        self._attention_item_order: list[str] = []
         self._recent_writes: list[BlackboardWriteEvent] = []
         self._subscriptions = SubscriptionManager()
         # Writes are serialized under this lock; read accessors intentionally stay
@@ -320,6 +326,60 @@ class InMemoryBlackboard(BlackboardStore):
             )
             return True
         return False
+
+    async def put_interaction_request(self, request: InteractionRequest) -> None:
+        async with self._lock:
+            if request.request_id not in self._interaction_requests:
+                self._interaction_request_order.append(request.request_id)
+            self._interaction_requests[request.request_id] = request
+        await self._publish(
+            BlackboardWriteEvent(
+                kind=BlackboardWriteKind.INTERACTION_REQUEST,
+                entity_id=request.request_id,
+                task_id=request.task_id,
+                payload={
+                    "kind": request.kind.value,
+                    "status": request.status.value,
+                },
+            )
+        )
+
+    async def get_interaction_request(self, request_id: str) -> InteractionRequest | None:
+        return self._interaction_requests.get(request_id)
+
+    async def list_interaction_requests(self) -> list[InteractionRequest]:
+        return [
+            self._interaction_requests[request_id]
+            for request_id in self._interaction_request_order
+            if request_id in self._interaction_requests
+        ]
+
+    async def put_attention_item(self, item: AttentionItem) -> None:
+        async with self._lock:
+            if item.attention_id not in self._attention_items:
+                self._attention_item_order.append(item.attention_id)
+            self._attention_items[item.attention_id] = item
+        await self._publish(
+            BlackboardWriteEvent(
+                kind=BlackboardWriteKind.ATTENTION,
+                entity_id=item.attention_id,
+                task_id=item.task_id,
+                payload={
+                    "kind": item.kind.value,
+                    "status": item.status.value,
+                },
+            )
+        )
+
+    async def get_attention_item(self, attention_id: str) -> AttentionItem | None:
+        return self._attention_items.get(attention_id)
+
+    async def list_attention_items(self) -> list[AttentionItem]:
+        return [
+            self._attention_items[attention_id]
+            for attention_id in self._attention_item_order
+            if attention_id in self._attention_items
+        ]
 
     async def list_recent_writes(self, limit: int = 50) -> list[BlackboardWriteEvent]:
         return list(self._recent_writes[-limit:])

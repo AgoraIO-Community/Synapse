@@ -17,6 +17,8 @@ class BlackboardWriteKind(StrEnum):
     EXECUTION_MODE = "execution_mode"
     NOTIFICATION = "notification"
     PERSONA = "persona"
+    INTERACTION_REQUEST = "interaction_request"
+    ATTENTION = "attention"
 
 
 @dataclass(slots=True)

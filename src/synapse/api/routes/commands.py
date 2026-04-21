@@ -35,6 +35,9 @@ async def submit_command(
     task = resolution.task
     if task is None:
         raise HTTPException(status_code=404, detail="Task not found.")
+    validation_error = await session.validate_task_command(task, request.command_type)
+    if validation_error is not None:
+        raise HTTPException(status_code=409, detail=validation_error)
 
     command = TaskCommand(
         command_id=f"cmd-{uuid4().hex[:8]}",

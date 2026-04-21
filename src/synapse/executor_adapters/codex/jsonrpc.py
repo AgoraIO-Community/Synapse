@@ -44,6 +44,15 @@ class JsonRpcPeer:
             }
         )
 
+    async def respond(self, request_id: object, result: dict[str, object]) -> None:
+        await self._send(
+            {
+                "jsonrpc": "2.0",
+                "id": request_id,
+                "result": result,
+            }
+        )
+
     async def next_event(self) -> dict[str, object]:
         return await self._events.get()
 

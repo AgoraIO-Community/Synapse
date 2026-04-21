@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import re
+from dataclasses import dataclass
+from uuid import uuid4
+
 from synapse.communication.history import ConversationEntry
 from synapse.blackboard import BlackboardStore
 from synapse.observability.emitters.communication import CommunicationDiagnosticEmitter
@@ -36,6 +40,59 @@ TERMINAL_TASK_STATUSES = {
     TaskStatus.CANCELLED,
     TaskStatus.FAILED,
 }
+
+
+@dataclass(slots=True)
+class BundleSlot:
+    task_id: str
+    field_name: str
+    cue: str
+    group: str | None
+    value: str
+
+
+SLOT_PHRASE_RE = re.compile(
+    r"\b(?P<cue>from|to|in|at)\s+(?P<value>[A-Za-z][A-Za-z\s-]+?)(?=\s+(?:for|from|to|instead|today|tomorrow)\b|[.,!?]|$)",
+    re.IGNORECASE,
+)
+
+CORRECTION_OLD_NEW_RE = re.compile(
+    r"^(?:change|replace|switch)\s+(?:(?P<cue>from|to|in|at)\s+)?(?P<old>[A-Za-z][A-Za-z\s-]+?)\s+(?:to|with|for)\s+(?P<new>[A-Za-z][A-Za-z\s-]+)$",
+    re.IGNORECASE,
+)
+
+CORRECTION_SHOULD_BE_RE = re.compile(
+    r"^(?:(?:it|that|this|destination|origin)\s+)?should\s+be\s+(?P<new>[A-Za-z][A-Za-z\s-]+?)(?:\s+(?P<cue>from|to|in|at))?$",
+    re.IGNORECASE,
+)
+
+CORRECTION_DIRECT_CUE_RE = re.compile(
+    r"^(?P<cue>from|to|in|at)\s+(?P<new>[A-Za-z][A-Za-z\s-]+)$",
+    re.IGNORECASE,
+)
+
+CONTINUE_PHRASES = {
+    "continue",
+    "go on",
+    "keep going",
+    "resume",
+    "继续",
+    "继续吧",
+    "继续执行",
+}
+
+STOP_PHRASES = {
+    "stop",
+    "stop it",
+    "forget it",
+    "never mind",
+    "cancel that",
+    "取消",
+    "停止",
+    "别做了",
+}
+
+
 class CommunicationBrain:
     def __init__(
         self,
@@ -100,6 +157,14 @@ class CommunicationBrain:
             conversation_id,
             available_tools=self._tool_usage_policy.available_tools,
         )
+        local_result = await self._handle_local_intent(
+            conversation_id,
+            user_text,
+            context=context,
+            on_tool_call=on_tool_call,
+        )
+        if local_result is not None:
+            return local_result
         respond_kwargs = {
             "user_text": user_text,
             "context": context,
@@ -388,6 +453,23 @@ class CommunicationBrain:
                 conversation_id,
                 reply_text="Which task do you want me to continue?",
                 conversational_act="request_clarification",
+            )
+        if task.status == TaskStatus.WAITING_USER_INPUT:
+            pending_request = _pending_interaction_request_for_task(context, task.task_id)
+            if pending_request is not None:
+                prompt = pending_request.get("prompt")
+                if isinstance(prompt, str) and prompt.strip():
+                    reply_text = f"I still need your input before I can continue: {prompt.strip()}"
+                else:
+                    reply_text = f"I still need your input before I can continue with {task.title}."
+            else:
+                reply_text = f"I still need your input before I can continue with {task.title}."
+            return self._finalize_local_turn(
+                conversation_id,
+                reply_text=reply_text,
+                conversational_act="request_clarification",
+                affected_task_ids=[task.task_id],
+                focused_task_id=task.task_id,
             )
         if task.status == TaskStatus.CANCELLED:
             recreated = await self._recreate_task_from_cancelled(
@@ -1007,6 +1089,18 @@ def _task_by_id(tasks: list[Task], task_id: str) -> Task | None:
     for task in tasks:
         if task.task_id == task_id:
             return task
+    return None
+
+
+def _pending_interaction_request_for_task(context, task_id: str) -> dict[str, object] | None:
+    requests = context.interaction_requests or []
+    for request in requests:
+        if (
+            isinstance(request, dict)
+            and request.get("task_id") == task_id
+            and request.get("status") == "pending"
+        ):
+            return request
     return None
 
 

@@ -93,6 +93,9 @@ class SessionManager:
     def drop_live_session(self, execution_session_id: str) -> None:
         self._live_sessions.pop(execution_session_id, None)
 
+    def get_live_session(self, execution_session_id: str) -> ExecutorSession | None:
+        return self._live_sessions.get(execution_session_id)
+
 
 def _session_is_alive(session: ExecutorSession) -> bool:
     if isinstance(session, AcpxExecutorSession):

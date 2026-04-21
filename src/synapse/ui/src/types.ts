@@ -5,7 +5,10 @@ export type ConnectionStatus =
   | "disconnected"
   | "error";
 
-export type SessionActionType = "send_message" | "send_command";
+export type SessionActionType =
+  | "send_message"
+  | "send_command"
+  | "resolve_interaction_request";
 
 export type TaskStatus =
   | "created"
@@ -33,6 +36,27 @@ export type TaskCommandType =
   | "preempt_task"
   | "resume_task"
   | "retry_task";
+
+export type InteractionRequestKind = "permission" | "question" | "confirmation";
+export type InteractionRequestStatus =
+  | "pending"
+  | "approved"
+  | "denied"
+  | "answered"
+  | "resolved"
+  | "cancelled"
+  | "expired";
+
+export type AttentionItemKind =
+  | "permission_request"
+  | "question_request"
+  | "confirmation_request"
+  | "task_paused"
+  | "task_resumed"
+  | "task_blocked"
+  | "task_completed";
+
+export type AttentionItemStatus = "active" | "acted" | "dismissed" | "expired";
 
 export interface Task {
   task_id: string;
@@ -155,6 +179,48 @@ export interface NotificationCandidate {
   requires_immediate_delivery: boolean;
 }
 
+export interface InteractionRequest {
+  request_id: string;
+  task_id: string;
+  execution_session_id: string | null;
+  run_id: string | null;
+  executor_type: string | null;
+  kind: InteractionRequestKind;
+  status: InteractionRequestStatus;
+  prompt: string;
+  details: Record<string, unknown>;
+  available_actions: string[];
+  answer_schema: Record<string, unknown> | null;
+  resume_strategy: string;
+  opaque: Record<string, unknown>;
+  created_at: string;
+  resolved_at: string | null;
+}
+
+export interface AttentionItem {
+  attention_id: string;
+  source: string;
+  kind: AttentionItemKind;
+  priority: string;
+  status: AttentionItemStatus;
+  title: string;
+  body: string;
+  task_id: string | null;
+  request_id: string | null;
+  actions: Array<Record<string, unknown>>;
+  dedupe_key: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface ExecutorCapability {
+  executor_type: string;
+  supports_pause: boolean;
+  supports_cancel: boolean;
+  supports_resume: boolean;
+  supports_follow_up: boolean;
+}
+
 export interface ConversationHistoryEntry {
   role: string;
   text: string;
@@ -171,6 +237,9 @@ export interface SessionSnapshot {
   summaries: TaskSummary[];
   notification_candidates: NotificationCandidate[];
   personas: Persona[];
+  interaction_requests: InteractionRequest[];
+  attention_items: AttentionItem[];
+  executor_capabilities: ExecutorCapability[];
 }
 
 export interface Persona {

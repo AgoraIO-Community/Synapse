@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from dataclasses import replace
 from dataclasses import dataclass, field
 
@@ -13,23 +14,31 @@ from synapse.communication.tools import build_default_tool_registry
 from synapse.communication.types import CommunicationTurnResult
 from synapse.executor_adapters.acpx import AcpxExecutor
 from synapse.execution import ExecutionBrain
-from synapse.executor_adapters.codex import CodexExecutor
+from synapse.executor_adapters.codex import CodexExecutor, CodexExecutorSession
 from synapse.executor_adapters.mock import MockExecutor
 from synapse.executor_core import ExecutorRegistry, UnknownExecutorError
+from synapse.interaction import InteractionManager
+from synapse.interaction.sanitization import (
+    sanitize_interaction_request_details,
+    sanitize_interaction_request_opaque,
+)
 from synapse.notification import NotificationManager
 from synapse.observability.bootstrap import SessionObservability, build_session_observability
 from synapse.observability.context import bind_diagnostic_context
 from synapse.observability.reason_codes import COMMUNICATION_MODEL_FAILURE
 from synapse.protocol import (
+    AttentionItemKind,
     BindingStatus,
     ExecutionRun,
     ExecutionSession,
+    InteractionRequest,
     NotificationDeliveryStatus,
     RunStatus,
     TaskCommand,
     TaskCommandType,
     TaskStatus,
     TaskSummary,
+    Task,
 )
 
 from .config import Settings
@@ -50,6 +59,8 @@ from .models import (
 
 
 FALLBACK_ASSISTANT_ERROR_MESSAGE = "Sorry, something went wrong while generating the reply."
+LOGGER = logging.getLogger(__name__)
+MAX_TASK_INSTRUCTION_CHARS = 4000
 
 
 @dataclass(slots=True)
@@ -68,6 +79,7 @@ class SessionRuntime:
     communication_brain: CommunicationBrain
     execution_brain: ExecutionBrain
     notification_manager: NotificationManager
+    interaction_manager: InteractionManager
     observability: SessionObservability
     subscribers: list[asyncio.Queue[SessionStreamEventBase]] = field(default_factory=list)
     _message_queue: asyncio.Queue[PendingMessageRequest] = field(default_factory=asyncio.Queue)
@@ -91,6 +103,17 @@ class SessionRuntime:
         execution_modes = await self.blackboard.list_execution_modes()
         notification_candidates = await self.blackboard.list_notification_candidates()
         bindings = await self.blackboard.list_bindings()
+        interaction_requests = await self.blackboard.list_interaction_requests()
+        sanitized_interaction_requests = [
+            request.model_copy(
+                update={
+                    "opaque": sanitize_interaction_request_opaque(request.opaque),
+                    "details": sanitize_interaction_request_details(request.details),
+                }
+            )
+            for request in interaction_requests
+        ]
+        attention_items = await self.blackboard.list_attention_items()
         summaries = [
             summary
             for summary in [await self.blackboard.get_summary(task.task_id) for task in tasks]
@@ -106,6 +129,9 @@ class SessionRuntime:
             summaries=summaries,
             notification_candidates=notification_candidates,
             personas=await self.blackboard.list_personas(),
+            interaction_requests=sanitized_interaction_requests,
+            attention_items=attention_items,
+            executor_capabilities=self._executor_capabilities_snapshot(),
         )
 
     async def conversation_snapshot(self) -> ConversationSnapshot:
@@ -236,11 +262,41 @@ class SessionRuntime:
         # double-execution of the same task.
         self._execution_task = asyncio.create_task(self._run_execution_loop())
 
+    async def validate_task_command(self, task: Task, command_type: TaskCommandType) -> str | None:
+        if command_type not in {TaskCommandType.PAUSE_TASK, TaskCommandType.PREEMPT_TASK}:
+            if command_type == TaskCommandType.RESUME_TASK:
+                if task.status == TaskStatus.WAITING_USER_INPUT:
+                    return (
+                        "This task is waiting for user input. Resolve the pending interaction request "
+                        "instead of using resume."
+                    )
+                if task.status != TaskStatus.PAUSED:
+                    return "Only paused tasks can be resumed."
+            return None
+        if task.status in {TaskStatus.CREATED, TaskStatus.QUEUED}:
+            return None
+        run, executor_type = await self._resolve_task_command_target(task)
+        if run is None and executor_type is None:
+            return "Task is not actively running."
+        if executor_type is None:
+            return "Task executor could not be determined."
+        try:
+            executor = self.registry.get(executor_type)
+        except UnknownExecutorError:
+            return f"Executor '{executor_type}' is not available."
+        if not executor.get_capabilities().supports_pause:
+            return f"Executor '{executor_type}' does not support pause."
+        return None
+
     async def apply_command(self, command: TaskCommand) -> list[str]:
-        await self.blackboard.append_command(command)
         task = await self.blackboard.get_task(command.task_id)
         if task is None:
             return []
+        validation_error = await self.validate_task_command(task, command.command_type)
+        if validation_error is not None:
+            raise ValueError(validation_error)
+
+        await self.blackboard.append_command(command)
 
         binding = await self.blackboard.get_binding(task.task_id)
         execution_session = None
@@ -249,6 +305,7 @@ class SessionRuntime:
         run = await self._select_command_run(execution_session)
 
         if command.command_type in {TaskCommandType.PAUSE_TASK, TaskCommandType.PREEMPT_TASK}:
+            await self._capture_pause_resume_handle(execution_session, run)
             task.status = TaskStatus.PAUSED
             await self._pause_live_run(run)
             if run is not None:
@@ -272,6 +329,11 @@ class SessionRuntime:
                     latest_user_visible_status="paused",
                     needs_user_input=False,
                 )
+            )
+            await self.interaction_manager.add_task_signal_attention(
+                task=task,
+                kind=AttentionItemKind.TASK_PAUSED,
+                body=f"{task.title} is paused.",
             )
         elif command.command_type == TaskCommandType.CANCEL_TASK:
             task.status = TaskStatus.CANCELLED
@@ -304,6 +366,7 @@ class SessionRuntime:
                 )
             )
             await self._suppress_pending_notifications(task.task_id)
+            await self.interaction_manager.cancel_requests_for_task(task.task_id)
         elif command.command_type in {TaskCommandType.RESUME_TASK, TaskCommandType.RETRY_TASK}:
             task.status = TaskStatus.QUEUED
             if execution_session is not None and run is not None and execution_session.active_run_id == run.run_id:
@@ -328,7 +391,80 @@ class SessionRuntime:
                     needs_user_input=False,
                 )
             )
+            if command.command_type == TaskCommandType.RESUME_TASK:
+                await self.interaction_manager.add_task_signal_attention(
+                    task=task,
+                    kind=AttentionItemKind.TASK_RESUMED,
+                    body=f"{task.title} is queued to continue.",
+                )
 
+        await self.blackboard.put_task(task)
+        return [task.task_id]
+
+    async def resolve_interaction_request(
+        self,
+        request_id: str,
+        *,
+        action: str,
+        answer_text: str | None = None,
+        option_id: str | None = None,
+        reason: str | None = None,
+    ) -> list[str]:
+        resolution = await self.interaction_manager.resolve_request(
+            request_id,
+            action=action,
+            answer_text=answer_text,
+            option_id=option_id,
+            reason=reason,
+        )
+        native_resolved = await self._respond_to_native_interaction_request(
+            resolution.request,
+            action=action,
+            answer_text=answer_text,
+        )
+        if native_resolved:
+            await self.blackboard.put_interaction_request(
+                resolution.request.model_copy(update={"resume_strategy": "native_response"})
+            )
+            return [resolution.request.task_id]
+        task = await self.blackboard.get_task(resolution.request.task_id)
+        if task is None:
+            raise KeyError(f"Task '{resolution.request.task_id}' not found.")
+
+        await self._detach_follow_up_live_session(resolution.request)
+        task.latest_instruction = self._merge_follow_up_instruction(
+            task.latest_instruction,
+            resolution.follow_up_instruction,
+        )
+        task.status = TaskStatus.QUEUED
+
+        binding = await self.blackboard.get_binding(task.task_id)
+        execution_session = None
+        if binding is not None and binding.execution_session_id is not None:
+            execution_session = await self.blackboard.get_session(binding.execution_session_id)
+        if execution_session is not None and resolution.request.run_id is not None:
+            if execution_session.active_run_id == resolution.request.run_id:
+                execution_session.active_run_id = None
+                await self.blackboard.put_session(execution_session)
+        if binding is not None:
+            await self.blackboard.put_binding(
+                binding.model_copy(
+                    update={
+                        "claimed_by": None,
+                        "claim_expires_at": None,
+                        "binding_status": BindingStatus.RELEASED,
+                    }
+                )
+            )
+        await self.blackboard.put_summary(
+            TaskSummary(
+                task_id=task.task_id,
+                operational_summary=f"Queued: {task.title}",
+                conversational_summary=f"I queued {task.title} again.",
+                latest_user_visible_status="queued",
+                needs_user_input=False,
+            )
+        )
         await self.blackboard.put_task(task)
         return [task.task_id]
 
@@ -383,6 +519,102 @@ class SessionRuntime:
         except Exception:
             return
 
+    async def _capture_pause_resume_handle(
+        self,
+        execution_session: ExecutionSession | None,
+        run: ExecutionRun | None,
+    ) -> None:
+        if execution_session is None or run is None:
+            return
+        try:
+            executor = self.registry.get(run.executor_type)
+        except UnknownExecutorError:
+            return
+        if not executor.get_capabilities().supports_resume:
+            return
+        live_session = self.execution_brain.get_live_session(execution_session.execution_session_id)
+        if live_session is None:
+            return
+        resume_handle = None
+        if isinstance(executor, CodexExecutor) and isinstance(live_session, CodexExecutorSession):
+            resume_handle = executor.build_resume_handle(live_session)
+        elif hasattr(executor, "build_resume_handle"):
+            try:
+                resume_handle = executor.build_resume_handle(live_session)
+            except Exception:
+                resume_handle = None
+        if resume_handle is None:
+            return
+        execution_session.latest_resume_handle = resume_handle
+        await self.blackboard.put_session(execution_session)
+
+    async def _respond_to_native_interaction_request(
+        self,
+        request: InteractionRequest,
+        *,
+        action: str,
+        answer_text: str | None,
+    ) -> bool:
+        native_response = request.opaque.get("native_response")
+        if not isinstance(native_response, dict):
+            return False
+        method = native_response.get("method")
+        params = native_response.get("params")
+        request_id = native_response.get("request_id")
+        if not isinstance(method, str) or not isinstance(params, dict):
+            return False
+        execution_session_id = request.execution_session_id
+        if not isinstance(execution_session_id, str) or not execution_session_id:
+            return False
+        live_session = self.execution_brain.get_live_session(execution_session_id)
+        if not isinstance(live_session, CodexExecutorSession):
+            return False
+        if request_id is None:
+            return False
+        try:
+            await live_session.client.respond_to_request(
+                request_id=request_id,
+                method=method,
+                params=params,
+                action=action,
+                answer_text=answer_text,
+            )
+        except Exception:
+            LOGGER.warning(
+                "Failed to send native interaction response for %s in session %s.",
+                request.request_id,
+                execution_session_id,
+                exc_info=True,
+            )
+            return False
+        live_session.mark_blocked_resolved()
+        return True
+
+    async def _detach_follow_up_live_session(self, request: InteractionRequest) -> None:
+        execution_session_id = request.execution_session_id
+        if not isinstance(execution_session_id, str) or not execution_session_id:
+            return
+        live_session = self.execution_brain.get_live_session(execution_session_id)
+        if not isinstance(live_session, CodexExecutorSession):
+            return
+        execution_session = await self.blackboard.get_session(execution_session_id)
+        run = (
+            await self.blackboard.get_run(request.run_id)
+            if isinstance(request.run_id, str) and request.run_id
+            else None
+        )
+        await self._capture_pause_resume_handle(execution_session, run)
+        try:
+            await live_session.close()
+        except Exception:
+            LOGGER.warning(
+                "Failed to close blocked Codex session %s while preparing follow-up run.",
+                execution_session_id,
+                exc_info=True,
+            )
+        finally:
+            self.execution_brain.drop_live_session(execution_session_id)
+
     async def _suppress_pending_notifications(self, task_id: str) -> None:
         candidates = await self.blackboard.list_notification_candidates()
         for candidate in candidates:
@@ -395,6 +627,69 @@ class SessionRuntime:
                         update={"delivery_status": NotificationDeliveryStatus.SUPPRESSED}
                     )
                 )
+
+    async def _resolve_task_command_target(
+        self,
+        task: Task,
+    ) -> tuple[ExecutionRun | None, str | None]:
+        execution_session = None
+        for session in await self.blackboard.list_sessions():
+            if session.task_id == task.task_id:
+                execution_session = session
+                break
+        run = None
+        if execution_session is not None:
+            candidate_run_ids = []
+            if execution_session.active_run_id:
+                candidate_run_ids.append(execution_session.active_run_id)
+            if (
+                execution_session.latest_run_id
+                and execution_session.latest_run_id not in candidate_run_ids
+            ):
+                candidate_run_ids.append(execution_session.latest_run_id)
+            for run_id in candidate_run_ids:
+                run = await self.blackboard.get_run(run_id)
+                if run is not None and run.status in {
+                    RunStatus.CREATED,
+                    RunStatus.ASSIGNED,
+                    RunStatus.RUNNING,
+                    RunStatus.BLOCKED,
+                    RunStatus.PAUSED,
+                }:
+                    return run, run.executor_type
+        executor_type = task.preferred_executor
+        return run, executor_type
+
+    def _executor_capabilities_snapshot(self) -> list[dict[str, object]]:
+        return [
+            {
+                "executor_type": capability.executor_type,
+                "supports_pause": capability.supports_pause,
+                "supports_cancel": capability.supports_cancel,
+                "supports_resume": capability.supports_resume,
+                "supports_follow_up": capability.supports_follow_up,
+            }
+            for capability in self.registry.list_capabilities()
+        ]
+
+    def _merge_follow_up_instruction(
+        self,
+        existing: str | None,
+        follow_up: str,
+    ) -> str:
+        if existing and existing.strip():
+            merged = f"{existing.strip()}\n\nFollow-up:\n{follow_up}"
+        else:
+            merged = follow_up
+        if len(merged) <= MAX_TASK_INSTRUCTION_CHARS:
+            return merged
+        marker = "[Earlier instructions truncated]\n\n"
+        suffix = f"\n\nFollow-up:\n{follow_up}"
+        available = MAX_TASK_INSTRUCTION_CHARS - len(marker) - len(suffix)
+        if available <= 0:
+            return merged[-MAX_TASK_INSTRUCTION_CHARS:]
+        preserved_existing = (existing or "").strip()[-available:].lstrip()
+        return f"{marker}{preserved_existing}{suffix}"
 
     async def _run_execution_loop(self) -> None:
         with bind_diagnostic_context(conversation_id=self.session_id):
@@ -603,6 +898,7 @@ class SessionRuntime:
 
                 for event in blackboard_events:
                     with bind_diagnostic_context(conversation_id=self.session_id):
+                        await self.interaction_manager.handle_blackboard_write(event)
                         await self.notification_manager.handle_blackboard_write(event)
         except asyncio.CancelledError:
             raise
@@ -708,7 +1004,12 @@ def create_session_runtime(
             )
         )
     if settings.codex_executor_enabled:
-        registry.register(CodexExecutor(command=settings.codex_command))
+        registry.register(
+            CodexExecutor(
+                command=settings.codex_command,
+                blocked_wait_timeout_seconds=settings.codex_blocked_wait_timeout_seconds,
+            )
+        )
     default_executor_type = (
         "acpx"
         if settings.acpx_executor_enabled
@@ -719,6 +1020,7 @@ def create_session_runtime(
         blackboard,
         executor_types=registry.list_executor_types(),
         default_executor_type=default_executor_type,
+        apply_interaction_request=None,
     )
     communication_brain = CommunicationBrain(
         blackboard,
@@ -742,6 +1044,7 @@ def create_session_runtime(
         conversation_id=session_id,
         observability=observability.notification,
     )
+    interaction_manager = InteractionManager(blackboard)
     runtime = SessionRuntime(
         session_id=session_id,
         blackboard=blackboard,
@@ -750,11 +1053,15 @@ def create_session_runtime(
         communication_brain=communication_brain,
         execution_brain=execution_brain,
         notification_manager=notification_manager,
+        interaction_manager=interaction_manager,
         observability=observability,
     )
     control_task_handler = tool_registry.get("control_task").handler
     if hasattr(control_task_handler, "set_apply_callback"):
         control_task_handler.set_apply_callback(runtime.apply_command)
+    interaction_request_handler = tool_registry.get("resolve_interaction_request").handler
+    if hasattr(interaction_request_handler, "set_apply_callback"):
+        interaction_request_handler.set_apply_callback(runtime.resolve_interaction_request)
     communication_brain.set_trace_callback(runtime._record_llm_trace)
     notification_manager.set_conversation_event_callback(runtime._broadcast_conversation_append)
     runtime.start_notification_processing()

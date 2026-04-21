@@ -4,7 +4,11 @@ from uuid import uuid4
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from pydantic import ValidationError
 
-from synapse.api.models import SendCommandSocketAction, SendMessageSocketAction
+from synapse.api.models import (
+    ResolveInteractionRequestSocketAction,
+    SendCommandSocketAction,
+    SendMessageSocketAction,
+)
 from synapse.communication.resolver import TaskResolver, describe_candidates
 from synapse.observability.context import bind_diagnostic_context
 from synapse.protocol import TaskCommand
@@ -75,6 +79,9 @@ async def _handle_client_action(session, queue: asyncio.Queue, payload: object) 
         return
     if action_type_value == "send_command":
         await _handle_send_command(session, queue, payload)
+        return
+    if action_type_value == "resolve_interaction_request":
+        await _handle_resolve_interaction_request(session, queue, payload)
         return
 
     await session.publish_private_event(
@@ -217,6 +224,24 @@ async def _handle_send_command(session, queue: asyncio.Queue, payload: dict[str,
             ),
         )
         return
+    validation_error = await session.validate_task_command(task, action.command_type)
+    if validation_error is not None:
+        session.observability.api.ws_action_rejected(
+            conversation_id=session.session_id,
+            request_id=action.request_id,
+            action_type=action.type,
+            error_code="unsupported_command",
+        )
+        await session.publish_private_event(
+            queue,
+            session.action_rejected_event(
+                action.request_id,
+                action_type=action.type,
+                error_code="unsupported_command",
+                message=validation_error,
+            ),
+        )
+        return
 
     command = TaskCommand(
         command_id=f"cmd-{uuid4().hex[:8]}",
@@ -251,6 +276,78 @@ async def _handle_send_command(session, queue: asyncio.Queue, payload: dict[str,
         task_id=task.task_id,
     ):
         await session.apply_command(command)
+    session.schedule_execution()
+    await session.publish_snapshot()
+
+
+async def _handle_resolve_interaction_request(
+    session,
+    queue: asyncio.Queue,
+    payload: dict[str, object],
+) -> None:
+    try:
+        action = ResolveInteractionRequestSocketAction.model_validate(payload)
+    except ValidationError as exc:
+        session.observability.api.ws_action_rejected(
+            conversation_id=session.session_id,
+            request_id=_request_id_from_payload(payload),
+            action_type="resolve_interaction_request",
+            error_code="invalid_payload",
+        )
+        await session.publish_private_event(
+            queue,
+            session.action_rejected_event(
+                _request_id_from_payload(payload),
+                action_type="resolve_interaction_request",
+                error_code="invalid_payload",
+                message=str(exc),
+            ),
+        )
+        return
+
+    try:
+        affected_task_ids = await session.resolve_interaction_request(
+            action.interaction_request_id,
+            action=action.action,
+            answer_text=action.answer_text,
+            option_id=action.option_id,
+            reason=action.reason,
+        )
+    except KeyError as exc:
+        await session.publish_private_event(
+            queue,
+            session.action_rejected_event(
+                action.request_id,
+                action_type=action.type,
+                error_code="interaction_request_not_found",
+                message=str(exc),
+            ),
+        )
+        return
+    except ValueError as exc:
+        await session.publish_private_event(
+            queue,
+            session.action_rejected_event(
+                action.request_id,
+                action_type=action.type,
+                error_code="invalid_interaction_resolution",
+                message=str(exc),
+            ),
+        )
+        return
+
+    await session.publish_private_event(
+        queue,
+        session.action_accepted_event(
+            action.request_id,
+            action_type=action.type,
+        ),
+    )
+    session.observability.api.ws_action_accepted(
+        conversation_id=session.session_id,
+        request_id=action.request_id,
+        action_type=action.type,
+    )
     session.schedule_execution()
     await session.publish_snapshot()
 
