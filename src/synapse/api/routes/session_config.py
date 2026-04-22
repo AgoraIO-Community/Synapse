@@ -3,6 +3,8 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
+from synapse.communication.persona_pool import save_communication_persona_prompt_to_file
+
 router = APIRouter()
 
 ALLOWED_CONFIG_KEYS = frozenset({
@@ -48,4 +50,6 @@ async def put_session_config(
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     await session.blackboard.put_session_config(key, body.value)
+    if key == "communication_persona_prompt":
+        save_communication_persona_prompt_to_file(body.value)
     return {"key": key, "value": body.value}
