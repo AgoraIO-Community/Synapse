@@ -9,16 +9,16 @@ from synapse.protocol import (
     AckMessage,
     CancelRunCommand,
     DispatchRunCommand,
-    ExecutorHostExecutor,
+    ExecutorNodeExecutor,
     InteractionRequest,
-    RegisterHostMessage,
+    RegisterNodeMessage,
     RunEventMessage,
     SupplyInteractionResponseCommand,
 )
 
 
 @dataclass(slots=True)
-class HostRunEnvelope:
+class NodeRunEnvelope:
     event: ExecutorEvent
     latest_resume_handle: dict[str, object] | None = None
 
@@ -31,18 +31,18 @@ class RunDispatchState:
 
 
 @dataclass(slots=True)
-class HostConnectionState:
-    host_id: str | None = None
+class NodeConnectionState:
+    node_id: str | None = None
     metadata: dict[str, object] = field(default_factory=dict)
-    executors: dict[str, ExecutorHostExecutor] = field(default_factory=dict)
+    executors: dict[str, ExecutorNodeExecutor] = field(default_factory=dict)
     connected: bool = False
 
 
-class ExecutorHostAuthError(RuntimeError):
+class ExecutorNodeAuthError(RuntimeError):
     pass
 
 
-class ExecutorHostManager:
+class ExecutorNodeManager:
     def __init__(
         self,
         *,
@@ -50,9 +50,9 @@ class ExecutorHostManager:
     ) -> None:
         self._detached_executor_types = detached_executor_types
         self._connection: Any = None
-        self._connection_state = HostConnectionState()
+        self._connection_state = NodeConnectionState()
         self._send_lock = asyncio.Lock()
-        self._run_queues: dict[str, asyncio.Queue[HostRunEnvelope]] = {}
+        self._run_queues: dict[str, asyncio.Queue[NodeRunEnvelope]] = {}
         self._run_states: dict[str, RunDispatchState] = {}
 
     @property
@@ -60,8 +60,8 @@ class ExecutorHostManager:
         return self._detached_executor_types
 
     @property
-    def host_id(self) -> str | None:
-        return self._connection_state.host_id
+    def node_id(self) -> str | None:
+        return self._connection_state.node_id
 
     @property
     def connected(self) -> bool:
@@ -77,30 +77,30 @@ class ExecutorHostManager:
         if not self.is_detached_executor(executor_type):
             return {
                 "connected": True,
-                "host_id": None,
+                "node_id": None,
                 "availability_reason": None,
             }
         if self.is_executor_connected(executor_type):
             return {
                 "connected": True,
-                "host_id": self._connection_state.host_id,
+                "node_id": self._connection_state.node_id,
                 "availability_reason": None,
             }
-        reason = "host_disconnected"
+        reason = "node_disconnected"
         if self.connected and executor_type not in self._connection_state.executors:
-            reason = "host_missing_executor"
+            reason = "node_missing_executor"
         return {
             "connected": False,
-            "host_id": self.host_id,
+            "node_id": self.node_id,
             "availability_reason": reason,
         }
 
-    async def register_connection(self, websocket: Any, register: RegisterHostMessage) -> AckMessage:
+    async def register_connection(self, websocket: Any, register: RegisterNodeMessage) -> AckMessage:
         if self._connection is not None and self._connection is not websocket and self.connected:
-            raise ExecutorHostAuthError("An executor host is already connected.")
+            raise ExecutorNodeAuthError("An executor node is already connected.")
         self._connection = websocket
-        self._connection_state = HostConnectionState(
-            host_id=register.host_id,
+        self._connection_state = NodeConnectionState(
+            node_id=register.node_id,
             metadata=dict(register.metadata),
             executors={executor.executor_type: executor for executor in register.executors},
             connected=True,
@@ -109,25 +109,25 @@ class ExecutorHostManager:
 
     async def disconnect(self, *, reason: str) -> None:
         self._connection = None
-        host_id = self._connection_state.host_id
-        self._connection_state = HostConnectionState(host_id=host_id, connected=False)
+        node_id = self._connection_state.node_id
+        self._connection_state = NodeConnectionState(node_id=node_id, connected=False)
         for run_id, queue in list(self._run_queues.items()):
             state = self._run_states.get(run_id)
             if state is None:
                 continue
             await queue.put(
-                HostRunEnvelope(
+                NodeRunEnvelope(
                     event=ExecutorEvent(
                         run_id=run_id,
                         session_id=state.execution_session_id,
                         event_type=ExecutorEventType.WAITING_EXECUTOR,
                         message=(
-                            f"Waiting for executor host '{host_id}' to reconnect."
-                            if host_id
-                            else "Waiting for detached executor host to reconnect."
+                            f"Waiting for executor node '{node_id}' to reconnect."
+                            if node_id
+                            else "Waiting for detached executor node to reconnect."
                         ),
                         metadata={
-                            "executor_host_id": host_id,
+                            "executor_node_id": node_id,
                             "availability_reason": reason,
                         },
                     )
@@ -147,8 +147,8 @@ class ExecutorHostManager:
         workspace_id: str | None,
         task_metadata: dict[str, object],
         latest_resume_handle: dict[str, object] | None,
-    ) -> asyncio.Queue[HostRunEnvelope]:
-        queue: asyncio.Queue[HostRunEnvelope] = asyncio.Queue()
+    ) -> asyncio.Queue[NodeRunEnvelope]:
+        queue: asyncio.Queue[NodeRunEnvelope] = asyncio.Queue()
         self._run_queues[run_id] = queue
         self._run_states[run_id] = RunDispatchState(
             run_id=run_id,
@@ -156,16 +156,16 @@ class ExecutorHostManager:
             executor_type=executor_type,
         )
         if not self.is_executor_connected(executor_type):
-            host_label = self.host_id or "detached executor host"
+            node_label = self.node_id or "detached executor node"
             await queue.put(
-                HostRunEnvelope(
+                NodeRunEnvelope(
                     event=ExecutorEvent(
                         run_id=run_id,
                         session_id=execution_session_id,
                         event_type=ExecutorEventType.WAITING_EXECUTOR,
-                        message=f"Waiting for {host_label} to connect.",
+                        message=f"Waiting for {node_label} to connect.",
                         metadata={
-                            "executor_host_id": self.host_id,
+                            "executor_node_id": self.node_id,
                             "availability_reason": self.executor_availability(executor_type)["availability_reason"],
                         },
                     )
@@ -242,7 +242,7 @@ class ExecutorHostManager:
             else None
         )
         await queue.put(
-            HostRunEnvelope(
+            NodeRunEnvelope(
                 event=ExecutorEvent(
                     run_id=message.run_id,
                     session_id=message.session_id,
@@ -262,6 +262,6 @@ class ExecutorHostManager:
     async def _send_json(self, payload: dict[str, object]) -> None:
         websocket = self._connection
         if websocket is None:
-            raise RuntimeError("No executor host websocket is connected.")
+            raise RuntimeError("No executor node websocket is connected.")
         async with self._send_lock:
             await websocket.send_json(payload)

@@ -20,7 +20,7 @@ WORKSPACES_DIR = SYNAPSE_HOME_DIR / "workspaces"
 def create_workspace(task_id: str) -> str:
     """Create a durable workspace id for a task.
 
-    The detached executor host resolves this id to a local filesystem path.
+    The detached executor node resolves this id to a local filesystem path.
     """
     return f"ws-{task_id.replace('task-', '')}"
 

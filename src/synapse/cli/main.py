@@ -55,7 +55,7 @@ LEGACY_REAL_EXECUTOR_ENV_KEYS = {
 }
 SYSTEMD_UNIT_NAME = "synapse.service"
 SYSTEMD_SERVICE_DIR = Path("/etc/systemd/system")
-REMOVED_RUNTIME_KEYS = {"executor_host_id", "executor_host_token"}
+REMOVED_RUNTIME_KEYS = {"executor_node_id", "executor_node_token"}
 START_PUBLIC_PORT = 8000
 DEFAULT_ENV_TEMPLATE_LINES = (
     "OPENAI_API_KEY=your_openai_api_key_here",
@@ -145,10 +145,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="Run the connector host with reload enabled.",
     )
 
-    executor_parser = subparsers.add_parser("executor", help="Configure and run the detached executor host.")
+    executor_parser = subparsers.add_parser("executor", help="Configure and run the detached executor node.")
     executor_subparsers = executor_parser.add_subparsers(dest="executor_command", required=True)
-    executor_subparsers.add_parser("setup", help="Interactively configure the detached executor host.")
-    executor_subparsers.add_parser("run", help="Run the detached executor host.")
+    executor_subparsers.add_parser("setup", help="Interactively configure the detached executor node.")
+    executor_subparsers.add_parser("run", help="Run the detached executor node.")
 
     service_parser = subparsers.add_parser("service", help="Install and control the Ubuntu systemd service.")
     service_subparsers = service_parser.add_subparsers(dest="service_command", required=True)
@@ -233,7 +233,7 @@ def cmd_setup(_args: argparse.Namespace) -> int:
                 runtime=_resolved_runtime_config(existing_config_yaml, setup_values.runtime_values),
                 connector_host=_existing_connector_host_config(existing_config_yaml),
                 connectors=_existing_connectors_config(existing_config_yaml),
-                executor_host=_existing_executor_host_config(existing_config_yaml),
+                executor_node=_existing_executor_node_config(existing_config_yaml),
                 executors=_existing_executors_config(existing_config_yaml),
             ),
         )
@@ -406,7 +406,7 @@ def cmd_executor_setup(_args: argparse.Namespace) -> int:
 
 def cmd_executor_run(_args: argparse.Namespace) -> int:
     venv_python = require_venv_python()
-    return run_checked(executor_host_command(venv_python), cwd=ROOT)
+    return run_checked(executor_node_command(venv_python), cwd=ROOT)
 
 
 def cmd_service_install(args: argparse.Namespace) -> int:
@@ -482,11 +482,11 @@ def connector_command(venv_python: Path, host: str, port: int, *, reload: bool) 
     return command
 
 
-def executor_host_command(venv_python: Path) -> list[str]:
+def executor_node_command(venv_python: Path) -> list[str]:
     return [
         str(venv_python),
         "-m",
-        "synapse.executors.host",
+        "synapse.executors.node",
     ]
 
 
@@ -971,7 +971,7 @@ def resolve_connector_setup_values(
                 runtime=_resolved_runtime_config(existing_config_yaml, runtime_values),
                 connector_host=_default_connector_host_config(),
                 connectors={},
-                executor_host=_existing_executor_host_config(existing_config_yaml),
+                executor_node=_existing_executor_node_config(existing_config_yaml),
                 executors=_existing_executors_config(existing_config_yaml),
             ),
         )
@@ -1032,7 +1032,7 @@ def resolve_connector_setup_values(
             "enabled_connectors": connectors,
         },
         connectors=connector_blocks,
-        executor_host=_existing_executor_host_config(existing_config_yaml),
+        executor_node=_existing_executor_node_config(existing_config_yaml),
         executors=_existing_executors_config(existing_config_yaml),
     )
     return ConnectorSetupResult(
@@ -1060,14 +1060,14 @@ def resolve_executor_setup_values(
         default_selected=_existing_executor_enabled_types(existing_config_yaml) or runtime_executor_types
     )
     synapse_base_url = prompt_text_value(
-        "Synapse service base URL for executor host",
-        default_value=_existing_yaml_value(existing_config_yaml, "executor_host", "synapse_base_url")
+        "Synapse service base URL for executor node",
+        default_value=_existing_yaml_value(existing_config_yaml, "executor_node", "synapse_base_url")
         or "http://127.0.0.1:8000",
         required=True,
     )
-    host_id = prompt_text_value(
-        "Executor host id",
-        default_value=_executor_host_id_default(existing_config_yaml),
+    node_id = prompt_text_value(
+        "Executor node id",
+        default_value=_executor_node_id_default(existing_config_yaml),
         required=True,
     )
     executors_block = _existing_executors_config(existing_config_yaml)
@@ -1117,10 +1117,10 @@ def resolve_executor_setup_values(
         runtime=runtime_values,
         connector_host=_existing_connector_host_config(existing_config_yaml),
         connectors=_existing_connectors_config(existing_config_yaml),
-        executor_host={
+        executor_node={
             "enabled": True,
             "synapse_base_url": synapse_base_url,
-            "host_id": host_id,
+            "node_id": node_id,
             "enabled_executors": enabled_executors,
         },
         executors={
@@ -1163,7 +1163,7 @@ def bootstrap_setup_files() -> None:
                     runtime=resolve_bootstrap_runtime_values(existing_values),
                     connector_host=_default_connector_host_config(),
                     connectors={},
-                    executor_host=_default_executor_host_config(),
+                    executor_node=_default_executor_node_config(),
                     executors={},
                 ),
             )
@@ -1540,11 +1540,11 @@ def load_connector_settings():
     return connector_config_module.load_connector_host_settings(env_file=ENV_LOCAL)
 
 
-def load_executor_host_settings():
+def load_executor_node_settings():
     import importlib
 
-    executor_host_config_module = importlib.import_module("synapse.executors.host.config")
-    return executor_host_config_module.load_executor_host_settings(env_file=ENV_LOCAL)
+    executor_node_config_module = importlib.import_module("synapse.executors.node.config")
+    return executor_node_config_module.load_executor_node_settings(env_file=ENV_LOCAL)
 
 
 def load_connector_settings_if_enabled():
@@ -1643,8 +1643,8 @@ def _existing_nested_value(raw_connector: dict[str, object], *path: str) -> str 
     return str(value)
 
 
-def _generated_executor_host_id() -> str:
-    return f"host-{uuid4().hex[:8]}"
+def _generated_executor_node_id() -> str:
+    return f"node-{uuid4().hex[:8]}"
 
 
 def _runtime_detached_executor_enabled(raw_connector_yaml: dict[str, object]) -> bool:
@@ -1678,10 +1678,10 @@ def _runtime_detached_executor_types(raw_connector_yaml: dict[str, object]) -> l
 
 
 def _existing_executor_enabled_types(raw_connector_yaml: dict[str, object]) -> list[str]:
-    raw_executor_host = raw_connector_yaml.get("executor_host")
-    if not isinstance(raw_executor_host, dict):
+    raw_executor_node = raw_connector_yaml.get("executor_node")
+    if not isinstance(raw_executor_node, dict):
         return []
-    raw_types = raw_executor_host.get("enabled_executors")
+    raw_types = raw_executor_node.get("enabled_executors")
     if not isinstance(raw_types, list):
         return []
     return [
@@ -1691,11 +1691,11 @@ def _existing_executor_enabled_types(raw_connector_yaml: dict[str, object]) -> l
     ]
 
 
-def _executor_host_id_default(raw_connector_yaml: dict[str, object]) -> str:
-    existing = _existing_yaml_value(raw_connector_yaml, "executor_host", "host_id")
-    if existing and existing != "default-host":
+def _executor_node_id_default(raw_connector_yaml: dict[str, object]) -> str:
+    existing = _existing_yaml_value(raw_connector_yaml, "executor_node", "node_id")
+    if existing and existing != "default-node":
         return existing
-    return _generated_executor_host_id()
+    return _generated_executor_node_id()
 
 
 def _coerce_bool_config_value(value: object, *, default: bool) -> bool:
@@ -1737,16 +1737,16 @@ def _existing_connectors_config(raw_connector_yaml: dict[str, object]) -> dict[s
     }
 
 
-def _existing_executor_host_config(raw_connector_yaml: dict[str, object]) -> dict[str, object]:
-    raw_executor_host = raw_connector_yaml.get("executor_host")
-    if isinstance(raw_executor_host, dict):
+def _existing_executor_node_config(raw_connector_yaml: dict[str, object]) -> dict[str, object]:
+    raw_executor_node = raw_connector_yaml.get("executor_node")
+    if isinstance(raw_executor_node, dict):
         return {
-            "enabled": _coerce_bool_config_value(raw_executor_host.get("enabled", False), default=False),
-            "synapse_base_url": raw_executor_host.get("synapse_base_url", "http://127.0.0.1:8000"),
-            "host_id": _executor_host_id_default(raw_connector_yaml),
+            "enabled": _coerce_bool_config_value(raw_executor_node.get("enabled", False), default=False),
+            "synapse_base_url": raw_executor_node.get("synapse_base_url", "http://127.0.0.1:8000"),
+            "node_id": _executor_node_id_default(raw_connector_yaml),
             "enabled_executors": _existing_executor_enabled_types(raw_connector_yaml),
         }
-    return _default_executor_host_config()
+    return _default_executor_node_config()
 
 
 def _existing_executors_config(raw_connector_yaml: dict[str, object]) -> dict[str, dict[str, object]]:
@@ -1784,11 +1784,11 @@ def _default_connector_host_config() -> dict[str, object]:
     }
 
 
-def _default_executor_host_config() -> dict[str, object]:
+def _default_executor_node_config() -> dict[str, object]:
     return {
         "enabled": False,
         "synapse_base_url": "http://127.0.0.1:8000",
-        "host_id": _generated_executor_host_id(),
+        "node_id": _generated_executor_node_id(),
         "enabled_executors": [],
     }
 
@@ -1803,7 +1803,7 @@ def render_connector_config(
     runtime: dict[str, object],
     connector_host: dict[str, object],
     connectors: dict[str, dict[str, object]],
-    executor_host: dict[str, object] | None = None,
+    executor_node: dict[str, object] | None = None,
     executors: dict[str, dict[str, object]] | None = None,
 ) -> str:
     lines = ["version: 1", ""]
@@ -1820,8 +1820,8 @@ def render_connector_config(
         lines.extend(_render_yaml_mapping(connectors, indent=2))
     else:
         lines.append("connectors: {}")
-    lines.extend(["", "executor_host:"])
-    lines.extend(_render_yaml_mapping(executor_host or _default_executor_host_config(), indent=2))
+    lines.extend(["", "executor_node:"])
+    lines.extend(_render_yaml_mapping(executor_node or _default_executor_node_config(), indent=2))
     lines.append("")
     if executors:
         lines.append("executors:")

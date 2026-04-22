@@ -4,7 +4,7 @@ from uuid import uuid4
 
 from synapse.executors.core import ExecutorCapabilities, ExecutorSession, ExecutorEventType
 
-from synapse.runtime.executor_host_manager import ExecutorHostManager
+from synapse.runtime.executor_node_manager import ExecutorNodeManager
 
 
 TERMINAL_EVENT_TYPES = {
@@ -21,7 +21,7 @@ class HostedExecutor:
         self,
         *,
         executor_type: str,
-        manager: ExecutorHostManager,
+        manager: ExecutorNodeManager,
         supports_resume: bool,
         supports_follow_up: bool,
         supports_pause: bool,
@@ -38,8 +38,8 @@ class HostedExecutor:
         )
 
     @property
-    def executor_host_id(self) -> str | None:
-        return self._manager.host_id
+    def executor_node_id(self) -> str | None:
+        return self._manager.node_id
 
     def get_capabilities(self) -> ExecutorCapabilities:
         return self._capabilities

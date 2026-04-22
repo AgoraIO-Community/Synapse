@@ -11,7 +11,7 @@ The Execution Brain owns:
 - execution classification decisions
 - interruption resolution on the execution side
 - best-effort live run pause/cancel handling for explicit task-control commands
-- detached executor-host availability and redispatch when the host reconnects
+- detached executor-node availability and redispatch when the host reconnects
 
 It should be driven by:
 
@@ -59,7 +59,7 @@ Execution-side interruption rule:
 
 Detached-host availability rule:
 
-- if a real executor host is unavailable, the task should move into
+- if a real executor node is unavailable, the task should move into
   `waiting_executor` state rather than failing immediately
 - reconnect should requeue matching waiting tasks and let normal execution
   scheduling dispatch them again

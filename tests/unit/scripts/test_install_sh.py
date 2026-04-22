@@ -39,8 +39,8 @@ def read_bootstrap_outputs(home: Path) -> tuple[str, str]:
     assert "SYNAPSE_CODEX_EXECUTOR_ENABLED" not in env_text
     assert '# Shared Synapse credentials written by `synapse setup` to ~/.synapse/.env' in env_text
     assert 'public_base_url: "http://127.0.0.1:8000"' in config_text
-    assert "executor_host:" in config_text
-    assert "host_id: host-bootstrap" in config_text
+    assert "executor_node:" in config_text
+    assert "node_id: node-bootstrap" in config_text
     assert "executors: {}" in config_text
 
     return env_text, config_text
@@ -124,10 +124,10 @@ connector_host:
 
 connectors: {{}}
 
-executor_host:
+executor_node:
   enabled: false
   synapse_base_url: "http://127.0.0.1:8000"
-  host_id: host-bootstrap
+  node_id: node-bootstrap
   enabled_executors: []
 
 executors: {{}}

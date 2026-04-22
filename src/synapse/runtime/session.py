@@ -43,7 +43,7 @@ from synapse.protocol import (
 )
 
 from .config import Settings
-from .executor_host_manager import ExecutorHostManager
+from .executor_node_manager import ExecutorNodeManager
 from .models import (
     ActionAcceptedStreamEvent,
     ActionRejectedStreamEvent,
@@ -83,7 +83,7 @@ class SessionRuntime:
     notification_manager: NotificationManager
     interaction_manager: InteractionManager
     observability: SessionObservability
-    executor_host_manager: ExecutorHostManager
+    executor_node_manager: ExecutorNodeManager
     subscribers: list[asyncio.Queue[SessionStreamEventBase]] = field(default_factory=list)
     _message_queue: asyncio.Queue[PendingMessageRequest] = field(default_factory=asyncio.Queue)
     _execution_task: asyncio.Task[None] | None = field(default=None, init=False, repr=False)
@@ -592,7 +592,7 @@ class SessionRuntime:
         action: str,
         answer_text: str | None,
     ) -> bool:
-        if await self.executor_host_manager.supply_interaction_response(
+        if await self.executor_node_manager.supply_interaction_response(
             request,
             action=action,
             answer_text=answer_text,
@@ -711,7 +711,7 @@ class SessionRuntime:
                 "supports_cancel": capability.supports_cancel,
                 "supports_resume": capability.supports_resume,
                 "supports_follow_up": capability.supports_follow_up,
-                **self.executor_host_manager.executor_availability(capability.executor_type),
+                **self.executor_node_manager.executor_availability(capability.executor_type),
             }
             for capability in self.registry.list_capabilities()
         ]
@@ -1031,9 +1031,9 @@ def create_session_runtime(
     *,
     model: CommunicationModel,
     settings: Settings,
-    executor_host_manager: ExecutorHostManager | None = None,
+    executor_node_manager: ExecutorNodeManager | None = None,
 ) -> SessionRuntime:
-    executor_host_manager = executor_host_manager or ExecutorHostManager(
+    executor_node_manager = executor_node_manager or ExecutorNodeManager(
         detached_executor_types=settings.detached_executor_types,
     )
     blackboard = InMemoryBlackboard()
@@ -1047,7 +1047,7 @@ def create_session_runtime(
                 registry.register(
                     HostedExecutor(
                         executor_type="codex",
-                        manager=executor_host_manager,
+                        manager=executor_node_manager,
                         supports_resume=True,
                         supports_follow_up=True,
                         supports_pause=True,
@@ -1057,7 +1057,7 @@ def create_session_runtime(
                 registry.register(
                     HostedExecutor(
                         executor_type="acpx",
-                        manager=executor_host_manager,
+                        manager=executor_node_manager,
                         supports_resume=True,
                         supports_follow_up=True,
                         supports_pause=False,
@@ -1067,7 +1067,7 @@ def create_session_runtime(
         registry.register(
             HostedExecutor(
                 executor_type="acpx",
-                manager=executor_host_manager,
+                manager=executor_node_manager,
                 supports_resume=True,
                 supports_follow_up=True,
                 supports_pause=False,
@@ -1077,7 +1077,7 @@ def create_session_runtime(
         registry.register(
             HostedExecutor(
                 executor_type="codex",
-                manager=executor_host_manager,
+                manager=executor_node_manager,
                 supports_resume=True,
                 supports_follow_up=True,
                 supports_pause=True,
@@ -1128,7 +1128,7 @@ def create_session_runtime(
         notification_manager=notification_manager,
         interaction_manager=interaction_manager,
         observability=observability,
-        executor_host_manager=executor_host_manager,
+        executor_node_manager=executor_node_manager,
     )
     control_task_handler = tool_registry.get("control_task").handler
     if hasattr(control_task_handler, "set_apply_callback"):

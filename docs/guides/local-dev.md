@@ -28,7 +28,7 @@ Current test command:
 .venv/bin/python -m pytest
 ```
 
-Real executors now run through the detached executor host.
+Real executors now run through the detached executor node.
 
 Typical local real-executor flow:
 
@@ -42,20 +42,20 @@ Typical local real-executor flow:
 `./synapse setup` configures the main control plane, including whether detached
 executors are enabled and which executor families the control plane should
 expect.
-`./synapse executor setup` configures the detached executor host itself,
-including the Synapse base URL, a generated executor-node host id, and local
+`./synapse executor setup` configures the detached executor node itself,
+including the Synapse base URL, a generated executor-node id, and local
 Codex or ACPX command settings.
 `./synapse executor run` now reports foreground lifecycle state directly in the
 terminal:
 
 - `[start]` after local config is loaded
 - `[connect]` before each control-channel dial attempt
-- `[ready]` only after the host registers successfully with Synapse
-- `[warn]` plus `[retry]` when connection or registration fails and the host is
+- `[ready]` only after the node registers successfully with Synapse
+- `[warn]` plus `[retry]` when connection or registration fails and the node is
   retrying
 - `[stop]` on manual interrupt
 
-`./synapse dev` and `./synapse start` do not auto-start the executor host.
+`./synapse dev` and `./synapse start` do not auto-start the executor node.
 Run `./synapse executor run` explicitly when you want local real execution.
 
 Backend-only and frontend-only commands:

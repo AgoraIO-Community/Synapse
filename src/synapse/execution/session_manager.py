@@ -24,19 +24,19 @@ class SessionManager:
         task: Task,
         binding: SessionBinding,
     ) -> tuple[ExecutionSession, SessionBinding, ExecutorSession]:
-        executor_host_id = getattr(executor, "executor_host_id", None)
+        executor_node_id = getattr(executor, "executor_node_id", None)
         if binding.execution_session_id:
             existing = await store.get_session(binding.execution_session_id)
             if existing is not None:
-                if executor_host_id is not None and existing.executor_host_id != executor_host_id:
-                    existing.executor_host_id = executor_host_id
+                if executor_node_id is not None and existing.executor_node_id != executor_node_id:
+                    existing.executor_node_id = executor_node_id
                     await store.put_session(existing)
                 cached = self._live_sessions.get(existing.execution_session_id)
                 if cached is not None and _session_is_alive(cached):
                     active_binding = binding.model_copy(
                         update={
                             "binding_status": BindingStatus.ACTIVE,
-                            "executor_host_id": executor_host_id,
+                            "executor_node_id": executor_node_id,
                         }
                     )
                     await store.put_binding(active_binding)
@@ -56,7 +56,7 @@ class SessionManager:
                 active_binding = binding.model_copy(
                     update={
                         "session_id": executor_session.session_id,
-                        "executor_host_id": executor_host_id,
+                        "executor_node_id": executor_node_id,
                         "binding_status": BindingStatus.ACTIVE,
                     }
                 )
@@ -76,13 +76,13 @@ class SessionManager:
             execution_session_id=f"exec-session-{uuid4().hex[:8]}",
             task_id=task.task_id,
             base_executor_id=executor.get_capabilities().executor_type,
-            executor_host_id=executor_host_id,
+            executor_node_id=executor_node_id,
         )
         self._live_sessions[execution_session.execution_session_id] = executor_session
         updated_binding = binding.model_copy(
             update={
                 "execution_session_id": execution_session.execution_session_id,
-                "executor_host_id": executor_host_id,
+                "executor_node_id": executor_node_id,
                 "session_id": executor_session.session_id,
                 "binding_status": BindingStatus.ACTIVE,
             }

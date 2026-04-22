@@ -44,13 +44,13 @@ Core rule:
 
 Detached-executor additions:
 
-- `ExecutionSession.executor_host_id`
-  - identifies which detached executor host currently owns the live real-executor lineage
-- `SessionBinding.executor_host_id`
-  - records which host the current binding is associated with
+- `ExecutionSession.executor_node_id`
+  - identifies which detached executor node currently owns the live real-executor lineage
+- `SessionBinding.executor_node_id`
+  - records which node the current binding is associated with
 - `TaskStatus = waiting_executor`
   - task is accepted and durable state exists, but Synapse is waiting for the
-    detached executor host to become available
+    detached executor node to become available
 - `RunStatus = waiting_executor`
   - the current run has been created but is waiting on detached-host availability
 
@@ -58,4 +58,4 @@ Workspace rule:
 
 - `session_affinity` is an opaque workspace id, not a control-plane filesystem
   path
-- the detached executor host maps that id to a host-local working directory
+- the detached executor node maps that id to a node-local working directory

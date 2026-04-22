@@ -29,4 +29,4 @@ def test_bootstrap_allows_detached_executor_mode_without_host_auth():
             detached_executor_enabled=True,
         )
     )
-    assert container.executor_host_manager.host_id is None
+    assert container.executor_node_manager.node_id is None

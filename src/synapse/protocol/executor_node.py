@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 from .session import AgentResumeHandle
 
 
-class ExecutorHostExecutor(BaseModel):
+class ExecutorNodeExecutor(BaseModel):
     executor_type: str
     supports_resume: bool = False
     supports_follow_up: bool = False
@@ -15,10 +15,10 @@ class ExecutorHostExecutor(BaseModel):
     supports_cancel: bool = True
 
 
-class RegisterHostMessage(BaseModel):
-    type: Literal["register_host"] = "register_host"
-    host_id: str
-    executors: list[ExecutorHostExecutor] = Field(default_factory=list)
+class RegisterNodeMessage(BaseModel):
+    type: Literal["register_node"] = "register_node"
+    node_id: str
+    executors: list[ExecutorNodeExecutor] = Field(default_factory=list)
     metadata: dict[str, object] = Field(default_factory=dict)
 
 
@@ -51,9 +51,9 @@ class InteractionStateMessage(BaseModel):
     metadata: dict[str, object] = Field(default_factory=dict)
 
 
-class HostStatusMessage(BaseModel):
-    type: Literal["host_status"] = "host_status"
-    host_id: str
+class NodeStatusMessage(BaseModel):
+    type: Literal["node_status"] = "node_status"
+    node_id: str
     status: Literal["ready", "degraded"]
     metadata: dict[str, object] = Field(default_factory=dict)
 

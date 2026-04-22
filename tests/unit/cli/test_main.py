@@ -67,11 +67,11 @@ def test_setup_interactive_updates_env_file(monkeypatch, tmp_path: Path):
     configured_runtime = (root / ".synapse" / "config.yaml").read_text(encoding="utf-8")
     assert "detached_executor_enabled: false" in configured_runtime
     assert "detached_executor_types" not in configured_runtime
-    assert "executor_host:" in configured_runtime
+    assert "executor_node:" in configured_runtime
     assert "executors: {}" in configured_runtime
     assert "host_token" not in configured_runtime
     assert "heartbeat_seconds" not in configured_runtime
-    assert re.search(r"host_id: host-[0-9a-f]{8}", configured_runtime)
+    assert re.search(r"node_id: node-[0-9a-f]{8}", configured_runtime)
 
 
 def test_setup_interactive_enables_detached_executors(monkeypatch, tmp_path: Path):
@@ -113,10 +113,10 @@ def test_executor_setup_uses_detected_codex_command_default(monkeypatch, tmp_pat
                 '  synapse_base_url: "http://127.0.0.1:8000"',
                 "  enabled_connectors: []",
                 "connectors: {}",
-                "executor_host:",
+                "executor_node:",
                 "  enabled: false",
                 '  synapse_base_url: "http://127.0.0.1:8000"',
-                "  host_id: default-host",
+                "  node_id: default-node",
                 "  enabled_executors: []",
                 "executors: {}",
             ]
@@ -141,11 +141,11 @@ def test_executor_setup_uses_detected_codex_command_default(monkeypatch, tmp_pat
     configured_runtime = (root / ".synapse" / "config.yaml").read_text(encoding="utf-8")
     assert "detached_executor_enabled: true" in configured_runtime
     assert "detached_executor_types:" in configured_runtime
-    assert "executor_host:" in configured_runtime
+    assert "executor_node:" in configured_runtime
     assert "command: /detected/codex" in configured_runtime
     assert "host_token" not in configured_runtime
     assert "heartbeat_seconds" not in configured_runtime
-    assert re.search(r"host_id: host-[0-9a-f]{8}", configured_runtime)
+    assert re.search(r"node_id: node-[0-9a-f]{8}", configured_runtime)
 
 
 def test_executor_setup_migrates_legacy_codex_command_over_detected_default(
@@ -182,10 +182,10 @@ def test_executor_setup_migrates_legacy_codex_command_over_detected_default(
                 '  synapse_base_url: "http://127.0.0.1:8000"',
                 "  enabled_connectors: []",
                 "connectors: {}",
-                "executor_host:",
+                "executor_node:",
                 "  enabled: false",
                 '  synapse_base_url: "http://127.0.0.1:8000"',
-                "  host_id: default-host",
+                "  node_id: default-node",
                 "  enabled_executors: []",
                 "executors: {}",
             ]
@@ -428,7 +428,7 @@ def test_setup_non_interactive_uses_existing_and_env(monkeypatch, tmp_path: Path
     assert "SYNAPSE_CODEX_COMMAND" not in configured
     configured_runtime = (root / ".synapse" / "config.yaml").read_text(encoding="utf-8")
     assert "runtime: {}" in configured_runtime
-    assert "executor_host:" in configured_runtime
+    assert "executor_node:" in configured_runtime
     assert "executors: {}" in configured_runtime
 
 
@@ -463,10 +463,10 @@ def test_executor_setup_migrates_legacy_codex_command_to_config(monkeypatch, tmp
                 '  synapse_base_url: "http://127.0.0.1:8000"',
                 "  enabled_connectors: []",
                 "connectors: {}",
-                "executor_host:",
+                "executor_node:",
                 "  enabled: false",
                 '  synapse_base_url: "http://127.0.0.1:8000"',
-                "  host_id: default-host",
+                "  node_id: default-node",
                 "  enabled_executors: []",
                 "executors: {}",
             ]
@@ -491,7 +491,7 @@ def test_executor_setup_migrates_legacy_codex_command_to_config(monkeypatch, tmp
     assert "command: /legacy/codex" in configured_runtime
     assert "host_token" not in configured_runtime
     assert "heartbeat_seconds" not in configured_runtime
-    assert re.search(r"host_id: host-[0-9a-f]{8}", configured_runtime)
+    assert re.search(r"node_id: node-[0-9a-f]{8}", configured_runtime)
 
 
 def test_executor_setup_requires_detached_executor_runtime_config(monkeypatch, tmp_path: Path, capsys):
@@ -532,7 +532,7 @@ def test_setup_non_interactive_tolerates_malformed_existing_config(monkeypatch, 
 
     configured_runtime = (root / ".synapse" / "config.yaml").read_text(encoding="utf-8")
     assert "runtime:" in configured_runtime
-    assert "executor_host:" in configured_runtime
+    assert "executor_node:" in configured_runtime
     assert "executors: {}" in configured_runtime
 
 
@@ -572,11 +572,11 @@ def test_setup_bootstrap_defaults_creates_env_and_connector_config(monkeypatch, 
     assert "enabled_connectors: []" in configured_connector
     assert "connectors: {}" in configured_connector
     assert "connectors:\n  {}" not in configured_connector
-    assert "executor_host:" in configured_connector
+    assert "executor_node:" in configured_connector
     assert "enabled_executors: []" in configured_connector
     assert "host_token" not in configured_connector
     assert "heartbeat_seconds" not in configured_connector
-    assert re.search(r"host_id: host-[0-9a-f]{8}", configured_connector)
+    assert re.search(r"node_id: node-[0-9a-f]{8}", configured_connector)
     assert "executors: {}" in configured_connector
 
 

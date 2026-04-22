@@ -117,8 +117,8 @@ async def test_service_app_keeps_session_stream_and_executor_control_websockets(
         async with ASGIWebSocketSession(app, "/executors/control") as websocket:
             await websocket.send_json(
                 {
-                    "type": "register_host",
-                    "host_id": "host-1",
+                    "type": "register_node",
+                    "node_id": "node-1",
                     "executors": [
                         {
                             "executor_type": "codex",

@@ -7,9 +7,9 @@ import json
 import pytest
 
 from synapse.executors.core import ExecutorCapabilities
-from synapse.executors.host.config import ExecutorHostSettings
-from synapse.executors.host.service import ExecutorHostLifecycleReporter, ExecutorHostService
-import synapse.executors.host.service as service_module
+from synapse.executors.node.config import ExecutorNodeSettings
+from synapse.executors.node.service import ExecutorNodeLifecycleReporter, ExecutorNodeService
+import synapse.executors.node.service as service_module
 
 
 class FakeExecutor:
@@ -51,17 +51,17 @@ class FakeConnection:
         return False
 
 
-def build_service(monkeypatch: pytest.MonkeyPatch, *, reporter: ExecutorHostLifecycleReporter) -> ExecutorHostService:
+def build_service(monkeypatch: pytest.MonkeyPatch, *, reporter: ExecutorNodeLifecycleReporter) -> ExecutorNodeService:
     monkeypatch.setattr(
-        ExecutorHostService,
+        ExecutorNodeService,
         "_build_executors",
         lambda self, _executors_config: {"codex": FakeExecutor()},
     )
-    return ExecutorHostService(
-        settings=ExecutorHostSettings(
+    return ExecutorNodeService(
+        settings=ExecutorNodeSettings(
             enabled=True,
             synapse_base_url="http://127.0.0.1:8000",
-            host_id="host-1",
+            node_id="node-1",
             enabled_executors=["codex"],
         ),
         executors_config={},
@@ -72,11 +72,11 @@ def build_service(monkeypatch: pytest.MonkeyPatch, *, reporter: ExecutorHostLife
 @pytest.mark.anyio
 async def test_run_forever_reports_retry_then_ready(monkeypatch: pytest.MonkeyPatch):
     stream = io.StringIO()
-    reporter = ExecutorHostLifecycleReporter(stream=stream)
+    reporter = ExecutorNodeLifecycleReporter(stream=stream)
     service = build_service(monkeypatch, reporter=reporter)
     websocket = FakeWebSocket(
         [
-            {"type": "ack", "message_type": "register_host", "ok": True, "detail": "registered"},
+            {"type": "ack", "message_type": "register_node", "ok": True, "detail": "registered"},
             asyncio.CancelledError(),
         ]
     )
@@ -104,28 +104,28 @@ async def test_run_forever_reports_retry_then_ready(monkeypatch: pytest.MonkeyPa
         await service.run_forever()
 
     output = stream.getvalue()
-    assert "[start] executor host host_id=host-1 executors=codex synapse=http://127.0.0.1:8000" in output
-    assert "[connect] executor host attempt=1 url=ws://127.0.0.1:8000/executors/control" in output
+    assert "[start] executor node node_id=node-1 executors=codex synapse=http://127.0.0.1:8000" in output
+    assert "[connect] executor node attempt=1 url=ws://127.0.0.1:8000/executors/control" in output
     assert (
-        "[warn] executor host attempt=1 connect_failed=OSError: connection refused "
+        "[warn] executor node attempt=1 connect_failed=OSError: connection refused "
         "url=ws://127.0.0.1:8000/executors/control"
     ) in output
-    assert "[retry] executor host retrying in 1.0s" in output
-    assert "[connect] executor host attempt=2 url=ws://127.0.0.1:8000/executors/control" in output
-    assert "[ready] executor host host_id=host-1 executors=codex synapse=http://127.0.0.1:8000" in output
-    assert output.index("[connect] executor host attempt=2") < output.index("[ready] executor host")
+    assert "[retry] executor node retrying in 1.0s" in output
+    assert "[connect] executor node attempt=2 url=ws://127.0.0.1:8000/executors/control" in output
+    assert "[ready] executor node node_id=node-1 executors=codex synapse=http://127.0.0.1:8000" in output
+    assert output.index("[connect] executor node attempt=2") < output.index("[ready] executor node")
     assert delays == [1.0]
-    assert websocket.sent[0]["type"] == "register_host"
+    assert websocket.sent[0]["type"] == "register_node"
 
 
 @pytest.mark.anyio
 async def test_run_forever_reports_disconnect_after_ready(monkeypatch: pytest.MonkeyPatch):
     stream = io.StringIO()
-    reporter = ExecutorHostLifecycleReporter(stream=stream)
+    reporter = ExecutorNodeLifecycleReporter(stream=stream)
     service = build_service(monkeypatch, reporter=reporter)
     websocket = FakeWebSocket(
         [
-            {"type": "ack", "message_type": "register_host", "ok": True, "detail": "registered"},
+            {"type": "ack", "message_type": "register_node", "ok": True, "detail": "registered"},
             RuntimeError("connection lost"),
         ]
     )
@@ -147,10 +147,10 @@ async def test_run_forever_reports_disconnect_after_ready(monkeypatch: pytest.Mo
         await service.run_forever()
 
     output = stream.getvalue()
-    assert "[ready] executor host host_id=host-1 executors=codex synapse=http://127.0.0.1:8000" in output
+    assert "[ready] executor node node_id=node-1 executors=codex synapse=http://127.0.0.1:8000" in output
     assert (
-        "[warn] executor host disconnected=RuntimeError: connection lost "
+        "[warn] executor node disconnected=RuntimeError: connection lost "
         "url=ws://127.0.0.1:8000/executors/control"
     ) in output
-    assert "[retry] executor host retrying in 1.0s" in output
+    assert "[retry] executor node retrying in 1.0s" in output
     assert delays == [1.0]

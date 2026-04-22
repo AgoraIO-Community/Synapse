@@ -4,10 +4,10 @@ from pathlib import Path
 
 import pytest
 
-from synapse.executors.host.config import load_executor_host_config
+from synapse.executors.node.config import load_executor_node_config
 
 
-def test_load_executor_host_config_reads_enabled_executors(tmp_path: Path):
+def test_load_executor_node_config_reads_enabled_executors(tmp_path: Path):
     env_file = tmp_path / ".env"
     config_file = tmp_path / "config.yaml"
     env_file.write_text("", encoding="utf-8")
@@ -15,10 +15,10 @@ def test_load_executor_host_config_reads_enabled_executors(tmp_path: Path):
         "\n".join(
             [
                 "version: 1",
-                "executor_host:",
+                "executor_node:",
                 "  enabled: true",
                 "  synapse_base_url: http://127.0.0.1:8000",
-                "  host_id: host-1",
+                "  node_id: node-1",
                 "  enabled_executors:",
                 "    - codex",
                 "executors:",
@@ -30,15 +30,15 @@ def test_load_executor_host_config_reads_enabled_executors(tmp_path: Path):
         encoding="utf-8",
     )
 
-    loaded = load_executor_host_config(env_file=env_file, config_file=config_file)
+    loaded = load_executor_node_config(env_file=env_file, config_file=config_file)
 
-    assert loaded.host_settings.enabled is True
-    assert loaded.host_settings.host_id == "host-1"
-    assert loaded.host_settings.enabled_executors == ["codex"]
+    assert loaded.node_settings.enabled is True
+    assert loaded.node_settings.node_id == "node-1"
+    assert loaded.node_settings.enabled_executors == ["codex"]
     assert loaded.executors["codex"]["command"] == "/opt/codex"
 
 
-def test_load_executor_host_config_rejects_invalid_enabled_executors(tmp_path: Path):
+def test_load_executor_node_config_rejects_invalid_enabled_executors(tmp_path: Path):
     env_file = tmp_path / ".env"
     config_file = tmp_path / "config.yaml"
     env_file.write_text("", encoding="utf-8")
@@ -46,7 +46,7 @@ def test_load_executor_host_config_rejects_invalid_enabled_executors(tmp_path: P
         "\n".join(
             [
                 "version: 1",
-                "executor_host:",
+                "executor_node:",
                 "  enabled: true",
                 "  enabled_executors: codex",
             ]
@@ -55,11 +55,11 @@ def test_load_executor_host_config_rejects_invalid_enabled_executors(tmp_path: P
         encoding="utf-8",
     )
 
-    with pytest.raises(RuntimeError, match="executor_host.enabled_executors"):
-        load_executor_host_config(env_file=env_file, config_file=config_file)
+    with pytest.raises(RuntimeError, match="executor_node.enabled_executors"):
+        load_executor_node_config(env_file=env_file, config_file=config_file)
 
 
-def test_load_executor_host_config_requires_host_id_when_enabled(tmp_path: Path):
+def test_load_executor_node_config_requires_node_id_when_enabled(tmp_path: Path):
     env_file = tmp_path / ".env"
     config_file = tmp_path / "config.yaml"
     env_file.write_text("", encoding="utf-8")
@@ -67,7 +67,7 @@ def test_load_executor_host_config_requires_host_id_when_enabled(tmp_path: Path)
         "\n".join(
             [
                 "version: 1",
-                "executor_host:",
+                "executor_node:",
                 "  enabled: true",
                 "  enabled_executors:",
                 "    - codex",
@@ -77,5 +77,5 @@ def test_load_executor_host_config_requires_host_id_when_enabled(tmp_path: Path)
         encoding="utf-8",
     )
 
-    with pytest.raises(RuntimeError, match="executor_host.host_id"):
-        load_executor_host_config(env_file=env_file, config_file=config_file)
+    with pytest.raises(RuntimeError, match="executor_node.node_id"):
+        load_executor_node_config(env_file=env_file, config_file=config_file)

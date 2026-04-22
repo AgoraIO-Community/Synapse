@@ -12,7 +12,7 @@ Stable core concepts:
 - `ExecutorEvent`
 - `ExecutorResult`
 - `ExecutorCapabilities`
-- `Executor Host`
+- `Executor Node`
 
 Important capability directions:
 
@@ -24,16 +24,16 @@ Current deployment direction:
 
 - `mock` remains an in-process adapter
 - real executors such as `codex` and `acpx` run inside the detached executor
-  host
+  node
 - the main Synapse API process registers hosted executor proxies rather than
   launching real executor subprocesses directly
 
-Executor-host note:
+Executor-node note:
 
-- the detached host owns live executor-native session continuity
+- the detached node owns live executor-native session continuity
 - Synapse keeps durable execution lineage and user-facing control semantics
 - executor-native continuity still remains optional across executor families
-- detached executor hosts connect to the main Synapse service origin through
+- detached executor nodes connect to the main Synapse service origin through
   `WS /executors/control`
 - foreground `synapse executor run` output should make connect, ready,
   disconnect, and retry state explicit, and should only report ready after the
@@ -49,7 +49,7 @@ This is why:
 - `AgentResumeHandle` must stay optional
 - runtime continuity and executor-native continuity must remain distinct concepts
 - `session_affinity` should be treated as an opaque workspace id that the
-  detached host resolves into a host-local directory
+  detached node resolves into a node-local directory
 
 Related docs:
 

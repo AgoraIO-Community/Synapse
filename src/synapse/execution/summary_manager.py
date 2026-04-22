@@ -14,7 +14,7 @@ class SummaryManager:
                 needs_user_input=False,
             )
         if task.status == TaskStatus.WAITING_EXECUTOR:
-            text = run.latest_progress_message or f"Waiting for executor host: {task.title}"
+            text = run.latest_progress_message or f"Waiting for executor node: {task.title}"
             return TaskSummary(
                 task_id=task.task_id,
                 operational_summary=text,
@@ -66,7 +66,7 @@ class SummaryManager:
                 needs_user_input=False,
             )
         if run.status == RunStatus.WAITING_EXECUTOR:
-            text = run.latest_progress_message or f"Waiting for executor host: {task.title}"
+            text = run.latest_progress_message or f"Waiting for executor node: {task.title}"
             return TaskSummary(
                 task_id=task.task_id,
                 operational_summary=text,

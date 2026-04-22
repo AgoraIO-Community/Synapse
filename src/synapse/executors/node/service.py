@@ -18,14 +18,14 @@ from synapse.protocol import (
     AckMessage,
     CancelRunCommand,
     DispatchRunCommand,
-    ExecutorHostExecutor,
-    RegisterHostMessage,
+    ExecutorNodeExecutor,
+    RegisterNodeMessage,
     ReleaseRunCommand,
     RunEventMessage,
     SupplyInteractionResponseCommand,
 )
 
-from .config import ExecutorHostSettings
+from .config import ExecutorNodeSettings
 
 
 @dataclass(slots=True)
@@ -36,66 +36,66 @@ class LocalRunContext:
 
 
 @dataclass(slots=True)
-class ExecutorHostLifecycleReporter:
+class ExecutorNodeLifecycleReporter:
     stream: TextIO = field(default_factory=lambda: sys.stdout)
 
-    def starting(self, *, host_id: str, executor_types: list[str], synapse_base_url: str) -> None:
+    def starting(self, *, node_id: str, executor_types: list[str], synapse_base_url: str) -> None:
         self._emit(
-            "[start] executor host "
-            f"host_id={host_id} executors={_format_executor_types(executor_types)} "
+            "[start] executor node "
+            f"node_id={node_id} executors={_format_executor_types(executor_types)} "
             f"synapse={synapse_base_url}"
         )
 
     def connect_attempt(self, *, attempt: int, control_url: str) -> None:
-        self._emit(f"[connect] executor host attempt={attempt} url={control_url}")
+        self._emit(f"[connect] executor node attempt={attempt} url={control_url}")
 
     def connect_failed(self, *, attempt: int, control_url: str, error: BaseException) -> None:
         self._emit(
-            "[warn] executor host "
+            "[warn] executor node "
             f"attempt={attempt} connect_failed={_format_exception_summary(error)} url={control_url}"
         )
 
-    def ready(self, *, host_id: str, executor_types: list[str], synapse_base_url: str) -> None:
+    def ready(self, *, node_id: str, executor_types: list[str], synapse_base_url: str) -> None:
         self._emit(
-            "[ready] executor host "
-            f"host_id={host_id} executors={_format_executor_types(executor_types)} "
+            "[ready] executor node "
+            f"node_id={node_id} executors={_format_executor_types(executor_types)} "
             f"synapse={synapse_base_url}"
         )
 
     def disconnected(self, *, control_url: str, error: BaseException) -> None:
         self._emit(
-            "[warn] executor host "
+            "[warn] executor node "
             f"disconnected={_format_exception_summary(error)} url={control_url}"
         )
 
     def retrying(self, *, delay_seconds: float) -> None:
-        self._emit(f"[retry] executor host retrying in {delay_seconds:.1f}s")
+        self._emit(f"[retry] executor node retrying in {delay_seconds:.1f}s")
 
     def _emit(self, message: str) -> None:
         print(message, file=self.stream, flush=True)
 
 
-class ExecutorHostService:
+class ExecutorNodeService:
     def __init__(
         self,
         *,
-        settings: ExecutorHostSettings,
+        settings: ExecutorNodeSettings,
         executors_config: dict[str, Any],
-        reporter: ExecutorHostLifecycleReporter | None = None,
+        reporter: ExecutorNodeLifecycleReporter | None = None,
     ) -> None:
         self._settings = settings
         self._executors = self._build_executors(executors_config)
         self._live_sessions: dict[str, ExecutorSession] = {}
         self._active_runs: dict[str, LocalRunContext] = {}
         self._send_lock = asyncio.Lock()
-        self._reporter = reporter or ExecutorHostLifecycleReporter()
+        self._reporter = reporter or ExecutorNodeLifecycleReporter()
 
     async def run_forever(self) -> None:
         control_url = self._ws_url()
         retry_delay_seconds = 1.0
         attempt = 0
         self._reporter.starting(
-            host_id=self._settings.host_id,
+            node_id=self._settings.node_id,
             executor_types=list(self._executors.keys()),
             synapse_base_url=self._settings.synapse_base_url,
         )
@@ -112,18 +112,18 @@ class ExecutorHostService:
                 ) as websocket:
                     await self._send_json(
                         websocket,
-                        RegisterHostMessage(
-                            host_id=self._settings.host_id,
+                        RegisterNodeMessage(
+                            node_id=self._settings.node_id,
                             executors=[self._descriptor(name, executor) for name, executor in self._executors.items()],
                         ).model_dump(mode="json"),
                     )
                     ack = AckMessage.model_validate(await self._recv_json(websocket))
-                    if not ack.ok or ack.message_type != "register_host":
+                    if not ack.ok or ack.message_type != "register_node":
                         detail = ack.detail or f"unexpected ack for {ack.message_type}"
                         raise RuntimeError(f"registration rejected: {detail}")
                     ready = True
                     self._reporter.ready(
-                        host_id=self._settings.host_id,
+                        node_id=self._settings.node_id,
                         executor_types=list(self._executors.keys()),
                         synapse_base_url=self._settings.synapse_base_url,
                     )
@@ -299,9 +299,9 @@ class ExecutorHostService:
                 )
         return built
 
-    def _descriptor(self, executor_type: str, executor: Any) -> ExecutorHostExecutor:
+    def _descriptor(self, executor_type: str, executor: Any) -> ExecutorNodeExecutor:
         capabilities = executor.get_capabilities()
-        return ExecutorHostExecutor(
+        return ExecutorNodeExecutor(
             executor_type=executor_type,
             supports_resume=capabilities.supports_resume,
             supports_follow_up=capabilities.supports_follow_up,
@@ -326,10 +326,10 @@ class ExecutorHostService:
     async def _recv_json(self, websocket: Any) -> dict[str, object]:
         raw = await websocket.recv()
         if not isinstance(raw, str):
-            raise RuntimeError("Executor host websocket received a non-text payload.")
+            raise RuntimeError("Executor node websocket received a non-text payload.")
         payload = json.loads(raw)
         if not isinstance(payload, dict):
-            raise RuntimeError("Executor host websocket received a non-object payload.")
+            raise RuntimeError("Executor node websocket received a non-object payload.")
         return payload
 
     def _ws_url(self) -> str:

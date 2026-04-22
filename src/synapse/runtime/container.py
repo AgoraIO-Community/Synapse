@@ -6,7 +6,7 @@ from uuid import uuid4
 from synapse.communication.model import CommunicationModel
 
 from .config import Settings
-from .executor_host_manager import ExecutorHostManager
+from .executor_node_manager import ExecutorNodeManager
 from .session import SessionRuntime, create_session_runtime
 
 
@@ -14,11 +14,11 @@ from .session import SessionRuntime, create_session_runtime
 class RuntimeContainer:
     communication_model: CommunicationModel
     settings: Settings
-    executor_host_manager: ExecutorHostManager = field(init=False)
+    executor_node_manager: ExecutorNodeManager = field(init=False)
     _sessions: dict[str, SessionRuntime] = field(default_factory=dict, init=False)
 
     def __post_init__(self) -> None:
-        self.executor_host_manager = ExecutorHostManager(
+        self.executor_node_manager = ExecutorNodeManager(
             detached_executor_types=self.settings.detached_executor_types,
         )
 
@@ -28,7 +28,7 @@ class RuntimeContainer:
             session_id,
             model=self.communication_model,
             settings=self.settings,
-            executor_host_manager=self.executor_host_manager,
+            executor_node_manager=self.executor_node_manager,
         )
         self._sessions[session_id] = session
         return session
@@ -39,11 +39,11 @@ class RuntimeContainer:
         except KeyError as exc:
             raise KeyError(f"Unknown session: {session_id}") from exc
 
-    async def handle_executor_host_connected(self) -> list[str]:
+    async def handle_executor_node_connected(self) -> list[str]:
         available = {
             executor_type
-            for executor_type in self.executor_host_manager.detached_executor_types
-            if self.executor_host_manager.is_executor_connected(executor_type)
+            for executor_type in self.executor_node_manager.detached_executor_types
+            if self.executor_node_manager.is_executor_connected(executor_type)
         }
         updated_task_ids: list[str] = []
         for session in self._sessions.values():

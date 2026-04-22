@@ -76,11 +76,11 @@ async def test_detached_executor_waits_for_host_when_unavailable():
         if capability["executor_type"] == "codex"
     )
     assert codex_capability["connected"] is False
-    assert codex_capability["availability_reason"] == "host_disconnected"
+    assert codex_capability["availability_reason"] == "node_disconnected"
 
 
 @pytest.mark.anyio
-async def test_executor_host_registration_requeues_waiting_task_and_completes():
+async def test_executor_node_registration_requeues_waiting_task_and_completes():
     app = _build_app()
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
         session_id = (await client.post("/sessions")).json()["session_id"]
@@ -105,8 +105,8 @@ async def test_executor_host_registration_requeues_waiting_task_and_completes():
         async with ASGIWebSocketSession(app, "/executors/control") as websocket:
             await websocket.send_json(
                 {
-                    "type": "register_host",
-                    "host_id": "host-1",
+                    "type": "register_node",
+                    "node_id": "node-1",
                     "executors": [
                         {
                             "executor_type": "codex",
@@ -159,11 +159,11 @@ async def test_executor_host_registration_requeues_waiting_task_and_completes():
         if capability["executor_type"] == "codex"
     )
     assert codex_capability["connected"] is True
-    assert codex_capability["host_id"] == "host-1"
+    assert codex_capability["node_id"] == "node-1"
 
 
 @pytest.mark.anyio
-async def test_resolve_interaction_request_routes_native_response_to_executor_host():
+async def test_resolve_interaction_request_routes_native_response_to_executor_node():
     app = _build_app()
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
         session_id = (await client.post("/sessions")).json()["session_id"]
@@ -183,7 +183,7 @@ async def test_resolve_interaction_request_routes_native_response_to_executor_ho
                 execution_session_id="exec-native",
                 task_id="task-native",
                 base_executor_id="codex",
-                executor_host_id="host-1",
+                executor_node_id="node-1",
                 active_run_id="run-native",
                 latest_run_id="run-native",
                 run_ids=["run-native"],
@@ -193,7 +193,7 @@ async def test_resolve_interaction_request_routes_native_response_to_executor_ho
             SessionBinding(
                 task_id="task-native",
                 execution_session_id="exec-native",
-                executor_host_id="host-1",
+                executor_node_id="node-1",
                 session_id="session-native",
                 claimed_by="worker-native",
                 claim_expires_at="2026-04-16T00:10:00+00:00",
@@ -235,8 +235,8 @@ async def test_resolve_interaction_request_routes_native_response_to_executor_ho
         async with ASGIWebSocketSession(app, "/executors/control") as websocket:
             await websocket.send_json(
                 {
-                    "type": "register_host",
-                    "host_id": "host-1",
+                    "type": "register_node",
+                    "node_id": "node-1",
                     "executors": [
                         {
                             "executor_type": "codex",
