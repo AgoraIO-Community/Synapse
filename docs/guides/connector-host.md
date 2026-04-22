@@ -107,6 +107,13 @@ reachable:
 - in the standalone connector-host path, set it to the public standalone connector
   origin
 
+Upgrade note:
+
+- older standalone gateway/connector setups often pointed `public_base_url` at
+  `http://127.0.0.1:8010`
+- the tracked example now defaults it to `http://127.0.0.1:8000` because the
+  unified-service path exposes `/connectors/...` from the main Synapse service
+
 The tracked template is:
 
 ```text

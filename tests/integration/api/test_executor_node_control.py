@@ -163,6 +163,84 @@ async def test_executor_node_registration_requeues_waiting_task_and_completes():
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("invalid_payload", "message_type"),
+    [
+        (
+            {
+                "type": "run_event",
+                "run_id": "run-1",
+            },
+            "run_event",
+        ),
+        (
+            {
+                "type": "interaction_state",
+                "run_id": "run-1",
+            },
+            "interaction_state",
+        ),
+        (
+            {
+                "type": "node_status",
+                "status": "ready",
+            },
+            "node_status",
+        ),
+    ],
+)
+async def test_executor_control_invalid_message_ack_does_not_close_connection(
+    invalid_payload: dict[str, object],
+    message_type: str,
+):
+    app = _build_app()
+
+    async with ASGIWebSocketSession(app, "/executors/control") as websocket:
+        await websocket.send_json(
+            {
+                "type": "register_node",
+                "node_id": "node-1",
+                "executors": [
+                    {
+                        "executor_type": "codex",
+                        "supports_resume": True,
+                        "supports_follow_up": True,
+                        "supports_pause": True,
+                        "supports_cancel": True,
+                    }
+                ],
+            }
+        )
+        assert (await websocket.receive_json())["type"] == "ack"
+
+        await websocket.send_json(invalid_payload)
+        invalid_ack = await websocket.receive_json()
+        assert invalid_ack == {
+            "type": "ack",
+            "message_type": message_type,
+            "ok": False,
+            "run_id": None,
+            "detail": "invalid_payload",
+        }
+
+        await websocket.send_json(
+            {
+                "type": "node_status",
+                "node_id": "node-1",
+                "status": "ready",
+            }
+        )
+        valid_ack = await websocket.receive_json()
+        assert valid_ack == {
+            "type": "ack",
+            "message_type": "node_status",
+            "ok": True,
+            "run_id": None,
+            "detail": "ok",
+        }
+
+
+@pytest.mark.anyio
 async def test_resolve_interaction_request_routes_native_response_to_executor_node():
     app = _build_app()
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:

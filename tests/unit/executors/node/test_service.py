@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import io
 import json
+import logging
 
 import pytest
 
@@ -10,6 +11,8 @@ from synapse.executors.core import ExecutorCapabilities
 from synapse.executors.node.config import ExecutorNodeSettings
 from synapse.executors.node.service import ExecutorNodeLifecycleReporter, ExecutorNodeService
 import synapse.executors.node.service as service_module
+from synapse.executors.adapters.codex.session import CodexExecutorSession
+from synapse.protocol import SupplyInteractionResponseCommand
 
 
 class FakeExecutor:
@@ -154,3 +157,36 @@ async def test_run_forever_reports_disconnect_after_ready(monkeypatch: pytest.Mo
     ) in output
     assert "[retry] executor node retrying in 1.0s" in output
     assert delays == [1.0]
+
+
+@pytest.mark.anyio
+async def test_supply_interaction_response_logs_failures(monkeypatch: pytest.MonkeyPatch, caplog):
+    stream = io.StringIO()
+    reporter = ExecutorNodeLifecycleReporter(stream=stream)
+    service = build_service(monkeypatch, reporter=reporter)
+    session = CodexExecutorSession(session_id="codex-session-1", executor_type="codex")
+
+    class FakeClient:
+        async def respond_to_request(self, **kwargs) -> None:
+            raise RuntimeError("boom")
+
+    session._client = FakeClient()
+    service._live_sessions["exec-1"] = session
+
+    command = SupplyInteractionResponseCommand(
+        interaction_request_id="ireq-1",
+        execution_session_id="exec-1",
+        action="approve",
+        native_response={
+            "request_id": "req-1",
+            "method": "item/permissions/requestApproval",
+            "params": {"prompt": "Need approval."},
+        },
+    )
+
+    with caplog.at_level(logging.WARNING):
+        await service._supply_interaction_response(command)
+
+    assert "Failed to forward interaction response to executor node session" in caplog.text
+    assert "exec-1" in caplog.text
+    assert "ireq-1" in caplog.text

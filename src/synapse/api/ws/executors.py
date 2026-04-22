@@ -48,13 +48,21 @@ async def _handle_control_message(container, payload: object) -> AckMessage:
         return AckMessage(message_type="unknown", ok=False, detail="invalid_payload")
     message_type = payload.get("type")
     if message_type == "run_event":
-        return await container.executor_node_manager.publish_run_event(
-            RunEventMessage.model_validate(payload)
-        )
+        try:
+            message = RunEventMessage.model_validate(payload)
+        except ValidationError:
+            return AckMessage(message_type="run_event", ok=False, detail="invalid_payload")
+        return await container.executor_node_manager.publish_run_event(message)
     if message_type == "interaction_state":
-        InteractionStateMessage.model_validate(payload)
+        try:
+            InteractionStateMessage.model_validate(payload)
+        except ValidationError:
+            return AckMessage(message_type="interaction_state", ok=False, detail="invalid_payload")
         return AckMessage(message_type="interaction_state", detail="ignored")
     if message_type == "node_status":
-        NodeStatusMessage.model_validate(payload)
+        try:
+            NodeStatusMessage.model_validate(payload)
+        except ValidationError:
+            return AckMessage(message_type="node_status", ok=False, detail="invalid_payload")
         return AckMessage(message_type="node_status", detail="ok")
     return AckMessage(message_type=str(message_type or "unknown"), ok=False, detail="unknown_message_type")

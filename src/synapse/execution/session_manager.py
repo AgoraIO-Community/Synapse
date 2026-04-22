@@ -32,7 +32,9 @@ class SessionManager:
                     existing.executor_node_id = executor_node_id
                     await store.put_session(existing)
                 cached = self._live_sessions.get(existing.execution_session_id)
-                if cached is not None and _session_is_alive(cached):
+                # Control-plane cached sessions are reusable; executor-native liveness is
+                # owned by the detached node rather than tracked here.
+                if cached is not None:
                     active_binding = binding.model_copy(
                         update={
                             "binding_status": BindingStatus.ACTIVE,
@@ -103,10 +105,6 @@ class SessionManager:
 
     def get_live_session(self, execution_session_id: str) -> ExecutorSession | None:
         return self._live_sessions.get(execution_session_id)
-
-
-def _session_is_alive(session: ExecutorSession) -> bool:
-    return True
 
 
 def _hydrate_resume_handle(

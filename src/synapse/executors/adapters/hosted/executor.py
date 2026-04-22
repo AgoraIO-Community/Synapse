@@ -3,6 +3,7 @@ from __future__ import annotations
 from uuid import uuid4
 
 from synapse.executors.core import ExecutorCapabilities, ExecutorSession, ExecutorEventType
+from synapse.protocol import ExecutionRun, Task
 
 from synapse.runtime.executor_node_manager import ExecutorNodeManager
 
@@ -57,7 +58,12 @@ class HostedExecutor:
     async def pause_run(self, run_id: str) -> None:
         await self._manager.cancel_run(run_id, mode="pause")
 
-    async def run_task(self, run, task, session):
+    async def run_task(
+        self,
+        run: ExecutionRun,
+        task: Task,
+        session: ExecutorSession,
+    ):
         queue = await self._manager.dispatch_run(
             run_id=run.run_id,
             execution_session_id=run.execution_session_id,

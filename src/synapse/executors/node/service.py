@@ -4,6 +4,7 @@ import asyncio
 import contextlib
 import json
 from dataclasses import dataclass, field
+import logging
 import sys
 from typing import Any, TextIO
 from urllib.parse import urlparse, urlunparse
@@ -26,6 +27,8 @@ from synapse.protocol import (
 )
 
 from .config import ExecutorNodeSettings
+
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -263,7 +266,14 @@ class ExecutorNodeService:
                 action=command.action,
                 answer_text=command.answer_text,
             )
-        except Exception:
+        except Exception as exc:
+            LOGGER.warning(
+                "Failed to forward interaction response to executor node session "
+                "execution_session_id=%s interaction_request_id=%s: %s",
+                command.execution_session_id,
+                command.interaction_request_id,
+                exc,
+            )
             return
         session.mark_blocked_resolved()
 

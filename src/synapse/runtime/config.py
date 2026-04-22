@@ -163,7 +163,8 @@ def load_settings() -> Settings:
     detached_executor_types = _parse_string_list(
         yaml_detached_executor_types
         if yaml_detached_executor_types is not None
-        else os.getenv("SYNAPSE_DETACHED_EXECUTOR_TYPES", "codex,acpx")
+        else os.getenv("SYNAPSE_DETACHED_EXECUTOR_TYPES", "codex,acpx"),
+        field_name="runtime.detached_executor_types",
     )
     return Settings(
         app_name=os.getenv("SYNAPSE_APP_NAME", "Synapse v2"),
@@ -208,12 +209,12 @@ def _parse_bool(value: Any) -> bool:
     raise RuntimeError(f"Invalid boolean value in runtime config: {value!r}")
 
 
-def _parse_string_list(value: Any) -> tuple[str, ...]:
+def _parse_string_list(value: Any, *, field_name: str) -> tuple[str, ...]:
     if isinstance(value, str):
         return tuple(part.strip() for part in value.split(",") if part.strip())
     if isinstance(value, list):
         if any(not isinstance(item, str) or not item.strip() for item in value):
-            raise RuntimeError("runtime.detached_executor_types must be a list of strings.")
+            raise RuntimeError(f"{field_name} must be a list of strings.")
         return tuple(item.strip() for item in value)
     if value in (None, ""):
         return ()
