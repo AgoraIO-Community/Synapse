@@ -240,6 +240,7 @@ export interface SessionSnapshot {
   interaction_requests: InteractionRequest[];
   attention_items: AttentionItem[];
   executor_capabilities: ExecutorCapability[];
+  communication_persona_prompt: string;
 }
 
 export interface Persona {

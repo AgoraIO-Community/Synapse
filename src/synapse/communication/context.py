@@ -54,6 +54,7 @@ class CommunicationContext:
     available_tools: list[str]
     personas: list[dict[str, object]] | None = None
     interaction_requests: list[dict[str, object]] | None = None
+    communication_persona_prompt: str = ""
 
 
 class CommunicationContextBuilder:
@@ -124,6 +125,9 @@ class CommunicationContextBuilder:
             available_tools=available_tools,
             personas=await self._build_persona_context(),
             interaction_requests=await self._build_interaction_request_context(),
+            communication_persona_prompt=(
+                await self._store.get_session_config("communication_persona_prompt") or ""
+            ),
         )
 
     def _build_task_brief(

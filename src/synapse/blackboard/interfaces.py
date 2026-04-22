@@ -152,6 +152,13 @@ class BlackboardStore(Protocol):
 
     async def list_recent_writes(self, limit: int = 50) -> list[BlackboardWriteEvent]:
         """List recent blackboard write events for debugging."""
+    async def get_session_config(self, key: str) -> str | None:
+        """Fetch a session-level configuration value by key."""
+
+    async def put_session_config(self, key: str, value: str) -> None:
+        """Store a session-level configuration value."""
+
+
 
     def subscribe(self) -> asyncio.Queue[BlackboardWriteEvent]:
         """Subscribe to blackboard write events."""

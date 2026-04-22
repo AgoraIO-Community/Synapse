@@ -132,6 +132,9 @@ class SessionRuntime:
             interaction_requests=sanitized_interaction_requests,
             attention_items=attention_items,
             executor_capabilities=self._executor_capabilities_snapshot(),
+            communication_persona_prompt=(
+                await self.blackboard.get_session_config("communication_persona_prompt") or ""
+            ),
         )
 
     async def conversation_snapshot(self) -> ConversationSnapshot:
