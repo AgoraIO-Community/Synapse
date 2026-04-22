@@ -81,7 +81,12 @@ const clientMock = vi.hoisted(() => ({
   getSessionSnapshot: vi.fn(),
   getConversationSnapshot: vi.fn(),
   getSessionConfig: vi.fn(async () => ({ key: "communication_persona_prompt", value: "" })),
-  putSessionConfig: vi.fn(async () => ({ key: "communication_persona_prompt", value: "" })),
+  putSessionConfig: vi.fn(
+    async (_sessionId: string, _key: string, value: string) => ({
+      key: "communication_persona_prompt",
+      value,
+    }),
+  ),
   getDiagnosticTimeline: vi.fn(async () => ({ events: [] })),
   openSessionStream: vi.fn((sessionId: string, handlers: StreamHandlers) => {
     streamState.handlersBySession.set(sessionId, handlers);
@@ -240,6 +245,7 @@ function makeSnapshot(sessionId: string, overrides: SessionSnapshotOverrides = {
     interaction_requests: [],
     attention_items: [],
     executor_capabilities: [],
+    communication_persona_prompt: "",
     ...overrides,
     personas,
   };
@@ -281,9 +287,9 @@ describe("App shell", () => {
       async () => ({ key: "communication_persona_prompt", value: "" }),
     );
     clientMock.putSessionConfig.mockImplementation(
-      async (_sessionId: string, _key: string, value: string) => ({
+      async (...args: [string, string, string]) => ({
         key: "communication_persona_prompt",
-        value,
+        value: args[2],
       }),
     );
     gatewayMock.getGatewayConfig.mockResolvedValue({
