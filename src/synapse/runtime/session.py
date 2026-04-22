@@ -1074,7 +1074,10 @@ def create_session_runtime(
     runtime._ensure_diagnostic_pump()
     communication_persona_prompt = load_communication_persona_prompt_from_file()
     if communication_persona_prompt:
-        blackboard._session_config["communication_persona_prompt"] = communication_persona_prompt
+        blackboard.seed_session_config(
+            "communication_persona_prompt",
+            communication_persona_prompt,
+        )
     # Load personas from persistent config into the blackboard.
     for persona in load_personas_from_file():
         blackboard._personas[persona.persona_id] = persona

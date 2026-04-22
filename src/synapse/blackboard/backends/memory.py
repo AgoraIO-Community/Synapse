@@ -384,6 +384,7 @@ class InMemoryBlackboard(BlackboardStore):
 
     async def list_recent_writes(self, limit: int = 50) -> list[BlackboardWriteEvent]:
         return list(self._recent_writes[-limit:])
+
     async def get_session_config(self, key: str) -> str | None:
         return self._session_config.get(key)
 
@@ -397,7 +398,13 @@ class InMemoryBlackboard(BlackboardStore):
             )
         )
 
+    def seed_session_config(self, key: str, value: str) -> None:
+        """Initialize persisted session config without emitting a write event.
 
+        This is intended for bootstrap-time hydration of a fresh in-memory
+        blackboard before any client-visible mutation flow begins.
+        """
+        self._session_config[key] = value
 
     def subscribe(self) -> asyncio.Queue[BlackboardWriteEvent]:
         return self._subscriptions.subscribe()
