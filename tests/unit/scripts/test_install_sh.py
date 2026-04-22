@@ -26,6 +26,26 @@ def prepare_repo_root(root: Path) -> None:
     )
 
 
+def read_bootstrap_outputs(home: Path) -> tuple[str, str]:
+    env_path = home / ".synapse" / ".env"
+    config_path = home / ".synapse" / "config.yaml"
+
+    assert env_path.exists()
+    assert config_path.exists()
+
+    env_text = env_path.read_text(encoding="utf-8")
+    config_text = config_path.read_text(encoding="utf-8")
+
+    assert "SYNAPSE_CODEX_EXECUTOR_ENABLED" not in env_text
+    assert '# Shared Synapse credentials written by `synapse setup` to ~/.synapse/.env' in env_text
+    assert 'public_base_url: "http://127.0.0.1:8000"' in config_text
+    assert "executor_node:" in config_text
+    assert "node_id: node-bootstrap" in config_text
+    assert "executors: {}" in config_text
+
+    return env_text, config_text
+
+
 def fake_bun_script() -> str:
     return """#!/usr/bin/env bash
 set -euo pipefail
@@ -83,12 +103,7 @@ OPENAI_API_KEY=
 SYNAPSE_OPENAI_MODEL=gpt-4o-mini
 SYNAPSE_OPENAI_TIMEOUT_SECONDS=30
 # SYNAPSE_OPENAI_BASE_URL=
-# Set to true only after the Codex CLI is installed and configured locally.
-SYNAPSE_CODEX_EXECUTOR_ENABLED=false
-# Legacy fallback only; prefer runtime.codex_command in ~/.synapse/config.yaml.
-# SYNAPSE_CODEX_COMMAND=codex
-
-# Runtime and gateway credentials written by `synapse setup` to ~/.synapse/.env
+# Shared Synapse credentials written by `synapse setup` to ~/.synapse/.env
 # AGORA_APP_ID=
 # AGORA_APP_CERTIFICATE=
 # DEEPGRAM_API_KEY=
@@ -99,15 +114,23 @@ version: 1
 
 runtime: {{}}
 
-host:
+connector_host:
   enabled: false
   host: 0.0.0.0
   port: 8010
-  public_base_url: "http://127.0.0.1:8010"
+  public_base_url: "http://127.0.0.1:8000"
   synapse_base_url: "http://127.0.0.1:8000"
-  enabled_gateways: []
+  enabled_connectors: []
 
-gateways: {{}}
+connectors: {{}}
+
+executor_node:
+  enabled: false
+  synapse_base_url: "http://127.0.0.1:8000"
+  node_id: node-bootstrap
+  enabled_executors: []
+
+executors: {{}}
 BOOTSTRAP_CONFIG
 fi
 exit 0
@@ -173,13 +196,10 @@ def test_install_sh_macos_skips_existing_system_dependencies(tmp_path: Path):
     assert "venv-python -m pip install -e .[dev]" in log_text
     assert "bun install" in log_text
     assert "venv-python -m synapse setup --bootstrap-defaults" in log_text
-    assert (home / ".synapse" / ".env").exists()
-    assert (home / ".synapse" / "config.yaml").exists()
-    env_text = (home / ".synapse" / ".env").read_text(encoding="utf-8")
+    env_text, _ = read_bootstrap_outputs(home)
     assert "sk-shell-secret" not in env_text
     assert "agora-shell-app" not in env_text
     assert "/shell/codex" not in env_text
-    assert "SYNAPSE_CODEX_EXECUTOR_ENABLED=false" in env_text
     assert "[install] Skipping Python install;" in completed.stdout
     assert "[install] Skipping Bun install;" in completed.stdout
     assert "./synapse setup" in completed.stdout
@@ -222,6 +242,8 @@ def test_install_sh_macos_installs_only_missing_bun(tmp_path: Path):
     assert "brew install python@3.12" not in log_text
     assert "curl -fsSL https://bun.sh/install" in log_text
     assert "bun install" in log_text
+    assert "venv-python -m synapse setup --bootstrap-defaults" in log_text
+    read_bootstrap_outputs(home)
     assert "[install] Skipping Python install;" in completed.stdout
     assert "[install] Installing Bun" in completed.stdout
 
@@ -286,6 +308,7 @@ def test_install_sh_macos_reinstalls_python_when_capabilities_missing(
     assert f"python3.12 -m venv {repo_root / '.venv'}" in log_text
     assert "venv-python -m pip install --upgrade pip" in log_text
     assert "venv-python -m synapse setup --bootstrap-defaults" in log_text
+    read_bootstrap_outputs(home)
     assert "[install] Installing Python 3.12+ with Homebrew" in completed.stdout
     assert "[install] Skipping Python install;" not in completed.stdout
     assert "[install] Skipping Bun install;" in completed.stdout
@@ -330,6 +353,8 @@ def test_install_sh_ubuntu_skips_existing_system_dependencies(tmp_path: Path):
     assert "curl -fsSL https://bun.sh/install" not in log_text
     assert f"python3.12 -m venv {repo_root / '.venv'}" in log_text
     assert "bun install" in log_text
+    assert "venv-python -m synapse setup --bootstrap-defaults" in log_text
+    read_bootstrap_outputs(home)
     assert "[install] Skipping Python install;" in completed.stdout
     assert "[install] Skipping Bun install;" in completed.stdout
 
@@ -405,6 +430,7 @@ fi
     assert "bun install" in log_text
     assert "venv-python -m synapse setup --bootstrap-defaults" in log_text
     assert "curl -fsSL https://bun.sh/install" not in log_text
+    read_bootstrap_outputs(home)
     assert "[install] Installing missing apt prerequisites" in completed.stdout
     assert "[install] Installing Ubuntu/Debian dependencies with apt-get" not in completed.stdout
     assert "[install] Skipping Bun install;" in completed.stdout
@@ -424,10 +450,10 @@ def test_install_sh_ubuntu_installs_curl_before_bun_when_curl_missing(tmp_path: 
     for command_name, target in {
         "bash": "/bin/bash",
         "basename": "/usr/bin/basename",
-        "cat": "/usr/bin/cat",
-        "chmod": "/usr/bin/chmod",
-        "cp": "/usr/bin/cp",
-        "mkdir": "/usr/bin/mkdir",
+        "cat": "/bin/cat",
+        "chmod": "/bin/chmod",
+        "cp": "/bin/cp",
+        "mkdir": "/bin/mkdir",
     }.items():
         (fake_bin / command_name).symlink_to(target)
 
@@ -487,6 +513,8 @@ fi
     assert "curl -fsSL https://bun.sh/install" in log_text
     assert f"python3.12 -m venv {repo_root / '.venv'}" in log_text
     assert "bun install" in log_text
+    assert "venv-python -m synapse setup --bootstrap-defaults" in log_text
+    read_bootstrap_outputs(home)
     assert "[install] Skipping Python install;" in completed.stdout
     assert "[install] Installing missing apt prerequisites" in completed.stdout
     assert "[install] Installing Ubuntu/Debian dependencies with apt-get" not in completed.stdout

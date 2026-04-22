@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from synapse.runtime import config as config_module
 
 
@@ -214,3 +216,8 @@ def test_load_settings_reads_codex_blocked_wait_timeout(monkeypatch, tmp_path: P
     settings = config_module.load_settings()
 
     assert settings.codex_blocked_wait_timeout_seconds == 42.0
+
+
+def test_parse_string_list_uses_field_name_in_error():
+    with pytest.raises(RuntimeError, match="runtime.detached_executor_types must be a list of strings."):
+        config_module._parse_string_list([1], field_name="runtime.detached_executor_types")

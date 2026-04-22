@@ -8,7 +8,7 @@ from synapse.communication.history import ConversationEntry
 from synapse.blackboard import BlackboardStore
 from synapse.observability.emitters.communication import CommunicationDiagnosticEmitter
 from synapse.protocol import MutationType, NotificationCandidate, Task, TaskMutation, TaskStatus
-from synapse.executor_core import ExecutorCapabilities
+from synapse.executors.core import ExecutorCapabilities
 
 from .context import CommunicationContextBuilder
 from .history import InMemoryConversationHistory
@@ -31,6 +31,7 @@ from .types import CommunicationTurnResult, ToolInvocationRecord
 ACTIVE_TASK_STATUSES = {
     TaskStatus.CREATED,
     TaskStatus.QUEUED,
+    TaskStatus.WAITING_EXECUTOR,
     TaskStatus.RUNNING,
     TaskStatus.WAITING_USER_INPUT,
     TaskStatus.PAUSED,

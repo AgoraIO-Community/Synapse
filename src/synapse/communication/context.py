@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from synapse.blackboard import BlackboardQueryService, BlackboardStore
-from synapse.executor_core import ExecutorCapabilities
+from synapse.executors.core import ExecutorCapabilities
 from synapse.protocol import InteractionRequest, Task, TaskExecutionDetailEntry, TaskStatus, TaskSummary
 
 from .history import ConversationEntry, InMemoryConversationHistory
@@ -102,6 +102,7 @@ class CommunicationContextBuilder:
             in {
                 TaskStatus.CREATED,
                 TaskStatus.QUEUED,
+                TaskStatus.WAITING_EXECUTOR,
                 TaskStatus.RUNNING,
                 TaskStatus.WAITING_USER_INPUT,
                 TaskStatus.PAUSED,

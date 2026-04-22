@@ -24,6 +24,7 @@ class ExecutionSession(BaseModel):
     execution_session_id: str
     task_id: str
     base_executor_id: str
+    executor_node_id: str | None = None
     run_ids: list[str] = Field(default_factory=list)
     active_run_id: str | None = None
     latest_run_id: str | None = None
@@ -34,6 +35,7 @@ class ExecutionSession(BaseModel):
 class SessionBinding(BaseModel):
     task_id: str
     execution_session_id: str | None = None
+    executor_node_id: str | None = None
     session_id: str | None = None
     claimed_by: str | None = None
     claim_expires_at: str | None = None

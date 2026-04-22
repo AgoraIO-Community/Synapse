@@ -13,6 +13,7 @@ export type SessionActionType =
 export type TaskStatus =
   | "created"
   | "queued"
+  | "waiting_executor"
   | "running"
   | "waiting_user_input"
   | "paused"
@@ -23,6 +24,7 @@ export type TaskStatus =
 export type RunStatus =
   | "created"
   | "assigned"
+  | "waiting_executor"
   | "running"
   | "blocked"
   | "paused"
@@ -114,6 +116,7 @@ export interface ExecutionSession {
   execution_session_id: string;
   task_id: string;
   base_executor_id: string;
+  executor_node_id: string | null;
   run_ids: string[];
   active_run_id: string | null;
   latest_run_id: string | null;
@@ -148,6 +151,7 @@ export interface TaskExecutionMode {
 export interface SessionBinding {
   task_id: string;
   execution_session_id: string | null;
+  executor_node_id: string | null;
   session_id: string | null;
   claimed_by: string | null;
   claim_expires_at: string | null;
@@ -218,6 +222,9 @@ export interface ExecutorCapability {
   supports_pause: boolean;
   supports_cancel: boolean;
   supports_resume: boolean;
+  connected?: boolean;
+  node_id?: string | null;
+  availability_reason?: string | null;
   supports_follow_up: boolean;
 }
 

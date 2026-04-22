@@ -103,8 +103,8 @@ const clientMock = vi.hoisted(() => ({
   sendSocketMessage: vi.fn(),
 }));
 
-const gatewayMock = vi.hoisted(() => ({
-  getGatewayConfig: vi.fn<
+const connectorMock = vi.hoisted(() => ({
+  getConnectorConfig: vi.fn<
     () => Promise<{
       ready: boolean;
       service_base_url: string;
@@ -113,11 +113,11 @@ const gatewayMock = vi.hoisted(() => ({
     }>
   >(async () => ({
     ready: true,
-    service_base_url: "https://gateway.example.com",
+    service_base_url: "https://connectors.example.com",
     defaults: {},
     missing_requirements: [],
   })),
-  prepareGatewaySession: vi.fn(async () => ({
+  prepareConnectorSession: vi.fn(async () => ({
     prepared_session_id: "prepared-1",
     app_id: "agora-app",
     channel_name: "voice-room",
@@ -152,12 +152,12 @@ const gatewayMock = vi.hoisted(() => ({
       enable_error_message: true,
     },
   })),
-  activateGatewaySession: vi.fn(async () => ({
+  activateConnectorSession: vi.fn(async () => ({
     prepared_session_id: "prepared-1",
     binding_id: "binding-1",
     synapse_session_id: "voice-session-1",
     runtime_session_id: "runtime-1",
-    chat_completions_url: "https://gateway.example.com/chat",
+    chat_completions_url: "https://connectors.example.com/chat",
     app_id: "agora-app",
     channel_name: "voice-room",
     token: "voice-token",
@@ -191,8 +191,8 @@ const gatewayMock = vi.hoisted(() => ({
       enable_error_message: true,
     },
   })),
-  stopGatewaySession: vi.fn(async () => {}),
-  stopGatewaySessionBeacon: vi.fn(() => true),
+  stopConnectorSession: vi.fn(async () => {}),
+  stopConnectorSessionBeacon: vi.fn(() => true),
 }));
 
 type SessionSnapshotOverrides = Partial<Omit<SessionSnapshot, "session_id" | "personas">> & {
@@ -200,7 +200,7 @@ type SessionSnapshotOverrides = Partial<Omit<SessionSnapshot, "session_id" | "pe
 };
 
 vi.mock("../lib/session-client", () => clientMock);
-vi.mock("../lib/gateway-client", () => gatewayMock);
+vi.mock("../lib/connector-client", () => connectorMock);
 vi.mock("agora-rtc-sdk-ng", () => ({
   default: {
     createClient: vi.fn(() => agoraState.rtcClient),
@@ -292,9 +292,9 @@ describe("App shell", () => {
         value: args[2],
       }),
     );
-    gatewayMock.getGatewayConfig.mockResolvedValue({
+    connectorMock.getConnectorConfig.mockResolvedValue({
       ready: true,
-      service_base_url: "https://gateway.example.com",
+      service_base_url: "https://connectors.example.com",
       defaults: {},
       missing_requirements: [],
     });
@@ -340,7 +340,7 @@ describe("App shell", () => {
     expect(screen.queryByTestId("conversation-composer-shell")).not.toBeInTheDocument();
     expect(await screen.findByTestId("voice-session-start")).toBeInTheDocument();
     expect(streamState.handlersBySession.size).toBe(0);
-    expect(gatewayMock.prepareGatewaySession).not.toHaveBeenCalled();
+    expect(connectorMock.prepareConnectorSession).not.toHaveBeenCalled();
   });
 
   it("switches to text mode and shows the text composer plus starter prompts", async () => {
@@ -363,9 +363,9 @@ describe("App shell", () => {
     expect(streamState.handlersBySession.has("voice-session-1")).toBe(false);
     fireEvent.click(await screen.findByTestId("voice-session-start"));
 
-    await waitFor(() => expect(gatewayMock.prepareGatewaySession).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(connectorMock.prepareConnectorSession).toHaveBeenCalledTimes(1));
     await waitFor(() =>
-      expect(gatewayMock.activateGatewaySession).toHaveBeenCalledWith({
+      expect(connectorMock.activateConnectorSession).toHaveBeenCalledWith({
         prepared_session_id: "prepared-1",
       }),
     );
@@ -445,14 +445,14 @@ describe("App shell", () => {
     await waitFor(() => expect(streamState.handlersBySession.has("voice-session-1")).toBe(true));
     fireEvent.click(screen.getByTestId("voice-session-stop"));
 
-    await waitFor(() => expect(gatewayMock.stopGatewaySession).toHaveBeenCalledWith("binding-1"));
+    await waitFor(() => expect(connectorMock.stopConnectorSession).toHaveBeenCalledWith("binding-1"));
     expect(screen.queryByTestId("conversation-composer-shell")).not.toBeInTheDocument();
     expect(await screen.findByTestId("voice-session-start")).toBeInTheDocument();
     expect(screen.getByText(/no live session is running yet/i)).toBeInTheDocument();
   });
 
   it("keeps the binding available so a failed stop can be retried", async () => {
-    gatewayMock.stopGatewaySession
+    connectorMock.stopConnectorSession
       .mockRejectedValueOnce(new Error("temporary stop failure"))
       .mockResolvedValueOnce(undefined);
 
@@ -468,7 +468,7 @@ describe("App shell", () => {
 
     fireEvent.click(screen.getByTestId("voice-session-retry-stop"));
 
-    await waitFor(() => expect(gatewayMock.stopGatewaySession).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(connectorMock.stopConnectorSession).toHaveBeenCalledTimes(2));
     expect(await screen.findByTestId("voice-session-start")).toBeInTheDocument();
   });
 
@@ -494,27 +494,27 @@ describe("App shell", () => {
     await waitFor(() => expect(streamState.handlersBySession.has("voice-session-1")).toBe(true));
     fireEvent.click(screen.getByTestId("mode-switch-text"));
 
-    await waitFor(() => expect(gatewayMock.stopGatewaySession).toHaveBeenCalledWith("binding-1"));
+    await waitFor(() => expect(connectorMock.stopConnectorSession).toHaveBeenCalledWith("binding-1"));
     await waitFor(() => expect(clientMock.createSession).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(streamState.handlersBySession.has("text-session-1")).toBe(true));
     expect(await screen.findByTestId("conversation-composer-shell")).toBeInTheDocument();
   });
 
-  it("shows a voice-mode startup error when gateway config is incomplete", async () => {
-    gatewayMock.getGatewayConfig.mockImplementationOnce(async () => ({
+  it("shows a voice-mode startup error when connector config is incomplete", async () => {
+    connectorMock.getConnectorConfig.mockImplementationOnce(async () => ({
       ready: false,
-      service_base_url: "https://gateway.example.com",
+      service_base_url: "https://connectors.example.com",
       defaults: {},
-      missing_requirements: ["gateways.agora-convoai.app_id"] as string[],
+      missing_requirements: ["connectors.agora-convoai.app_id"] as string[],
     }));
 
     renderApp();
     fireEvent.click(await screen.findByTestId("voice-session-start"));
 
-    expect(await screen.findByText(/gateways\.agora-convoai\.app_id/)).toBeInTheDocument();
+    expect(await screen.findByText(/connectors\.agora-convoai\.app_id/)).toBeInTheDocument();
   });
 
-  it("signals the gateway stop endpoint on pagehide while a voice session is active", async () => {
+  it("signals the connector stop endpoint on pagehide while a voice session is active", async () => {
     const { unmount } = renderApp();
 
     fireEvent.click(await screen.findByTestId("voice-session-start"));
@@ -522,8 +522,8 @@ describe("App shell", () => {
 
     unmount();
 
-    expect(gatewayMock.stopGatewaySessionBeacon).toHaveBeenCalledTimes(1);
-    expect(gatewayMock.stopGatewaySessionBeacon).toHaveBeenCalledWith("binding-1");
+    expect(connectorMock.stopConnectorSessionBeacon).toHaveBeenCalledTimes(1);
+    expect(connectorMock.stopConnectorSessionBeacon).toHaveBeenCalledWith("binding-1");
   });
 
   it("sends text-mode composer messages through the active text session websocket", async () => {

@@ -25,10 +25,12 @@ The installed service runs:
 
 That means:
 
-- the main Synapse API always starts
-- the gateway host also starts automatically when `~/.synapse/config.yaml`
-  enables gateways
-- the service stays on the current combined backend-plus-optional-gateway shape
+- one main Synapse service listens on the public port and becomes the single
+  browser-facing origin
+- the production frontend build is served from the same origin at `/`
+- the normal API and websocket routes live on that same service origin
+- enabled `/connectors/...` routes are mounted directly into the main service
+- the standalone connector host no longer auto-starts from `synapse start`
 
 ## Deployment Notes
 
@@ -37,15 +39,18 @@ That means:
 - When a non-root user runs the install, the CLI uses `sudo` only for writing
   the unit and calling `systemctl`.
 - The installed systemd unit always runs as the user who ran
-  `./synapse service install`, and it reads the shared runtime-plus-gateway
+  `./synapse service install`, and it reads the shared runtime-plus-connector
   config from that user’s home directory.
-- This path is backend/gateway only. It does not install or serve the Vite
-  frontend.
+- This path builds the production frontend during `synapse service install` and
+  serves the built UI directly from the main Synapse service.
 - If the Codex executor is enabled, set an absolute `runtime.codex_command` in
   `~/.synapse/config.yaml`.
-- If a separately deployed browser UI uses voice mode against this server, add
-  the frontend origin to `host.cors_allowed_origins` in `~/.synapse/config.yaml`
-  so the gateway host can answer cross-origin `/gateway/...` requests.
+- Same-origin voice mode now works through the main service `/connectors/...`
+  routes when connectors are enabled, so a separate `VITE_CONNECTOR_BASE_URL` is
+  not required for this service-hosted UI path.
+- If Agora or another external caller must reach
+  `/connectors/agora-convoai/chat/completions`, set `connector_host.public_base_url` in
+  `~/.synapse/config.yaml` to the public Synapse service origin.
 
 Runtime config lives in:
 
@@ -69,10 +74,16 @@ After starting the service:
 curl -i http://127.0.0.1:8000/health
 ```
 
-If gateway modules are enabled:
+Verify the served UI shell:
 
 ```bash
-curl -i http://127.0.0.1:8010/health
+curl -i http://127.0.0.1:8000/
+```
+
+If connector modules are enabled:
+
+```bash
+curl -i http://127.0.0.1:8000/connectors/agora-convoai/config
 ```
 
 ## Logs And Control

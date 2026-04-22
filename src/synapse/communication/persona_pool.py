@@ -25,12 +25,21 @@ class PersonaStore:
     communication_persona_prompt: str = ""
 
 
-def create_workspace(task_id: str) -> Path:
-    """Create a new isolated workspace directory for a task."""
-    workspace_id = f"ws-{task_id.replace('task-', '')}"
+def create_workspace(task_id: str) -> str:
+    """Create a durable workspace id for a task."""
+    return f"ws-{task_id.replace('task-', '')}"
+
+
+def resolve_workspace(workspace_id: str) -> Path:
+    """Resolve a durable workspace id into a local workspace path."""
+    resolved_id = (
+        f"ws-{workspace_id.replace('task-', '')}"
+        if workspace_id.startswith("task-")
+        else workspace_id
+    )
     candidates = [
-        WORKSPACES_DIR / workspace_id,
-        Path.cwd() / ".synapse" / "workspaces" / workspace_id,
+        WORKSPACES_DIR / resolved_id,
+        Path.cwd() / ".synapse" / "workspaces" / resolved_id,
     ]
     last_error: OSError | None = None
     for workspace in candidates:

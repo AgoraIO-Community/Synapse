@@ -1,4 +1,4 @@
-import { stopGatewaySession } from "./gateway-client";
+import { stopConnectorSession } from "./connector-client";
 
 export type VoiceTranscriptTurn = {
   turn_id?: string | number;
@@ -58,6 +58,6 @@ export async function teardownVoiceSession(
   } catch {}
 
   if (notifyBackend && resources.bindingId) {
-    await stopGatewaySession(resources.bindingId);
+    await stopConnectorSession(resources.bindingId);
   }
 }

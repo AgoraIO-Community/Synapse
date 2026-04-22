@@ -10,7 +10,7 @@ import {
   Volume2,
   Waves,
 } from "lucide-react";
-import type { GatewayActivateResponse } from "../lib/gateway-client";
+import type { ConnectorActivateResponse } from "../lib/connector-client";
 import { Button } from "./ui/button";
 import { cn } from "../lib/utils";
 
@@ -58,7 +58,7 @@ function normalizeSpeakerId(value: string | number | null | undefined) {
 
 function resolveTranscriptSpeakerLabel(
   item: VoiceTranscriptTurn,
-  activeSession: GatewayActivateResponse | null,
+  activeSession: ConnectorActivateResponse | null,
 ) {
   const metadata = item.metadata;
   const metadataObject =
@@ -105,7 +105,7 @@ export function VoiceModePanel({
 }: {
   phase: VoiceModePhase;
   agentState: string;
-  activeSession: GatewayActivateResponse | null;
+  activeSession: ConnectorActivateResponse | null;
   transcript: VoiceTranscriptTurn[];
   error: string | null;
   lastTranscriptUpdateAt: string | null;

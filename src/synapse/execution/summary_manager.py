@@ -13,6 +13,15 @@ class SummaryManager:
                 latest_user_visible_status="queued",
                 needs_user_input=False,
             )
+        if task.status == TaskStatus.WAITING_EXECUTOR:
+            text = run.latest_progress_message or f"Waiting for executor node: {task.title}"
+            return TaskSummary(
+                task_id=task.task_id,
+                operational_summary=text,
+                conversational_summary=text,
+                latest_user_visible_status="waiting_executor",
+                needs_user_input=False,
+            )
         if task.status == TaskStatus.PAUSED:
             return TaskSummary(
                 task_id=task.task_id,
@@ -54,6 +63,15 @@ class SummaryManager:
                 operational_summary=text,
                 conversational_summary=text,
                 latest_user_visible_status="cancelled",
+                needs_user_input=False,
+            )
+        if run.status == RunStatus.WAITING_EXECUTOR:
+            text = run.latest_progress_message or f"Waiting for executor node: {task.title}"
+            return TaskSummary(
+                task_id=task.task_id,
+                operational_summary=text,
+                conversational_summary=text,
+                latest_user_visible_status="waiting_executor",
                 needs_user_input=False,
             )
         text = run.latest_progress_message or f"Running: {task.title}"

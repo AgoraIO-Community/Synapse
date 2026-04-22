@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 from synapse.blackboard import BlackboardStore
-from synapse.executor_core import ExecutorEvent, ExecutorEventType
+from synapse.executors.core import ExecutorEvent, ExecutorEventType
 from synapse.observability.emitters.execution import ExecutionDiagnosticEmitter
 from synapse.protocol import (
     ExecutionRun,
@@ -79,6 +79,14 @@ class RunManager:
                 should_append_detail = True
             if task.status != TaskStatus.RUNNING:
                 task.status = TaskStatus.RUNNING
+        elif event.event_type == ExecutorEventType.WAITING_EXECUTOR:
+            run.status = RunStatus.WAITING_EXECUTOR
+            if isinstance(event.message, str) and event.message.strip():
+                run.latest_progress_message = event.message
+            if event.metadata:
+                run.metadata["executor_wait_event"] = dict(event.metadata)
+            task.status = TaskStatus.WAITING_EXECUTOR
+            should_append_detail = True
         elif event.event_type == ExecutorEventType.BLOCKED:
             run.status = RunStatus.BLOCKED
             run.block_reason = event.message
@@ -157,6 +165,8 @@ def _detail_text(task: Task, event: ExecutorEvent) -> str:
         return event.message.strip()
     if event.event_type == ExecutorEventType.PROGRESS:
         return f"Running: {task.title}"
+    if event.event_type == ExecutorEventType.WAITING_EXECUTOR:
+        return event.message.strip() if isinstance(event.message, str) and event.message.strip() else f"Waiting for executor: {task.title}"
     if event.event_type == ExecutorEventType.BLOCKED:
         return f"Blocked: {task.title}"
     if event.event_type == ExecutorEventType.COMPLETED:

@@ -82,7 +82,7 @@ class CreateTaskTool:
                 session_affinity = prior_task.session_affinity
                 metadata["continue_from_task_id"] = continue_from_task_id
         if session_affinity is None:
-            session_affinity = str(create_workspace(task_id))
+            session_affinity = create_workspace(task_id)
 
         if persona is not None:
             metadata["persona_id"] = persona.persona_id

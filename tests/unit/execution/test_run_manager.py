@@ -4,7 +4,7 @@ import pytest
 
 from synapse.blackboard import InMemoryBlackboard
 from synapse.execution import RunManager
-from synapse.executor_core import ExecutorEvent, ExecutorEventType
+from synapse.executors.core import ExecutorEvent, ExecutorEventType
 from synapse.protocol import ExecutionRun, RunStatus, Task, TaskStatus
 
 

@@ -2,7 +2,7 @@ import pytest
 
 from synapse.blackboard import InMemoryBlackboard
 from synapse.execution import SessionManager
-from synapse.executor_adapters.mock import MockExecutor
+from synapse.executors.adapters.mock import MockExecutor
 from synapse.protocol import SessionBinding, Task
 
 

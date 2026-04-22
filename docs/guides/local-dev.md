@@ -28,11 +28,35 @@ Current test command:
 .venv/bin/python -m pytest
 ```
 
-To use the Codex executor locally, make sure the `codex` CLI is installed, keep
-`SYNAPSE_CODEX_EXECUTOR_ENABLED=true` in `~/.synapse/.env`, and set
-`runtime.codex_command` in `~/.synapse/config.yaml`. `./synapse setup` will
-prompt for the Codex command path and default it to the current `which codex`
-result when available.
+Real executors now run through the detached executor node.
+
+Typical local real-executor flow:
+
+```bash
+./synapse setup
+./synapse executor setup
+./synapse backend
+./synapse executor run
+```
+
+`./synapse setup` configures the main control plane, including whether detached
+executors are enabled and which executor families the control plane should
+expect.
+`./synapse executor setup` configures the detached executor node itself,
+including the Synapse base URL, a generated executor-node id, and local
+Codex or ACPX command settings.
+`./synapse executor run` now reports foreground lifecycle state directly in the
+terminal:
+
+- `[start]` after local config is loaded
+- `[connect]` before each control-channel dial attempt
+- `[ready]` only after the node registers successfully with Synapse
+- `[warn]` plus `[retry]` when connection or registration fails and the node is
+  retrying
+- `[stop]` on manual interrupt
+
+`./synapse dev` and `./synapse start` do not auto-start the executor node.
+Run `./synapse executor run` explicitly when you want local real execution.
 
 Backend-only and frontend-only commands:
 
@@ -40,6 +64,20 @@ Backend-only and frontend-only commands:
 ./synapse backend
 ./synapse frontend
 ```
+
+`./synapse start` is the production-style runtime entrypoint used by the
+systemd service path. It expects an existing frontend production build and runs
+one main Synapse service on the public port. That service serves the built UI
+from `/`, keeps the normal API and websocket routes on the same origin, and
+mounts `/connectors/...` routes directly when connectors are enabled.
+
+`./synapse dev` runs the same main service with reload on port `8000` plus the
+separate Vite frontend on `5173`. The Vite workspace proxies both `/sessions`
+and `/connectors` to the local main service while you iterate on the UI.
+
+`./synapse connector run` remains available when you want to run the standalone
+headless connector host by itself for separate deployment or direct connector
+testing.
 
 Separate frontend production deployments are documented in
 [`./vercel-ui-deployment.md`](./vercel-ui-deployment.md). Local

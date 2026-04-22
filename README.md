@@ -18,7 +18,7 @@ For a fresh clone, use the repo bootstrap launcher:
 ```bash
 ./install.sh
 ./synapse setup
-./synapse gateway setup
+./synapse connector setup
 ./synapse doctor
 ./synapse dev
 ```
@@ -29,12 +29,12 @@ starter `~/.synapse/.env` plus `~/.synapse/config.yaml` files when they do not
 already exist.
 
 `./synapse setup` fills in `~/.synapse/.env` plus the shared
-`~/.synapse/config.yaml` runtime/gateway config. By default it prompts for
+`~/.synapse/config.yaml` runtime/connectors config. By default it prompts for
 required runtime values such as `OPENAI_API_KEY`, and it can also enter the
-gateway-host setup flow. For gateway-only reconfiguration, use:
+connector-host setup flow. For connector-only reconfiguration, use:
 
 ```bash
-./synapse gateway setup
+./synapse connector setup
 ```
 
 For automation, use:
@@ -94,13 +94,13 @@ If both ACPX and the direct Codex executor are enabled, Synapse prefers ACPX.
 ```bash
 ./install.sh
 ./synapse setup
-./synapse gateway setup
+./synapse connector setup
 ./synapse doctor
 ./synapse dev
 ./synapse backend
 ./synapse frontend
 ./synapse start
-./synapse gateway run
+./synapse connector run
 ./synapse service install
 ./synapse service start
 ./synapse service stop
@@ -132,10 +132,10 @@ To run only the frontend:
 ./synapse frontend
 ```
 
-To run only the headless gateway host:
+To run only the headless connector host:
 
 ```bash
-./synapse gateway run
+./synapse connector run
 ```
 
 ## Ubuntu Systemd
@@ -148,15 +148,16 @@ system service with:
 ./synapse service start
 ```
 
-The installed `synapse.service` unit runs `synapse start`, so it starts the
-main backend and also starts the gateway host when `~/.synapse/config.yaml`
-enables gateways.
+The installed `synapse.service` unit runs `synapse start`, so it starts one
+main Synapse service on the public port.
 
-This server path does not install or serve the Vite frontend. Use a separate
-frontend deployment or reverse proxy if you need the browser UI.
+This path stays inside the repo checkout. The main service serves
+`src/synapse/ui/dist` at `/`, keeps the normal API and websocket routes on the
+same origin, and mounts `/connectors/...` routes directly when connectors are
+enabled.
 
 The systemd unit runs as the user who invoked `./synapse service install` and
-reads shared runtime-plus-gateway config from that user’s home directory:
+reads shared runtime-plus-connector config from that user’s home directory:
 
 ```text
 ~/.synapse/.env
@@ -174,15 +175,16 @@ If the Codex executor is enabled, set an absolute
 `runtime.codex_command` in `~/.synapse/config.yaml` so the service does not
 depend on an interactive shell PATH.
 
-When gateway modules are enabled in `~/.synapse/config.yaml`, `./synapse dev`
-and `./synapse start` also start the gateway host automatically.
+`./synapse dev` and `./synapse start` do not auto-start the standalone connector
+host. Run `./synapse connector run` separately when you want the detached connector
+process for direct connector testing or separate deployment.
 
 `./synapse dev` is the reload-capable local iteration path. `./synapse start`
-does not reload Python code changes, so restart it after editing backend or
-gateway host code.
+does not reload Python code changes, so restart it after editing backend,
+connector modules, or other Python service code.
 
-The gateway host talks to the Synapse backend directly using the configured
-`SYNAPSE_GATEWAY_SYNAPSE_BASE_URL` and does not use proxy environment variables
+The connector host talks to the Synapse backend directly using the configured
+`SYNAPSE_CONNECTOR_SYNAPSE_BASE_URL` and does not use proxy environment variables
 for its internal upstream traffic.
 
 ## Test
@@ -216,7 +218,7 @@ Then deploy from the UI workspace:
 ```bash
 cd src/synapse/ui
 npx vercel env add VITE_API_BASE_URL production
-npx vercel env add VITE_GATEWAY_BASE_URL production
+npx vercel env add VITE_CONNECTOR_BASE_URL production
 npx vercel --prod
 ```
 
@@ -225,25 +227,25 @@ example:
 
 ```text
 VITE_API_BASE_URL=https://newbro.plutoless.com
-VITE_GATEWAY_BASE_URL=https://newbro.plutoless.com
+VITE_CONNECTOR_BASE_URL=https://newbro.plutoless.com
 ```
 
 If you also use Vercel preview deployments, add the same variable for the
 `preview` environment and include that preview origin in
 `SYNAPSE_CORS_ALLOWED_ORIGINS`.
 
-If the deployed UI enables voice mode, the gateway host must also allow the
+If the deployed UI enables voice mode, the connector host must also allow the
 frontend origin. Configure that in `~/.synapse/config.yaml` under:
 
 ```yaml
-host:
+connector_host:
   cors_allowed_origins:
     - https://newbro.agora-io.czhen.work
 ```
 
 If the backend is served behind Nginx on your server, proxy the public session
-routes to the main Synapse API on port `8000`, proxy `/gateway/...` to the
-gateway host on `8010`, and keep websocket upgrade headers intact for
+routes to the main Synapse API on port `8000`, proxy `/connectors/...` to the
+connector host on `8010`, and keep websocket upgrade headers intact for
 `/sessions/{session_id}/stream`. See
 [`docs/guides/vercel-ui-deployment.md`](./docs/guides/vercel-ui-deployment.md)
 for the full deployment contract and an example reverse-proxy shape.
@@ -263,7 +265,7 @@ Before enabling that workflow, configure these GitHub repository settings:
 
 The production GitHub Actions deploy now injects
 `VITE_API_BASE_URL=https://newbro.plutoless.com` and
-`VITE_GATEWAY_BASE_URL=https://newbro.plutoless.com` directly into the build so
+`VITE_CONNECTOR_BASE_URL=https://newbro.plutoless.com` directly into the build so
 the merge-to-`main` path does not depend on separate Vercel production env
 entries.
 If you also use manual Vercel CLI deploys outside GitHub Actions, keep the

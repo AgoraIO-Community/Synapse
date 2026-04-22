@@ -3,9 +3,7 @@ from __future__ import annotations
 from uuid import uuid4
 
 from synapse.blackboard import BlackboardStore
-from synapse.executor_adapters.acpx import AcpxExecutorSession
-from synapse.executor_adapters.codex import CodexExecutorSession
-from synapse.executor_core import Executor, ExecutorSession
+from synapse.executors.core import Executor, ExecutorSession
 from synapse.observability.emitters.execution import ExecutionDiagnosticEmitter
 from synapse.observability.reason_codes import (
     EXECUTOR_SESSION_RECREATED,
@@ -26,13 +24,22 @@ class SessionManager:
         task: Task,
         binding: SessionBinding,
     ) -> tuple[ExecutionSession, SessionBinding, ExecutorSession]:
+        executor_node_id = getattr(executor, "executor_node_id", None)
         if binding.execution_session_id:
             existing = await store.get_session(binding.execution_session_id)
             if existing is not None:
+                if executor_node_id is not None and existing.executor_node_id != executor_node_id:
+                    existing.executor_node_id = executor_node_id
+                    await store.put_session(existing)
                 cached = self._live_sessions.get(existing.execution_session_id)
-                if cached is not None and _session_is_alive(cached):
+                # Control-plane cached sessions are reusable; executor-native liveness is
+                # owned by the detached node rather than tracked here.
+                if cached is not None:
                     active_binding = binding.model_copy(
-                        update={"binding_status": BindingStatus.ACTIVE}
+                        update={
+                            "binding_status": BindingStatus.ACTIVE,
+                            "executor_node_id": executor_node_id,
+                        }
                     )
                     await store.put_binding(active_binding)
                     if self._observability is not None:
@@ -51,6 +58,7 @@ class SessionManager:
                 active_binding = binding.model_copy(
                     update={
                         "session_id": executor_session.session_id,
+                        "executor_node_id": executor_node_id,
                         "binding_status": BindingStatus.ACTIVE,
                     }
                 )
@@ -70,11 +78,13 @@ class SessionManager:
             execution_session_id=f"exec-session-{uuid4().hex[:8]}",
             task_id=task.task_id,
             base_executor_id=executor.get_capabilities().executor_type,
+            executor_node_id=executor_node_id,
         )
         self._live_sessions[execution_session.execution_session_id] = executor_session
         updated_binding = binding.model_copy(
             update={
                 "execution_session_id": execution_session.execution_session_id,
+                "executor_node_id": executor_node_id,
                 "session_id": executor_session.session_id,
                 "binding_status": BindingStatus.ACTIVE,
             }
@@ -97,44 +107,11 @@ class SessionManager:
         return self._live_sessions.get(execution_session_id)
 
 
-def _session_is_alive(session: ExecutorSession) -> bool:
-    if isinstance(session, AcpxExecutorSession):
-        return True
-    if isinstance(session, CodexExecutorSession):
-        return session.is_alive()
-    return True
-
-
 def _hydrate_resume_handle(
     session: ExecutorSession,
     resume_handle: AgentResumeHandle | None,
 ) -> None:
-    if (
-        isinstance(session, AcpxExecutorSession)
-        and resume_handle is not None
-        and resume_handle.executor_id == "acpx"
-    ):
-        opaque = resume_handle.opaque
-        session.hydrate_resume_handle(
-            cwd=str(opaque.get("cwd")) if opaque.get("cwd") is not None else None,
-            session_name=(
-                str(opaque.get("sessionName")) if opaque.get("sessionName") is not None else None
-            ),
-            agent=str(opaque.get("agent")) if opaque.get("agent") is not None else None,
-            acpx_record_id=resume_handle.session_handle,
-            acp_session_id=(
-                str(opaque.get("acpSessionId")) if opaque.get("acpSessionId") is not None else None
-            ),
-            agent_session_id=(
-                str(opaque.get("agentSessionId"))
-                if opaque.get("agentSessionId") is not None
-                else None
-            ),
-        )
+    if resume_handle is None:
+        session.metadata.pop("latest_resume_handle", None)
         return
-    if (
-        isinstance(session, CodexExecutorSession)
-        and resume_handle is not None
-        and resume_handle.executor_id == "codex"
-    ):
-        session.thread_id = resume_handle.session_handle
+    session.metadata["latest_resume_handle"] = resume_handle.model_dump(mode="json")

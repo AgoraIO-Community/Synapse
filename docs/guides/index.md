@@ -10,7 +10,7 @@ This directory contains contributor-oriented operational guides.
 - [Frontend Contracts](./frontend-contracts.md)
 - [Frontend Handoff](./frontend-handoff.md)
 - [Frontend Workbench](./frontend-workbench.md)
-- [Gateway Host](./gateway-host.md)
+- [Connector Host](./connector-host.md)
 - [Agora Conversational AI](./agora-conversational-ai.md)
 
 Related planning material:

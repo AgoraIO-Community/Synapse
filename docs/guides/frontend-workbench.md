@@ -66,10 +66,10 @@ Primary reads:
 - `GET /sessions/{session_id}/conversation`
 - `GET /sessions/{session_id}/diagnostics/timeline`
 - `WS /sessions/{session_id}/stream`
-- `GET /gateway/agora-convoai/config`
-- `POST /gateway/agora-convoai/sessions/prepare`
-- `POST /gateway/agora-convoai/sessions/activate`
-- `POST /gateway/agora-convoai/sessions/stop`
+- `GET /connectors/agora-convoai/config`
+- `POST /connectors/agora-convoai/sessions/prepare`
+- `POST /connectors/agora-convoai/sessions/activate`
+- `POST /connectors/agora-convoai/sessions/stop`
 
 State ownership:
 
@@ -88,19 +88,19 @@ Mode rules:
 - switching modes abandons the current frontend-owned session for that mode
 - switching to `Text` creates a fresh `POST /sessions` session
 - switching to `Voice` enters an idle voice-mode shell first
-- pressing `Start` in voice mode creates a fresh gateway-backed voice session
+- pressing `Start` in voice mode creates a fresh connector-backed voice session
   and then rebinds the whole shell to the returned `synapse_session_id`
 - switching away from `Voice` stops the active Agora session through
-  `POST /gateway/agora-convoai/sessions/stop`
+  `POST /connectors/agora-convoai/sessions/stop`
 
 By default, the browser client talks to those routes on the current origin so
 local Vite proxying and same-origin backend hosting keep working. Separate UI
 deployments can set `VITE_API_BASE_URL` to a public backend base URL instead,
 and that URL must support both HTTPS requests and secure websocket upgrades.
-Voice gateway calls may independently use `VITE_GATEWAY_BASE_URL`; if unset,
-they also fall back to same-origin `/gateway/...` requests. This keeps the main
+Voice connector calls may independently use `VITE_CONNECTOR_BASE_URL`; if unset,
+they also fall back to same-origin `/connectors/...` requests. This keeps the main
 workbench session transport on the main Synapse API while allowing the Agora
-gateway host to sit on a different public origin.
+connector host to sit on a different public origin.
 When the backend sits behind an HTTPS reverse proxy such as Nginx, the public
 origin must forward `/sessions` to the main Synapse API and preserve websocket
 upgrade handling for the session stream route.

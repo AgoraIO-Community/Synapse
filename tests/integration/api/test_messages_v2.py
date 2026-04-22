@@ -7,7 +7,7 @@ from synapse.api.app import create_app
 from synapse.communication.model import ToolCall
 from synapse.communication.models import ScriptedCommunicationModel
 from synapse.communication.models.scripted import ScriptedPlan
-from synapse.executor_core import ExecutorCapabilities, ExecutorEvent, ExecutorEventType, ExecutorSession
+from synapse.executors.core import ExecutorCapabilities, ExecutorEvent, ExecutorEventType, ExecutorSession
 from synapse.runtime.container import RuntimeContainer
 from synapse.runtime import Settings
 from synapse.protocol import Task, TaskStatus
@@ -251,7 +251,7 @@ async def test_messages_v2_conversational_cancel_applies_runtime_command_and_sto
         )
 
         assert response.status_code == 200
-        assert response.json()["reply_text"] == "Okay, I won't continue with that."
+        assert response.json()["reply_text"] == "Okay, I won't continue with Cancelable task."
 
         snapshot = await _wait_for_snapshot(
             client,
@@ -319,7 +319,7 @@ async def test_messages_v2_current_work_reply_prefers_active_task_over_cancelled
 
         assert response.status_code == 200
         assert response.json()["reply_text"] == "I'm working on Check Shanghai's Weather right now."
-        assert response.json()["affected_task_ids"] == []
+        assert response.json()["affected_task_ids"] == ["task-weather"]
 
 
 @pytest.mark.anyio
