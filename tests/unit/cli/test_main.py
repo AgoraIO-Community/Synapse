@@ -716,6 +716,71 @@ def test_dev_uses_repo_venv_and_frontend_command(monkeypatch, tmp_path: Path):
     assert spawned[2][0][:4] == [str(venv_python), "-m", "uvicorn", "synapse.gateway_host.app:app"]
 
 
+def test_start_uses_edge_transport_and_internal_upstreams(monkeypatch, tmp_path: Path):
+    venv_python = tmp_path / ".venv" / "bin" / "python"
+    venv_python.parent.mkdir(parents=True, exist_ok=True)
+    venv_python.write_text("", encoding="utf-8")
+    dist_dir = tmp_path / "src" / "synapse" / "ui" / "dist"
+    dist_dir.mkdir(parents=True, exist_ok=True)
+    (dist_dir / "index.html").write_text("<html>ok</html>", encoding="utf-8")
+
+    configure_repo_paths(monkeypatch, tmp_path)
+    (tmp_path / ".synapse").mkdir(parents=True, exist_ok=True)
+    (tmp_path / ".synapse" / ".env").write_text("OPENAI_API_KEY=test-key\n", encoding="utf-8")
+    (tmp_path / ".synapse" / "config.yaml").write_text(
+        "\n".join(
+            [
+                "version: 1",
+                "host:",
+                "  enabled: true",
+                "  host: 0.0.0.0",
+                "  port: 8010",
+                '  public_base_url: "http://127.0.0.1:8010"',
+                "  enabled_gateways:",
+                "    - agora-convoai",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    captured: dict[str, object] = {}
+
+    def fake_run_managed_processes(commands):
+        captured["commands"] = commands
+        return 0
+
+    monkeypatch.setattr(cli_main, "run_managed_processes", fake_run_managed_processes)
+
+    assert cli_main.main(["start"]) == 0
+
+    commands = captured["commands"]
+    assert commands[0][0] == "backend"
+    assert commands[0][1][:4] == [str(venv_python), "-m", "uvicorn", "synapse.api.app:app"]
+    assert commands[0][1][-4:] == ["--host", "127.0.0.1", "--port", "8001"]
+    assert commands[1] == (
+        "edge",
+        [
+            str(venv_python),
+            "-m",
+            "synapse.edge",
+            "--host",
+            "0.0.0.0",
+            "--port",
+            "8000",
+            "--backend-base-url",
+            "http://127.0.0.1:8001",
+            "--frontend-dist",
+            str(dist_dir),
+            "--gateway-base-url",
+            "http://127.0.0.1:8010",
+        ],
+        tmp_path,
+    )
+    assert commands[2][0] == "gateway"
+    assert commands[2][1][-4:] == ["--host", "127.0.0.1", "--port", "8010"]
+
+
 def configure_service_environment(monkeypatch, tmp_path: Path) -> None:
     configure_repo_paths(monkeypatch, tmp_path)
     monkeypatch.setattr(cli_main.sys, "platform", "linux")
@@ -848,14 +913,18 @@ def test_render_service_unit_includes_expected_values():
         workdir=Path("/srv/synapse"),
         venv_python=Path("/srv/synapse/.venv/bin/python"),
         host="0.0.0.0",
-        port=8000,
+        public_port=8000,
+        backend_port=8001,
     )
 
     assert "User=deploy" in unit
     assert "WorkingDirectory=/srv/synapse" in unit
     assert 'Environment="HOME=/home/deploy"' in unit
     assert 'Environment="PATH=/srv/synapse/.venv/bin:/home/deploy/.local/bin:/home/deploy/.bun/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"' in unit
-    assert "ExecStart=/srv/synapse/.venv/bin/python -m synapse start --host 0.0.0.0 --port 8000" in unit
+    assert (
+        "ExecStart=/srv/synapse/.venv/bin/python -m synapse start --host 0.0.0.0 --port 8000 --backend-port 8001"
+        in unit
+    )
     assert "Restart=on-failure" in unit
     assert "WantedBy=multi-user.target" in unit
 
@@ -867,7 +936,8 @@ def test_render_service_unit_supports_root_values():
         workdir=Path("/srv/synapse"),
         venv_python=Path("/srv/synapse/.venv/bin/python"),
         host="0.0.0.0",
-        port=8000,
+        public_port=8000,
+        backend_port=8001,
     )
 
     assert "User=root" in unit

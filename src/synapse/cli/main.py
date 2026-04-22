@@ -56,6 +56,8 @@ LEGACY_REAL_EXECUTOR_ENV_KEYS = {
 SYSTEMD_UNIT_NAME = "synapse.service"
 SYSTEMD_SERVICE_DIR = Path("/etc/systemd/system")
 REMOVED_RUNTIME_KEYS = {"executor_host_id", "executor_host_token"}
+START_PUBLIC_PORT = 8000
+START_BACKEND_PORT = 8001
 DEFAULT_ENV_TEMPLATE_LINES = (
     "OPENAI_API_KEY=your_openai_api_key_here",
     "SYNAPSE_OPENAI_MODEL=gpt-4o-mini",
@@ -125,8 +127,13 @@ def build_parser() -> argparse.ArgumentParser:
     doctor_parser.add_argument("--backend-port", type=int, default=8000)
     doctor_parser.add_argument("--frontend-port", type=int, default=5173)
 
-    start_parser = subparsers.add_parser("start", help="Run the FastAPI backend without reload.")
-    _add_host_port(start_parser, backend_port=8000)
+    start_parser = subparsers.add_parser(
+        "start",
+        help="Run the production Synapse edge plus backend without reload.",
+    )
+    start_parser.add_argument("--host", default="0.0.0.0")
+    start_parser.add_argument("--port", type=int, default=START_PUBLIC_PORT)
+    start_parser.add_argument("--backend-port", type=int, default=START_BACKEND_PORT)
 
     gateway_parser = subparsers.add_parser("gateway", help="Configure and run the gateway host.")
     gateway_subparsers = gateway_parser.add_subparsers(dest="gateway_command", required=True)
@@ -151,7 +158,9 @@ def build_parser() -> argparse.ArgumentParser:
         "install",
         help="Install or update the systemd unit for this repo checkout.",
     )
-    _add_host_port(service_install_parser, backend_port=8000)
+    service_install_parser.add_argument("--host", default="0.0.0.0")
+    service_install_parser.add_argument("--port", type=int, default=START_PUBLIC_PORT)
+    service_install_parser.add_argument("--backend-port", type=int, default=START_BACKEND_PORT)
     service_subparsers.add_parser("start", help="Start the installed systemd service.")
     service_subparsers.add_parser("stop", help="Stop the installed systemd service.")
     service_subparsers.add_parser("restart", help="Restart the installed systemd service.")
@@ -274,15 +283,35 @@ def cmd_backend(args: argparse.Namespace) -> int:
 def cmd_start(args: argparse.Namespace) -> int:
     venv_python = require_venv_python()
     ensure_frontend_build_ready()
-    commands = [("backend", backend_command(venv_python, args.host, args.port, reload=False), ROOT)]
+    backend_host = internal_bind_host(args.host)
     gateway_settings = load_gateway_settings_if_enabled()
+    gateway_base_url = (
+        f"http://{internal_bind_host(gateway_settings.host)}:{gateway_settings.port}"
+        if gateway_settings is not None
+        else None
+    )
+    commands = [
+        ("backend", backend_command(venv_python, backend_host, args.backend_port, reload=False), ROOT),
+        (
+            "edge",
+            edge_command(
+                venv_python,
+                args.host,
+                args.port,
+                backend_base_url=f"http://{backend_host}:{args.backend_port}",
+                gateway_base_url=gateway_base_url,
+                frontend_dist=frontend_dist_dir(),
+            ),
+            ROOT,
+        ),
+    ]
     if gateway_settings is not None:
         commands.append(
             (
                 "gateway",
                 gateway_command(
                     venv_python,
-                    gateway_settings.host,
+                    internal_bind_host(gateway_settings.host),
                     gateway_settings.port,
                     reload=False,
                 ),
@@ -440,7 +469,8 @@ def cmd_service_install(args: argparse.Namespace) -> int:
         workdir=ROOT,
         venv_python=venv_python,
         host=args.host,
-        port=args.port,
+        public_port=args.port,
+        backend_port=args.backend_port,
     )
     install_service_unit(unit_text)
     print(f"[ok] installed {service_unit_path()}")
@@ -485,6 +515,35 @@ def gateway_command(venv_python: Path, host: str, port: int, *, reload: bool) ->
     return command
 
 
+def edge_command(
+    venv_python: Path,
+    host: str,
+    port: int,
+    *,
+    backend_base_url: str,
+    gateway_base_url: str | None,
+    frontend_dist: Path,
+) -> list[str]:
+    return [
+        str(venv_python),
+        "-m",
+        "synapse.edge",
+        "--host",
+        host,
+        "--port",
+        str(port),
+        "--backend-base-url",
+        backend_base_url,
+        "--frontend-dist",
+        str(frontend_dist),
+        *(
+            ["--gateway-base-url", gateway_base_url]
+            if gateway_base_url is not None
+            else []
+        ),
+    ]
+
+
 def executor_host_command(venv_python: Path) -> list[str]:
     return [
         str(venv_python),
@@ -520,6 +579,12 @@ def preferred_frontend_tool() -> str:
     if shutil.which("npm"):
         return "npm"
     raise CliError("Missing frontend package manager: install Bun or npm.")
+
+
+def internal_bind_host(host: str) -> str:
+    if host in {"", "0.0.0.0", "::"}:
+        return "127.0.0.1"
+    return host
 
 
 def ensure_service_install_supported() -> None:
@@ -593,7 +658,8 @@ def render_service_unit(
     workdir: Path,
     venv_python: Path,
     host: str,
-    port: int,
+    public_port: int,
+    backend_port: int,
 ) -> str:
     path_entries = [
         str(workdir / ".venv" / "bin"),
@@ -607,7 +673,18 @@ def render_service_unit(
         "/bin",
     ]
     exec_start = _render_systemd_exec_start(
-        [str(venv_python), "-m", "synapse", "start", "--host", host, "--port", str(port)]
+        [
+            str(venv_python),
+            "-m",
+            "synapse",
+            "start",
+            "--host",
+            host,
+            "--port",
+            str(public_port),
+            "--backend-port",
+            str(backend_port),
+        ]
     )
     lines = [
         "[Unit]",

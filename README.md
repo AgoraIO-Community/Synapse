@@ -149,11 +149,14 @@ system service with:
 ```
 
 The installed `synapse.service` unit runs `synapse start`, so it starts the
-main backend and also starts the gateway host when `~/.synapse/config.yaml`
-enables gateways.
+public `synapse.edge` transport on the public port, the main backend on an
+internal port, and also starts the gateway host when
+`~/.synapse/config.yaml` enables gateways.
 
-This server path does not install or serve the Vite frontend. Use a separate
-frontend deployment or reverse proxy if you need the browser UI.
+This path stays inside the repo checkout. The edge transport serves
+`src/synapse/ui/dist` at `/`, proxies API plus websocket traffic to the
+internal backend, and proxies `/gateway/...` routes to the gateway host on the
+same origin when gateways are enabled.
 
 The systemd unit runs as the user who invoked `./synapse service install` and
 reads shared runtime-plus-gateway config from that user’s home directory:
@@ -178,8 +181,8 @@ When gateway modules are enabled in `~/.synapse/config.yaml`, `./synapse dev`
 and `./synapse start` also start the gateway host automatically.
 
 `./synapse dev` is the reload-capable local iteration path. `./synapse start`
-does not reload Python code changes, so restart it after editing backend or
-gateway host code.
+does not reload Python code changes, so restart it after editing backend,
+gateway host, or the edge transport.
 
 The gateway host talks to the Synapse backend directly using the configured
 `SYNAPSE_GATEWAY_SYNAPSE_BASE_URL` and does not use proxy environment variables

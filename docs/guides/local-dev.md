@@ -54,8 +54,9 @@ Backend-only and frontend-only commands:
 ```
 
 `./synapse start` is the production-style runtime entrypoint used by the
-systemd service path. It now expects an existing frontend production build and
-serves that built UI from the same origin as the main backend.
+systemd service path. It expects an existing frontend production build, starts
+the in-repo `synapse.edge` transport on the public port, and keeps the main
+backend behind that edge layer on an internal port.
 
 Separate frontend production deployments are documented in
 [`./vercel-ui-deployment.md`](./vercel-ui-deployment.md). Local

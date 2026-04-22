@@ -149,3 +149,4 @@ Short log of important design decisions and changes for Synapse.
 - Removed detached executor host-token auth and the unused control-channel heartbeat from the adopted V1 contract, leaving websocket connect/disconnect as the only liveness signal.
 - Made detached-executor enablement and executor-family selection control-plane config under `synapse setup`, while `synapse executor setup` now owns only executor-side host config and generates a stable local `host_id`.
 - Changed `synapse start` / systemd deployment so the main FastAPI origin now serves the built frontend UI from `/`, while same-origin `/gateway/...` requests are proxied back to the separate gateway host.
+- Replaced the adopted Caddy-based `synapse start` front door with an in-repo `synapse.edge` transport layer that serves the built UI and proxies API, websocket, and gateway traffic to internal backend and gateway listeners.

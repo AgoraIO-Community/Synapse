@@ -458,7 +458,7 @@ function statusLabel(status: Task["status"]) {
   if (status === "waiting_executor") {
     return "Waiting for host";
   }
-  if (status === "running" || status === "queued" || status === "waiting_executor" || status === "created") {
+  if (status === "running" || status === "queued" || status === "created") {
     return "In progress";
   }
   if (status === "waiting_user_input") {
