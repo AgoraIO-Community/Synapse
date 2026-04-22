@@ -98,9 +98,6 @@ class ExecutorNodeManager:
     async def register_connection(self, websocket: Any, register: RegisterNodeMessage) -> AckMessage:
         if self._connection is not None and self._connection is not websocket and self.connected:
             raise ExecutorNodeAuthError("An executor node is already connected.")
-        # Clear any stale run tracking left behind by the previous disconnected node session.
-        self._run_queues.clear()
-        self._run_states.clear()
         self._connection = websocket
         self._connection_state = NodeConnectionState(
             node_id=register.node_id,
@@ -114,8 +111,10 @@ class ExecutorNodeManager:
         self._connection = None
         node_id = self._connection_state.node_id
         self._connection_state = NodeConnectionState(node_id=node_id, connected=False)
-        for run_id, queue in list(self._run_queues.items()):
-            state = self._run_states.get(run_id)
+        run_queues = self._run_queues
+        run_states = self._run_states
+        for run_id, queue in list(run_queues.items()):
+            state = run_states.get(run_id)
             if state is None:
                 continue
             await queue.put(
@@ -136,6 +135,8 @@ class ExecutorNodeManager:
                     )
                 )
             )
+        self._run_queues = {}
+        self._run_states = {}
 
     async def dispatch_run(
         self,

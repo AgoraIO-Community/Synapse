@@ -9,10 +9,9 @@ from synapse.runtime.executor_node_manager import ExecutorNodeManager, RunDispat
 
 
 @pytest.mark.anyio
-async def test_register_connection_clears_stale_run_tracking_after_disconnect():
+async def test_disconnect_notifies_waiting_runs_and_clears_tracking():
     manager = ExecutorNodeManager(detached_executor_types=("codex",))
     first_socket = object()
-    second_socket = object()
 
     await manager.register_connection(
         first_socket,
@@ -30,17 +29,13 @@ async def test_register_connection_clears_stale_run_tracking_after_disconnect():
     )
 
     await manager.disconnect(reason="connection_closed")
-    assert "run-stale" in manager._run_queues
-    assert "run-stale" in manager._run_states
 
-    await manager.register_connection(
-        second_socket,
-        RegisterNodeMessage(
-            node_id="node-2",
-            executors=[ExecutorNodeExecutor(executor_type="codex")],
-        ),
-    )
-
+    event = await stale_queue.get()
+    assert event.event.event_type.value == "waiting_executor"
+    assert event.event.message == "Waiting for executor node 'node-1' to reconnect."
+    assert event.event.metadata == {
+        "executor_node_id": "node-1",
+        "availability_reason": "connection_closed",
+    }
     assert manager._run_queues == {}
     assert manager._run_states == {}
-
