@@ -49,6 +49,7 @@ class InMemoryBlackboard(BlackboardStore):
         self._interaction_request_order: list[str] = []
         self._attention_items: dict[str, AttentionItem] = {}
         self._attention_item_order: list[str] = []
+        self._session_config: dict[str, str] = {}
         self._recent_writes: list[BlackboardWriteEvent] = []
         self._subscriptions = SubscriptionManager()
         # Writes are serialized under this lock; read accessors intentionally stay
@@ -383,6 +384,27 @@ class InMemoryBlackboard(BlackboardStore):
 
     async def list_recent_writes(self, limit: int = 50) -> list[BlackboardWriteEvent]:
         return list(self._recent_writes[-limit:])
+
+    async def get_session_config(self, key: str) -> str | None:
+        return self._session_config.get(key)
+
+    async def put_session_config(self, key: str, value: str) -> None:
+        async with self._lock:
+            self._session_config[key] = value
+        await self._publish(
+            BlackboardWriteEvent(
+                kind=BlackboardWriteKind.SESSION_CONFIG,
+                entity_id=key,
+            )
+        )
+
+    def seed_session_config(self, key: str, value: str) -> None:
+        """Initialize persisted session config without emitting a write event.
+
+        This is intended for bootstrap-time hydration of a fresh in-memory
+        blackboard before any client-visible mutation flow begins.
+        """
+        self._session_config[key] = value
 
     def subscribe(self) -> asyncio.Queue[BlackboardWriteEvent]:
         return self._subscriptions.subscribe()

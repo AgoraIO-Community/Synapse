@@ -91,6 +91,7 @@ import {
 } from "./lib/voice-runtime";
 import { PixelPersona, taskStatusToPersonaState } from "./components/PixelPersona";
 import { PersonaPanel } from "./components/PersonaPanel";
+import { CommunicationPersonaConfig } from "./components/CommunicationPersonaConfig";
 import { AttentionPanel } from "./components/AttentionPanel";
 
 type TaskResultDetail = {
@@ -1930,11 +1931,10 @@ export default function App() {
                 <PersonaPanel
                   sessionId={activeSessionId}
                   personas={snapshot?.personas ?? []}
-                  onRefresh={() => {
-                    if (activeSessionId) {
-                      getSessionSnapshot(activeSessionId).then(setSnapshot);
-                    }
-                  }}
+                />
+                <CommunicationPersonaConfig
+                  sessionId={activeSessionId}
+                  currentSessionValue={snapshot?.communication_persona_prompt ?? ""}
                 />
               </section>
             )}
@@ -2297,11 +2297,6 @@ export default function App() {
                           <PersonaPanel
                             sessionId={activeSessionId}
                             personas={snapshot?.personas ?? []}
-                            onRefresh={() => {
-                              if (activeSessionId) {
-                                getSessionSnapshot(activeSessionId).then(setSnapshot);
-                              }
-                            }}
                           />
                         </div>
                       )}

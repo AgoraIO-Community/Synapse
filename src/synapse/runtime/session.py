@@ -7,7 +7,10 @@ from dataclasses import dataclass, field
 
 from synapse.blackboard import InMemoryBlackboard
 from synapse.communication import CommunicationBrain
-from synapse.communication.persona_pool import load_personas_from_file
+from synapse.communication.persona_pool import (
+    load_communication_persona_prompt_from_file,
+    load_personas_from_file,
+)
 from synapse.communication.history import InMemoryConversationHistory
 from synapse.communication.model import CommunicationModel, LlmTraceRecord, ToolCallRecord
 from synapse.communication.tools import build_default_tool_registry
@@ -135,6 +138,9 @@ class SessionRuntime:
             interaction_requests=sanitized_interaction_requests,
             attention_items=attention_items,
             executor_capabilities=self._executor_capabilities_snapshot(),
+            communication_persona_prompt=(
+                await self.blackboard.get_session_config("communication_persona_prompt") or ""
+            ),
         )
 
     async def conversation_snapshot(self) -> ConversationSnapshot:
@@ -1140,6 +1146,12 @@ def create_session_runtime(
     notification_manager.set_conversation_event_callback(runtime._broadcast_conversation_append)
     runtime.start_notification_processing()
     runtime._ensure_diagnostic_pump()
+    communication_persona_prompt = load_communication_persona_prompt_from_file()
+    if communication_persona_prompt:
+        blackboard.seed_session_config(
+            "communication_persona_prompt",
+            communication_persona_prompt,
+        )
     # Load personas from persistent config into the blackboard.
     for persona in load_personas_from_file():
         blackboard._personas[persona.persona_id] = persona

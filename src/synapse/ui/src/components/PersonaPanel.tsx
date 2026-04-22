@@ -15,26 +15,27 @@ import { PixelPersona, taskStatusToPersonaState, AVATAR_IMAGES } from "./PixelPe
 interface PersonaPanelProps {
   sessionId: string;
   personas: Persona[];
-  onRefresh: () => void;
 }
 
-export function PersonaPanel({ sessionId, personas, onRefresh }: PersonaPanelProps) {
+export function PersonaPanel({ sessionId, personas }: PersonaPanelProps) {
   const [isAdding, setIsAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [avatar, setAvatar] = useState(AVATAR_IMAGES[0]);
   const [basePrompt, setBasePrompt] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [status, setStatus] = useState<string | null>(null);
 
   async function handleCreate() {
     if (!name.trim()) return;
     setError(null);
+    setStatus(null);
     try {
       await createPersona(sessionId, { name: name.trim(), avatar, base_prompt: basePrompt });
       setName("");
       setBasePrompt("");
       setIsAdding(false);
-      onRefresh();
+      setStatus("Saved. This bro will be available in the next session.");
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to create persona");
     }
@@ -42,9 +43,10 @@ export function PersonaPanel({ sessionId, personas, onRefresh }: PersonaPanelPro
 
   async function handleDelete(personaId: string) {
     setError(null);
+    setStatus(null);
     try {
       await deletePersona(sessionId, personaId);
-      onRefresh();
+      setStatus("Saved. This change applies to the next session.");
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to delete persona");
     }
@@ -52,6 +54,7 @@ export function PersonaPanel({ sessionId, personas, onRefresh }: PersonaPanelPro
 
   async function handleUpdate(personaId: string) {
     setError(null);
+    setStatus(null);
     try {
       await updatePersona(sessionId, personaId, {
         name: name.trim() || undefined,
@@ -61,7 +64,7 @@ export function PersonaPanel({ sessionId, personas, onRefresh }: PersonaPanelPro
       setEditingId(null);
       setName("");
       setBasePrompt("");
-      onRefresh();
+      setStatus("Saved. This bro update applies to the next session.");
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to update persona");
     }
@@ -94,6 +97,12 @@ export function PersonaPanel({ sessionId, personas, onRefresh }: PersonaPanelPro
       {error && (
         <div className="rounded bg-red-900/40 px-2 py-1 text-xs text-red-300">{error}</div>
       )}
+      {status && (
+        <div className="rounded bg-emerald-900/30 px-2 py-1 text-xs text-emerald-300">{status}</div>
+      )}
+      <div className="text-[0.68rem] leading-4 text-white/45">
+        Current session bros are frozen at session start. Changes here apply to the next session.
+      </div>
 
       {/* Persona list */}
       <div className="flex flex-wrap gap-3">

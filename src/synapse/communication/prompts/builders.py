@@ -8,6 +8,7 @@ from synapse.protocol import NotificationCandidate
 from ..context import CommunicationContext
 from .base.guardrails import GUARDRAILS_PROMPT
 from .base.identity import IDENTITY_PROMPT
+from .base.persona_identity import build_persona_identity_prompt
 from .base.reply_style import REPLY_STYLE_PROMPT
 from .base.tool_policy import build_tool_policy_prompt
 from .examples.notification_style import NOTIFICATION_STYLE_EXAMPLES_PROMPT
@@ -64,8 +65,7 @@ def build_reply_prompt_request(
     user_text: str,
     context: CommunicationContext,
 ) -> PromptBuildResult:
-    return PromptBuildResult(
-        messages=[
+    messages = [
         _message("system", IDENTITY_PROMPT),
         _message("system", build_tool_policy_prompt(context)),
         _message("system", REPLY_STYLE_PROMPT),
@@ -79,9 +79,19 @@ def build_reply_prompt_request(
         ),
         _message("system", build_tool_usage_examples_prompt(context)),
         _message("system", json.dumps(build_runtime_context(context))),
-        *[_message(entry.role, entry.text) for entry in context.recent_history],
-        ],
-        prompt_sections=list(REPLY_PROMPT_SECTIONS),
+    ]
+    prompt_sections = list(REPLY_PROMPT_SECTIONS)
+
+    persona_prompt = build_persona_identity_prompt(context)
+    if persona_prompt is not None:
+        messages.insert(1, _message("system", persona_prompt))
+        prompt_sections.insert(1, "persona_identity")
+
+    messages.extend(_message(entry.role, entry.text) for entry in context.recent_history)
+
+    return PromptBuildResult(
+        messages=messages,
+        prompt_sections=prompt_sections,
     )
 
 
@@ -102,8 +112,8 @@ def build_notification_prompt_request(
     key_task = rendering_context.get("key_task")
     relevant_tasks = rendering_context.get("relevant_tasks", [])
     recent_chat_history = rendering_context.get("recent_chat_history", [])
-    return PromptBuildResult(
-        messages=[
+
+    messages = [
         _message("system", IDENTITY_PROMPT),
         _message("system", REPLY_STYLE_PROMPT),
         _message("system", GUARDRAILS_PROMPT),
@@ -111,8 +121,17 @@ def build_notification_prompt_request(
         _message("system", NOTIFICATION_STYLE_EXAMPLES_PROMPT),
         _message("system", json.dumps(rendering_context)),
         _message("system", json.dumps(build_notification_candidates_payload(candidates))),
-        ],
-        prompt_sections=list(NOTIFICATION_PROMPT_SECTIONS),
+    ]
+    prompt_sections = list(NOTIFICATION_PROMPT_SECTIONS)
+
+    persona_prompt = build_persona_identity_prompt(context)
+    if persona_prompt is not None:
+        messages.insert(1, _message("system", persona_prompt))
+        prompt_sections.insert(1, "persona_identity")
+
+    return PromptBuildResult(
+        messages=messages,
+        prompt_sections=prompt_sections,
         notification_key_task_id=(
             str(key_task.get("task_id")) if isinstance(key_task, dict) and key_task.get("task_id") else None
         ),
