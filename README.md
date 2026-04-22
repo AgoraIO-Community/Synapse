@@ -148,15 +148,13 @@ system service with:
 ./synapse service start
 ```
 
-The installed `synapse.service` unit runs `synapse start`, so it starts the
-public `synapse.edge` transport on the public port, the main backend on an
-internal port, and also starts the gateway host when
-`~/.synapse/config.yaml` enables gateways.
+The installed `synapse.service` unit runs `synapse start`, so it starts one
+main Synapse service on the public port.
 
-This path stays inside the repo checkout. The edge transport serves
-`src/synapse/ui/dist` at `/`, proxies API plus websocket traffic to the
-internal backend, and proxies `/gateway/...` routes to the gateway host on the
-same origin when gateways are enabled.
+This path stays inside the repo checkout. The main service serves
+`src/synapse/ui/dist` at `/`, keeps the normal API and websocket routes on the
+same origin, and mounts `/gateway/...` routes directly when gateways are
+enabled.
 
 The systemd unit runs as the user who invoked `./synapse service install` and
 reads shared runtime-plus-gateway config from that user’s home directory:
@@ -177,12 +175,13 @@ If the Codex executor is enabled, set an absolute
 `runtime.codex_command` in `~/.synapse/config.yaml` so the service does not
 depend on an interactive shell PATH.
 
-When gateway modules are enabled in `~/.synapse/config.yaml`, `./synapse dev`
-and `./synapse start` also start the gateway host automatically.
+`./synapse dev` and `./synapse start` do not auto-start the standalone gateway
+host. Run `./synapse gateway run` separately when you want the detached gateway
+process for direct gateway testing or separate deployment.
 
 `./synapse dev` is the reload-capable local iteration path. `./synapse start`
 does not reload Python code changes, so restart it after editing backend,
-gateway host, or the edge transport.
+gateway modules, or other Python service code.
 
 The gateway host talks to the Synapse backend directly using the configured
 `SYNAPSE_GATEWAY_SYNAPSE_BASE_URL` and does not use proxy environment variables

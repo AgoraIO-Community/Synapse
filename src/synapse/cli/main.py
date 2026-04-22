@@ -482,19 +482,6 @@ def gateway_command(venv_python: Path, host: str, port: int, *, reload: bool) ->
     return command
 
 
-def edge_command(
-    venv_python: Path,
-    host: str,
-    port: int,
-    *,
-    backend_base_url: str,
-    gateway_base_url: str | None,
-    frontend_dist: Path,
-) -> list[str]:
-    del host, port, backend_base_url, gateway_base_url, frontend_dist
-    raise CliError("synapse.edge is no longer used by the CLI.")
-
-
 def executor_host_command(venv_python: Path) -> list[str]:
     return [
         str(venv_python),
