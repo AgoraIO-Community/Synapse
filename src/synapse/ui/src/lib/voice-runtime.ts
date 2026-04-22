@@ -5,6 +5,7 @@ export type VoiceTranscriptTurn = {
   uid?: string | number;
   text?: string;
   status?: string;
+  metadata?: Record<string, unknown>;
 };
 
 export type ActiveVoiceResources = {

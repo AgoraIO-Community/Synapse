@@ -149,8 +149,16 @@ Short log of important design decisions and changes for Synapse.
 - Removed detached executor host-token auth and the unused control-channel heartbeat from the adopted V1 contract, leaving websocket connect/disconnect as the only liveness signal.
 - Made detached-executor enablement and executor-family selection control-plane config under `synapse setup`, while `synapse executor setup` now owns only executor-side host config and generates a stable local `node_id`.
 - Changed `synapse start` / systemd deployment so the main FastAPI origin now serves the built frontend UI from `/`, while same-origin `/gateway/...` requests are proxied back to the separate gateway host.
+<<<<<<< Updated upstream
 - Replaced the adopted Caddy-based `synapse start` front door with an in-repo `synapse.edge` transport layer that serves the built UI and proxies API, websocket, and gateway traffic to internal backend and gateway listeners.
 - Made detached executor host foreground lifecycle explicit so `synapse executor run` now prints start, connect, ready, disconnect, retry, and interrupt state instead of failing silently during control-channel connection issues.
 - Merged the temporary `synapse.edge` transport back into the main Synapse service so `synapse start` now runs one public service process that serves the built UI, exposes `/sessions` and `/executors/control`, and mounts enabled `/gateway/...` routes directly.
 - Renamed the executor substrate packages to `src/synapse/executors/{core,adapters,host}`, moved connector runtime code under `src/synapse/connectors/{base,host,voice/...}`, and renamed the public connector contract to `connector_host`, `connectors`, `SYNAPSE_CONNECTOR_*`, `VITE_CONNECTOR_BASE_URL`, `synapse connector ...`, and `/connectors/...`.
 - Renamed the detached executor worker contract from `host` to `node`, moving code under `src/synapse/executors/node` and renaming the current executor control-plane fields to `executor_node`, `executor_node_id`, and `node_id`.
+=======
+
+## 2026-04-23
+
+- Replaced the main frontend root shell with a componentized `Newbro` command-center concept layout, using a light persona-to-card adapter with seeded sample fallbacks instead of the prior live workbench root experience.
+- Wired the `Newbro` shell's `Interaction memory` panel to live Agora transcript state, with explicit top-bar start/stop/mute controls, shell rebinding to the gateway-backed voice `synapse_session_id`, and retained transcript history after stop.
+>>>>>>> Stashed changes

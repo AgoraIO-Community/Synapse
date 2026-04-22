@@ -1,32 +1,9 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import React from "react";
 import App from "../App";
-import type { ConversationSnapshot, SessionStreamEvent, SessionSnapshot } from "../types";
+import { buildBroCardModels } from "../components/newbro";
 
-type StreamHandlers = {
-  onOpen: () => void;
-  onMessage: (event: SessionStreamEvent) => void;
-  onClose: () => void;
-  onError: () => void;
-};
-
-const streamState = {
-  handlersBySession: new Map<string, StreamHandlers>(),
-  socketsBySession: new Map<
-    string,
-    {
-      close: ReturnType<typeof vi.fn>;
-      send: ReturnType<typeof vi.fn>;
-    }
-  >(),
-  reset() {
-    streamState.handlersBySession = new Map();
-    streamState.socketsBySession = new Map();
-  },
-};
-
-const agoraState = vi.hoisted(() => {
+const voiceHarness = vi.hoisted(() => {
   const state = {
     voiceEvents: {} as Record<string, (...args: any[]) => void>,
     rtcClient: {
@@ -79,39 +56,10 @@ const agoraState = vi.hoisted(() => {
 const clientMock = vi.hoisted(() => ({
   createSession: vi.fn(),
   getSessionSnapshot: vi.fn(),
-  getConversationSnapshot: vi.fn(),
-  getSessionConfig: vi.fn(async () => ({ key: "communication_persona_prompt", value: "" })),
-  putSessionConfig: vi.fn(
-    async (_sessionId: string, _key: string, value: string) => ({
-      key: "communication_persona_prompt",
-      value,
-    }),
-  ),
-  getDiagnosticTimeline: vi.fn(async () => ({ events: [] })),
-  openSessionStream: vi.fn((sessionId: string, handlers: StreamHandlers) => {
-    streamState.handlersBySession.set(sessionId, handlers);
-    const socket = {
-      readyState: WebSocket.OPEN,
-      close: vi.fn(),
-      send: vi.fn(),
-    };
-    streamState.socketsBySession.set(sessionId, socket);
-    queueMicrotask(() => handlers.onOpen());
-    return socket as unknown as WebSocket;
-  }),
-  sendSocketCommand: vi.fn(),
-  sendSocketMessage: vi.fn(),
 }));
 
 const connectorMock = vi.hoisted(() => ({
-  getConnectorConfig: vi.fn<
-    () => Promise<{
-      ready: boolean;
-      service_base_url: string;
-      defaults: Record<string, never>;
-      missing_requirements: string[];
-    }>
-  >(async () => ({
+  getConnectorConfig: vi.fn(async () => ({
     ready: true,
     service_base_url: "https://connectors.example.com",
     defaults: {},
@@ -157,7 +105,7 @@ const connectorMock = vi.hoisted(() => ({
     binding_id: "binding-1",
     synapse_session_id: "voice-session-1",
     runtime_session_id: "runtime-1",
-    chat_completions_url: "https://connectors.example.com/chat",
+    chat_completions_url: "https://gateway.example.com/chat",
     app_id: "agora-app",
     channel_name: "voice-room",
     token: "voice-token",
@@ -191,355 +139,252 @@ const connectorMock = vi.hoisted(() => ({
       enable_error_message: true,
     },
   })),
-  stopConnectorSession: vi.fn(async () => {}),
   stopConnectorSessionBeacon: vi.fn(() => true),
 }));
 
-type SessionSnapshotOverrides = Partial<Omit<SessionSnapshot, "session_id" | "personas">> & {
-  personas?: SessionSnapshot["personas"];
-};
+const runtimeMock = vi.hoisted(() => ({
+  loadAgoraBrowserStack: vi.fn(async () => ({
+    AgoraRTC: {
+      createClient: vi.fn(() => voiceHarness.rtcClient),
+      createMicrophoneAudioTrack: vi.fn(async () => voiceHarness.micTrack),
+    },
+    AgoraRTM: {
+      RTM: vi.fn().mockImplementation(function MockRTM() {
+        return voiceHarness.rtmClient;
+      }),
+    },
+    AgoraVoiceAI: {
+      init: vi.fn(async () => voiceHarness.voiceAi),
+    },
+    AgoraVoiceAIEvents: {
+      TRANSCRIPT_UPDATED: "TRANSCRIPT_UPDATED",
+      AGENT_STATE_CHANGED: "AGENT_STATE_CHANGED",
+      AGENT_ERROR: "AGENT_ERROR",
+      MESSAGE_ERROR: "MESSAGE_ERROR",
+      AGENT_INTERRUPTED: "AGENT_INTERRUPTED",
+      DEBUG_LOG: "DEBUG_LOG",
+    },
+    TranscriptHelperMode: {
+      AUTO: "AUTO",
+    },
+  })),
+  teardownVoiceSession: vi.fn(async () => {}),
+}));
 
 vi.mock("../lib/session-client", () => clientMock);
 vi.mock("../lib/connector-client", () => connectorMock);
-vi.mock("agora-rtc-sdk-ng", () => ({
-  default: {
-    createClient: vi.fn(() => agoraState.rtcClient),
-    createMicrophoneAudioTrack: vi.fn(async () => agoraState.micTrack),
-  },
-}));
-vi.mock("agora-rtm", () => ({
-  default: {
-    RTM: vi.fn().mockImplementation(function MockRTM() {
-      return agoraState.rtmClient;
-    }),
-  },
-}));
-vi.mock("agora-agent-client-toolkit", () => ({
-  AgoraVoiceAI: {
-    init: vi.fn(async () => agoraState.voiceAi),
-  },
-  AgoraVoiceAIEvents: {
-    TRANSCRIPT_UPDATED: "TRANSCRIPT_UPDATED",
-    AGENT_STATE_CHANGED: "AGENT_STATE_CHANGED",
-    AGENT_ERROR: "AGENT_ERROR",
-    MESSAGE_ERROR: "MESSAGE_ERROR",
-    AGENT_INTERRUPTED: "AGENT_INTERRUPTED",
-    DEBUG_LOG: "DEBUG_LOG",
-  },
-  TranscriptHelperMode: {
-    AUTO: "AUTO",
-  },
-}));
+vi.mock("../lib/voice-runtime", () => runtimeMock);
 
-function makeSnapshot(sessionId: string, overrides: SessionSnapshotOverrides = {}): SessionSnapshot {
-  const personas = overrides.personas ?? [];
-  return {
-    session_id: sessionId,
-    tasks: [],
-    execution_sessions: [],
-    execution_runs: [],
-    execution_modes: [],
-    bindings: [],
-    summaries: [],
-    notification_candidates: [],
-    interaction_requests: [],
-    attention_items: [],
-    executor_capabilities: [],
-    communication_persona_prompt: "",
-    ...overrides,
-    personas,
-  };
-}
-
-function emit(sessionId: string, event: SessionStreamEvent) {
-  const handlers = streamState.handlersBySession.get(sessionId);
-  if (!handlers) {
-    throw new Error(`stream handlers not ready for ${sessionId}`);
-  }
-  handlers.onMessage(event);
-}
-
-describe("App shell", () => {
-  let textSessionCounter = 0;
-
+describe("Newbro voice shell", () => {
   beforeEach(() => {
-    streamState.reset();
     vi.clearAllMocks();
-    agoraState.reset();
-    textSessionCounter = 0;
-    Object.defineProperty(globalThis.navigator, "sendBeacon", {
-      configurable: true,
-      value: vi.fn(() => true),
-    });
-
-    clientMock.createSession.mockImplementation(async () => {
-      textSessionCounter += 1;
-      return { session_id: `text-session-${textSessionCounter}` };
-    });
-    clientMock.getSessionSnapshot.mockImplementation(async (sessionId: string) =>
-      makeSnapshot(sessionId),
-    );
-    clientMock.getConversationSnapshot.mockImplementation(async (sessionId: string) => ({
+    voiceHarness.reset();
+    clientMock.createSession.mockResolvedValue({ session_id: "session-1" });
+    clientMock.getSessionSnapshot.mockImplementation(async (sessionId: string) => ({
       session_id: sessionId,
-      conversation_history: [],
+      tasks: [],
+      execution_sessions: [],
+      execution_runs: [],
+      execution_modes: [],
+      bindings: [],
+      summaries: [],
+      notification_candidates: [],
+      personas: [],
+      interaction_requests: [],
+      attention_items: [],
+      executor_capabilities: [],
     }));
-    clientMock.getSessionConfig.mockImplementation(
-      async () => ({ key: "communication_persona_prompt", value: "" }),
-    );
-    clientMock.putSessionConfig.mockImplementation(
-      async (...args: [string, string, string]) => ({
-        key: "communication_persona_prompt",
-        value: args[2],
-      }),
-    );
-    connectorMock.getConnectorConfig.mockResolvedValue({
-      ready: true,
-      service_base_url: "https://connectors.example.com",
-      defaults: {},
-      missing_requirements: [],
-    });
-
-    Object.defineProperty(window, "matchMedia", {
-      writable: true,
-      value: vi.fn().mockImplementation((query: string) => ({
-        matches: query.includes("min-width: 1280px"),
-        media: query,
-        onchange: null,
-        addListener: vi.fn(),
-        removeListener: vi.fn(),
-        addEventListener: vi.fn(),
-        removeEventListener: vi.fn(),
-        dispatchEvent: vi.fn(),
-      })),
-    });
   });
 
-  function renderApp() {
-    const queryClient = new QueryClient({
-      defaultOptions: {
-        queries: {
-          retry: false,
-        },
-      },
-    });
-    return render(
-      <QueryClientProvider client={queryClient}>
-        <App />
-      </QueryClientProvider>,
-    );
-  }
+  it("boots into an explicit empty interaction-memory state", async () => {
+    render(<App />);
 
-  it("boots into voice mode with the vertical-attached switch and idle voice controls", async () => {
-    renderApp();
+    expect(await screen.findByText("Transcript will appear here.")).toBeInTheDocument();
+    expect(screen.getByTestId("voice-session-start")).toBeInTheDocument();
+    expect(screen.queryByText("No transcript yet")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("Start a live session to fill this memory with real transcript turns."),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("No live session yet. Press Start in the top bar to begin voice interaction."),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText("Atlas")).toBeInTheDocument();
 
-    expect(await screen.findByTestId("mode-switch-shell")).toBeInTheDocument();
-    expect(screen.getByTestId("mode-switch-text")).toBeInTheDocument();
-    expect(screen.getByTestId("mode-switch-voice")).toBeInTheDocument();
-    expect(await screen.findByText("Talk to NewBro live.")).toBeInTheDocument();
-    expect(await screen.findByTestId("voice-mode-transcript-feed")).toBeInTheDocument();
-    expect(screen.queryByTestId("conversation-composer-shell")).not.toBeInTheDocument();
-    expect(await screen.findByTestId("voice-session-start")).toBeInTheDocument();
-    expect(streamState.handlersBySession.size).toBe(0);
-    expect(connectorMock.prepareConnectorSession).not.toHaveBeenCalled();
+    await waitFor(() => expect(clientMock.createSession).toHaveBeenCalled());
+    await waitFor(() => expect(clientMock.getSessionSnapshot).toHaveBeenCalledWith("session-1"));
   });
 
-  it("switches to text mode and shows the text composer plus starter prompts", async () => {
-    renderApp();
+  it("starts voice mode and renders live transcript turns inside interaction memory", async () => {
+    render(<App />);
 
-    fireEvent.click(await screen.findByTestId("mode-switch-text"));
-
-    expect(await screen.findByTestId("conversation-composer-shell")).toBeInTheDocument();
-    expect(await screen.findByText("Write a clear instruction.")).toBeInTheDocument();
-    expect(screen.getByText("Starter prompts")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Draft a clear release note for the current sprint." })).toBeInTheDocument();
-  });
-
-  it("starts voice mode on demand and binds the workbench stream to the voice session", async () => {
-    renderApp();
-
-    fireEvent.click(await screen.findByTestId("mode-switch-text"));
-    await waitFor(() => expect(streamState.handlersBySession.has("text-session-1")).toBe(true));
-    fireEvent.click(await screen.findByTestId("mode-switch-voice"));
-    expect(streamState.handlersBySession.has("voice-session-1")).toBe(false);
     fireEvent.click(await screen.findByTestId("voice-session-start"));
 
     await waitFor(() => expect(connectorMock.prepareConnectorSession).toHaveBeenCalledTimes(1));
-    await waitFor(() =>
-      expect(connectorMock.activateConnectorSession).toHaveBeenCalledWith({
-        prepared_session_id: "prepared-1",
-      }),
-    );
-    await waitFor(() => expect(streamState.handlersBySession.has("voice-session-1")).toBe(true));
-    expect(screen.queryByTestId("conversation-composer-shell")).not.toBeInTheDocument();
-    expect(await screen.findByTestId("voice-mode-transcript-feed")).toBeInTheDocument();
-    expect(screen.getByText("Voice mode")).toBeInTheDocument();
+    await waitFor(() => expect(connectorMock.activateConnectorSession).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(clientMock.getSessionSnapshot).toHaveBeenCalledWith("voice-session-1"));
+    expect(await screen.findByText("Voice session live")).toBeInTheDocument();
 
     await act(async () => {
-      emit(
-        "voice-session-1",
-        {
-          type: "snapshot",
-          sequence: 1,
-          snapshot: makeSnapshot("voice-session-1", {
-            tasks: [
-              {
-                task_id: "task-voice-1",
-                root_task_id: "task-voice-1",
-                parent_task_id: null,
-                title: "Voice follow-up task",
-                goal: "Track the live voice-mode task",
-                status: "running",
-                priority: 1,
-                interruptible: true,
-                requires_confirmation: false,
-                preferred_executor: "mock",
-                session_affinity: null,
-                task_revision: 1,
-                latest_instruction: "Follow up on the spoken request",
-                metadata: {},
-              },
-            ],
-          }),
-        } as SessionStreamEvent,
-      );
-    });
-
-    expect((await screen.findAllByText("Voice follow-up task")).length).toBeGreaterThan(0);
-  });
-
-  it("keeps rendering transcript updates after the greeting in voice mode", async () => {
-    renderApp();
-
-    fireEvent.click(await screen.findByTestId("voice-session-start"));
-    await waitFor(() => expect(streamState.handlersBySession.has("voice-session-1")).toBe(true));
-
-    await act(async () => {
-      agoraState.voiceEvents.TRANSCRIPT_UPDATED?.([
+      voiceHarness.voiceEvents.TRANSCRIPT_UPDATED?.([
         { turn_id: "turn-1", uid: "9001", text: "Hello. How can I help you today?", status: "final" },
+        { turn_id: "turn-2", uid: "101", text: "Please create a follow-up task.", status: "final" },
       ]);
     });
 
     expect(await screen.findByText("Hello. How can I help you today?")).toBeInTheDocument();
+    expect(screen.getByText("Please create a follow-up task.")).toBeInTheDocument();
     expect(screen.getByText("NewBro")).toBeInTheDocument();
-    expect(screen.queryByText("UID 9001")).not.toBeInTheDocument();
-    expect(screen.queryByText("final")).not.toBeInTheDocument();
+    expect(screen.getByText("Me")).toBeInTheDocument();
+    expect(screen.getByText("2 transcript turns")).toBeInTheDocument();
+  });
+
+  it("keeps the last transcript visible after stop and rebinds the shell to the idle session", async () => {
+    render(<App />);
+
+    fireEvent.click(await screen.findByTestId("voice-session-start"));
+    await waitFor(() => expect(clientMock.getSessionSnapshot).toHaveBeenCalledWith("voice-session-1"));
 
     await act(async () => {
-      agoraState.voiceEvents.TRANSCRIPT_UPDATED?.([
+      voiceHarness.voiceEvents.TRANSCRIPT_UPDATED?.([
         { turn_id: "turn-1", uid: "9001", text: "Hello. How can I help you today?", status: "final" },
-        { turn_id: "turn-2", uid: "101", text: "Please create a follow-up task.", status: "final" },
-        { turn_id: "turn-3", uid: "9001", text: "I am creating that task now.", status: "final" },
       ]);
     });
 
-    expect(await screen.findByText("Please create a follow-up task.")).toBeInTheDocument();
-    expect(screen.getByText("I am creating that task now.")).toBeInTheDocument();
-    expect(screen.getByText("Me")).toBeInTheDocument();
-    expect(screen.queryByText("UID 101")).not.toBeInTheDocument();
-  });
-
-  it("stops the active voice session back to idle voice mode", async () => {
-    renderApp();
-
-    fireEvent.click(await screen.findByTestId("voice-session-start"));
-    await waitFor(() => expect(streamState.handlersBySession.has("voice-session-1")).toBe(true));
     fireEvent.click(screen.getByTestId("voice-session-stop"));
 
-    await waitFor(() => expect(connectorMock.stopConnectorSession).toHaveBeenCalledWith("binding-1"));
-    expect(screen.queryByTestId("conversation-composer-shell")).not.toBeInTheDocument();
-    expect(await screen.findByTestId("voice-session-start")).toBeInTheDocument();
-    expect(screen.getByText(/no live session is running yet/i)).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByTestId("voice-session-start")).toBeInTheDocument();
+    });
+    await waitFor(() => expect(clientMock.getSessionSnapshot).toHaveBeenLastCalledWith("session-1"));
+
+    expect(screen.getByText("Hello. How can I help you today?")).toBeInTheDocument();
+    expect(screen.queryByText("Last voice session")).not.toBeInTheDocument();
+    expect(screen.queryByText("Voice session stopped. Transcript memory retained.")).not.toBeInTheDocument();
   });
 
-  it("keeps the binding available so a failed stop can be retried", async () => {
-    connectorMock.stopConnectorSession
-      .mockRejectedValueOnce(new Error("temporary stop failure"))
-      .mockResolvedValueOnce(undefined);
-
-    renderApp();
+  it("mutes and unmutes the microphone while the voice session is live", async () => {
+    render(<App />);
 
     fireEvent.click(await screen.findByTestId("voice-session-start"));
-    await waitFor(() => expect(streamState.handlersBySession.has("voice-session-1")).toBe(true));
-    fireEvent.click(screen.getByTestId("voice-session-stop"));
-
-    expect((await screen.findAllByText("temporary stop failure")).length).toBeGreaterThan(0);
-    expect(await screen.findByTestId("voice-session-retry-stop")).toBeInTheDocument();
-    expect(streamState.handlersBySession.has("voice-session-1")).toBe(true);
-
-    fireEvent.click(screen.getByTestId("voice-session-retry-stop"));
-
-    await waitFor(() => expect(connectorMock.stopConnectorSession).toHaveBeenCalledTimes(2));
-    expect(await screen.findByTestId("voice-session-start")).toBeInTheDocument();
-  });
-
-  it("mutes and unmutes the microphone while the voice session stays live", async () => {
-    renderApp();
-
-    fireEvent.click(await screen.findByTestId("voice-session-start"));
-    await waitFor(() => expect(streamState.handlersBySession.has("voice-session-1")).toBe(true));
+    await waitFor(() => expect(screen.getByTestId("voice-session-mic-toggle")).toBeInTheDocument());
 
     fireEvent.click(screen.getByTestId("voice-session-mic-toggle"));
-    await waitFor(() => expect(agoraState.micTrack.setEnabled).toHaveBeenCalledWith(false));
-    expect(await screen.findByText("Muted")).toBeInTheDocument();
+    await waitFor(() => expect(voiceHarness.micTrack.setEnabled).toHaveBeenCalledWith(false));
+    expect(await screen.findByText("Interaction memory is live. The microphone is currently muted.")).toBeInTheDocument();
 
     fireEvent.click(screen.getByTestId("voice-session-mic-toggle"));
-    await waitFor(() => expect(agoraState.micTrack.setEnabled).toHaveBeenCalledWith(true));
-    expect(await screen.findByText("Live")).toBeInTheDocument();
+    await waitFor(() => expect(voiceHarness.micTrack.setEnabled).toHaveBeenCalledWith(true));
   });
 
-  it("switches from active voice mode to a fresh text session", async () => {
-    renderApp();
-
-    fireEvent.click(await screen.findByTestId("voice-session-start"));
-    await waitFor(() => expect(streamState.handlersBySession.has("voice-session-1")).toBe(true));
-    fireEvent.click(screen.getByTestId("mode-switch-text"));
-
-    await waitFor(() => expect(connectorMock.stopConnectorSession).toHaveBeenCalledWith("binding-1"));
-    await waitFor(() => expect(clientMock.createSession).toHaveBeenCalledTimes(1));
-    await waitFor(() => expect(streamState.handlersBySession.has("text-session-1")).toBe(true));
-    expect(await screen.findByTestId("conversation-composer-shell")).toBeInTheDocument();
-  });
-
-  it("shows a voice-mode startup error when connector config is incomplete", async () => {
-    connectorMock.getConnectorConfig.mockImplementationOnce(async () => ({
+  it("surfaces startup errors without breaking the shell", async () => {
+    connectorMock.getConnectorConfig.mockResolvedValueOnce({
       ready: false,
       service_base_url: "https://connectors.example.com",
       defaults: {},
-      missing_requirements: ["connectors.agora-convoai.app_id"] as string[],
-    }));
+      missing_requirements: ["connectors.agora-convoai.app_id"],
+    } as any);
 
-    renderApp();
+    render(<App />);
     fireEvent.click(await screen.findByTestId("voice-session-start"));
 
-    expect(await screen.findByText(/connectors\.agora-convoai\.app_id/)).toBeInTheDocument();
+    expect((await screen.findAllByText(/connectors\.agora-convoai\.app_id/)).length).toBeGreaterThan(0);
+    expect(screen.getByTestId("voice-session-start")).toBeInTheDocument();
   });
 
-  it("signals the connector stop endpoint on pagehide while a voice session is active", async () => {
-    const { unmount } = renderApp();
+  it("signals pagehide stop cleanup while a voice session is active", async () => {
+    const { unmount } = render(<App />);
 
     fireEvent.click(await screen.findByTestId("voice-session-start"));
-    await waitFor(() => expect(streamState.handlersBySession.has("voice-session-1")).toBe(true));
+    await waitFor(() => expect(connectorMock.activateConnectorSession).toHaveBeenCalledTimes(1));
 
     unmount();
 
-    expect(connectorMock.stopConnectorSessionBeacon).toHaveBeenCalledTimes(1);
     expect(connectorMock.stopConnectorSessionBeacon).toHaveBeenCalledWith("binding-1");
+    expect(runtimeMock.teardownVoiceSession).toHaveBeenCalled();
   });
 
-  it("sends text-mode composer messages through the active text session websocket", async () => {
-    renderApp();
+  it("switches to runtime persona cards when persona data exists", async () => {
+    clientMock.getSessionSnapshot.mockResolvedValueOnce({
+      session_id: "session-1",
+      tasks: [],
+      execution_sessions: [],
+      execution_runs: [],
+      execution_modes: [],
+      bindings: [],
+      summaries: [],
+      notification_candidates: [],
+      personas: [
+        {
+          persona_id: "persona-1",
+          name: "Rook",
+          avatar: "/avatars/avatar-01.png",
+          base_prompt: "",
+          status: "busy",
+          current_task_id: "task-1234",
+        },
+        {
+          persona_id: "persona-2",
+          name: "Vale",
+          avatar: "/avatars/avatar-02.png",
+          base_prompt: "",
+          status: "idle",
+          current_task_id: null,
+        },
+      ],
+      interaction_requests: [],
+      attention_items: [],
+      executor_capabilities: [],
+    });
 
-    fireEvent.click(await screen.findByTestId("mode-switch-text"));
-    await waitFor(() => expect(streamState.handlersBySession.has("text-session-1")).toBe(true));
+    render(<App />);
 
-    const input = screen.getByPlaceholderText("Issue a system directive...");
-    fireEvent.change(input, { target: { value: "Review the active tasks" } });
-    fireEvent.click(screen.getByTestId("conversation-composer-send"));
+    expect(await screen.findByText("Rook")).toBeInTheDocument();
+    expect(screen.getByText("Vale")).toBeInTheDocument();
+    expect(screen.getByText("2 online")).toBeInTheDocument();
+    expect(screen.queryByText("Atlas")).not.toBeInTheDocument();
+  });
+});
 
-    expect(clientMock.sendSocketMessage).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.any(String),
-      "Review the active tasks",
-    );
+describe("buildBroCardModels", () => {
+  it("falls back to the seeded sample bros when no personas are available", () => {
+    const bros = buildBroCardModels([]);
+
+    expect(bros.map((bro) => bro.name)).toEqual(["Atlas", "Scout", "Muse", "Forge"]);
+    expect(bros.every((bro) => bro.source === "sample")).toBe(true);
+  });
+
+  it("maps runtime personas into bro cards with busy and idle states", () => {
+    const bros = buildBroCardModels([
+      {
+        persona_id: "persona-1",
+        name: "Rook",
+        avatar: "/avatars/avatar-01.png",
+        status: "busy",
+        current_task_id: "task-1234",
+      },
+      {
+        persona_id: "persona-2",
+        name: "Vale",
+        avatar: "/avatars/avatar-02.png",
+        status: "idle",
+        current_task_id: null,
+      },
+    ]);
+
+    expect(bros).toHaveLength(2);
+    expect(bros[0]).toMatchObject({
+      id: "persona-1",
+      name: "Rook",
+      status: "busy",
+      taskTitle: "Handle active runtime work",
+      source: "runtime",
+    });
+    expect(bros[1]).toMatchObject({
+      id: "persona-2",
+      name: "Vale",
+      status: "idle",
+      progressLabel: "Idle",
+      source: "runtime",
+    });
   });
 });
