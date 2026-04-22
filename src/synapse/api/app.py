@@ -9,6 +9,7 @@ from synapse.api.routes.health import router as health_router
 from synapse.api.routes.interaction_requests import router as interaction_requests_router
 from synapse.api.routes.messages import router as messages_router
 from synapse.api.routes.personas import router as personas_router
+from synapse.api.routes.session_config import router as session_config_router
 from synapse.api.routes.sessions import router as sessions_router
 from synapse.api.ws.stream import router as stream_router
 from synapse.runtime.bootstrap import build_runtime_container
@@ -33,6 +34,7 @@ def create_app(*, settings: Settings | None = None) -> FastAPI:
     app.include_router(commands_router)
     app.include_router(interaction_requests_router)
     app.include_router(personas_router)
+    app.include_router(session_config_router)
     app.include_router(stream_router)
 
     return app

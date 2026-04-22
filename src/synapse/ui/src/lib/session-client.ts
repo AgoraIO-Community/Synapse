@@ -268,3 +268,24 @@ export async function deletePersona(sessionId: string, personaId: string) {
   });
   return (await ensureOk(response)).json();
 }
+
+
+// --- Session Config API ---
+
+export async function getSessionConfig(sessionId: string, key: string): Promise<{ key: string; value: string | null }> {
+  const response = await fetch(buildHttpUrl(`/sessions/${sessionId}/config/${key}`));
+  return (await ensureOk(response)).json();
+}
+
+export async function putSessionConfig(
+  sessionId: string,
+  key: string,
+  value: string,
+): Promise<{ key: string; value: string }> {
+  const response = await fetch(buildHttpUrl(`/sessions/${sessionId}/config/${key}`), {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ value }),
+  });
+  return (await ensureOk(response)).json();
+}
