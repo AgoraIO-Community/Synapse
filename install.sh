@@ -3,6 +3,8 @@ set -euo pipefail
 
 ROOT="${SYNAPSE_INSTALL_ROOT:-$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)}"
 FRONTEND_DIR="$ROOT/src/synapse/ui"
+MIN_PYTHON_MAJOR=3
+MIN_PYTHON_MINOR=12
 
 log() {
   printf '[install] %s\n' "$*"
@@ -15,6 +17,25 @@ die() {
 
 have_cmd() {
   command -v "$1" >/dev/null 2>&1
+}
+
+prepend_path_once() {
+  local path_entry="$1"
+  case ":$PATH:" in
+    *":$path_entry:"*)
+      ;;
+    *)
+      export PATH="$path_entry:$PATH"
+      ;;
+  esac
+}
+
+add_user_bun_to_path() {
+  local bun_dir
+  [[ -n "${HOME:-}" ]] || return 0
+  bun_dir="$HOME/.bun/bin"
+  [[ -x "$bun_dir/bun" ]] || return 0
+  prepend_path_once "$bun_dir"
 }
 
 detect_uname() {
@@ -45,32 +66,121 @@ run_as_root() {
   die "sudo is required for system package installation."
 }
 
+python_meets_minimum() {
+  local python_bin="$1"
+  "$python_bin" -c "import sys; raise SystemExit(0 if sys.version_info >= (${MIN_PYTHON_MAJOR}, ${MIN_PYTHON_MINOR}) else 1)" >/dev/null 2>&1
+}
+
+python_supports_venv() {
+  local python_bin="$1"
+  "$python_bin" -m venv --help >/dev/null 2>&1
+}
+
+python_supports_pip() {
+  local python_bin="$1"
+  "$python_bin" -m pip --version >/dev/null 2>&1
+}
+
+find_supported_python() {
+  local candidate
+  local candidate_path
+
+  for candidate in python3.12 python3 python; do
+    if ! have_cmd "$candidate"; then
+      continue
+    fi
+    candidate_path="$(command -v "$candidate")"
+    if python_meets_minimum "$candidate_path"; then
+      printf '%s\n' "$candidate_path"
+      return 0
+    fi
+  done
+
+  return 1
+}
+
 install_macos_dependencies() {
-  if ! have_cmd brew; then
-    die "Homebrew is required on macOS. Install Homebrew first, then rerun ./install.sh."
+  local python_bin
+
+  add_user_bun_to_path
+  python_bin="$(find_supported_python || true)"
+
+  if [[ -n "$python_bin" ]] && python_supports_venv "$python_bin" && python_supports_pip "$python_bin"; then
+    log "Skipping Python install; found supported interpreter at $python_bin"
+  else
+    if ! have_cmd brew; then
+      die "Homebrew is required on macOS when Python 3.12+ is not already available. Install Homebrew first, then rerun ./install.sh."
+    fi
+    log "Installing Python 3.12+ with Homebrew"
+    brew install python@3.12
   fi
 
-  log "Installing macOS dependencies with Homebrew"
-  brew install python@3.12
+  if have_cmd bun; then
+    log "Skipping Bun install; bun already available"
+    return
+  fi
+
+  if ! have_cmd curl; then
+    die "curl is required to install Bun."
+  fi
+  log "Installing Bun"
   curl -fsSL https://bun.sh/install | bash
+  add_user_bun_to_path
+  if ! have_cmd bun; then
+    die "Bun installation completed but bun is still not available on PATH."
+  fi
 }
 
 install_linux_dependencies() {
-  if ! have_cmd apt-get; then
-    die "Only Ubuntu/Debian apt-get environments are supported by install.sh right now."
+  local python_bin
+  local needs_apt=0
+
+  add_user_bun_to_path
+  python_bin="$(find_supported_python || true)"
+
+  if [[ -n "$python_bin" ]] && python_supports_venv "$python_bin" && python_supports_pip "$python_bin"; then
+    log "Skipping Python install; found supported interpreter at $python_bin"
+  else
+    needs_apt=1
   fi
 
-  log "Installing Ubuntu/Debian dependencies with apt-get"
-  run_as_root apt-get update
-  run_as_root apt-get install -y python3 python3-venv python3-pip curl ca-certificates
+  if have_cmd bun; then
+    log "Skipping Bun install; bun already available"
+  elif ! have_cmd curl; then
+    needs_apt=1
+  fi
 
-  if ! have_cmd bun; then
-    if ! have_cmd curl; then
-      die "curl is required to install Bun."
+  if (( needs_apt )); then
+    ensure_supported_linux
+    if ! have_cmd apt-get; then
+      die "Only Ubuntu/Debian apt-get environments are supported by install.sh for automatic dependency installation."
     fi
-    log "Installing Bun"
-    curl -fsSL https://bun.sh/install | bash
-    export PATH="$HOME/.bun/bin:$PATH"
+
+    log "Installing missing apt prerequisites"
+    run_as_root apt-get update
+    run_as_root apt-get install -y python3 python3-venv python3-pip curl ca-certificates
+  fi
+
+  python_bin="$(choose_python)"
+  if ! python_supports_venv "$python_bin"; then
+    die "Selected Python interpreter at $python_bin does not support python -m venv."
+  fi
+  if ! python_supports_pip "$python_bin"; then
+    die "Selected Python interpreter at $python_bin does not support python -m pip."
+  fi
+
+  if have_cmd bun; then
+    return
+  fi
+
+  if ! have_cmd curl; then
+    die "curl is required to install Bun."
+  fi
+  log "Installing Bun"
+  curl -fsSL https://bun.sh/install | bash
+  add_user_bun_to_path
+  if ! have_cmd bun; then
+    die "Bun installation completed but bun is still not available on PATH."
   fi
 }
 
@@ -91,15 +201,14 @@ ensure_supported_linux() {
 }
 
 choose_python() {
-  if have_cmd python3.12; then
-    command -v python3.12
+  local python_bin
+
+  python_bin="$(find_supported_python || true)"
+  if [[ -n "$python_bin" ]]; then
+    printf '%s\n' "$python_bin"
     return
   fi
-  if have_cmd python3; then
-    command -v python3
-    return
-  fi
-  die "A Python 3 interpreter is required but was not found after dependency installation."
+  die "Python 3.12 or newer is required but was not found after dependency installation."
 }
 
 bootstrap_repo_dependencies() {
@@ -151,13 +260,13 @@ main() {
   local uname_out
   local python_bin
 
+  add_user_bun_to_path
   uname_out="$(detect_uname)"
   case "$uname_out" in
     Darwin)
       install_macos_dependencies
       ;;
     Linux)
-      ensure_supported_linux
       install_linux_dependencies
       ;;
     *)
@@ -165,6 +274,7 @@ main() {
       ;;
   esac
 
+  add_user_bun_to_path
   python_bin="$(choose_python)"
   bootstrap_repo_dependencies "$python_bin"
   bootstrap_config_files
