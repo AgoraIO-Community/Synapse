@@ -277,7 +277,11 @@ export async function getSessionConfig(sessionId: string, key: string): Promise<
   return (await ensureOk(response)).json();
 }
 
-export async function putSessionConfig(sessionId: string, key: string, value: string) {
+export async function putSessionConfig(
+  sessionId: string,
+  key: string,
+  value: string,
+): Promise<{ key: string; value: string }> {
   const response = await fetch(buildHttpUrl(`/sessions/${sessionId}/config/${key}`), {
     method: "PUT",
     headers: { "Content-Type": "application/json" },

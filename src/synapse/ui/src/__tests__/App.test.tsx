@@ -80,6 +80,8 @@ const clientMock = vi.hoisted(() => ({
   createSession: vi.fn(),
   getSessionSnapshot: vi.fn(),
   getConversationSnapshot: vi.fn(),
+  getSessionConfig: vi.fn(async () => ({ key: "communication_persona_prompt", value: "" })),
+  putSessionConfig: vi.fn(async () => ({ key: "communication_persona_prompt", value: "" })),
   getDiagnosticTimeline: vi.fn(async () => ({ events: [] })),
   openSessionStream: vi.fn((sessionId: string, handlers: StreamHandlers) => {
     streamState.handlersBySession.set(sessionId, handlers);
@@ -275,6 +277,15 @@ describe("App shell", () => {
       session_id: sessionId,
       conversation_history: [],
     }));
+    clientMock.getSessionConfig.mockImplementation(
+      async () => ({ key: "communication_persona_prompt", value: "" }),
+    );
+    clientMock.putSessionConfig.mockImplementation(
+      async (_sessionId: string, _key: string, value: string) => ({
+        key: "communication_persona_prompt",
+        value,
+      }),
+    );
     gatewayMock.getGatewayConfig.mockResolvedValue({
       ready: true,
       service_base_url: "https://gateway.example.com",

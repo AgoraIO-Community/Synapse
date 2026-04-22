@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Request
 
 from synapse.api.models import PersonaCreateRequest, PersonaUpdateRequest
-from synapse.communication.persona_pool import save_personas_to_file
+from synapse.communication.persona_pool import load_personas_from_file, save_personas_to_file
 from synapse.protocol import Persona
 
 router = APIRouter()
@@ -13,10 +13,10 @@ router = APIRouter()
 async def list_personas(session_id: str, request: Request):
     container = request.app.state.runtime_container
     try:
-        session = container.get_session(session_id)
+        container.get_session(session_id)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    return await session.blackboard.list_personas()
+    return load_personas_from_file()
 
 
 @router.post("/sessions/{session_id}/personas", status_code=201)
@@ -27,12 +27,12 @@ async def create_persona(
 ):
     container = request.app.state.runtime_container
     try:
-        session = container.get_session(session_id)
+        container.get_session(session_id)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     persona_id = f"persona-{body.name.lower().replace(' ', '-')}"
-    existing = await session.blackboard.get_persona(persona_id)
-    if existing is not None:
+    personas = load_personas_from_file()
+    if any(persona.persona_id == persona_id for persona in personas):
         raise HTTPException(status_code=409, detail=f"Persona '{body.name}' already exists.")
     persona = Persona(
         persona_id=persona_id,
@@ -40,8 +40,7 @@ async def create_persona(
         avatar=body.avatar,
         base_prompt=body.base_prompt,
     )
-    await session.blackboard.put_persona(persona)
-    await _persist_personas(session)
+    save_personas_to_file([*personas, persona])
     return persona
 
 
@@ -54,10 +53,11 @@ async def update_persona(
 ):
     container = request.app.state.runtime_container
     try:
-        session = container.get_session(session_id)
+        container.get_session(session_id)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    persona = await session.blackboard.get_persona(persona_id)
+    personas = load_personas_from_file()
+    persona = next((item for item in personas if item.persona_id == persona_id), None)
     if persona is None:
         raise HTTPException(status_code=404, detail=f"Persona '{persona_id}' not found.")
     updates: dict[str, object] = {}
@@ -67,10 +67,15 @@ async def update_persona(
         updates["avatar"] = body.avatar
     if body.base_prompt is not None:
         updates["base_prompt"] = body.base_prompt
+    updated = persona.model_copy(update=updates) if updates else persona
     if updates:
-        await session.blackboard.put_persona(persona.model_copy(update=updates))
-    await _persist_personas(session)
-    return await session.blackboard.get_persona(persona_id)
+        save_personas_to_file(
+            [
+                updated if item.persona_id == persona_id else item
+                for item in personas
+            ]
+        )
+    return updated
 
 
 @router.delete("/sessions/{session_id}/personas/{persona_id}")
@@ -81,20 +86,12 @@ async def delete_persona(
 ):
     container = request.app.state.runtime_container
     try:
-        session = container.get_session(session_id)
+        container.get_session(session_id)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    persona = await session.blackboard.get_persona(persona_id)
+    personas = load_personas_from_file()
+    persona = next((item for item in personas if item.persona_id == persona_id), None)
     if persona is None:
         raise HTTPException(status_code=404, detail=f"Persona '{persona_id}' not found.")
-    if persona.status == "busy":
-        raise HTTPException(status_code=409, detail=f"{persona.name} is busy. Cancel the task first.")
-    await session.blackboard.delete_persona(persona_id)
-    await _persist_personas(session)
+    save_personas_to_file([item for item in personas if item.persona_id != persona_id])
     return {"deleted": persona_id}
-
-
-async def _persist_personas(session) -> None:
-    """Write current personas back to ~/.synapse/personas.yaml."""
-    personas = await session.blackboard.list_personas()
-    save_personas_to_file(personas)

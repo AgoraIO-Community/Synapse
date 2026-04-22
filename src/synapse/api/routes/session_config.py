@@ -1,15 +1,26 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-from synapse.communication.persona_pool import save_communication_persona_prompt_to_file
+from synapse.communication.persona_pool import (
+    load_communication_persona_prompt_from_file,
+    save_communication_persona_prompt_to_file,
+)
 
 router = APIRouter()
 
 ALLOWED_CONFIG_KEYS = frozenset({
     "communication_persona_prompt",
 })
+_LOAD_HOOKS: dict[str, Callable[[], str]] = {
+    "communication_persona_prompt": load_communication_persona_prompt_from_file,
+}
+_PERSIST_HOOKS: dict[str, Callable[[str], None]] = {
+    "communication_persona_prompt": save_communication_persona_prompt_to_file,
+}
 
 
 class SessionConfigValue(BaseModel):
@@ -32,7 +43,9 @@ async def get_session_config(session_id: str, key: str, request: Request):
         session = container.get_session(session_id)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    value = await session.blackboard.get_session_config(key)
+    del session
+    loader = _LOAD_HOOKS[key]
+    value = loader()
     return {"key": key, "value": value}
 
 
@@ -49,7 +62,7 @@ async def put_session_config(
         session = container.get_session(session_id)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    await session.blackboard.put_session_config(key, body.value)
-    if key == "communication_persona_prompt":
-        save_communication_persona_prompt_to_file(body.value)
+    del session
+    persist_hook = _PERSIST_HOOKS[key]
+    persist_hook(body.value)
     return {"key": key, "value": body.value}

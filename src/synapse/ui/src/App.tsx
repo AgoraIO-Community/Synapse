@@ -1926,20 +1926,10 @@ export default function App() {
                 <PersonaPanel
                   sessionId={activeSessionId}
                   personas={snapshot?.personas ?? []}
-                  onRefresh={() => {
-                    if (activeSessionId) {
-                      getSessionSnapshot(activeSessionId).then(setSnapshot);
-                    }
-                  }}
                 />
                 <CommunicationPersonaConfig
                   sessionId={activeSessionId}
-                  initialValue={snapshot?.communication_persona_prompt ?? ""}
-                  onSaved={() => {
-                    if (activeSessionId) {
-                      getSessionSnapshot(activeSessionId).then(setSnapshot);
-                    }
-                  }}
+                  currentSessionValue={snapshot?.communication_persona_prompt ?? ""}
                 />
               </section>
             )}
@@ -2302,11 +2292,6 @@ export default function App() {
                           <PersonaPanel
                             sessionId={activeSessionId}
                             personas={snapshot?.personas ?? []}
-                            onRefresh={() => {
-                              if (activeSessionId) {
-                                getSessionSnapshot(activeSessionId).then(setSnapshot);
-                              }
-                            }}
                           />
                         </div>
                       )}
