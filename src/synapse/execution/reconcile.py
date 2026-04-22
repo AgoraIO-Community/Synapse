@@ -4,7 +4,7 @@ import asyncio
 import time
 
 from synapse.blackboard import BlackboardQueryService, BlackboardStore
-from synapse.executor_core import ExecutorRegistry, UnknownExecutorError
+from synapse.executors.core import ExecutorRegistry, UnknownExecutorError
 from synapse.observability.emitters.execution import ExecutionDiagnosticEmitter
 from synapse.protocol import AgentResumeHandle, BindingStatus, RunStatus, Task, TaskStatus, TaskSummary
 

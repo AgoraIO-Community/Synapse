@@ -33,12 +33,12 @@ OPENAI_KEY = "OPENAI_API_KEY"
 CODEX_ENABLED_KEY = "SYNAPSE_CODEX_EXECUTOR_ENABLED"
 CODEX_COMMAND_KEY = "SYNAPSE_CODEX_COMMAND"
 INTERACTIVE_SETUP_KEYS = {OPENAI_KEY}
-GATEWAY_ENABLED_KEY = "SYNAPSE_GATEWAY_ENABLED"
-GATEWAY_HOST_KEY = "SYNAPSE_GATEWAY_HOST"
-GATEWAY_PORT_KEY = "SYNAPSE_GATEWAY_PORT"
-GATEWAY_PUBLIC_BASE_URL_KEY = "SYNAPSE_GATEWAY_PUBLIC_BASE_URL"
-GATEWAY_SYNAPSE_BASE_URL_KEY = "SYNAPSE_GATEWAY_SYNAPSE_BASE_URL"
-GATEWAY_MODULES_KEY = "SYNAPSE_GATEWAY_MODULES"
+CONNECTOR_ENABLED_KEY = "SYNAPSE_CONNECTOR_ENABLED"
+CONNECTOR_HOST_KEY = "SYNAPSE_CONNECTOR_HOST"
+CONNECTOR_PORT_KEY = "SYNAPSE_CONNECTOR_PORT"
+CONNECTOR_PUBLIC_BASE_URL_KEY = "SYNAPSE_CONNECTOR_PUBLIC_BASE_URL"
+CONNECTOR_SYNAPSE_BASE_URL_KEY = "SYNAPSE_CONNECTOR_SYNAPSE_BASE_URL"
+CONNECTOR_MODULES_KEY = "SYNAPSE_CONNECTOR_MODULES"
 ACPX_COMMAND_KEY = "SYNAPSE_ACPX_COMMAND"
 ACPX_AGENT_KEY = "SYNAPSE_ACPX_AGENT"
 ACPX_PERMISSION_MODE_KEY = "SYNAPSE_ACPX_PERMISSION_MODE"
@@ -81,7 +81,7 @@ class EnvTemplateLine:
 
 
 @dataclass(slots=True)
-class GatewaySetupResult:
+class ConnectorSetupResult:
     env_values: dict[str, str | None]
     config_path: Path | None = None
     config_text: str | None = None
@@ -133,16 +133,16 @@ def build_parser() -> argparse.ArgumentParser:
     start_parser.add_argument("--host", default="0.0.0.0")
     start_parser.add_argument("--port", type=int, default=START_PUBLIC_PORT)
 
-    gateway_parser = subparsers.add_parser("gateway", help="Configure and run the gateway host.")
-    gateway_subparsers = gateway_parser.add_subparsers(dest="gateway_command", required=True)
-    gateway_subparsers.add_parser("setup", help="Interactively configure gateway modules.")
-    gateway_run_parser = gateway_subparsers.add_parser("run", help="Run the headless gateway host.")
-    gateway_run_parser.add_argument("--host")
-    gateway_run_parser.add_argument("--port", type=int)
-    gateway_run_parser.add_argument(
+    connector_parser = subparsers.add_parser("connector", help="Configure and run the connector host.")
+    connector_subparsers = connector_parser.add_subparsers(dest="connector_command", required=True)
+    connector_subparsers.add_parser("setup", help="Interactively configure connector modules.")
+    connector_run_parser = connector_subparsers.add_parser("run", help="Run the headless connector host.")
+    connector_run_parser.add_argument("--host")
+    connector_run_parser.add_argument("--port", type=int)
+    connector_run_parser.add_argument(
         "--reload",
         action="store_true",
-        help="Run the gateway host with reload enabled.",
+        help="Run the connector host with reload enabled.",
     )
 
     executor_parser = subparsers.add_parser("executor", help="Configure and run the detached executor host.")
@@ -184,7 +184,7 @@ def main(argv: list[str] | None = None) -> int:
             "frontend": cmd_frontend,
             "doctor": cmd_doctor,
             "start": cmd_start,
-            "gateway": cmd_gateway,
+            "connector": cmd_connector,
             "executor": cmd_executor,
             "service": cmd_service,
         }
@@ -204,8 +204,8 @@ def cmd_setup(_args: argparse.Namespace) -> int:
 
     template_lines = load_env_template()
     existing_values, existing_order = load_env_assignments(ENV_LOCAL)
-    config_path = gateway_config_path()
-    existing_config_yaml, config_load_error = _load_existing_gateway_yaml_for_setup(config_path)
+    config_path = connector_config_path()
+    existing_config_yaml, config_load_error = _load_existing_connector_yaml_for_setup(config_path)
     if config_load_error is not None:
         print(
             f"[warn] ignoring invalid existing config at {format_user_path(config_path)}: {config_load_error}"
@@ -224,20 +224,20 @@ def cmd_setup(_args: argparse.Namespace) -> int:
         existing_order=existing_order,
         destination=ENV_LOCAL,
     )
-    config_setup = GatewaySetupResult(env_values={})
+    config_setup = ConnectorSetupResult(env_values={})
     if config_load_error is not None or setup_values.runtime_values or not config_path.exists():
-        config_setup = GatewaySetupResult(
+        config_setup = ConnectorSetupResult(
             env_values={},
             config_path=config_path,
-            config_text=render_gateway_config(
+            config_text=render_connector_config(
                 runtime=_resolved_runtime_config(existing_config_yaml, setup_values.runtime_values),
-                host=_existing_host_config(existing_config_yaml),
-                gateways=_existing_gateways_config(existing_config_yaml),
+                connector_host=_existing_connector_host_config(existing_config_yaml),
+                connectors=_existing_connectors_config(existing_config_yaml),
                 executor_host=_existing_executor_host_config(existing_config_yaml),
                 executors=_existing_executors_config(existing_config_yaml),
             ),
         )
-    _write_gateway_config_if_needed(config_setup)
+    _write_connector_config_if_needed(config_setup)
     print(f"[write] configured {format_user_path(ENV_LOCAL)}")
     return 0
 
@@ -248,13 +248,13 @@ def cmd_dev(args: argparse.Namespace) -> int:
         ("service", service_command(venv_python, args.host, args.port, reload=True), ROOT),
         ("frontend", frontend_dev_command(args.host, args.frontend_port), FRONTEND),
     ]
-    gateway_settings = load_gateway_settings_if_enabled()
+    connector_settings = load_connector_settings_if_enabled()
 
     print("\nSynapse dev is running")
     print(f"Frontend: http://localhost:{args.frontend_port}")
     print(f"Service : http://localhost:{args.port}")
-    if gateway_settings is not None:
-        print(f"Gateway : mounted via {gateway_settings.public_base_url}")
+    if connector_settings is not None:
+        print(f"Connector : mounted via {connector_settings.public_base_url}")
     print("Press Ctrl+C to stop\n")
     return run_managed_processes(commands)
 
@@ -308,17 +308,17 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         print("[missing] env: OPENAI_API_KEY (run ./synapse setup)")
         ok = False
 
-    ok &= report_gateway_status(args)
+    ok &= report_connector_status(args)
 
     return 0 if ok else 1
 
 
-def cmd_gateway(args: argparse.Namespace) -> int:
-    if args.gateway_command == "setup":
-        return cmd_gateway_setup(args)
-    if args.gateway_command == "run":
-        return cmd_gateway_run(args)
-    raise CliError(f"Unknown gateway command: {args.gateway_command}")
+def cmd_connector(args: argparse.Namespace) -> int:
+    if args.connector_command == "setup":
+        return cmd_connector_setup(args)
+    if args.connector_command == "run":
+        return cmd_connector_run(args)
+    raise CliError(f"Unknown connector command: {args.connector_command}")
 
 
 def cmd_executor(args: argparse.Namespace) -> int:
@@ -337,14 +337,14 @@ def cmd_service(args: argparse.Namespace) -> int:
     raise CliError(f"Unknown service command: {args.service_command}")
 
 
-def cmd_gateway_setup(_args: argparse.Namespace) -> int:
+def cmd_connector_setup(_args: argparse.Namespace) -> int:
     if not setup_can_prompt():
-        raise CliError("synapse gateway setup requires a TTY.")
+        raise CliError("synapse connector setup requires a TTY.")
 
     template_lines = load_env_template()
     existing_values, existing_order = load_env_assignments(ENV_LOCAL)
-    existing_config_yaml = _load_existing_gateway_yaml(gateway_config_path())
-    gateway_setup = resolve_gateway_setup_values(
+    existing_config_yaml = _load_existing_connector_yaml(connector_config_path())
+    connector_setup = resolve_connector_setup_values(
         existing_values=existing_values,
         environ=os.environ,
         interactive=True,
@@ -354,22 +354,22 @@ def cmd_gateway_setup(_args: argparse.Namespace) -> int:
     )
     write_env_file(
         template_lines=template_lines,
-        resolved_values={**existing_values, **gateway_setup.env_values},
+        resolved_values={**existing_values, **connector_setup.env_values},
         existing_values=existing_values,
         existing_order=existing_order,
         destination=ENV_LOCAL,
     )
-    _write_gateway_config_if_needed(gateway_setup)
+    _write_connector_config_if_needed(connector_setup)
     print(f"[write] configured {format_user_path(ENV_LOCAL)}")
     return 0
 
 
-def cmd_gateway_run(args: argparse.Namespace) -> int:
+def cmd_connector_run(args: argparse.Namespace) -> int:
     venv_python = require_venv_python()
-    settings = load_gateway_settings()
+    settings = load_connector_settings()
     host = args.host or settings.host
     port = args.port or settings.port
-    return run_checked(gateway_command(venv_python, host, port, reload=args.reload), cwd=ROOT)
+    return run_checked(connector_command(venv_python, host, port, reload=args.reload), cwd=ROOT)
 
 
 def cmd_executor_setup(_args: argparse.Namespace) -> int:
@@ -378,7 +378,7 @@ def cmd_executor_setup(_args: argparse.Namespace) -> int:
 
     template_lines = load_env_template()
     existing_values, existing_order = load_env_assignments(ENV_LOCAL)
-    existing_config_yaml = _load_existing_gateway_yaml(gateway_config_path())
+    existing_config_yaml = _load_existing_connector_yaml(connector_config_path())
     executor_setup = resolve_executor_setup_values(
         existing_values=existing_values,
         environ=os.environ,
@@ -399,7 +399,7 @@ def cmd_executor_setup(_args: argparse.Namespace) -> int:
         existing_order=filtered_existing_order,
         destination=ENV_LOCAL,
     )
-    _write_gateway_config_if_needed(executor_setup)
+    _write_connector_config_if_needed(executor_setup)
     print(f"[write] configured {format_user_path(ENV_LOCAL)}")
     return 0
 
@@ -466,12 +466,12 @@ def service_command(venv_python: Path, host: str, port: int, *, reload: bool) ->
     return command
 
 
-def gateway_command(venv_python: Path, host: str, port: int, *, reload: bool) -> list[str]:
+def connector_command(venv_python: Path, host: str, port: int, *, reload: bool) -> list[str]:
     command = [
         str(venv_python),
         "-m",
         "uvicorn",
-        "synapse.gateway_host.app:app",
+        "synapse.connectors.host.app:app",
         "--host",
         host,
         "--port",
@@ -486,7 +486,7 @@ def executor_host_command(venv_python: Path) -> list[str]:
     return [
         str(venv_python),
         "-m",
-        "synapse.executor_host",
+        "synapse.executors.host",
     ]
 
 
@@ -946,7 +946,7 @@ def resolve_bootstrap_values(
     return resolved
 
 
-def resolve_gateway_setup_values(
+def resolve_connector_setup_values(
     *,
     existing_values: dict[str, str],
     environ: os._Environ[str],
@@ -954,88 +954,88 @@ def resolve_gateway_setup_values(
     force_prompt: bool,
     existing_config_yaml: dict[str, object],
     runtime_values: dict[str, object] | None,
-) -> GatewaySetupResult:
+) -> ConnectorSetupResult:
     if not interactive:
-        return GatewaySetupResult(env_values={})
+        return ConnectorSetupResult(env_values={})
 
-    existing_enabled = pick_env_value(GATEWAY_ENABLED_KEY, existing_values, environ)
+    existing_enabled = pick_env_value(CONNECTOR_ENABLED_KEY, existing_values, environ)
     default_enabled = parse_bool_value(existing_enabled) if existing_enabled is not None else False
-    should_configure = prompt_bool_value("Configure gateway host", default=bool(default_enabled or force_prompt))
+    should_configure = prompt_bool_value("Configure connector host", default=bool(default_enabled or force_prompt))
     if not should_configure:
         if not force_prompt:
-            return GatewaySetupResult(env_values={})
-        return GatewaySetupResult(
+            return ConnectorSetupResult(env_values={})
+        return ConnectorSetupResult(
             env_values={},
-            config_path=gateway_config_path(),
-            config_text=render_gateway_config(
+            config_path=connector_config_path(),
+            config_text=render_connector_config(
                 runtime=_resolved_runtime_config(existing_config_yaml, runtime_values),
-                host=_default_host_config(),
-                gateways={},
+                connector_host=_default_connector_host_config(),
+                connectors={},
                 executor_host=_existing_executor_host_config(existing_config_yaml),
                 executors=_existing_executors_config(existing_config_yaml),
             ),
         )
 
-    config_path = gateway_config_path()
+    config_path = connector_config_path()
 
-    gateways = prompt_gateway_selection()
+    connectors = prompt_connector_selection()
     host = prompt_text_value(
-        "Gateway host",
-        default_value=_existing_yaml_value(existing_config_yaml, "host", "host")
-        or pick_env_value(GATEWAY_HOST_KEY, existing_values, environ)
+        "Connector host",
+        default_value=_existing_yaml_value(existing_config_yaml, "connector_host", "host")
+        or pick_env_value(CONNECTOR_HOST_KEY, existing_values, environ)
         or "0.0.0.0",
         required=True,
     )
     port = prompt_text_value(
-        "Gateway port",
+        "Connector port",
         default_value=str(
-            _existing_yaml_value(existing_config_yaml, "host", "port")
-            or pick_env_value(GATEWAY_PORT_KEY, existing_values, environ)
+            _existing_yaml_value(existing_config_yaml, "connector_host", "port")
+            or pick_env_value(CONNECTOR_PORT_KEY, existing_values, environ)
             or "8010"
         ),
         required=True,
     )
     public_base_url = prompt_text_value(
-        "Gateway public base URL",
-        default_value=_existing_yaml_value(existing_config_yaml, "host", "public_base_url")
-        or pick_env_value(GATEWAY_PUBLIC_BASE_URL_KEY, existing_values, environ)
-        or str(_default_host_config()["public_base_url"]),
+        "Connector public base URL",
+        default_value=_existing_yaml_value(existing_config_yaml, "connector_host", "public_base_url")
+        or pick_env_value(CONNECTOR_PUBLIC_BASE_URL_KEY, existing_values, environ)
+        or str(_default_connector_host_config()["public_base_url"]),
         required=True,
     )
     synapse_base_url = prompt_text_value(
-        "Synapse service base URL for gateway callbacks",
-        default_value=_existing_yaml_value(existing_config_yaml, "host", "synapse_base_url")
-        or pick_env_value(GATEWAY_SYNAPSE_BASE_URL_KEY, existing_values, environ)
+        "Synapse service base URL for connector callbacks",
+        default_value=_existing_yaml_value(existing_config_yaml, "connector_host", "synapse_base_url")
+        or pick_env_value(CONNECTOR_SYNAPSE_BASE_URL_KEY, existing_values, environ)
         or "http://127.0.0.1:8000",
         required=True,
     )
 
     resolved_env: dict[str, str | None] = {}
-    gateway_blocks: dict[str, dict[str, object]] = {}
-    for gateway in gateways:
-        if gateway == "agora-convoai":
-            block, env_updates = resolve_agora_gateway_setup_values(
+    connector_blocks: dict[str, dict[str, object]] = {}
+    for connector in connectors:
+        if connector == "agora-convoai":
+            block, env_updates = resolve_agora_connector_setup_values(
                 existing_values,
                 environ,
                 existing_config_yaml,
             )
-            gateway_blocks[gateway] = block
+            connector_blocks[connector] = block
             resolved_env.update(env_updates)
-    config_text = render_gateway_config(
+    config_text = render_connector_config(
         runtime=_resolved_runtime_config(existing_config_yaml, runtime_values),
-        host={
+        connector_host={
             "enabled": True,
             "host": host,
             "port": int(port),
             "public_base_url": public_base_url,
             "synapse_base_url": synapse_base_url,
-            "enabled_gateways": gateways,
+            "enabled_connectors": connectors,
         },
-        gateways=gateway_blocks,
+        connectors=connector_blocks,
         executor_host=_existing_executor_host_config(existing_config_yaml),
         executors=_existing_executors_config(existing_config_yaml),
     )
-    return GatewaySetupResult(
+    return ConnectorSetupResult(
         env_values=resolved_env,
         config_path=config_path,
         config_text=config_text,
@@ -1047,9 +1047,9 @@ def resolve_executor_setup_values(
     existing_values: dict[str, str],
     environ: os._Environ[str],
     existing_config_yaml: dict[str, object],
-) -> GatewaySetupResult:
+) -> ConnectorSetupResult:
     del environ  # reserved for future env-backed defaults
-    config_path = gateway_config_path()
+    config_path = connector_config_path()
     runtime_values = _existing_runtime_config(existing_config_yaml)
     if not runtime_values.get("detached_executor_enabled"):
         raise CliError("Detached executors are disabled. Run `./synapse setup` first.")
@@ -1113,10 +1113,10 @@ def resolve_executor_setup_values(
                 "timeout_seconds": existing_block.get("timeout_seconds") or existing_values.get(ACPX_TIMEOUT_SECONDS_KEY),
             }
 
-    config_text = render_gateway_config(
+    config_text = render_connector_config(
         runtime=runtime_values,
-        host=_existing_host_config(existing_config_yaml),
-        gateways=_existing_gateways_config(existing_config_yaml),
+        connector_host=_existing_connector_host_config(existing_config_yaml),
+        connectors=_existing_connectors_config(existing_config_yaml),
         executor_host={
             "enabled": True,
             "synapse_base_url": synapse_base_url,
@@ -1129,7 +1129,7 @@ def resolve_executor_setup_values(
             if key in enabled_executors
         },
     )
-    return GatewaySetupResult(
+    return ConnectorSetupResult(
         env_values={},
         config_path=config_path,
         config_text=config_text,
@@ -1153,16 +1153,16 @@ def bootstrap_setup_files() -> None:
         )
         print(f"[write] configured {format_user_path(ENV_LOCAL)}")
 
-    config_path = gateway_config_path()
+    config_path = connector_config_path()
     if not config_path.exists():
-        _write_gateway_config_if_needed(
-            GatewaySetupResult(
+        _write_connector_config_if_needed(
+            ConnectorSetupResult(
                 env_values={},
                 config_path=config_path,
-                config_text=render_gateway_config(
+                config_text=render_connector_config(
                     runtime=resolve_bootstrap_runtime_values(existing_values),
-                    host=_default_host_config(),
-                    gateways={},
+                    connector_host=_default_connector_host_config(),
+                    connectors={},
                     executor_host=_default_executor_host_config(),
                     executors={},
                 ),
@@ -1170,13 +1170,13 @@ def bootstrap_setup_files() -> None:
         )
 
 
-def resolve_agora_gateway_setup_values(
+def resolve_agora_connector_setup_values(
     existing_values: dict[str, str],
     environ: os._Environ[str],
-    existing_gateway_yaml: dict[str, object],
+    existing_connector_yaml: dict[str, object],
 ) -> tuple[dict[str, object], dict[str, str | None]]:
     env_updates: dict[str, str | None] = {}
-    existing_gateway = _existing_gateway_block(existing_gateway_yaml, "agora-convoai")
+    existing_connector = _existing_connector_block(existing_connector_yaml, "agora-convoai")
 
     app_id = prompt_text_value(
         "Agora App ID",
@@ -1194,17 +1194,17 @@ def resolve_agora_gateway_setup_values(
         "ASR credential mode",
         choices=["managed", "byok"],
         default_value=str(
-            _existing_nested_value(existing_gateway, "asr", "credential_mode") or "managed"
+            _existing_nested_value(existing_connector, "asr", "credential_mode") or "managed"
         ),
     )
     asr_model = prompt_choice_value(
         "ASR model",
         choices=["nova-3", "nova-2"],
-        default_value=str(_existing_nested_value(existing_gateway, "asr", "model") or "nova-3"),
+        default_value=str(_existing_nested_value(existing_connector, "asr", "model") or "nova-3"),
     )
     asr_language = prompt_text_value(
         "ASR language",
-        default_value=str(_existing_nested_value(existing_gateway, "asr", "language") or "en-US"),
+        default_value=str(_existing_nested_value(existing_connector, "asr", "language") or "en-US"),
         required=True,
     )
     asr_block: dict[str, object] = {
@@ -1224,7 +1224,7 @@ def resolve_agora_gateway_setup_values(
     tts_vendor = prompt_choice_value(
         "TTS vendor",
         choices=["minimax", "openai", "elevenlabs"],
-        default_value=str(_existing_nested_value(existing_gateway, "tts", "vendor") or "minimax"),
+        default_value=str(_existing_nested_value(existing_connector, "tts", "vendor") or "minimax"),
     )
     if tts_vendor == "minimax":
         tts_block: dict[str, object] = {
@@ -1234,7 +1234,7 @@ def resolve_agora_gateway_setup_values(
                 "TTS model",
                 choices=["speech_2_6_turbo", "speech_2_8_turbo"],
                 default_value=str(
-                    _existing_nested_value(existing_gateway, "tts", "model")
+                    _existing_nested_value(existing_connector, "tts", "model")
                     or "speech_2_6_turbo"
                 ),
             ),
@@ -1242,7 +1242,7 @@ def resolve_agora_gateway_setup_values(
                 prompt_text_value(
                     "TTS voice",
                     default_value=(
-                        _existing_nested_value(existing_gateway, "tts", "voice")
+                        _existing_nested_value(existing_connector, "tts", "voice")
                         or "English_magnetic_voiced_man"
                     ),
                 )
@@ -1257,7 +1257,7 @@ def resolve_agora_gateway_setup_values(
             "voice": normalize_optional_value(
                 prompt_text_value(
                     "TTS voice",
-                    default_value=_existing_nested_value(existing_gateway, "tts", "voice") or "alloy",
+                    default_value=_existing_nested_value(existing_connector, "tts", "voice") or "alloy",
                 )
             )
             or "alloy",
@@ -1275,7 +1275,7 @@ def resolve_agora_gateway_setup_values(
             "model": prompt_text_value(
                 "TTS model",
                 default_value=str(
-                    _existing_nested_value(existing_gateway, "tts", "model")
+                    _existing_nested_value(existing_connector, "tts", "model")
                     or "eleven_flash_v2_5"
                 ),
                 required=True,
@@ -1283,7 +1283,7 @@ def resolve_agora_gateway_setup_values(
             "voice": normalize_optional_value(
                 prompt_text_value(
                     "TTS voice",
-                    default_value=_existing_nested_value(existing_gateway, "tts", "voice"),
+                    default_value=_existing_nested_value(existing_connector, "tts", "voice"),
                     required=True,
                 )
             ),
@@ -1292,7 +1292,7 @@ def resolve_agora_gateway_setup_values(
                 prompt_text_value(
                     "TTS sample rate",
                     default_value=str(
-                        _existing_nested_value(existing_gateway, "tts", "sample_rate") or "24000"
+                        _existing_nested_value(existing_connector, "tts", "sample_rate") or "24000"
                     ),
                     required=True,
                 )
@@ -1304,10 +1304,10 @@ def resolve_agora_gateway_setup_values(
             "app_id": "$AGORA_APP_ID",
             "app_certificate": "$AGORA_APP_CERTIFICATE",
             "convoai_area": "US",
-            "client_token_ttl_seconds": int(existing_gateway.get("client_token_ttl_seconds") or 3600),
-            "speak_priority": str(existing_gateway.get("speak_priority") or "APPEND").upper(),
-            "speak_interruptable": bool(existing_gateway.get("speak_interruptable", True)),
-            "request_timeout_seconds": float(existing_gateway.get("request_timeout_seconds") or 10.0),
+            "client_token_ttl_seconds": int(existing_connector.get("client_token_ttl_seconds") or 3600),
+            "speak_priority": str(existing_connector.get("speak_priority") or "APPEND").upper(),
+            "speak_interruptable": bool(existing_connector.get("speak_interruptable", True)),
+            "request_timeout_seconds": float(existing_connector.get("request_timeout_seconds") or 10.0),
             "asr": asr_block,
             "tts": tts_block,
         },
@@ -1444,35 +1444,35 @@ def prompt_bool_value(label: str, *, default: bool) -> bool:
         print("Please answer yes or no.")
 
 
-def prompt_gateway_module_selection() -> list[str]:
-    return prompt_gateway_selection()
+def prompt_connector_module_selection() -> list[str]:
+    return prompt_connector_selection()
 
 
-def prompt_gateway_selection() -> list[str]:
-    gateways = list_available_gateway_modules()
-    if not gateways:
-        raise CliError("No gateways are currently registered.")
+def prompt_connector_selection() -> list[str]:
+    connectors = list_available_connector_modules()
+    if not connectors:
+        raise CliError("No connectors are currently registered.")
 
-    print("Available gateways:")
-    for index, gateway in enumerate(gateways, start=1):
-        print(f"  {index}. {gateway}")
+    print("Available connectors:")
+    for index, connector in enumerate(connectors, start=1):
+        print(f"  {index}. {connector}")
 
     while True:
-        entered = input("Select gateways [1]: ").strip()
+        entered = input("Select connectors [1]: ").strip()
         if not entered:
-            return [gateways[0]]
+            return [connectors[0]]
         selected: list[str] = []
         try:
             for part in entered.split(","):
                 index = int(part.strip())
-                selected.append(gateways[index - 1])
+                selected.append(connectors[index - 1])
         except (ValueError, IndexError):
             print("Enter one or more numeric choices separated by commas.")
             continue
         deduped: list[str] = []
-        for gateway in selected:
-            if gateway not in deduped:
-                deduped.append(gateway)
+        for connector in selected:
+            if connector not in deduped:
+                deduped.append(connector)
         return deduped
 
 
@@ -1528,48 +1528,48 @@ def prompt_choice_value(label: str, *, choices: list[str], default_value: str) -
         print(f"Choose one of: {', '.join(choices)}")
 
 
-def list_available_gateway_modules() -> list[str]:
-    from synapse.gateway_host.catalog import list_gateway_module_specs
+def list_available_connector_modules() -> list[str]:
+    from synapse.connectors.host.catalog import list_connector_module_specs
 
-    return [spec.slug for spec in list_gateway_module_specs()]
+    return [spec.slug for spec in list_connector_module_specs()]
 
 
-def load_gateway_settings():
+def load_connector_settings():
     import importlib
-    gateway_config_module = importlib.import_module("synapse.gateway_host.config")
-    return gateway_config_module.load_gateway_host_settings(env_file=ENV_LOCAL)
+    connector_config_module = importlib.import_module("synapse.connectors.host.config")
+    return connector_config_module.load_connector_host_settings(env_file=ENV_LOCAL)
 
 
 def load_executor_host_settings():
     import importlib
 
-    executor_host_config_module = importlib.import_module("synapse.executor_host.config")
+    executor_host_config_module = importlib.import_module("synapse.executors.host.config")
     return executor_host_config_module.load_executor_host_settings(env_file=ENV_LOCAL)
 
 
-def load_gateway_settings_if_enabled():
-    settings = load_gateway_settings()
-    if not settings.enabled or not settings.enabled_gateways:
+def load_connector_settings_if_enabled():
+    settings = load_connector_settings()
+    if not settings.enabled or not settings.enabled_connectors:
         return None
     return settings
 
 
-def report_gateway_status(args: argparse.Namespace) -> bool:
+def report_connector_status(args: argparse.Namespace) -> bool:
     del args
     try:
-        settings = load_gateway_settings()
+        settings = load_connector_settings()
     except Exception as exc:
-        print(f"[missing] gateway config: {exc}")
+        print(f"[missing] connector config: {exc}")
         return False
     if not settings.enabled:
-        print("[ok] gateway: disabled")
+        print("[ok] connector: disabled")
         return True
 
     ok = True
-    gateways = ", ".join(settings.enabled_gateways) or "(none)"
-    print(f"[ok] gateway: enabled -> {gateways}")
-    print(f"[ok] gateway public URL: {settings.public_base_url}")
-    print(f"[ok] gateway standalone listener: {settings.host}:{settings.port}")
+    connectors = ", ".join(settings.enabled_connectors) or "(none)"
+    print(f"[ok] connector: enabled -> {connectors}")
+    print(f"[ok] connector public URL: {settings.public_base_url}")
+    print(f"[ok] connector standalone listener: {settings.host}:{settings.port}")
 
     return ok
 
@@ -1582,7 +1582,7 @@ def report_required_env_keys(keys: list[str]) -> bool:
         if value:
             print(f"[ok] env: {key}")
         else:
-            print(f"[missing] env: {key} (run ./synapse gateway setup)")
+            print(f"[missing] env: {key} (run ./synapse connector setup)")
             ok = False
     return ok
 
@@ -1591,11 +1591,11 @@ class CliError(Exception):
     pass
 
 
-def gateway_config_path() -> Path:
+def connector_config_path() -> Path:
     return ENV_LOCAL.with_name("config.yaml")
 
 
-def _load_existing_gateway_yaml(path: Path) -> dict[str, object]:
+def _load_existing_connector_yaml(path: Path) -> dict[str, object]:
     if not path.exists():
         return {}
     loaded = load_yaml_file(path)
@@ -1604,15 +1604,15 @@ def _load_existing_gateway_yaml(path: Path) -> dict[str, object]:
     return {}
 
 
-def _load_existing_gateway_yaml_for_setup(path: Path) -> tuple[dict[str, object], str | None]:
+def _load_existing_connector_yaml_for_setup(path: Path) -> tuple[dict[str, object], str | None]:
     try:
-        return _load_existing_gateway_yaml(path), None
+        return _load_existing_connector_yaml(path), None
     except Exception as exc:
         return {}, str(exc)
 
 
-def _existing_yaml_value(raw_gateway_yaml: dict[str, object], *path: str) -> str | None:
-    value: object = raw_gateway_yaml
+def _existing_yaml_value(raw_connector_yaml: dict[str, object], *path: str) -> str | None:
+    value: object = raw_connector_yaml
     for part in path:
         if not isinstance(value, dict) or part not in value:
             return None
@@ -1622,18 +1622,18 @@ def _existing_yaml_value(raw_gateway_yaml: dict[str, object], *path: str) -> str
     return str(value)
 
 
-def _existing_gateway_block(raw_gateway_yaml: dict[str, object], gateway: str) -> dict[str, object]:
-    raw_gateways = raw_gateway_yaml.get("gateways")
-    if not isinstance(raw_gateways, dict):
+def _existing_connector_block(raw_connector_yaml: dict[str, object], connector: str) -> dict[str, object]:
+    raw_connectors = raw_connector_yaml.get("connectors")
+    if not isinstance(raw_connectors, dict):
         return {}
-    raw_gateway = raw_gateways.get(gateway)
-    if not isinstance(raw_gateway, dict):
+    raw_connector = raw_connectors.get(connector)
+    if not isinstance(raw_connector, dict):
         return {}
-    return raw_gateway
+    return raw_connector
 
 
-def _existing_nested_value(raw_gateway: dict[str, object], *path: str) -> str | None:
-    value: object = raw_gateway
+def _existing_nested_value(raw_connector: dict[str, object], *path: str) -> str | None:
+    value: object = raw_connector
     for part in path:
         if not isinstance(value, dict) or part not in value:
             return None
@@ -1647,8 +1647,8 @@ def _generated_executor_host_id() -> str:
     return f"host-{uuid4().hex[:8]}"
 
 
-def _runtime_detached_executor_enabled(raw_gateway_yaml: dict[str, object]) -> bool:
-    raw_runtime = raw_gateway_yaml.get("runtime")
+def _runtime_detached_executor_enabled(raw_connector_yaml: dict[str, object]) -> bool:
+    raw_runtime = raw_connector_yaml.get("runtime")
     if not isinstance(raw_runtime, dict):
         return False
     raw_value = raw_runtime.get("detached_executor_enabled")
@@ -1661,8 +1661,8 @@ def _runtime_detached_executor_enabled(raw_gateway_yaml: dict[str, object]) -> b
     return False
 
 
-def _runtime_detached_executor_types(raw_gateway_yaml: dict[str, object]) -> list[str]:
-    raw_runtime = raw_gateway_yaml.get("runtime")
+def _runtime_detached_executor_types(raw_connector_yaml: dict[str, object]) -> list[str]:
+    raw_runtime = raw_connector_yaml.get("runtime")
     if not isinstance(raw_runtime, dict):
         return []
     raw_types = raw_runtime.get("detached_executor_types")
@@ -1677,8 +1677,8 @@ def _runtime_detached_executor_types(raw_gateway_yaml: dict[str, object]) -> lis
     ]
 
 
-def _existing_executor_enabled_types(raw_gateway_yaml: dict[str, object]) -> list[str]:
-    raw_executor_host = raw_gateway_yaml.get("executor_host")
+def _existing_executor_enabled_types(raw_connector_yaml: dict[str, object]) -> list[str]:
+    raw_executor_host = raw_connector_yaml.get("executor_host")
     if not isinstance(raw_executor_host, dict):
         return []
     raw_types = raw_executor_host.get("enabled_executors")
@@ -1691,8 +1691,8 @@ def _existing_executor_enabled_types(raw_gateway_yaml: dict[str, object]) -> lis
     ]
 
 
-def _executor_host_id_default(raw_gateway_yaml: dict[str, object]) -> str:
-    existing = _existing_yaml_value(raw_gateway_yaml, "executor_host", "host_id")
+def _executor_host_id_default(raw_connector_yaml: dict[str, object]) -> str:
+    existing = _existing_yaml_value(raw_connector_yaml, "executor_host", "host_id")
     if existing and existing != "default-host":
         return existing
     return _generated_executor_host_id()
@@ -1708,8 +1708,8 @@ def _coerce_bool_config_value(value: object, *, default: bool) -> bool:
     return default
 
 
-def _existing_runtime_config(raw_gateway_yaml: dict[str, object]) -> dict[str, object]:
-    raw_runtime = raw_gateway_yaml.get("runtime")
+def _existing_runtime_config(raw_connector_yaml: dict[str, object]) -> dict[str, object]:
+    raw_runtime = raw_connector_yaml.get("runtime")
     if not isinstance(raw_runtime, dict):
         return {}
     return {
@@ -1719,38 +1719,38 @@ def _existing_runtime_config(raw_gateway_yaml: dict[str, object]) -> dict[str, o
     }
 
 
-def _existing_host_config(raw_gateway_yaml: dict[str, object]) -> dict[str, object]:
-    raw_host = raw_gateway_yaml.get("host")
+def _existing_connector_host_config(raw_connector_yaml: dict[str, object]) -> dict[str, object]:
+    raw_host = raw_connector_yaml.get("connector_host")
     if isinstance(raw_host, dict):
         return dict(raw_host)
-    return _default_host_config()
+    return _default_connector_host_config()
 
 
-def _existing_gateways_config(raw_gateway_yaml: dict[str, object]) -> dict[str, dict[str, object]]:
-    raw_gateways = raw_gateway_yaml.get("gateways")
-    if not isinstance(raw_gateways, dict):
+def _existing_connectors_config(raw_connector_yaml: dict[str, object]) -> dict[str, dict[str, object]]:
+    raw_connectors = raw_connector_yaml.get("connectors")
+    if not isinstance(raw_connectors, dict):
         return {}
     return {
         key: value
-        for key, value in raw_gateways.items()
+        for key, value in raw_connectors.items()
         if isinstance(key, str) and isinstance(value, dict)
     }
 
 
-def _existing_executor_host_config(raw_gateway_yaml: dict[str, object]) -> dict[str, object]:
-    raw_executor_host = raw_gateway_yaml.get("executor_host")
+def _existing_executor_host_config(raw_connector_yaml: dict[str, object]) -> dict[str, object]:
+    raw_executor_host = raw_connector_yaml.get("executor_host")
     if isinstance(raw_executor_host, dict):
         return {
             "enabled": _coerce_bool_config_value(raw_executor_host.get("enabled", False), default=False),
             "synapse_base_url": raw_executor_host.get("synapse_base_url", "http://127.0.0.1:8000"),
-            "host_id": _executor_host_id_default(raw_gateway_yaml),
-            "enabled_executors": _existing_executor_enabled_types(raw_gateway_yaml),
+            "host_id": _executor_host_id_default(raw_connector_yaml),
+            "enabled_executors": _existing_executor_enabled_types(raw_connector_yaml),
         }
     return _default_executor_host_config()
 
 
-def _existing_executors_config(raw_gateway_yaml: dict[str, object]) -> dict[str, dict[str, object]]:
-    raw_executors = raw_gateway_yaml.get("executors")
+def _existing_executors_config(raw_connector_yaml: dict[str, object]) -> dict[str, dict[str, object]]:
+    raw_executors = raw_connector_yaml.get("executors")
     if not isinstance(raw_executors, dict):
         return {}
     return {
@@ -1761,10 +1761,10 @@ def _existing_executors_config(raw_gateway_yaml: dict[str, object]) -> dict[str,
 
 
 def _resolved_runtime_config(
-    raw_gateway_yaml: dict[str, object],
+    raw_connector_yaml: dict[str, object],
     runtime_values: dict[str, object] | None,
 ) -> dict[str, object]:
-    resolved = _existing_runtime_config(raw_gateway_yaml)
+    resolved = _existing_runtime_config(raw_connector_yaml)
     for key, value in (runtime_values or {}).items():
         if value in (None, ""):
             resolved.pop(key, None)
@@ -1773,14 +1773,14 @@ def _resolved_runtime_config(
     return resolved
 
 
-def _default_host_config() -> dict[str, object]:
+def _default_connector_host_config() -> dict[str, object]:
     return {
         "enabled": False,
         "host": "0.0.0.0",
         "port": 8010,
         "public_base_url": "http://127.0.0.1:8000",
         "synapse_base_url": "http://127.0.0.1:8000",
-        "enabled_gateways": [],
+        "enabled_connectors": [],
     }
 
 
@@ -1798,11 +1798,11 @@ def resolve_bootstrap_runtime_values(existing_values: dict[str, str]) -> dict[st
     return {}
 
 
-def render_gateway_config(
+def render_connector_config(
     *,
     runtime: dict[str, object],
-    host: dict[str, object],
-    gateways: dict[str, dict[str, object]],
+    connector_host: dict[str, object],
+    connectors: dict[str, dict[str, object]],
     executor_host: dict[str, object] | None = None,
     executors: dict[str, dict[str, object]] | None = None,
 ) -> str:
@@ -1812,14 +1812,14 @@ def render_gateway_config(
         lines.extend(_render_yaml_mapping(runtime, indent=2))
     else:
         lines.append("runtime: {}")
-    lines.extend(["", "host:"])
-    lines.extend(_render_yaml_mapping(host, indent=2))
+    lines.extend(["", "connector_host:"])
+    lines.extend(_render_yaml_mapping(connector_host, indent=2))
     lines.append("")
-    if gateways:
-        lines.append("gateways:")
-        lines.extend(_render_yaml_mapping(gateways, indent=2))
+    if connectors:
+        lines.append("connectors:")
+        lines.extend(_render_yaml_mapping(connectors, indent=2))
     else:
-        lines.append("gateways: {}")
+        lines.append("connectors: {}")
     lines.extend(["", "executor_host:"])
     lines.extend(_render_yaml_mapping(executor_host or _default_executor_host_config(), indent=2))
     lines.append("")
@@ -1867,7 +1867,7 @@ def _render_yaml_scalar(value: object) -> str:
     return text
 
 
-def _write_gateway_config_if_needed(result: GatewaySetupResult) -> None:
+def _write_connector_config_if_needed(result: ConnectorSetupResult) -> None:
     if result.config_path is None or result.config_text is None:
         return
     result.config_path.parent.mkdir(parents=True, exist_ok=True)

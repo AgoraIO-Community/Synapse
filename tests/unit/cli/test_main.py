@@ -105,14 +105,14 @@ def test_executor_setup_uses_detected_codex_command_default(monkeypatch, tmp_pat
                 "  detached_executor_enabled: true",
                 "  detached_executor_types:",
                 "    - codex",
-                "host:",
+                "connector_host:",
                 "  enabled: false",
                 "  host: 0.0.0.0",
                 "  port: 8010",
                 '  public_base_url: "http://127.0.0.1:8000"',
                 '  synapse_base_url: "http://127.0.0.1:8000"',
-                "  enabled_gateways: []",
-                "gateways: {}",
+                "  enabled_connectors: []",
+                "connectors: {}",
                 "executor_host:",
                 "  enabled: false",
                 '  synapse_base_url: "http://127.0.0.1:8000"',
@@ -174,14 +174,14 @@ def test_executor_setup_migrates_legacy_codex_command_over_detected_default(
                 "  detached_executor_enabled: true",
                 "  detached_executor_types:",
                 "    - codex",
-                "host:",
+                "connector_host:",
                 "  enabled: false",
                 "  host: 0.0.0.0",
                 "  port: 8010",
                 '  public_base_url: "http://127.0.0.1:8000"',
                 '  synapse_base_url: "http://127.0.0.1:8000"',
-                "  enabled_gateways: []",
-                "gateways: {}",
+                "  enabled_connectors: []",
+                "connectors: {}",
                 "executor_host:",
                 "  enabled: false",
                 '  synapse_base_url: "http://127.0.0.1:8000"',
@@ -216,23 +216,23 @@ def test_executor_setup_migrates_legacy_codex_command_over_detected_default(
     assert "heartbeat_seconds" not in configured_runtime
 
 
-def test_gateway_setup_writes_gateway_module_env(monkeypatch, tmp_path: Path):
+def test_connector_setup_writes_connector_module_env(monkeypatch, tmp_path: Path):
     root = tmp_path
     (root / "src" / "synapse" / "ui").mkdir(parents=True)
 
     configure_repo_paths(monkeypatch, root)
     monkeypatch.setattr(cli_main, "setup_can_prompt", lambda: True)
-    monkeypatch.setattr(cli_main, "list_available_gateway_modules", lambda: ["agora-convoai"])
+    monkeypatch.setattr(cli_main, "list_available_connector_modules", lambda: ["agora-convoai"])
     secret_responses = iter(["app-cert"])
     monkeypatch.setattr(cli_main.getpass, "getpass", lambda _prompt: next(secret_responses))
 
     allowed_empty_prompts = {
-        "Configure gateway host [Y/n]: ",
-        "Select gateways [1]: ",
-        "Gateway host [0.0.0.0]: ",
-        "Gateway port [8010]: ",
-        "Gateway public base URL [http://127.0.0.1:8000]: ",
-        "Synapse service base URL for gateway callbacks [http://127.0.0.1:8000]: ",
+        "Configure connector host [Y/n]: ",
+        "Select connectors [1]: ",
+        "Connector host [0.0.0.0]: ",
+        "Connector port [8010]: ",
+        "Connector public base URL [http://127.0.0.1:8000]: ",
+        "Synapse service base URL for connector callbacks [http://127.0.0.1:8000]: ",
         "ASR credential mode [managed]: ",
         "ASR model [nova-3]: ",
         "ASR language [en-US]: ",
@@ -250,24 +250,24 @@ def test_gateway_setup_writes_gateway_module_env(monkeypatch, tmp_path: Path):
 
     monkeypatch.setattr("builtins.input", fake_input)
 
-    assert cli_main.main(["gateway", "setup"]) == 0
+    assert cli_main.main(["connector", "setup"]) == 0
 
     configured = (root / ".synapse" / ".env").read_text(encoding="utf-8")
     assert "AGORA_APP_ID=agora-app" in configured
     assert "AGORA_APP_CERTIFICATE=app-cert" in configured
 
-    gateway_config = (root / ".synapse" / "config.yaml").read_text(encoding="utf-8")
-    assert "runtime: {}" in gateway_config
-    assert "enabled_gateways:" in gateway_config
-    assert "- agora-convoai" in gateway_config
-    assert "app_id: $AGORA_APP_ID" in gateway_config
-    assert "convoai_area: US" in gateway_config
-    assert "credential_mode: managed" in gateway_config
-    assert "vendor: minimax" in gateway_config
-    assert "voice: English_magnetic_voiced_man" in gateway_config
+    connector_config = (root / ".synapse" / "config.yaml").read_text(encoding="utf-8")
+    assert "runtime: {}" in connector_config
+    assert "enabled_connectors:" in connector_config
+    assert "- agora-convoai" in connector_config
+    assert "app_id: $AGORA_APP_ID" in connector_config
+    assert "convoai_area: US" in connector_config
+    assert "credential_mode: managed" in connector_config
+    assert "vendor: minimax" in connector_config
+    assert "voice: English_magnetic_voiced_man" in connector_config
 
 
-def test_gateway_setup_decline_disables_existing_gateway_config(monkeypatch, tmp_path: Path):
+def test_connector_setup_decline_disables_existing_connector_config(monkeypatch, tmp_path: Path):
     root = tmp_path
     (root / "src" / "synapse" / "ui").mkdir(parents=True)
     configure_repo_paths(monkeypatch, root)
@@ -279,11 +279,11 @@ def test_gateway_setup_decline_disables_existing_gateway_config(monkeypatch, tmp
                 "version: 1",
                 "runtime:",
                 "  codex_command: /existing/codex",
-                "host:",
+                "connector_host:",
                 "  enabled: true",
-                "  enabled_gateways:",
+                "  enabled_connectors:",
                 "    - agora-convoai",
-                "gateways:",
+                "connectors:",
                 "  agora-convoai:",
                 "    app_id: $AGORA_APP_ID",
             ]
@@ -293,15 +293,15 @@ def test_gateway_setup_decline_disables_existing_gateway_config(monkeypatch, tmp
     )
     monkeypatch.setattr("builtins.input", lambda _prompt: "no")
 
-    assert cli_main.main(["gateway", "setup"]) == 0
+    assert cli_main.main(["connector", "setup"]) == 0
 
     configured = (root / ".synapse" / "config.yaml").read_text(encoding="utf-8")
     assert "codex_command: /existing/codex" in configured
     assert "enabled: false" in configured
-    assert "enabled_gateways:" in configured
+    assert "enabled_connectors:" in configured
 
 
-def test_gateway_setup_reads_existing_legacy_empty_gateways_config_with_yaml_fallback(
+def test_connector_setup_reads_existing_legacy_empty_connectors_config_with_yaml_fallback(
     monkeypatch,
     tmp_path: Path,
 ):
@@ -312,14 +312,14 @@ def test_gateway_setup_reads_existing_legacy_empty_gateways_config_with_yaml_fal
         "\n".join(
             [
                 "version: 1",
-                "host:",
+                "connector_host:",
                 "  enabled: false",
                 "  host: 0.0.0.0",
                 "  port: 8010",
                 '  public_base_url: "http://127.0.0.1:8000"',
                 '  synapse_base_url: "http://127.0.0.1:8000"',
-                "  enabled_gateways:",
-                "gateways:",
+                "  enabled_connectors:",
+                "connectors:",
                 "  {}",
             ]
         )
@@ -329,18 +329,18 @@ def test_gateway_setup_reads_existing_legacy_empty_gateways_config_with_yaml_fal
 
     configure_repo_paths(monkeypatch, root)
     monkeypatch.setattr(cli_main, "setup_can_prompt", lambda: True)
-    monkeypatch.setattr(cli_main, "list_available_gateway_modules", lambda: ["agora-convoai"])
+    monkeypatch.setattr(cli_main, "list_available_connector_modules", lambda: ["agora-convoai"])
     force_yaml_fallback(monkeypatch)
 
     secret_responses = iter(["app-cert"])
     monkeypatch.setattr(cli_main.getpass, "getpass", lambda _prompt: next(secret_responses))
 
     allowed_empty_prompts = {
-        "Select gateways [1]: ",
-        "Gateway host [0.0.0.0]: ",
-        "Gateway port [8010]: ",
-        "Gateway public base URL [http://127.0.0.1:8000]: ",
-        "Synapse service base URL for gateway callbacks [http://127.0.0.1:8000]: ",
+        "Select connectors [1]: ",
+        "Connector host [0.0.0.0]: ",
+        "Connector port [8010]: ",
+        "Connector public base URL [http://127.0.0.1:8000]: ",
+        "Synapse service base URL for connector callbacks [http://127.0.0.1:8000]: ",
         "ASR credential mode [managed]: ",
         "ASR model [nova-3]: ",
         "ASR language [en-US]: ",
@@ -350,7 +350,7 @@ def test_gateway_setup_reads_existing_legacy_empty_gateways_config_with_yaml_fal
     }
 
     def fake_input(prompt: str) -> str:
-        if prompt in {"Configure gateway host [y/N]: ", "Configure gateway host [Y/n]: "}:
+        if prompt in {"Configure connector host [y/N]: ", "Configure connector host [Y/n]: "}:
             return "y"
         if prompt.startswith("Agora App ID"):
             return "agora-app"
@@ -360,15 +360,15 @@ def test_gateway_setup_reads_existing_legacy_empty_gateways_config_with_yaml_fal
 
     monkeypatch.setattr("builtins.input", fake_input)
 
-    assert cli_main.main(["gateway", "setup"]) == 0
+    assert cli_main.main(["connector", "setup"]) == 0
 
     configured = (root / ".synapse" / "config.yaml").read_text(encoding="utf-8")
-    assert "gateways:\n  {}" not in configured
-    assert "gateways:" in configured
+    assert "connectors:\n  {}" not in configured
+    assert "connectors:" in configured
     assert "app_id: $AGORA_APP_ID" in configured
 
 
-def test_gateway_listing_and_settings_do_not_require_fastapi(monkeypatch, tmp_path: Path):
+def test_connector_listing_and_settings_do_not_require_fastapi(monkeypatch, tmp_path: Path):
     root = tmp_path
     (root / "src" / "synapse" / "ui").mkdir(parents=True)
     (root / ".synapse").mkdir(parents=True, exist_ok=True)
@@ -385,9 +385,9 @@ def test_gateway_listing_and_settings_do_not_require_fastapi(monkeypatch, tmp_pa
         "\n".join(
             [
                 "version: 1",
-                "host:",
+                "connector_host:",
                 "  enabled: true",
-                "  enabled_gateways:",
+                "  enabled_connectors:",
                 "    - agora-convoai",
             ]
         )
@@ -407,10 +407,10 @@ def test_gateway_listing_and_settings_do_not_require_fastapi(monkeypatch, tmp_pa
 
     monkeypatch.setattr(builtins, "__import__", guarded_import)
 
-    assert cli_main.list_available_gateway_modules() == ["agora-convoai"]
-    settings = cli_main.load_gateway_settings()
+    assert cli_main.list_available_connector_modules() == ["agora-convoai"]
+    settings = cli_main.load_connector_settings()
     assert settings.enabled is True
-    assert settings.enabled_gateways == ["agora-convoai"]
+    assert settings.enabled_connectors == ["agora-convoai"]
 
 
 def test_setup_non_interactive_uses_existing_and_env(monkeypatch, tmp_path: Path):
@@ -455,14 +455,14 @@ def test_executor_setup_migrates_legacy_codex_command_to_config(monkeypatch, tmp
                 "  detached_executor_enabled: true",
                 "  detached_executor_types:",
                 "    - codex",
-                "host:",
+                "connector_host:",
                 "  enabled: false",
                 "  host: 0.0.0.0",
                 "  port: 8010",
                 '  public_base_url: "http://127.0.0.1:8000"',
                 '  synapse_base_url: "http://127.0.0.1:8000"',
-                "  enabled_gateways: []",
-                "gateways: {}",
+                "  enabled_connectors: []",
+                "connectors: {}",
                 "executor_host:",
                 "  enabled: false",
                 '  synapse_base_url: "http://127.0.0.1:8000"',
@@ -546,7 +546,7 @@ def test_setup_non_interactive_requires_openai(monkeypatch, tmp_path: Path, caps
     assert "OPENAI_API_KEY is required for non-interactive setup" in capsys.readouterr().err
 
 
-def test_setup_bootstrap_defaults_creates_env_and_gateway_config(monkeypatch, tmp_path: Path):
+def test_setup_bootstrap_defaults_creates_env_and_connector_config(monkeypatch, tmp_path: Path):
     root = tmp_path
     (root / "src" / "synapse" / "ui").mkdir(parents=True)
 
@@ -565,19 +565,19 @@ def test_setup_bootstrap_defaults_creates_env_and_gateway_config(monkeypatch, tm
     assert "agora-shell-app" not in configured_env
     assert "/shell/codex" not in configured_env
 
-    configured_gateway = (root / ".synapse" / "config.yaml").read_text(encoding="utf-8")
-    assert "runtime: {}" in configured_gateway
-    assert "enabled: false" in configured_gateway
-    assert 'public_base_url: "http://127.0.0.1:8000"' in configured_gateway
-    assert "enabled_gateways: []" in configured_gateway
-    assert "gateways: {}" in configured_gateway
-    assert "gateways:\n  {}" not in configured_gateway
-    assert "executor_host:" in configured_gateway
-    assert "enabled_executors: []" in configured_gateway
-    assert "host_token" not in configured_gateway
-    assert "heartbeat_seconds" not in configured_gateway
-    assert re.search(r"host_id: host-[0-9a-f]{8}", configured_gateway)
-    assert "executors: {}" in configured_gateway
+    configured_connector = (root / ".synapse" / "config.yaml").read_text(encoding="utf-8")
+    assert "runtime: {}" in configured_connector
+    assert "enabled: false" in configured_connector
+    assert 'public_base_url: "http://127.0.0.1:8000"' in configured_connector
+    assert "enabled_connectors: []" in configured_connector
+    assert "connectors: {}" in configured_connector
+    assert "connectors:\n  {}" not in configured_connector
+    assert "executor_host:" in configured_connector
+    assert "enabled_executors: []" in configured_connector
+    assert "host_token" not in configured_connector
+    assert "heartbeat_seconds" not in configured_connector
+    assert re.search(r"host_id: host-[0-9a-f]{8}", configured_connector)
+    assert "executors: {}" in configured_connector
 
 
 def test_setup_bootstrap_defaults_preserves_existing_files(monkeypatch, tmp_path: Path):
@@ -694,11 +694,11 @@ def test_dev_uses_repo_venv_and_frontend_command(monkeypatch, tmp_path: Path):
         "\n".join(
             [
                 "version: 1",
-                "host:",
+                "connector_host:",
                 "  enabled: true",
                 "  port: 8010",
                 "  public_base_url: http://127.0.0.1:8000",
-                "  enabled_gateways:",
+                "  enabled_connectors:",
                 "    - agora-convoai",
             ]
         )
@@ -731,12 +731,12 @@ def test_start_runs_single_service_process(monkeypatch, tmp_path: Path):
         "\n".join(
             [
                 "version: 1",
-                "host:",
+                "connector_host:",
                 "  enabled: true",
                 "  host: 0.0.0.0",
                 "  port: 8010",
                 '  public_base_url: "http://127.0.0.1:8000"',
-                "  enabled_gateways:",
+                "  enabled_connectors:",
                 "    - agora-convoai",
             ]
         )

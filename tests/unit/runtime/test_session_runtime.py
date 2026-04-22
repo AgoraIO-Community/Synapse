@@ -27,7 +27,7 @@ from synapse.protocol import (
     TaskCommandType,
     TaskExecutionMode,
 )
-from synapse.executor_core import ExecutorCapabilities, ExecutorEvent, ExecutorEventType, ExecutorSession
+from synapse.executors.core import ExecutorCapabilities, ExecutorEvent, ExecutorEventType, ExecutorSession
 from synapse.protocol import Task, TaskStatus
 from synapse.runtime import Settings
 from synapse.runtime.session import create_session_runtime
@@ -209,7 +209,7 @@ class FakeNativeClient:
 
 class FakeNativeCodexSession:
     def __init__(self) -> None:
-        from synapse.executor_adapters.codex.session import CodexExecutorSession
+        from synapse.executors.adapters.codex.session import CodexExecutorSession
 
         self.session = CodexExecutorSession(
             session_id="codex-session-native",

@@ -114,15 +114,15 @@ version: 1
 
 runtime: {{}}
 
-host:
+connector_host:
   enabled: false
   host: 0.0.0.0
   port: 8010
   public_base_url: "http://127.0.0.1:8000"
   synapse_base_url: "http://127.0.0.1:8000"
-  enabled_gateways: []
+  enabled_connectors: []
 
-gateways: {{}}
+connectors: {{}}
 
 executor_host:
   enabled: false

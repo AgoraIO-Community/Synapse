@@ -6,7 +6,7 @@ from synapse.communication.context import (
     CommunicationContextBuilder,
 )
 from synapse.communication.history import InMemoryConversationHistory
-from synapse.executor_core import ExecutorCapabilities
+from synapse.executors.core import ExecutorCapabilities
 from synapse.protocol import Task, TaskExecutionDetailEntry
 
 

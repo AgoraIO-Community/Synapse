@@ -20,13 +20,13 @@ Preferred direction:
   but allow a separately deployed UI to target a public main-service base URL
   through `VITE_API_BASE_URL`
 - when `VITE_API_BASE_URL` is used, that public backend origin must terminate
-  on the main Synapse service rather than the gateway host and must preserve secure
+  on the main Synapse service rather than the connector host and must preserve secure
   websocket upgrades for `WS /sessions/{session_id}/stream`
-- allow Agora voice-mode browser calls to use `VITE_GATEWAY_BASE_URL` for the
-  separate gateway host; if unset, keep using same-origin `/gateway/...`
+- allow Agora voice-mode browser calls to use `VITE_CONNECTOR_BASE_URL` for the
+  separate connector host; if unset, keep using same-origin `/connectors/...`
   requests from the main Synapse service
 - the whole frontend shell should follow exactly one active session at a time
-- in voice mode, that active session is the gateway-returned
+- in voice mode, that active session is the connector-returned
   `synapse_session_id`
 - voice mode may also exist without an active session binding before the user
   presses `Start`

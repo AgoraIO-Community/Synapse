@@ -2,8 +2,8 @@ import pytest
 
 from synapse.blackboard import InMemoryBlackboard
 from synapse.execution import ExecutionBrain
-from synapse.executor_adapters.mock import MockExecutor
-from synapse.executor_core import ExecutorRegistry
+from synapse.executors.adapters.mock import MockExecutor
+from synapse.executors.core import ExecutorRegistry
 from synapse.protocol import Task, TaskStatus
 
 

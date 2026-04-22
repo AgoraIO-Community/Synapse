@@ -69,14 +69,14 @@ Backend-only and frontend-only commands:
 systemd service path. It expects an existing frontend production build and runs
 one main Synapse service on the public port. That service serves the built UI
 from `/`, keeps the normal API and websocket routes on the same origin, and
-mounts `/gateway/...` routes directly when gateways are enabled.
+mounts `/connectors/...` routes directly when connectors are enabled.
 
 `./synapse dev` runs the same main service with reload on port `8000` plus the
 separate Vite frontend on `5173`. The Vite workspace proxies both `/sessions`
-and `/gateway` to the local main service while you iterate on the UI.
+and `/connectors` to the local main service while you iterate on the UI.
 
-`./synapse gateway run` remains available when you want to run the standalone
-headless gateway host by itself for separate deployment or direct gateway
+`./synapse connector run` remains available when you want to run the standalone
+headless connector host by itself for separate deployment or direct connector
 testing.
 
 Separate frontend production deployments are documented in

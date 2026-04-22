@@ -16,29 +16,29 @@ The deployed UI expects one public backend base URL that serves both:
   - `WS /sessions/{session_id}/stream`
 
 Point `VITE_API_BASE_URL` at that public backend origin itself. Do not point it
-at `/sessions`, `/gateway`, or the gateway host on port `8010`.
+at `/sessions`, `/connectors`, or the connector host on port `8010`.
 
 If the deployed UI also enables the compact Agora voice accessory in the main
 workbench, set a second frontend env var:
 
 ```env
-VITE_GATEWAY_BASE_URL=https://gateway.example.com
+VITE_CONNECTOR_BASE_URL=https://connectors.example.com
 ```
 
 That value is used only for browser calls to:
 
-- `GET /gateway/agora-convoai/config`
-- `POST /gateway/agora-convoai/sessions/prepare`
-- `POST /gateway/agora-convoai/sessions/activate`
-- `POST /gateway/agora-convoai/sessions/stop`
+- `GET /connectors/agora-convoai/config`
+- `POST /connectors/agora-convoai/sessions/prepare`
+- `POST /connectors/agora-convoai/sessions/activate`
+- `POST /connectors/agora-convoai/sessions/stop`
 
 The main shell's `Voice` mode now rebinds the whole frontend to the
-gateway-returned `synapse_session_id`, so deployed environments must ensure the
-public main-backend origin and the public gateway origin are both reachable from
+connector-returned `synapse_session_id`, so deployed environments must ensure the
+public main-backend origin and the public connector origin are both reachable from
 the browser during mode switches.
 
-If your main Synapse service already mounts `/gateway/...` routes directly, you
-may set `VITE_GATEWAY_BASE_URL` to the same public origin as
+If your main Synapse service already mounts `/connectors/...` routes directly, you
+may set `VITE_CONNECTOR_BASE_URL` to the same public origin as
 `VITE_API_BASE_URL`.
 
 ## Backend Configuration
@@ -54,14 +54,14 @@ If you also use Vercel preview deployments, include those exact preview origins
 as additional comma-separated values.
 
 The main Synapse API should remain the upstream for browser session traffic.
-The gateway host is a separate vendor-facing process and is not the frontend's
+The connector host is a separate vendor-facing process and is not the frontend's
 session API origin.
 
-The gateway host must separately allow the deployed frontend origin for browser
-voice-mode requests. In the shared gateway host config:
+The connector host must separately allow the deployed frontend origin for browser
+voice-mode requests. In the shared connector host config:
 
 ```yaml
-host:
+connector_host:
   cors_allowed_origins:
     - https://app.example.com
 ```
@@ -72,13 +72,13 @@ Set the Vercel frontend env var:
 
 ```env
 VITE_API_BASE_URL=https://api.example.com
-VITE_GATEWAY_BASE_URL=https://gateway.example.com
+VITE_CONNECTOR_BASE_URL=https://connectors.example.com
 ```
 
 That value is consumed by `src/synapse/ui/src/lib/session-client.ts` and is
 used for both HTTPS requests and websocket URL derivation.
-`VITE_GATEWAY_BASE_URL` is consumed by
-`src/synapse/ui/src/lib/gateway-client.ts` for voice gateway calls only.
+`VITE_CONNECTOR_BASE_URL` is consumed by
+`src/synapse/ui/src/lib/connector-client.ts` for voice connector calls only.
 
 The frontend workspace now vendors the `agora-rtm` package locally under
 `src/synapse/ui/vendor/agora-rtm/` because the published `agora-rtm` npm
@@ -94,7 +94,7 @@ the root so plain `npm install` on Linux runners remains sufficient.
 
 For this repo's GitHub Actions production deploy path, the workflow currently
 injects both `VITE_API_BASE_URL=https://newbro.plutoless.com` and
-`VITE_GATEWAY_BASE_URL=https://newbro.plutoless.com` directly during the
+`VITE_CONNECTOR_BASE_URL=https://newbro.plutoless.com` directly during the
 production build. Keep the Vercel project env aligned with those same values
 if you also use manual Vercel CLI or dashboard-triggered deploys outside
 GitHub Actions.
@@ -104,9 +104,9 @@ GitHub Actions.
 If your public backend origin is served through Nginx, proxy the session routes
 to the main Synapse API on `127.0.0.1:8000`.
 
-If you choose not to expose a separate `VITE_GATEWAY_BASE_URL`, the same public
-origin must still expose `/gateway/agora-convoai/*`, either directly from the
-main Synapse service or by forwarding those routes to a standalone gateway host.
+If you choose not to expose a separate `VITE_CONNECTOR_BASE_URL`, the same public
+origin must still expose `/connectors/agora-convoai/*`, either directly from the
+main Synapse service or by forwarding those routes to a standalone connector host.
 
 Typical requirements:
 
@@ -155,8 +155,8 @@ After deployment:
 - verify `POST https://your-backend-origin/sessions`
 - verify the deployed Vercel UI can load a session and conversation snapshot
 - verify the websocket stream opens over `wss://.../sessions/{session_id}/stream`
-- verify `GET https://your-gateway-origin/gateway/agora-convoai/config` when
-  `VITE_GATEWAY_BASE_URL` is set
+- verify `GET https://your-connector-origin/connectors/agora-convoai/config` when
+  `VITE_CONNECTOR_BASE_URL` is set
 - verify the main UI can start and stop the voice accessory without CORS or
   mixed-origin failures
 - verify browser devtools show no CORS failures and no failed websocket

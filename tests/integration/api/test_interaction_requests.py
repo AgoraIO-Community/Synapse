@@ -7,7 +7,7 @@ from httpx import ASGITransport, AsyncClient
 from synapse.api.app import create_app
 from synapse.communication.models import ScriptedCommunicationModel
 from synapse.communication.models.scripted import ScriptedPlan
-from synapse.executor_core import ExecutorCapabilities, ExecutorEvent, ExecutorEventType, ExecutorSession
+from synapse.executors.core import ExecutorCapabilities, ExecutorEvent, ExecutorEventType, ExecutorSession
 from synapse.protocol import Task, TaskStatus
 from synapse.runtime import Settings
 from synapse.runtime.container import RuntimeContainer

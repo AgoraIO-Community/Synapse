@@ -76,12 +76,12 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./comp
 import { ModeSwitch, type AppMode } from "./components/ModeSwitch";
 import { VoiceModePanel, type VoiceModePhase } from "./components/VoiceModePanel";
 import {
-  activateGatewaySession,
-  getGatewayConfig,
-  prepareGatewaySession,
-  stopGatewaySessionBeacon,
-  type GatewayActivateResponse,
-} from "./lib/gateway-client";
+  activateConnectorSession,
+  getConnectorConfig,
+  prepareConnectorSession,
+  stopConnectorSessionBeacon,
+  type ConnectorActivateResponse,
+} from "./lib/connector-client";
 import { cn } from "./lib/utils";
 import {
   loadAgoraBrowserStack,
@@ -137,7 +137,7 @@ type VoiceModeState = {
   transcript: VoiceTranscriptTurn[];
   lastTranscriptUpdateAt: string | null;
   lastToolkitMessage: string | null;
-  activeSession: GatewayActivateResponse | null;
+  activeSession: ConnectorActivateResponse | null;
 };
 
 const STARTER_PROMPTS = [
@@ -924,22 +924,22 @@ export default function App() {
     setVoiceModeState(INITIAL_VOICE_MODE_STATE);
   }
 
-  async function startVoiceModeSession(transitionId: number): Promise<GatewayActivateResponse> {
+  async function startVoiceModeSession(transitionId: number): Promise<ConnectorActivateResponse> {
     setVoiceModeState({
       ...INITIAL_VOICE_MODE_STATE,
       phase: "loading",
     });
 
-    const loadedConfig = await getGatewayConfig();
+    const loadedConfig = await getConnectorConfig();
     if (!loadedConfig.ready) {
       throw new Error(
         loadedConfig.missing_requirements.length > 0
-          ? `Voice gateway is missing: ${loadedConfig.missing_requirements.join(", ")}`
-          : "Voice gateway is not ready.",
+          ? `Voice connector is missing: ${loadedConfig.missing_requirements.join(", ")}`
+          : "Voice connector is not ready.",
       );
     }
 
-    const prepared = await prepareGatewaySession();
+    const prepared = await prepareConnectorSession();
     const generation = ++voiceGenerationRef.current;
     const { AgoraRTC, AgoraRTM, AgoraVoiceAI, AgoraVoiceAIEvents, TranscriptHelperMode } =
       await loadAgoraBrowserStack();
@@ -1029,7 +1029,7 @@ export default function App() {
       await rtcClient.publish([micTrack]);
       voiceAi.subscribeMessage(prepared.channel_name);
 
-      const activated = await activateGatewaySession({
+      const activated = await activateConnectorSession({
         prepared_session_id: prepared.prepared_session_id,
       });
 
@@ -1274,7 +1274,7 @@ export default function App() {
     const stopVoiceBindingOnPageHide = () => {
       const bindingId = voiceResourcesRef.current?.bindingId;
       if (bindingId) {
-        stopGatewaySessionBeacon(bindingId);
+        stopConnectorSessionBeacon(bindingId);
       }
     };
     window.addEventListener("pagehide", stopVoiceBindingOnPageHide);

@@ -8,7 +8,7 @@ from synapse.communication.history import ConversationEntry
 from synapse.blackboard import BlackboardStore
 from synapse.observability.emitters.communication import CommunicationDiagnosticEmitter
 from synapse.protocol import MutationType, NotificationCandidate, Task, TaskMutation, TaskStatus
-from synapse.executor_core import ExecutorCapabilities
+from synapse.executors.core import ExecutorCapabilities
 
 from .context import CommunicationContextBuilder
 from .history import InMemoryConversationHistory

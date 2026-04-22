@@ -7,8 +7,8 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import Response
 
 from synapse.api.app import create_app as create_api_app
-from synapse.gateway_host.app import include_enabled_gateway_routes
-from synapse.gateway_host.config import GatewayHostSettings, load_gateway_host_settings
+from synapse.connectors.host.app import include_enabled_connector_routes
+from synapse.connectors.host.config import ConnectorHostSettings, load_connector_host_settings
 from synapse.runtime.config import Settings
 
 
@@ -22,7 +22,7 @@ RESERVED_ROUTE_PREFIXES = {
     "interaction-requests",
     "personas",
     "executors",
-    "gateway",
+    "connectors",
     "openapi.json",
     "docs",
     "redoc",
@@ -33,10 +33,10 @@ def create_app(
     *,
     settings: Settings | None = None,
     frontend_dist: Path | None = None,
-    gateway_settings: GatewayHostSettings | None = None,
+    connector_settings: ConnectorHostSettings | None = None,
 ) -> FastAPI:
     app = create_api_app(settings=settings)
-    include_enabled_gateway_routes(app, gateway_settings or load_gateway_host_settings())
+    include_enabled_connector_routes(app, connector_settings or load_connector_host_settings())
     _install_frontend_routes(app, frontend_dist or DEFAULT_FRONTEND_DIST_DIR)
     return app
 

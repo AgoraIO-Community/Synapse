@@ -4,7 +4,7 @@ import asyncio
 from dataclasses import dataclass, field
 from typing import Any
 
-from synapse.executor_core import ExecutorEvent, ExecutorEventType
+from synapse.executors.core import ExecutorEvent, ExecutorEventType
 from synapse.protocol import (
     AckMessage,
     CancelRunCommand,

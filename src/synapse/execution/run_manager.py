@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 from synapse.blackboard import BlackboardStore
-from synapse.executor_core import ExecutorEvent, ExecutorEventType
+from synapse.executors.core import ExecutorEvent, ExecutorEventType
 from synapse.observability.emitters.execution import ExecutionDiagnosticEmitter
 from synapse.protocol import (
     ExecutionRun,

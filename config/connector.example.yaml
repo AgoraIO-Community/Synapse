@@ -1,0 +1,35 @@
+version: 1
+
+runtime:
+  codex_command: /absolute/path/to/codex
+
+connector_host:
+  enabled: true
+  host: 0.0.0.0
+  port: 8010
+  public_base_url: http://127.0.0.1:8000
+  synapse_base_url: http://127.0.0.1:8000
+  cors_allowed_origins: []
+  enabled_connectors:
+    - agora-convoai
+
+connectors:
+  agora-convoai:
+    app_id: $AGORA_APP_ID
+    app_certificate: $AGORA_APP_CERTIFICATE
+    convoai_area: CN
+    client_token_ttl_seconds: 3600
+    speak_priority: APPEND
+    speak_interruptable: true
+    request_timeout_seconds: 10.0
+    asr:
+      vendor: deepgram
+      credential_mode: managed
+      model: nova-3
+      language: en-US
+    tts:
+      vendor: minimax
+      credential_mode: managed
+      model: speech_2_6_turbo
+      voice: null
+      sample_rate: null

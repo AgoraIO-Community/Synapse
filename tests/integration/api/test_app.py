@@ -39,8 +39,8 @@ async def test_app_does_not_serve_frontend_routes():
     ) as client:
         root_response = await client.get("/")
         asset_response = await client.get("/assets/app.js")
-        gateway_response = await client.get("/gateway/agora-convoai/config")
+        connector_response = await client.get("/connectors/agora-convoai/config")
 
     assert root_response.status_code == 404
     assert asset_response.status_code == 404
-    assert gateway_response.status_code == 404
+    assert connector_response.status_code == 404

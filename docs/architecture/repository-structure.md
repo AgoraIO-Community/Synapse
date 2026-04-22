@@ -26,13 +26,11 @@ Recommended repository structure:
       ├─ blackboard/
       ├─ communication/
       ├─ execution/
-      ├─ executor_core/
-      ├─ executor_adapters/
+      ├─ executors/
       ├─ notification/
       ├─ runtime/
       ├─ api/
-      ├─ gateway_host/
-      ├─ gateways/
+      ├─ connectors/
       ├─ cli/
       ├─ ui/
       └─ infrastructure/
@@ -46,13 +44,17 @@ src/synapse/
 ├─ blackboard/
 ├─ communication/
 ├─ execution/
-├─ executor_core/
-├─ executor_adapters/
+├─ executors/
+│  ├─ core/
+│  ├─ adapters/
+│  └─ host/
 ├─ notification/
 ├─ runtime/
 ├─ api/
-├─ gateway_host/
-├─ gateways/
+├─ connectors/
+│  ├─ base/
+│  ├─ host/
+│  └─ voice/
 ├─ cli/
 ├─ ui/
 └─ infrastructure/
@@ -68,7 +70,7 @@ The most stable public boundaries should be:
 
 - `synapse.protocol`
 - `synapse.blackboard.interfaces`
-- `synapse.executor_core`
+- `synapse.executors.core`
 
 This keeps the project easier to understand and extend in open source.
 
@@ -86,7 +88,7 @@ Additional repository-level guidance:
   - minimal runnable demos and integration examples
 - `exmaple-ui/`
   - repo-root example browser clients and first-party demo frontends
-  - keep reusable backend and gateway logic out of this directory
+  - keep reusable backend and connector logic out of this directory
 
 Migration rule:
 

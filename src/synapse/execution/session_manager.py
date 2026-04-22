@@ -3,7 +3,7 @@ from __future__ import annotations
 from uuid import uuid4
 
 from synapse.blackboard import BlackboardStore
-from synapse.executor_core import Executor, ExecutorSession
+from synapse.executors.core import Executor, ExecutorSession
 from synapse.observability.emitters.execution import ExecutionDiagnosticEmitter
 from synapse.observability.reason_codes import (
     EXECUTOR_SESSION_RECREATED,

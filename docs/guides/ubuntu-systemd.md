@@ -29,8 +29,8 @@ That means:
   browser-facing origin
 - the production frontend build is served from the same origin at `/`
 - the normal API and websocket routes live on that same service origin
-- enabled `/gateway/...` routes are mounted directly into the main service
-- the standalone gateway host no longer auto-starts from `synapse start`
+- enabled `/connectors/...` routes are mounted directly into the main service
+- the standalone connector host no longer auto-starts from `synapse start`
 
 ## Deployment Notes
 
@@ -39,17 +39,17 @@ That means:
 - When a non-root user runs the install, the CLI uses `sudo` only for writing
   the unit and calling `systemctl`.
 - The installed systemd unit always runs as the user who ran
-  `./synapse service install`, and it reads the shared runtime-plus-gateway
+  `./synapse service install`, and it reads the shared runtime-plus-connector
   config from that user’s home directory.
 - This path builds the production frontend during `synapse service install` and
   serves the built UI directly from the main Synapse service.
 - If the Codex executor is enabled, set an absolute `runtime.codex_command` in
   `~/.synapse/config.yaml`.
-- Same-origin voice mode now works through the main service `/gateway/...`
-  routes when gateways are enabled, so a separate `VITE_GATEWAY_BASE_URL` is
+- Same-origin voice mode now works through the main service `/connectors/...`
+  routes when connectors are enabled, so a separate `VITE_CONNECTOR_BASE_URL` is
   not required for this service-hosted UI path.
 - If Agora or another external caller must reach
-  `/gateway/agora-convoai/chat/completions`, set `host.public_base_url` in
+  `/connectors/agora-convoai/chat/completions`, set `connector_host.public_base_url` in
   `~/.synapse/config.yaml` to the public Synapse service origin.
 
 Runtime config lives in:
@@ -80,10 +80,10 @@ Verify the served UI shell:
 curl -i http://127.0.0.1:8000/
 ```
 
-If gateway modules are enabled:
+If connector modules are enabled:
 
 ```bash
-curl -i http://127.0.0.1:8000/gateway/agora-convoai/config
+curl -i http://127.0.0.1:8000/connectors/agora-convoai/config
 ```
 
 ## Logs And Control

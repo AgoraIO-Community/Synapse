@@ -1,0 +1,167 @@
+export interface ConnectorConfig {
+  ready: boolean;
+  service_base_url: string;
+  defaults: {
+    profile?: string;
+    channel_name?: string;
+    display_name?: string;
+    agent_instructions?: string;
+    agent_greeting?: string;
+    agent_uid?: number;
+    user_uid?: number;
+  };
+  missing_requirements: string[];
+}
+
+export interface ConnectorSessionPrepareRequest {
+  profile?: string;
+  channel_name?: string;
+  display_name?: string;
+  agent_instructions?: string;
+  agent_greeting?: string;
+  agent_uid?: number;
+  user_uid?: number;
+}
+
+export interface ConnectorSessionActivateRequest {
+  prepared_session_id: string;
+}
+
+export interface ConnectorSessionDiagnostics {
+  convoai_area: string;
+  selected_url: string;
+  runtime_session_id: string | null;
+  asr_vendor: string;
+  asr_credential_mode: string;
+  asr_model: string;
+  tts_vendor: string;
+  tts_credential_mode: string;
+  tts_model: string;
+  agent_uid: string;
+  agent_rtm_uid: string;
+  rtc_uid: string | number | null;
+  rtm_user_id: string;
+  enable_string_uid: boolean;
+  enable_rtm: boolean;
+  data_channel: string | null;
+  enable_metrics: boolean;
+  enable_error_message: boolean;
+}
+
+export interface ConnectorPrepareResponse {
+  prepared_session_id: string;
+  app_id: string;
+  channel_name: string;
+  token: string;
+  uid: number;
+  user_rtm_uid: string;
+  agent: {
+    uid: string;
+  };
+  agent_rtm_uid: string;
+  enable_string_uid: boolean;
+  profile: string | null;
+  display_name: string | null;
+  diagnostics: ConnectorSessionDiagnostics;
+}
+
+export interface ConnectorActivateResponse {
+  prepared_session_id: string;
+  binding_id: string;
+  synapse_session_id: string;
+  runtime_session_id: string;
+  chat_completions_url: string;
+  app_id: string;
+  channel_name: string;
+  token: string;
+  uid: number;
+  user_rtm_uid: string;
+  agent: {
+    uid: string;
+  };
+  agent_rtm_uid: string;
+  enable_string_uid: boolean;
+  profile: string | null;
+  display_name: string | null;
+  diagnostics: ConnectorSessionDiagnostics;
+}
+
+const configuredConnectorBaseUrl = getConfiguredConnectorBaseUrl();
+
+async function ensureOk(response: Response) {
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || `Request failed with status ${response.status}`);
+  }
+  return response;
+}
+
+function getConfiguredConnectorBaseUrl(): URL | null {
+  const raw = import.meta.env.VITE_CONNECTOR_BASE_URL?.trim();
+  if (!raw) {
+    return null;
+  }
+  return new URL(raw, window.location.origin);
+}
+
+function withTrailingSlash(value: string): string {
+  return value.endsWith("/") ? value : `${value}/`;
+}
+
+function normalizePath(path: string): string {
+  return path.replace(/^\/+/, "");
+}
+
+function buildConnectorHttpUrl(path: string): string {
+  if (configuredConnectorBaseUrl === null) {
+    return path;
+  }
+  return new URL(normalizePath(path), withTrailingSlash(configuredConnectorBaseUrl.href)).toString();
+}
+
+export async function getConnectorConfig(): Promise<ConnectorConfig> {
+  const response = await fetch(buildConnectorHttpUrl("/connectors/agora-convoai/config"));
+  return (await ensureOk(response)).json();
+}
+
+export async function prepareConnectorSession(
+  payload: ConnectorSessionPrepareRequest = {},
+): Promise<ConnectorPrepareResponse> {
+  const response = await fetch(buildConnectorHttpUrl("/connectors/agora-convoai/sessions/prepare"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return (await ensureOk(response)).json();
+}
+
+export async function activateConnectorSession(
+  payload: ConnectorSessionActivateRequest,
+): Promise<ConnectorActivateResponse> {
+  const response = await fetch(buildConnectorHttpUrl("/connectors/agora-convoai/sessions/activate"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return (await ensureOk(response)).json();
+}
+
+export async function stopConnectorSession(bindingId: string): Promise<void> {
+  const response = await fetch(buildConnectorHttpUrl("/connectors/agora-convoai/sessions/stop"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ binding_id: bindingId }),
+  });
+  await ensureOk(response);
+}
+
+export function stopConnectorSessionBeacon(bindingId: string): boolean {
+  if (typeof navigator === "undefined" || typeof navigator.sendBeacon !== "function") {
+    return false;
+  }
+  const payload = JSON.stringify({ binding_id: bindingId });
+  return navigator.sendBeacon(
+    buildConnectorHttpUrl("/connectors/agora-convoai/sessions/stop"),
+    new Blob([payload], { type: "application/json" }),
+  );
+}

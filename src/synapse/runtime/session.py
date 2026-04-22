@@ -12,11 +12,11 @@ from synapse.communication.history import InMemoryConversationHistory
 from synapse.communication.model import CommunicationModel, LlmTraceRecord, ToolCallRecord
 from synapse.communication.tools import build_default_tool_registry
 from synapse.communication.types import CommunicationTurnResult
-from synapse.executor_adapters.hosted import HostedExecutor
-from synapse.executor_adapters.codex.session import CodexExecutorSession
+from synapse.executors.adapters.hosted import HostedExecutor
+from synapse.executors.adapters.codex.session import CodexExecutorSession
 from synapse.execution import ExecutionBrain
-from synapse.executor_adapters.mock import MockExecutor
-from synapse.executor_core import ExecutorRegistry, UnknownExecutorError
+from synapse.executors.adapters.mock import MockExecutor
+from synapse.executors.core import ExecutorRegistry, UnknownExecutorError
 from synapse.interaction import InteractionManager
 from synapse.interaction.sanitization import (
     sanitize_interaction_request_details,
