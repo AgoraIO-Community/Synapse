@@ -3,8 +3,9 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
-from dataclasses import dataclass
-from typing import Any
+from dataclasses import dataclass, field
+import sys
+from typing import Any, TextIO
 from urllib.parse import urlparse, urlunparse
 
 import websockets
@@ -14,6 +15,7 @@ from synapse.executor_adapters.acpx import AcpxExecutor, AcpxExecutorSession
 from synapse.executor_adapters.codex import CodexExecutor, CodexExecutorSession
 from synapse.executor_core import ExecutorEvent, ExecutorEventType, ExecutorSession
 from synapse.protocol import (
+    AckMessage,
     CancelRunCommand,
     DispatchRunCommand,
     ExecutorHostExecutor,
@@ -33,24 +35,77 @@ class LocalRunContext:
     background_task: asyncio.Task[None]
 
 
+@dataclass(slots=True)
+class ExecutorHostLifecycleReporter:
+    stream: TextIO = field(default_factory=lambda: sys.stdout)
+
+    def starting(self, *, host_id: str, executor_types: list[str], synapse_base_url: str) -> None:
+        self._emit(
+            "[start] executor host "
+            f"host_id={host_id} executors={_format_executor_types(executor_types)} "
+            f"synapse={synapse_base_url}"
+        )
+
+    def connect_attempt(self, *, attempt: int, control_url: str) -> None:
+        self._emit(f"[connect] executor host attempt={attempt} url={control_url}")
+
+    def connect_failed(self, *, attempt: int, control_url: str, error: BaseException) -> None:
+        self._emit(
+            "[warn] executor host "
+            f"attempt={attempt} connect_failed={_format_exception_summary(error)} url={control_url}"
+        )
+
+    def ready(self, *, host_id: str, executor_types: list[str], synapse_base_url: str) -> None:
+        self._emit(
+            "[ready] executor host "
+            f"host_id={host_id} executors={_format_executor_types(executor_types)} "
+            f"synapse={synapse_base_url}"
+        )
+
+    def disconnected(self, *, control_url: str, error: BaseException) -> None:
+        self._emit(
+            "[warn] executor host "
+            f"disconnected={_format_exception_summary(error)} url={control_url}"
+        )
+
+    def retrying(self, *, delay_seconds: float) -> None:
+        self._emit(f"[retry] executor host retrying in {delay_seconds:.1f}s")
+
+    def _emit(self, message: str) -> None:
+        print(message, file=self.stream, flush=True)
+
+
 class ExecutorHostService:
     def __init__(
         self,
         *,
         settings: ExecutorHostSettings,
         executors_config: dict[str, Any],
+        reporter: ExecutorHostLifecycleReporter | None = None,
     ) -> None:
         self._settings = settings
         self._executors = self._build_executors(executors_config)
         self._live_sessions: dict[str, ExecutorSession] = {}
         self._active_runs: dict[str, LocalRunContext] = {}
         self._send_lock = asyncio.Lock()
+        self._reporter = reporter or ExecutorHostLifecycleReporter()
 
     async def run_forever(self) -> None:
+        control_url = self._ws_url()
+        retry_delay_seconds = 1.0
+        attempt = 0
+        self._reporter.starting(
+            host_id=self._settings.host_id,
+            executor_types=list(self._executors.keys()),
+            synapse_base_url=self._settings.synapse_base_url,
+        )
         while True:
+            attempt += 1
+            ready = False
+            self._reporter.connect_attempt(attempt=attempt, control_url=control_url)
             try:
                 async with websockets.connect(
-                    self._ws_url(),
+                    control_url,
                     proxy=None,
                     open_timeout=10.0,
                     close_timeout=10.0,
@@ -62,15 +117,33 @@ class ExecutorHostService:
                             executors=[self._descriptor(name, executor) for name, executor in self._executors.items()],
                         ).model_dump(mode="json"),
                     )
-                    await self._recv_json(websocket)
+                    ack = AckMessage.model_validate(await self._recv_json(websocket))
+                    if not ack.ok or ack.message_type != "register_host":
+                        detail = ack.detail or f"unexpected ack for {ack.message_type}"
+                        raise RuntimeError(f"registration rejected: {detail}")
+                    ready = True
+                    self._reporter.ready(
+                        host_id=self._settings.host_id,
+                        executor_types=list(self._executors.keys()),
+                        synapse_base_url=self._settings.synapse_base_url,
+                    )
                     while True:
                         payload = await self._recv_json(websocket)
                         await self._handle_message(websocket, payload)
             except asyncio.CancelledError:
                 raise
-            except Exception:
+            except Exception as exc:
+                if ready:
+                    self._reporter.disconnected(control_url=control_url, error=exc)
+                else:
+                    self._reporter.connect_failed(
+                        attempt=attempt,
+                        control_url=control_url,
+                        error=exc,
+                    )
                 await self._cancel_active_runs()
-                await asyncio.sleep(1.0)
+                self._reporter.retrying(delay_seconds=retry_delay_seconds)
+                await asyncio.sleep(retry_delay_seconds)
 
     async def _handle_message(self, websocket: Any, payload: dict[str, object]) -> None:
         message_type = payload.get("type")
@@ -297,3 +370,16 @@ def _build_resume_handle(executor: Any, session: ExecutorSession):
         except Exception:
             return None
     return None
+
+
+def _format_executor_types(executor_types: list[str]) -> str:
+    if not executor_types:
+        return "none"
+    return ",".join(executor_types)
+
+
+def _format_exception_summary(error: BaseException) -> str:
+    detail = str(error).strip()
+    if not detail:
+        return type(error).__name__
+    return f"{type(error).__name__}: {detail}"

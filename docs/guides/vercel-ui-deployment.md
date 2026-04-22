@@ -37,6 +37,10 @@ gateway-returned `synapse_session_id`, so deployed environments must ensure the
 public main-backend origin and the public gateway origin are both reachable from
 the browser during mode switches.
 
+If your main Synapse service already mounts `/gateway/...` routes directly, you
+may set `VITE_GATEWAY_BASE_URL` to the same public origin as
+`VITE_API_BASE_URL`.
+
 ## Backend Configuration
 
 The backend must allow the deployed frontend origin through
@@ -101,8 +105,8 @@ If your public backend origin is served through Nginx, proxy the session routes
 to the main Synapse API on `127.0.0.1:8000`.
 
 If you choose not to expose a separate `VITE_GATEWAY_BASE_URL`, the same public
-origin must also proxy `/gateway/agora-convoai/*` to the gateway host on
-`127.0.0.1:8010`.
+origin must still expose `/gateway/agora-convoai/*`, either directly from the
+main Synapse service or by forwarding those routes to a standalone gateway host.
 
 Typical requirements:
 

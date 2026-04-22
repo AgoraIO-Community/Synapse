@@ -42,6 +42,15 @@ expect.
 `./synapse executor setup` configures the detached executor host itself,
 including the Synapse base URL, a generated executor-node host id, and local
 Codex or ACPX command settings.
+`./synapse executor run` now reports foreground lifecycle state directly in the
+terminal:
+
+- `[start]` after local config is loaded
+- `[connect]` before each control-channel dial attempt
+- `[ready]` only after the host registers successfully with Synapse
+- `[warn]` plus `[retry]` when connection or registration fails and the host is
+  retrying
+- `[stop]` on manual interrupt
 
 `./synapse dev` and `./synapse start` do not auto-start the executor host.
 Run `./synapse executor run` explicitly when you want local real execution.
@@ -54,9 +63,18 @@ Backend-only and frontend-only commands:
 ```
 
 `./synapse start` is the production-style runtime entrypoint used by the
-systemd service path. It expects an existing frontend production build, starts
-the in-repo `synapse.edge` transport on the public port, and keeps the main
-backend behind that edge layer on an internal port.
+systemd service path. It expects an existing frontend production build and runs
+one main Synapse service on the public port. That service serves the built UI
+from `/`, keeps the normal API and websocket routes on the same origin, and
+mounts `/gateway/...` routes directly when gateways are enabled.
+
+`./synapse dev` runs the same main service with reload on port `8000` plus the
+separate Vite frontend on `5173`. The Vite workspace proxies both `/sessions`
+and `/gateway` to the local main service while you iterate on the UI.
+
+`./synapse gateway run` remains available when you want to run the standalone
+headless gateway host by itself for separate deployment or direct gateway
+testing.
 
 Separate frontend production deployments are documented in
 [`./vercel-ui-deployment.md`](./vercel-ui-deployment.md). Local

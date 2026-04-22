@@ -19,7 +19,7 @@ export default defineConfig({
     port: 5173,
     proxy: {
       "/gateway": {
-        target: "http://127.0.0.1:8010",
+        target: "http://127.0.0.1:8000",
         changeOrigin: true,
       },
       "/sessions": {

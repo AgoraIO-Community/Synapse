@@ -57,7 +57,6 @@ SYSTEMD_UNIT_NAME = "synapse.service"
 SYSTEMD_SERVICE_DIR = Path("/etc/systemd/system")
 REMOVED_RUNTIME_KEYS = {"executor_host_id", "executor_host_token"}
 START_PUBLIC_PORT = 8000
-START_BACKEND_PORT = 8001
 DEFAULT_ENV_TEMPLATE_LINES = (
     "OPENAI_API_KEY=your_openai_api_key_here",
     "SYNAPSE_OPENAI_MODEL=gpt-4o-mini",
@@ -129,11 +128,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     start_parser = subparsers.add_parser(
         "start",
-        help="Run the production Synapse edge plus backend without reload.",
+        help="Run the production Synapse service without reload.",
     )
     start_parser.add_argument("--host", default="0.0.0.0")
     start_parser.add_argument("--port", type=int, default=START_PUBLIC_PORT)
-    start_parser.add_argument("--backend-port", type=int, default=START_BACKEND_PORT)
 
     gateway_parser = subparsers.add_parser("gateway", help="Configure and run the gateway host.")
     gateway_subparsers = gateway_parser.add_subparsers(dest="gateway_command", required=True)
@@ -160,7 +158,6 @@ def build_parser() -> argparse.ArgumentParser:
     )
     service_install_parser.add_argument("--host", default="0.0.0.0")
     service_install_parser.add_argument("--port", type=int, default=START_PUBLIC_PORT)
-    service_install_parser.add_argument("--backend-port", type=int, default=START_BACKEND_PORT)
     service_subparsers.add_parser("start", help="Start the installed systemd service.")
     service_subparsers.add_parser("stop", help="Stop the installed systemd service.")
     service_subparsers.add_parser("restart", help="Restart the installed systemd service.")
@@ -248,29 +245,16 @@ def cmd_setup(_args: argparse.Namespace) -> int:
 def cmd_dev(args: argparse.Namespace) -> int:
     venv_python = require_venv_python()
     commands = [
-        ("backend", backend_command(venv_python, args.host, args.port, reload=True), ROOT),
+        ("service", service_command(venv_python, args.host, args.port, reload=True), ROOT),
         ("frontend", frontend_dev_command(args.host, args.frontend_port), FRONTEND),
     ]
     gateway_settings = load_gateway_settings_if_enabled()
-    if gateway_settings is not None:
-        commands.append(
-            (
-                "gateway",
-                gateway_command(
-                    venv_python,
-                    gateway_settings.host,
-                    gateway_settings.port,
-                    reload=True,
-                ),
-                ROOT,
-            )
-        )
 
     print("\nSynapse dev is running")
     print(f"Frontend: http://localhost:{args.frontend_port}")
-    print(f"Backend : http://localhost:{args.port}")
+    print(f"Service : http://localhost:{args.port}")
     if gateway_settings is not None:
-        print(f"Gateway : {gateway_settings.public_base_url}")
+        print(f"Gateway : mounted via {gateway_settings.public_base_url}")
     print("Press Ctrl+C to stop\n")
     return run_managed_processes(commands)
 
@@ -283,41 +267,9 @@ def cmd_backend(args: argparse.Namespace) -> int:
 def cmd_start(args: argparse.Namespace) -> int:
     venv_python = require_venv_python()
     ensure_frontend_build_ready()
-    backend_host = internal_bind_host(args.host)
-    gateway_settings = load_gateway_settings_if_enabled()
-    gateway_base_url = (
-        f"http://{internal_bind_host(gateway_settings.host)}:{gateway_settings.port}"
-        if gateway_settings is not None
-        else None
-    )
     commands = [
-        ("backend", backend_command(venv_python, backend_host, args.backend_port, reload=False), ROOT),
-        (
-            "edge",
-            edge_command(
-                venv_python,
-                args.host,
-                args.port,
-                backend_base_url=f"http://{backend_host}:{args.backend_port}",
-                gateway_base_url=gateway_base_url,
-                frontend_dist=frontend_dist_dir(),
-            ),
-            ROOT,
-        ),
+        ("service", service_command(venv_python, args.host, args.port, reload=False), ROOT),
     ]
-    if gateway_settings is not None:
-        commands.append(
-            (
-                "gateway",
-                gateway_command(
-                    venv_python,
-                    internal_bind_host(gateway_settings.host),
-                    gateway_settings.port,
-                    reload=False,
-                ),
-                ROOT,
-            )
-        )
     return run_managed_processes(commands)
 
 
@@ -470,7 +422,6 @@ def cmd_service_install(args: argparse.Namespace) -> int:
         venv_python=venv_python,
         host=args.host,
         public_port=args.port,
-        backend_port=args.backend_port,
     )
     install_service_unit(unit_text)
     print(f"[ok] installed {service_unit_path()}")
@@ -489,6 +440,22 @@ def backend_command(venv_python: Path, host: str, port: int, *, reload: bool) ->
         "-m",
         "uvicorn",
         "synapse.api.app:app",
+        "--host",
+        host,
+        "--port",
+        str(port),
+    ]
+    if reload:
+        command.append("--reload")
+    return command
+
+
+def service_command(venv_python: Path, host: str, port: int, *, reload: bool) -> list[str]:
+    command = [
+        str(venv_python),
+        "-m",
+        "uvicorn",
+        "synapse.service.app:app",
         "--host",
         host,
         "--port",
@@ -524,24 +491,8 @@ def edge_command(
     gateway_base_url: str | None,
     frontend_dist: Path,
 ) -> list[str]:
-    return [
-        str(venv_python),
-        "-m",
-        "synapse.edge",
-        "--host",
-        host,
-        "--port",
-        str(port),
-        "--backend-base-url",
-        backend_base_url,
-        "--frontend-dist",
-        str(frontend_dist),
-        *(
-            ["--gateway-base-url", gateway_base_url]
-            if gateway_base_url is not None
-            else []
-        ),
-    ]
+    del host, port, backend_base_url, gateway_base_url, frontend_dist
+    raise CliError("synapse.edge is no longer used by the CLI.")
 
 
 def executor_host_command(venv_python: Path) -> list[str]:
@@ -659,7 +610,6 @@ def render_service_unit(
     venv_python: Path,
     host: str,
     public_port: int,
-    backend_port: int,
 ) -> str:
     path_entries = [
         str(workdir / ".venv" / "bin"),
@@ -682,8 +632,6 @@ def render_service_unit(
             host,
             "--port",
             str(public_port),
-            "--backend-port",
-            str(backend_port),
         ]
     )
     lines = [
@@ -775,7 +723,13 @@ def venv_python_path() -> Path:
 
 def run_checked(cmd: list[str], cwd: Path) -> int:
     print(f"[run] {' '.join(cmd)}")
-    completed = subprocess.run(cmd, cwd=cwd, check=False)
+    try:
+        completed = subprocess.run(cmd, cwd=cwd, check=False)
+    except KeyboardInterrupt:
+        print("[stop] interrupted")
+        return 130
+    if completed.returncode in {130, -signal.SIGINT}:
+        return 130
     if completed.returncode != 0:
         raise SystemExit(completed.returncode)
     return completed.returncode
@@ -1058,11 +1012,11 @@ def resolve_gateway_setup_values(
         "Gateway public base URL",
         default_value=_existing_yaml_value(existing_config_yaml, "host", "public_base_url")
         or pick_env_value(GATEWAY_PUBLIC_BASE_URL_KEY, existing_values, environ)
-        or f"http://127.0.0.1:{port}",
+        or str(_default_host_config()["public_base_url"]),
         required=True,
     )
     synapse_base_url = prompt_text_value(
-        "Synapse API base URL for gateway callbacks",
+        "Synapse service base URL for gateway callbacks",
         default_value=_existing_yaml_value(existing_config_yaml, "host", "synapse_base_url")
         or pick_env_value(GATEWAY_SYNAPSE_BASE_URL_KEY, existing_values, environ)
         or "http://127.0.0.1:8000",
@@ -1119,7 +1073,7 @@ def resolve_executor_setup_values(
         default_selected=_existing_executor_enabled_types(existing_config_yaml) or runtime_executor_types
     )
     synapse_base_url = prompt_text_value(
-        "Synapse API base URL for executor host",
+        "Synapse service base URL for executor host",
         default_value=_existing_yaml_value(existing_config_yaml, "executor_host", "synapse_base_url")
         or "http://127.0.0.1:8000",
         required=True,
@@ -1614,6 +1568,7 @@ def load_gateway_settings_if_enabled():
 
 
 def report_gateway_status(args: argparse.Namespace) -> bool:
+    del args
     try:
         settings = load_gateway_settings()
     except Exception as exc:
@@ -1627,7 +1582,7 @@ def report_gateway_status(args: argparse.Namespace) -> bool:
     gateways = ", ".join(settings.enabled_gateways) or "(none)"
     print(f"[ok] gateway: enabled -> {gateways}")
     print(f"[ok] gateway public URL: {settings.public_base_url}")
-    ok &= report_port(settings.port)
+    print(f"[ok] gateway standalone listener: {settings.host}:{settings.port}")
 
     return ok
 
@@ -1836,7 +1791,7 @@ def _default_host_config() -> dict[str, object]:
         "enabled": False,
         "host": "0.0.0.0",
         "port": 8010,
-        "public_base_url": "http://127.0.0.1:8010",
+        "public_base_url": "http://127.0.0.1:8000",
         "synapse_base_url": "http://127.0.0.1:8000",
         "enabled_gateways": [],
     }

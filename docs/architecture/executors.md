@@ -33,6 +33,11 @@ Executor-host note:
 - the detached host owns live executor-native session continuity
 - Synapse keeps durable execution lineage and user-facing control semantics
 - executor-native continuity still remains optional across executor families
+- detached executor hosts connect to the main Synapse service origin through
+  `WS /executors/control`
+- foreground `synapse executor run` output should make connect, ready,
+  disconnect, and retry state explicit, and should only report ready after the
+  control-channel registration handshake succeeds
 
 Adapter direction:
 

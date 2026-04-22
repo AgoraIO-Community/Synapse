@@ -16,14 +16,15 @@ Preferred direction:
   - `assistant_response_*` plus request ack/reject events for chat transport
 - do not depend on communication-model tool-call details on the frontend
   websocket; tool activity is internal and debug inspection is log-backed
-- default to same-origin transport locally, but allow a separately deployed UI
-  to target a public main-backend base URL through `VITE_API_BASE_URL`
+- default to same-origin transport locally through the main Synapse service,
+  but allow a separately deployed UI to target a public main-service base URL
+  through `VITE_API_BASE_URL`
 - when `VITE_API_BASE_URL` is used, that public backend origin must terminate
-  on the main Synapse API rather than the gateway host and must preserve secure
+  on the main Synapse service rather than the gateway host and must preserve secure
   websocket upgrades for `WS /sessions/{session_id}/stream`
 - allow Agora voice-mode browser calls to use `VITE_GATEWAY_BASE_URL` for the
   separate gateway host; if unset, keep using same-origin `/gateway/...`
-  requests
+  requests from the main Synapse service
 - the whole frontend shell should follow exactly one active session at a time
 - in voice mode, that active session is the gateway-returned
   `synapse_session_id`

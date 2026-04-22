@@ -9,6 +9,21 @@ from .registry import create_gateway_module_registry
 GATEWAY_HOST_IMPLEMENTATION_VERSION = "headless-gateway-host.v1"
 
 
+def include_enabled_gateway_routes(
+    app: FastAPI,
+    settings: GatewayHostSettings,
+) -> None:
+    if not settings.enabled or not settings.enabled_gateways:
+        return
+
+    registry = create_gateway_module_registry(settings.enabled_gateways)
+    for slug in settings.enabled_gateways:
+        module = registry.get(slug)
+        if module is None:
+            continue
+        app.include_router(module.build_router())
+
+
 def create_app(settings: GatewayHostSettings | None = None) -> FastAPI:
     settings = settings or load_gateway_host_settings()
     app = FastAPI(title="Synapse Gateway Host")
@@ -31,16 +46,7 @@ def create_app(settings: GatewayHostSettings | None = None) -> FastAPI:
             "upstream_transport_mode": "direct",
         }
 
-    if not settings.enabled or not settings.enabled_gateways:
-        return app
-
-    registry = create_gateway_module_registry(settings.enabled_gateways)
-    for slug in settings.enabled_gateways:
-        module = registry.get(slug)
-        if module is None:
-            continue
-        app.include_router(module.build_router())
-
+    include_enabled_gateway_routes(app, settings)
     return app
 
 

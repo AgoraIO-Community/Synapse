@@ -109,7 +109,7 @@ def test_executor_setup_uses_detected_codex_command_default(monkeypatch, tmp_pat
                 "  enabled: false",
                 "  host: 0.0.0.0",
                 "  port: 8010",
-                '  public_base_url: "http://127.0.0.1:8010"',
+                '  public_base_url: "http://127.0.0.1:8000"',
                 '  synapse_base_url: "http://127.0.0.1:8000"',
                 "  enabled_gateways: []",
                 "gateways: {}",
@@ -178,7 +178,7 @@ def test_executor_setup_migrates_legacy_codex_command_over_detected_default(
                 "  enabled: false",
                 "  host: 0.0.0.0",
                 "  port: 8010",
-                '  public_base_url: "http://127.0.0.1:8010"',
+                '  public_base_url: "http://127.0.0.1:8000"',
                 '  synapse_base_url: "http://127.0.0.1:8000"',
                 "  enabled_gateways: []",
                 "gateways: {}",
@@ -231,8 +231,8 @@ def test_gateway_setup_writes_gateway_module_env(monkeypatch, tmp_path: Path):
         "Select gateways [1]: ",
         "Gateway host [0.0.0.0]: ",
         "Gateway port [8010]: ",
-        "Gateway public base URL [http://127.0.0.1:8010]: ",
-        "Synapse API base URL for gateway callbacks [http://127.0.0.1:8000]: ",
+        "Gateway public base URL [http://127.0.0.1:8000]: ",
+        "Synapse service base URL for gateway callbacks [http://127.0.0.1:8000]: ",
         "ASR credential mode [managed]: ",
         "ASR model [nova-3]: ",
         "ASR language [en-US]: ",
@@ -316,7 +316,7 @@ def test_gateway_setup_reads_existing_legacy_empty_gateways_config_with_yaml_fal
                 "  enabled: false",
                 "  host: 0.0.0.0",
                 "  port: 8010",
-                '  public_base_url: "http://127.0.0.1:8010"',
+                '  public_base_url: "http://127.0.0.1:8000"',
                 '  synapse_base_url: "http://127.0.0.1:8000"',
                 "  enabled_gateways:",
                 "gateways:",
@@ -339,8 +339,8 @@ def test_gateway_setup_reads_existing_legacy_empty_gateways_config_with_yaml_fal
         "Select gateways [1]: ",
         "Gateway host [0.0.0.0]: ",
         "Gateway port [8010]: ",
-        "Gateway public base URL [http://127.0.0.1:8010]: ",
-        "Synapse API base URL for gateway callbacks [http://127.0.0.1:8000]: ",
+        "Gateway public base URL [http://127.0.0.1:8000]: ",
+        "Synapse service base URL for gateway callbacks [http://127.0.0.1:8000]: ",
         "ASR credential mode [managed]: ",
         "ASR model [nova-3]: ",
         "ASR language [en-US]: ",
@@ -459,7 +459,7 @@ def test_executor_setup_migrates_legacy_codex_command_to_config(monkeypatch, tmp
                 "  enabled: false",
                 "  host: 0.0.0.0",
                 "  port: 8010",
-                '  public_base_url: "http://127.0.0.1:8010"',
+                '  public_base_url: "http://127.0.0.1:8000"',
                 '  synapse_base_url: "http://127.0.0.1:8000"',
                 "  enabled_gateways: []",
                 "gateways: {}",
@@ -568,7 +568,7 @@ def test_setup_bootstrap_defaults_creates_env_and_gateway_config(monkeypatch, tm
     configured_gateway = (root / ".synapse" / "config.yaml").read_text(encoding="utf-8")
     assert "runtime: {}" in configured_gateway
     assert "enabled: false" in configured_gateway
-    assert 'public_base_url: "http://127.0.0.1:8010"' in configured_gateway
+    assert 'public_base_url: "http://127.0.0.1:8000"' in configured_gateway
     assert "enabled_gateways: []" in configured_gateway
     assert "gateways: {}" in configured_gateway
     assert "gateways:\n  {}" not in configured_gateway
@@ -697,7 +697,7 @@ def test_dev_uses_repo_venv_and_frontend_command(monkeypatch, tmp_path: Path):
                 "host:",
                 "  enabled: true",
                 "  port: 8010",
-                "  public_base_url: http://127.0.0.1:8010",
+                "  public_base_url: http://127.0.0.1:8000",
                 "  enabled_gateways:",
                 "    - agora-convoai",
             ]
@@ -711,12 +711,12 @@ def test_dev_uses_repo_venv_and_frontend_command(monkeypatch, tmp_path: Path):
     monkeypatch.setattr(cli_main, "frontend_dev_command", lambda host, port: ["npm", "run", "dev", "--", "--host", host, "--port", str(port)])
 
     assert cli_main.main(["dev"]) == 0
-    assert spawned[0][0][:4] == [str(venv_python), "-m", "uvicorn", "synapse.api.app:app"]
+    assert spawned[0][0][:4] == [str(venv_python), "-m", "uvicorn", "synapse.service.app:app"]
     assert spawned[1][0] == ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "5173"]
-    assert spawned[2][0][:4] == [str(venv_python), "-m", "uvicorn", "synapse.gateway_host.app:app"]
+    assert len(spawned) == 2
 
 
-def test_start_uses_edge_transport_and_internal_upstreams(monkeypatch, tmp_path: Path):
+def test_start_runs_single_service_process(monkeypatch, tmp_path: Path):
     venv_python = tmp_path / ".venv" / "bin" / "python"
     venv_python.parent.mkdir(parents=True, exist_ok=True)
     venv_python.write_text("", encoding="utf-8")
@@ -735,7 +735,7 @@ def test_start_uses_edge_transport_and_internal_upstreams(monkeypatch, tmp_path:
                 "  enabled: true",
                 "  host: 0.0.0.0",
                 "  port: 8010",
-                '  public_base_url: "http://127.0.0.1:8010"',
+                '  public_base_url: "http://127.0.0.1:8000"',
                 "  enabled_gateways:",
                 "    - agora-convoai",
             ]
@@ -755,30 +755,22 @@ def test_start_uses_edge_transport_and_internal_upstreams(monkeypatch, tmp_path:
     assert cli_main.main(["start"]) == 0
 
     commands = captured["commands"]
-    assert commands[0][0] == "backend"
-    assert commands[0][1][:4] == [str(venv_python), "-m", "uvicorn", "synapse.api.app:app"]
-    assert commands[0][1][-4:] == ["--host", "127.0.0.1", "--port", "8001"]
-    assert commands[1] == (
-        "edge",
-        [
-            str(venv_python),
-            "-m",
-            "synapse.edge",
-            "--host",
-            "0.0.0.0",
-            "--port",
-            "8000",
-            "--backend-base-url",
-            "http://127.0.0.1:8001",
-            "--frontend-dist",
-            str(dist_dir),
-            "--gateway-base-url",
-            "http://127.0.0.1:8010",
-        ],
-        tmp_path,
-    )
-    assert commands[2][0] == "gateway"
-    assert commands[2][1][-4:] == ["--host", "127.0.0.1", "--port", "8010"]
+    assert commands == [
+        (
+            "service",
+            [
+                str(venv_python),
+                "-m",
+                "uvicorn",
+                "synapse.service.app:app",
+                "--host",
+                "0.0.0.0",
+                "--port",
+                "8000",
+            ],
+            tmp_path,
+        )
+    ]
 
 
 def configure_service_environment(monkeypatch, tmp_path: Path) -> None:
@@ -914,7 +906,6 @@ def test_render_service_unit_includes_expected_values():
         venv_python=Path("/srv/synapse/.venv/bin/python"),
         host="0.0.0.0",
         public_port=8000,
-        backend_port=8001,
     )
 
     assert "User=deploy" in unit
@@ -922,7 +913,7 @@ def test_render_service_unit_includes_expected_values():
     assert 'Environment="HOME=/home/deploy"' in unit
     assert 'Environment="PATH=/srv/synapse/.venv/bin:/home/deploy/.local/bin:/home/deploy/.bun/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"' in unit
     assert (
-        "ExecStart=/srv/synapse/.venv/bin/python -m synapse start --host 0.0.0.0 --port 8000 --backend-port 8001"
+        "ExecStart=/srv/synapse/.venv/bin/python -m synapse start --host 0.0.0.0 --port 8000"
         in unit
     )
     assert "Restart=on-failure" in unit
@@ -937,7 +928,6 @@ def test_render_service_unit_supports_root_values():
         venv_python=Path("/srv/synapse/.venv/bin/python"),
         host="0.0.0.0",
         public_port=8000,
-        backend_port=8001,
     )
 
     assert "User=root" in unit
@@ -969,3 +959,31 @@ def test_service_lifecycle_commands_use_sudo(monkeypatch, tmp_path: Path):
         ["sudo", "systemctl", "stop", "synapse.service"],
         ["sudo", "systemctl", "restart", "synapse.service"],
     ]
+
+
+def test_run_checked_returns_130_on_keyboard_interrupt(monkeypatch, tmp_path: Path, capsys):
+    monkeypatch.setattr(
+        cli_main.subprocess,
+        "run",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(KeyboardInterrupt()),
+    )
+
+    assert cli_main.run_checked(["echo", "hello"], cwd=tmp_path) == 130
+    output = capsys.readouterr().out
+    assert "[run] echo hello" in output
+    assert "[stop] interrupted" in output
+
+
+def test_executor_run_returns_130_when_child_interrupts(monkeypatch, tmp_path: Path):
+    venv_python = tmp_path / ".venv" / "bin" / "python"
+    venv_python.parent.mkdir(parents=True, exist_ok=True)
+    venv_python.write_text("", encoding="utf-8")
+
+    configure_repo_paths(monkeypatch, tmp_path)
+    monkeypatch.setattr(
+        cli_main.subprocess,
+        "run",
+        lambda *_args, **_kwargs: FakeCompletedProcess(returncode=130),
+    )
+
+    assert cli_main.main(["executor", "run"]) == 130

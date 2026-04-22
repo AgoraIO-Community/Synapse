@@ -14,7 +14,11 @@ def main() -> int:
         settings=loaded.host_settings,
         executors_config=loaded.executors,
     )
-    asyncio.run(service.run_forever())
+    try:
+        asyncio.run(service.run_forever())
+    except KeyboardInterrupt:
+        print("[stop] executor host interrupted")
+        return 130
     return 0
 
 

@@ -2,13 +2,18 @@
 
 Synapse supports a separate, headless gateway host for vendor-facing gateway modules.
 
+The standalone gateway host is now an optional deployment path. In the default
+service-hosted runtime, the main Synapse service mounts enabled `/gateway/...`
+routes directly and serves them on the same public origin as the rest of the
+app.
+
 The gateway host:
 
 - runs as a separate process
 - mounts first-party gateway modules from `src/synapse/gateways/`
 - owns vendor callback endpoints
-- talks back to the main Synapse API through public session APIs
-- uses direct upstream connections to the configured Synapse backend rather
+- talks back to the main Synapse service through public session APIs
+- uses direct upstream connections to the configured Synapse service origin rather
   than environment-derived HTTP / HTTPS proxy settings
 
 It does not:
@@ -32,13 +37,9 @@ Run the gateway host only:
 ./synapse gateway run
 ```
 
-When gateway config is enabled in `~/.synapse/config.yaml`, these commands also start the
-gateway host automatically:
-
-```bash
-./synapse dev
-./synapse start
-```
+`./synapse dev` and `./synapse start` do not auto-start the standalone gateway
+host anymore. Use `./synapse gateway run` only when you want a separate gateway
+process.
 
 Reload behavior:
 
@@ -46,7 +47,8 @@ Reload behavior:
 - `./synapse start` does not reload Python code changes
 
 If you edit Python gateway code while using `./synapse start`, stop it and
-start it again before retesting.
+start the main Synapse service again before retesting. If you are using
+`./synapse gateway run` directly, restart that standalone process instead.
 
 ## Health and Debugging
 
@@ -96,6 +98,14 @@ Synapse runtime also reads the shared `runtime` section.
 For deployed browser voice-mode access, `host` may also include
 `cors_allowed_origins`, which is the list of browser origins allowed to call
 `/gateway/...` routes cross-origin.
+
+`host.public_base_url` should be the public base URL where `/gateway/...` is
+reachable:
+
+- in the default service-hosted path, set it to the public main Synapse
+  service origin
+- in the standalone gateway-host path, set it to the public standalone gateway
+  origin
 
 The tracked template is:
 
