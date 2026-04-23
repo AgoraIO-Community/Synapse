@@ -27,28 +27,28 @@ It does not:
 Interactive setup:
 
 ```bash
-./synapse setup
-./synapse connector setup
+./newbro setup
+./newbro connector setup
 ```
 
 Run the connector host only:
 
 ```bash
-./synapse connector run
+./newbro connector run
 ```
 
-`./synapse dev` and `./synapse start` do not auto-start the standalone connector
-host anymore. Use `./synapse connector run` only when you want a separate connector
+`./newbro dev` and `./newbro start` do not auto-start the standalone connector
+host anymore. Use `./newbro connector run` only when you want a separate connector
 process.
 
 Reload behavior:
 
-- `./synapse dev` is the local iteration path and uses reload-capable processes
-- `./synapse start` does not reload Python code changes
+- `./newbro dev` is the local iteration path and uses reload-capable processes
+- `./newbro start` does not reload Python code changes
 
-If you edit Python connector code while using `./synapse start`, stop it and
+If you edit Python connector code while using `./newbro start`, stop it and
 start the main Synapse service again before retesting. If you are using
-`./synapse connector run` directly, restart that standalone process instead.
+`./newbro connector run` directly, restart that standalone process instead.
 
 ## Health and Debugging
 
@@ -80,7 +80,7 @@ Connector host config now uses the shared runtime-plus-connector YAML file in th
 user config home:
 
 ```text
-~/.synapse/config.yaml
+~/.newbro/config.yaml
 ```
 
 The YAML file contains:
@@ -90,7 +90,7 @@ The YAML file contains:
 - `connectors` for per-connector module config
 
 Scalar values written as `$VAR_NAME` are resolved from environment variables
-after `~/.synapse/.env` is loaded.
+after `~/.newbro/.env` is loaded.
 
 The connector host only consumes the `connector_host` and `connectors` sections. The main
 Synapse runtime also reads the shared `runtime` section.

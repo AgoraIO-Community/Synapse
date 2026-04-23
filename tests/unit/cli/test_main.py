@@ -29,7 +29,7 @@ def configure_repo_paths(monkeypatch, root: Path) -> None:
     monkeypatch.setattr(cli_main, "ROOT", root)
     monkeypatch.setattr(cli_main, "FRONTEND", root / "src" / "synapse" / "ui")
     monkeypatch.setattr(cli_main, "VENV_DIR", root / ".venv")
-    monkeypatch.setattr(cli_main, "ENV_LOCAL", root / ".synapse" / ".env")
+    monkeypatch.setattr(cli_main, "ENV_LOCAL", root / ".newbro" / ".env")
 
 
 def force_yaml_fallback(monkeypatch) -> None:
@@ -43,11 +43,25 @@ def force_yaml_fallback(monkeypatch) -> None:
     monkeypatch.setattr(builtins, "__import__", guarded_import)
 
 
+def test_main_runs_newbro_home_migration_before_commands(monkeypatch, tmp_path: Path):
+    configure_repo_paths(monkeypatch, tmp_path)
+    migration_calls: list[bool] = []
+    monkeypatch.setattr(
+        cli_main,
+        "ensure_newbro_home",
+        lambda **_kwargs: migration_calls.append(True) or False,
+    )
+    monkeypatch.setattr(cli_main, "bootstrap_setup_files", lambda: None)
+
+    assert cli_main.main(["setup", "--bootstrap-defaults"]) == 0
+    assert migration_calls == [True]
+
+
 def test_setup_interactive_updates_env_file(monkeypatch, tmp_path: Path):
     root = tmp_path
     (root / "src" / "synapse" / "ui").mkdir(parents=True)
-    (root / ".synapse").mkdir(parents=True, exist_ok=True)
-    (root / ".synapse" / ".env").write_text(
+    (root / ".newbro").mkdir(parents=True, exist_ok=True)
+    (root / ".newbro" / ".env").write_text(
         "SYNAPSE_OPENAI_MODEL=gpt-4.1-mini\nEXTRA_FLAG=keep-me\n",
         encoding="utf-8",
     )
@@ -59,12 +73,12 @@ def test_setup_interactive_updates_env_file(monkeypatch, tmp_path: Path):
 
     assert cli_main.main(["setup"]) == 0
 
-    configured = (root / ".synapse" / ".env").read_text(encoding="utf-8")
+    configured = (root / ".newbro" / ".env").read_text(encoding="utf-8")
     assert "OPENAI_API_KEY=sk-test" in configured
     assert "SYNAPSE_OPENAI_MODEL=gpt-4.1-mini" in configured
     assert configured.strip().endswith("EXTRA_FLAG=keep-me")
 
-    configured_runtime = (root / ".synapse" / "config.yaml").read_text(encoding="utf-8")
+    configured_runtime = (root / ".newbro" / "config.yaml").read_text(encoding="utf-8")
     assert "runtime: {}" in configured_runtime
     assert "detached_executor_enabled" not in configured_runtime
     assert "detached_executor_types" not in configured_runtime
@@ -78,7 +92,7 @@ def test_setup_interactive_updates_env_file(monkeypatch, tmp_path: Path):
 def test_setup_interactive_can_configure_connector_host(monkeypatch, tmp_path: Path):
     root = tmp_path
     (root / "src" / "synapse" / "ui").mkdir(parents=True)
-    (root / ".synapse").mkdir(parents=True, exist_ok=True)
+    (root / ".newbro").mkdir(parents=True, exist_ok=True)
 
     configure_repo_paths(monkeypatch, root)
     monkeypatch.setattr(cli_main, "setup_can_prompt", lambda: True)
@@ -113,7 +127,7 @@ def test_setup_interactive_can_configure_connector_host(monkeypatch, tmp_path: P
 
     assert cli_main.main(["setup"]) == 0
 
-    configured_runtime = (root / ".synapse" / "config.yaml").read_text(encoding="utf-8")
+    configured_runtime = (root / ".newbro" / "config.yaml").read_text(encoding="utf-8")
     assert "detached_executor_enabled" not in configured_runtime
     assert "detached_executor_types:" not in configured_runtime
     assert "enabled_connectors:" in configured_runtime
@@ -124,8 +138,8 @@ def test_setup_interactive_can_configure_connector_host(monkeypatch, tmp_path: P
 def test_executor_setup_uses_detected_codex_command_default(monkeypatch, tmp_path: Path):
     root = tmp_path
     (root / "src" / "synapse" / "ui").mkdir(parents=True)
-    (root / ".synapse").mkdir(parents=True, exist_ok=True)
-    (root / ".synapse" / "config.yaml").write_text(
+    (root / ".newbro").mkdir(parents=True, exist_ok=True)
+    (root / ".newbro" / "config.yaml").write_text(
         "\n".join(
             [
                 "version: 1",
@@ -160,7 +174,7 @@ def test_executor_setup_uses_detected_codex_command_default(monkeypatch, tmp_pat
 
     assert cli_main.main(["executor", "setup"]) == 0
 
-    configured_runtime = (root / ".synapse" / "config.yaml").read_text(encoding="utf-8")
+    configured_runtime = (root / ".newbro" / "config.yaml").read_text(encoding="utf-8")
     assert "detached_executor_enabled" not in configured_runtime
     assert "detached_executor_types:" not in configured_runtime
     assert "executor_node:" in configured_runtime
@@ -177,8 +191,8 @@ def test_executor_setup_migrates_legacy_codex_command_over_detected_default(
 ):
     root = tmp_path
     (root / "src" / "synapse" / "ui").mkdir(parents=True)
-    (root / ".synapse").mkdir(parents=True, exist_ok=True)
-    (root / ".synapse" / ".env").write_text(
+    (root / ".newbro").mkdir(parents=True, exist_ok=True)
+    (root / ".newbro" / ".env").write_text(
         "\n".join(
             [
                 "OPENAI_API_KEY=sk-existing",
@@ -189,7 +203,7 @@ def test_executor_setup_migrates_legacy_codex_command_over_detected_default(
         + "\n",
         encoding="utf-8",
     )
-    (root / ".synapse" / "config.yaml").write_text(
+    (root / ".newbro" / "config.yaml").write_text(
         "\n".join(
             [
                 "version: 1",
@@ -224,8 +238,8 @@ def test_executor_setup_migrates_legacy_codex_command_over_detected_default(
 
     assert cli_main.main(["executor", "setup"]) == 0
 
-    configured_env = (root / ".synapse" / ".env").read_text(encoding="utf-8")
-    configured_runtime = (root / ".synapse" / "config.yaml").read_text(encoding="utf-8")
+    configured_env = (root / ".newbro" / ".env").read_text(encoding="utf-8")
+    configured_runtime = (root / ".newbro" / "config.yaml").read_text(encoding="utf-8")
     assert "command: /legacy/codex" in configured_runtime
     assert "command: /detected/codex" not in configured_runtime
     assert "SYNAPSE_CODEX_COMMAND=/legacy/codex" not in configured_env
@@ -270,11 +284,11 @@ def test_connector_setup_writes_connector_module_env(monkeypatch, tmp_path: Path
 
     assert cli_main.main(["connector", "setup"]) == 0
 
-    configured = (root / ".synapse" / ".env").read_text(encoding="utf-8")
+    configured = (root / ".newbro" / ".env").read_text(encoding="utf-8")
     assert "AGORA_APP_ID=agora-app" in configured
     assert "AGORA_APP_CERTIFICATE=app-cert" in configured
 
-    connector_config = (root / ".synapse" / "config.yaml").read_text(encoding="utf-8")
+    connector_config = (root / ".newbro" / "config.yaml").read_text(encoding="utf-8")
     assert "runtime: {}" in connector_config
     assert "enabled_connectors:" in connector_config
     assert "- agora-convoai" in connector_config
@@ -290,8 +304,8 @@ def test_connector_setup_decline_disables_existing_connector_config(monkeypatch,
     (root / "src" / "synapse" / "ui").mkdir(parents=True)
     configure_repo_paths(monkeypatch, root)
     monkeypatch.setattr(cli_main, "setup_can_prompt", lambda: True)
-    (root / ".synapse").mkdir(parents=True, exist_ok=True)
-    (root / ".synapse" / "config.yaml").write_text(
+    (root / ".newbro").mkdir(parents=True, exist_ok=True)
+    (root / ".newbro" / "config.yaml").write_text(
         "\n".join(
             [
                 "version: 1",
@@ -313,7 +327,7 @@ def test_connector_setup_decline_disables_existing_connector_config(monkeypatch,
 
     assert cli_main.main(["connector", "setup"]) == 0
 
-    configured = (root / ".synapse" / "config.yaml").read_text(encoding="utf-8")
+    configured = (root / ".newbro" / "config.yaml").read_text(encoding="utf-8")
     assert "codex_command: /existing/codex" in configured
     assert "enabled: false" in configured
     assert "enabled_connectors:" in configured
@@ -325,8 +339,8 @@ def test_connector_setup_reads_existing_legacy_empty_connectors_config_with_yaml
 ):
     root = tmp_path
     (root / "src" / "synapse" / "ui").mkdir(parents=True)
-    (root / ".synapse").mkdir(parents=True, exist_ok=True)
-    (root / ".synapse" / "config.yaml").write_text(
+    (root / ".newbro").mkdir(parents=True, exist_ok=True)
+    (root / ".newbro" / "config.yaml").write_text(
         "\n".join(
             [
                 "version: 1",
@@ -380,7 +394,7 @@ def test_connector_setup_reads_existing_legacy_empty_connectors_config_with_yaml
 
     assert cli_main.main(["connector", "setup"]) == 0
 
-    configured = (root / ".synapse" / "config.yaml").read_text(encoding="utf-8")
+    configured = (root / ".newbro" / "config.yaml").read_text(encoding="utf-8")
     assert "connectors:\n  {}" not in configured
     assert "connectors:" in configured
     assert "app_id: $AGORA_APP_ID" in configured
@@ -389,8 +403,8 @@ def test_connector_setup_reads_existing_legacy_empty_connectors_config_with_yaml
 def test_connector_listing_and_settings_do_not_require_fastapi(monkeypatch, tmp_path: Path):
     root = tmp_path
     (root / "src" / "synapse" / "ui").mkdir(parents=True)
-    (root / ".synapse").mkdir(parents=True, exist_ok=True)
-    (root / ".synapse" / ".env").write_text(
+    (root / ".newbro").mkdir(parents=True, exist_ok=True)
+    (root / ".newbro" / ".env").write_text(
         "\n".join(
             [
                 "OPENAI_API_KEY=test-key",
@@ -399,7 +413,7 @@ def test_connector_listing_and_settings_do_not_require_fastapi(monkeypatch, tmp_
         + "\n",
         encoding="utf-8",
     )
-    (root / ".synapse" / "config.yaml").write_text(
+    (root / ".newbro" / "config.yaml").write_text(
         "\n".join(
             [
                 "version: 1",
@@ -440,11 +454,11 @@ def test_setup_non_interactive_uses_existing_and_env(monkeypatch, tmp_path: Path
 
     assert cli_main.main(["setup", "--non-interactive"]) == 0
 
-    configured = (root / ".synapse" / ".env").read_text(encoding="utf-8")
+    configured = (root / ".newbro" / ".env").read_text(encoding="utf-8")
     assert "OPENAI_API_KEY=sk-env" in configured
     assert "SYNAPSE_CODEX_EXECUTOR_ENABLED" not in configured
     assert "SYNAPSE_CODEX_COMMAND" not in configured
-    configured_runtime = (root / ".synapse" / "config.yaml").read_text(encoding="utf-8")
+    configured_runtime = (root / ".newbro" / "config.yaml").read_text(encoding="utf-8")
     assert "runtime: {}" in configured_runtime
     assert "executor_node:" in configured_runtime
     assert "executors: {}" in configured_runtime
@@ -453,8 +467,8 @@ def test_setup_non_interactive_uses_existing_and_env(monkeypatch, tmp_path: Path
 def test_executor_setup_migrates_legacy_codex_command_to_config(monkeypatch, tmp_path: Path):
     root = tmp_path
     (root / "src" / "synapse" / "ui").mkdir(parents=True)
-    (root / ".synapse").mkdir(parents=True, exist_ok=True)
-    (root / ".synapse" / ".env").write_text(
+    (root / ".newbro").mkdir(parents=True, exist_ok=True)
+    (root / ".newbro" / ".env").write_text(
         "\n".join(
             [
                 "OPENAI_API_KEY=test-key",
@@ -465,7 +479,7 @@ def test_executor_setup_migrates_legacy_codex_command_to_config(monkeypatch, tmp
         + "\n",
         encoding="utf-8",
     )
-    (root / ".synapse" / "config.yaml").write_text(
+    (root / ".newbro" / "config.yaml").write_text(
         "\n".join(
             [
                 "version: 1",
@@ -495,11 +509,11 @@ def test_executor_setup_migrates_legacy_codex_command_to_config(monkeypatch, tmp
 
     assert cli_main.main(["executor", "setup"]) == 0
 
-    configured_env = (root / ".synapse" / ".env").read_text(encoding="utf-8")
+    configured_env = (root / ".newbro" / ".env").read_text(encoding="utf-8")
     assert "SYNAPSE_CODEX_COMMAND=/legacy/codex" not in configured_env
     assert "SYNAPSE_CODEX_EXECUTOR_ENABLED=true" not in configured_env
 
-    configured_runtime = (root / ".synapse" / "config.yaml").read_text(encoding="utf-8")
+    configured_runtime = (root / ".newbro" / "config.yaml").read_text(encoding="utf-8")
     assert "command: /legacy/codex" in configured_runtime
     assert "host_token" not in configured_runtime
     assert "heartbeat_seconds" not in configured_runtime
@@ -510,7 +524,7 @@ def test_executor_setup_migrates_legacy_codex_command_to_config(monkeypatch, tmp
 def test_executor_setup_works_without_runtime_config(monkeypatch, tmp_path: Path):
     root = tmp_path
     (root / "src" / "synapse" / "ui").mkdir(parents=True)
-    (root / ".synapse").mkdir(parents=True, exist_ok=True)
+    (root / ".newbro").mkdir(parents=True, exist_ok=True)
 
     configure_repo_paths(monkeypatch, root)
     monkeypatch.setattr(cli_main, "setup_can_prompt", lambda: True)
@@ -520,7 +534,7 @@ def test_executor_setup_works_without_runtime_config(monkeypatch, tmp_path: Path
     monkeypatch.setattr("builtins.input", lambda _prompt: next(responses))
 
     assert cli_main.main(["executor", "setup"]) == 0
-    configured_runtime = (root / ".synapse" / "config.yaml").read_text(encoding="utf-8")
+    configured_runtime = (root / ".newbro" / "config.yaml").read_text(encoding="utf-8")
     assert "executor_node:" in configured_runtime
     assert "enabled_executors:" in configured_runtime
     assert "command: /detected/codex" in configured_runtime
@@ -529,8 +543,8 @@ def test_executor_setup_works_without_runtime_config(monkeypatch, tmp_path: Path
 def test_setup_non_interactive_tolerates_malformed_existing_config(monkeypatch, tmp_path: Path, capsys):
     root = tmp_path
     (root / "src" / "synapse" / "ui").mkdir(parents=True)
-    (root / ".synapse").mkdir(parents=True, exist_ok=True)
-    (root / ".synapse" / ".env").write_text(
+    (root / ".newbro").mkdir(parents=True, exist_ok=True)
+    (root / ".newbro" / ".env").write_text(
         "\n".join(
             [
                 "OPENAI_API_KEY=test-key",
@@ -541,7 +555,7 @@ def test_setup_non_interactive_tolerates_malformed_existing_config(monkeypatch, 
         + "\n",
         encoding="utf-8",
     )
-    (root / ".synapse" / "config.yaml").write_text("version: [\n", encoding="utf-8")
+    (root / ".newbro" / "config.yaml").write_text("version: [\n", encoding="utf-8")
 
     configure_repo_paths(monkeypatch, root)
 
@@ -550,7 +564,7 @@ def test_setup_non_interactive_tolerates_malformed_existing_config(monkeypatch, 
     output = capsys.readouterr().out
     assert "ignoring invalid existing config" in output
 
-    configured_runtime = (root / ".synapse" / "config.yaml").read_text(encoding="utf-8")
+    configured_runtime = (root / ".newbro" / "config.yaml").read_text(encoding="utf-8")
     assert "runtime:" in configured_runtime
     assert "executor_node:" in configured_runtime
     assert "executors: {}" in configured_runtime
@@ -578,14 +592,14 @@ def test_setup_bootstrap_defaults_creates_env_and_connector_config(monkeypatch, 
 
     assert cli_main.main(["setup", "--bootstrap-defaults"]) == 0
 
-    configured_env = (root / ".synapse" / ".env").read_text(encoding="utf-8")
+    configured_env = (root / ".newbro" / ".env").read_text(encoding="utf-8")
     assert "OPENAI_API_KEY=\n" in configured_env
     assert "SYNAPSE_OPENAI_MODEL=gpt-4o-mini" in configured_env
     assert "sk-shell-secret" not in configured_env
     assert "agora-shell-app" not in configured_env
     assert "/shell/codex" not in configured_env
 
-    configured_connector = (root / ".synapse" / "config.yaml").read_text(encoding="utf-8")
+    configured_connector = (root / ".newbro" / "config.yaml").read_text(encoding="utf-8")
     assert "runtime: {}" in configured_connector
     assert "enabled: false" in configured_connector
     assert 'public_base_url: "http://127.0.0.1:8000"' in configured_connector
@@ -603,15 +617,15 @@ def test_setup_bootstrap_defaults_creates_env_and_connector_config(monkeypatch, 
 def test_setup_bootstrap_defaults_preserves_existing_files(monkeypatch, tmp_path: Path):
     root = tmp_path
     (root / "src" / "synapse" / "ui").mkdir(parents=True)
-    (root / ".synapse").mkdir(parents=True, exist_ok=True)
-    (root / ".synapse" / ".env").write_text("OPENAI_API_KEY=existing\n", encoding="utf-8")
-    (root / ".synapse" / "config.yaml").write_text("version: 1\n", encoding="utf-8")
+    (root / ".newbro").mkdir(parents=True, exist_ok=True)
+    (root / ".newbro" / ".env").write_text("OPENAI_API_KEY=existing\n", encoding="utf-8")
+    (root / ".newbro" / "config.yaml").write_text("version: 1\n", encoding="utf-8")
 
     configure_repo_paths(monkeypatch, root)
 
     assert cli_main.main(["setup", "--bootstrap-defaults"]) == 0
-    assert (root / ".synapse" / ".env").read_text(encoding="utf-8") == "OPENAI_API_KEY=existing\n"
-    assert (root / ".synapse" / "config.yaml").read_text(encoding="utf-8") == "version: 1\n"
+    assert (root / ".newbro" / ".env").read_text(encoding="utf-8") == "OPENAI_API_KEY=existing\n"
+    assert (root / ".newbro" / "config.yaml").read_text(encoding="utf-8") == "version: 1\n"
 
 
 def test_setup_bootstrap_defaults_ignores_malformed_codex_shell_env(monkeypatch, tmp_path: Path):
@@ -623,7 +637,7 @@ def test_setup_bootstrap_defaults_ignores_malformed_codex_shell_env(monkeypatch,
 
     assert cli_main.main(["setup", "--bootstrap-defaults"]) == 0
 
-    configured_env = (root / ".synapse" / ".env").read_text(encoding="utf-8")
+    configured_env = (root / ".newbro" / ".env").read_text(encoding="utf-8")
     assert "SYNAPSE_CODEX_EXECUTOR_ENABLED" not in configured_env
 
 
@@ -634,7 +648,7 @@ def test_backend_requires_setup(monkeypatch, tmp_path: Path):
 
 
 def test_doctor_reads_openai_key_from_env_file(monkeypatch, tmp_path: Path, capsys):
-    env_local = tmp_path / ".synapse" / ".env"
+    env_local = tmp_path / ".newbro" / ".env"
     env_local.parent.mkdir(parents=True, exist_ok=True)
     env_local.write_text("OPENAI_API_KEY=test-key\n", encoding="utf-8")
     venv_python = tmp_path / ".venv" / "bin" / "python"
@@ -657,7 +671,7 @@ def test_doctor_points_to_install_and_setup(monkeypatch, tmp_path: Path, capsys)
     assert cli_main.main(["doctor"]) == 1
     output = capsys.readouterr().out
     assert "[missing] virtualenv: run ./install.sh" in output
-    assert "[missing] env file: run ./synapse setup" in output
+    assert "[missing] env file: run ./newbro setup" in output
 
 
 def test_report_port_tolerates_permission_error(monkeypatch, capsys):
@@ -700,8 +714,8 @@ def test_dev_uses_repo_venv_and_frontend_command(monkeypatch, tmp_path: Path):
         return processes[len(spawned) - 1]
 
     configure_repo_paths(monkeypatch, tmp_path)
-    (tmp_path / ".synapse").mkdir(parents=True, exist_ok=True)
-    (tmp_path / ".synapse" / ".env").write_text(
+    (tmp_path / ".newbro").mkdir(parents=True, exist_ok=True)
+    (tmp_path / ".newbro" / ".env").write_text(
         "\n".join(
             [
                 "OPENAI_API_KEY=test-key",
@@ -710,7 +724,7 @@ def test_dev_uses_repo_venv_and_frontend_command(monkeypatch, tmp_path: Path):
         + "\n",
         encoding="utf-8",
     )
-    (tmp_path / ".synapse" / "config.yaml").write_text(
+    (tmp_path / ".newbro" / "config.yaml").write_text(
         "\n".join(
             [
                 "version: 1",
@@ -745,9 +759,9 @@ def test_start_runs_single_service_process(monkeypatch, tmp_path: Path):
     (dist_dir / "index.html").write_text("<html>ok</html>", encoding="utf-8")
 
     configure_repo_paths(monkeypatch, tmp_path)
-    (tmp_path / ".synapse").mkdir(parents=True, exist_ok=True)
-    (tmp_path / ".synapse" / ".env").write_text("OPENAI_API_KEY=test-key\n", encoding="utf-8")
-    (tmp_path / ".synapse" / "config.yaml").write_text(
+    (tmp_path / ".newbro").mkdir(parents=True, exist_ok=True)
+    (tmp_path / ".newbro" / ".env").write_text("OPENAI_API_KEY=test-key\n", encoding="utf-8")
+    (tmp_path / ".newbro" / "config.yaml").write_text(
         "\n".join(
             [
                 "version: 1",
@@ -843,10 +857,10 @@ def test_service_install_bootstraps_runtime_and_enables_unit(monkeypatch, tmp_pa
     assert commands[5][0][0:8] == ["sudo", "install", "-o", "root", "-g", "root", "-m", "0644"]
     assert commands[5][0][-1] == str(cli_main.service_unit_path())
     assert commands[6] == (["sudo", "systemctl", "daemon-reload"], tmp_path)
-    assert commands[7] == (["sudo", "systemctl", "enable", "synapse.service"], tmp_path)
-    assert commands[8] == (["sudo", "systemctl", "restart", "synapse.service"], tmp_path)
-    assert (tmp_path / ".synapse" / ".env").exists()
-    assert (tmp_path / ".synapse" / "config.yaml").exists()
+    assert commands[7] == (["sudo", "systemctl", "enable", "newbro.service"], tmp_path)
+    assert commands[8] == (["sudo", "systemctl", "restart", "newbro.service"], tmp_path)
+    assert (tmp_path / ".newbro" / ".env").exists()
+    assert (tmp_path / ".newbro" / "config.yaml").exists()
     assert "[warn] env: OPENAI_API_KEY is not configured" in capsys.readouterr().out
 
 
@@ -855,8 +869,8 @@ def test_service_install_skips_venv_creation_when_existing(monkeypatch, tmp_path
     venv_python = tmp_path / ".venv" / "bin" / "python"
     venv_python.parent.mkdir(parents=True, exist_ok=True)
     venv_python.write_text("", encoding="utf-8")
-    (tmp_path / ".synapse").mkdir(parents=True, exist_ok=True)
-    (tmp_path / ".synapse" / ".env").write_text("OPENAI_API_KEY=test-key\n", encoding="utf-8")
+    (tmp_path / ".newbro").mkdir(parents=True, exist_ok=True)
+    (tmp_path / ".newbro" / ".env").write_text("OPENAI_API_KEY=test-key\n", encoding="utf-8")
 
     commands: list[list[str]] = []
     monkeypatch.setattr(cli_main, "run_checked", lambda cmd, cwd: commands.append(cmd) or 0)
@@ -894,10 +908,10 @@ def test_service_install_allows_root_and_uses_direct_systemctl(monkeypatch, tmp_
     assert commands[5][0][0:7] == ["install", "-o", "root", "-g", "root", "-m", "0644"]
     assert commands[5][0][-1] == str(cli_main.service_unit_path())
     assert commands[6] == (["systemctl", "daemon-reload"], tmp_path)
-    assert commands[7] == (["systemctl", "enable", "synapse.service"], tmp_path)
-    assert commands[8] == (["systemctl", "restart", "synapse.service"], tmp_path)
-    assert (tmp_path / ".synapse" / ".env").exists()
-    assert (tmp_path / ".synapse" / "config.yaml").exists()
+    assert commands[7] == (["systemctl", "enable", "newbro.service"], tmp_path)
+    assert commands[8] == (["systemctl", "restart", "newbro.service"], tmp_path)
+    assert (tmp_path / ".newbro" / ".env").exists()
+    assert (tmp_path / ".newbro" / "config.yaml").exists()
     assert "[warn] env: OPENAI_API_KEY is not configured" in capsys.readouterr().out
 
 
@@ -934,8 +948,9 @@ def test_render_service_unit_includes_expected_values():
     assert "WorkingDirectory=/srv/synapse" in unit
     assert 'Environment="HOME=/home/deploy"' in unit
     assert 'Environment="PATH=/srv/synapse/.venv/bin:/home/deploy/.local/bin:/home/deploy/.bun/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"' in unit
+    assert "Description=Newbro service" in unit
     assert (
-        "ExecStart=/srv/synapse/.venv/bin/python -m synapse start --host 0.0.0.0 --port 8000"
+        "ExecStart=/srv/synapse/.venv/bin/newbro start --host 0.0.0.0 --port 8000"
         in unit
     )
     assert "Restart=on-failure" in unit
@@ -977,9 +992,9 @@ def test_service_lifecycle_commands_use_sudo(monkeypatch, tmp_path: Path):
     assert cli_main.main(["service", "restart"]) == 0
 
     assert commands == [
-        ["sudo", "systemctl", "start", "synapse.service"],
-        ["sudo", "systemctl", "stop", "synapse.service"],
-        ["sudo", "systemctl", "restart", "synapse.service"],
+        ["sudo", "systemctl", "start", "newbro.service"],
+        ["sudo", "systemctl", "stop", "newbro.service"],
+        ["sudo", "systemctl", "restart", "newbro.service"],
     ]
 
 

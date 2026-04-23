@@ -108,18 +108,18 @@ The main workbench under `src/synapse/ui/` now supports an explicit `Text` /
 
 ## Run
 
-Configure `~/.synapse/.env` and `~/.synapse/config.yaml`, then run:
+Configure `~/.newbro/.env` and `~/.newbro/config.yaml`, then run:
 
 ```bash
-./synapse setup
-./synapse connector setup
-./synapse start
+./newbro setup
+./newbro connector setup
+./newbro start
 ```
 
 For development with frontend + connector together:
 
 ```bash
-./synapse dev
+./newbro dev
 ```
 
 For the example browser test client:
@@ -130,8 +130,8 @@ npm install
 npm run dev
 ```
 
-The connector host reads its live config from the shared `~/.synapse/config.yaml`
-file and shared runtime env from `~/.synapse/.env`.
+The connector host reads its live config from the shared `~/.newbro/config.yaml`
+file and shared runtime env from `~/.newbro/.env`.
 
 For live Agora sessions, `SYNAPSE_CONNECTOR_PUBLIC_BASE_URL` must be a public URL
 that can reach the connector host.

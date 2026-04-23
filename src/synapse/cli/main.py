@@ -17,6 +17,8 @@ from uuid import uuid4
 
 from synapse.config_home import (
     SYNAPSE_ENV_FILE,
+    ConfigHomeMigrationError,
+    ensure_newbro_home,
     format_user_path,
 )
 from synapse.yaml_support import YAMLParseError, load_yaml_file
@@ -26,6 +28,8 @@ ROOT = Path(__file__).resolve().parents[3]
 FRONTEND = ROOT / "src" / "synapse" / "ui"
 VENV_DIR = ROOT / ".venv"
 ENV_LOCAL = SYNAPSE_ENV_FILE
+CLI_NAME = "newbro"
+ROOT_LAUNCHER = f"./{CLI_NAME}"
 ENV_LINE_RE = re.compile(r"^\s*(?P<comment>#\s*)?(?P<key>[A-Z0-9_]+)=(?P<value>.*)$")
 TRUTHY_VALUES = {"1", "true", "yes", "on", "y"}
 FALSY_VALUES = {"0", "false", "no", "off", "n"}
@@ -53,7 +57,7 @@ LEGACY_REAL_EXECUTOR_ENV_KEYS = {
     ACPX_NON_INTERACTIVE_PERMISSIONS_KEY,
     ACPX_TIMEOUT_SECONDS_KEY,
 }
-SYSTEMD_UNIT_NAME = "synapse.service"
+SYSTEMD_UNIT_NAME = "newbro.service"
 SYSTEMD_SERVICE_DIR = Path("/etc/systemd/system")
 REMOVED_RUNTIME_KEYS = {"executor_node_id", "executor_node_token"}
 START_PUBLIC_PORT = 8000
@@ -64,7 +68,7 @@ DEFAULT_ENV_TEMPLATE_LINES = (
     "# SYNAPSE_OPENAI_BASE_URL=",
     "# SYNAPSE_CORS_ALLOWED_ORIGINS=https://app.example.com,https://your-project.vercel.app",
     "",
-    f"# Shared Synapse credentials written by `synapse setup` to {format_user_path(ENV_LOCAL)}",
+    f"# Shared Newbro credentials written by `{CLI_NAME} setup` to {format_user_path(ENV_LOCAL)}",
     "# AGORA_APP_ID=",
     "# AGORA_APP_CERTIFICATE=",
     "# DEEPGRAM_API_KEY=",
@@ -94,7 +98,7 @@ class SetupValuesResult:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="synapse", description="Synapse developer CLI.")
+    parser = argparse.ArgumentParser(prog=CLI_NAME, description="Newbro developer CLI.")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     setup_parser = subparsers.add_parser(
@@ -180,6 +184,13 @@ def _add_host_port(parser: argparse.ArgumentParser, backend_port: int, frontend_
 
 def main(argv: list[str] | None = None) -> int:
     try:
+        try:
+            ensure_newbro_home(
+                legacy_home=ENV_LOCAL.parent.with_name(".synapse"),
+                new_home=ENV_LOCAL.parent,
+            )
+        except ConfigHomeMigrationError as exc:
+            raise CliError(str(exc)) from exc
         parser = build_parser()
         args = parser.parse_args(argv)
 
@@ -206,7 +217,7 @@ def cmd_setup(_args: argparse.Namespace) -> int:
         bootstrap_setup_files()
         return 0
     if not args.non_interactive and not setup_can_prompt():
-        raise CliError("synapse setup requires a TTY. Use --non-interactive for automation.")
+        raise CliError(f"{CLI_NAME} setup requires a TTY. Use --non-interactive for automation.")
 
     template_lines = load_env_template()
     existing_values, existing_order = load_env_assignments(ENV_LOCAL)
@@ -313,13 +324,13 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     if ENV_LOCAL.exists():
         print(f"[ok] env file: {format_user_path(ENV_LOCAL)}")
     else:
-        print("[missing] env file: run ./synapse setup")
+        print(f"[missing] env file: run {ROOT_LAUNCHER} setup")
         ok = False
 
     if openai_api_key_present():
         print("[ok] env: OPENAI_API_KEY")
     else:
-        print("[missing] env: OPENAI_API_KEY (run ./synapse setup)")
+        print(f"[missing] env: OPENAI_API_KEY (run {ROOT_LAUNCHER} setup)")
         ok = False
 
     ok &= report_connector_status(args)
@@ -353,7 +364,7 @@ def cmd_service(args: argparse.Namespace) -> int:
 
 def cmd_connector_setup(_args: argparse.Namespace) -> int:
     if not setup_can_prompt():
-        raise CliError("synapse connector setup requires a TTY.")
+        raise CliError(f"{CLI_NAME} connector setup requires a TTY.")
 
     template_lines = load_env_template()
     existing_values, existing_order = load_env_assignments(ENV_LOCAL)
@@ -388,7 +399,7 @@ def cmd_connector_run(args: argparse.Namespace) -> int:
 
 def cmd_executor_setup(_args: argparse.Namespace) -> int:
     if not setup_can_prompt():
-        raise CliError("synapse executor setup requires a TTY.")
+        raise CliError(f"{CLI_NAME} executor setup requires a TTY.")
     _run_executor_setup_flow()
     return 0
 
@@ -538,16 +549,16 @@ def internal_bind_host(host: str) -> str:
 
 def ensure_service_install_supported() -> None:
     if not sys.platform.startswith("linux"):
-        raise CliError("synapse service install currently supports Linux/systemd hosts only.")
+        raise CliError(f"{CLI_NAME} service install currently supports Linux/systemd hosts only.")
 
 
 def ensure_service_manager_available() -> None:
     if not sys.platform.startswith("linux"):
         raise CliError("systemd service management currently supports Linux hosts only.")
     if shutil.which("systemctl") is None:
-        raise CliError("systemctl is required for synapse service commands.")
+        raise CliError(f"systemctl is required for {CLI_NAME} service commands.")
     if os.geteuid() != 0 and shutil.which("sudo") is None:
-        raise CliError("sudo is required for synapse service commands.")
+        raise CliError(f"sudo is required for {CLI_NAME} service commands.")
 
 
 def current_service_user() -> str:
@@ -576,7 +587,7 @@ def ensure_frontend_build_ready() -> Path:
         return index_path
     raise CliError(
         f"Frontend production build is missing at {index_path}. "
-        "Run `./synapse service install` or build the frontend first."
+        f"Run `{ROOT_LAUNCHER} service install` or build the frontend first."
     )
 
 
@@ -609,6 +620,7 @@ def render_service_unit(
     host: str,
     public_port: int,
 ) -> str:
+    cli_bin = venv_python.with_name(CLI_NAME)
     path_entries = [
         str(workdir / ".venv" / "bin"),
         str(home / ".local" / "bin"),
@@ -622,9 +634,7 @@ def render_service_unit(
     ]
     exec_start = _render_systemd_exec_start(
         [
-            str(venv_python),
-            "-m",
-            "synapse",
+            str(cli_bin),
             "start",
             "--host",
             host,
@@ -634,7 +644,7 @@ def render_service_unit(
     )
     lines = [
         "[Unit]",
-        "Description=Synapse service",
+        "Description=Newbro service",
         "After=network-online.target",
         "Wants=network-online.target",
         "",
@@ -1161,8 +1171,8 @@ def _ensure_executor_runtime_configured_for_run() -> None:
         return
     if not setup_can_prompt():
         raise CliError(
-            "Local executor runtime config is incomplete. Run `./synapse executor setup` "
-            "or rerun `./synapse executor run ...` in a TTY."
+            f"Local executor runtime config is incomplete. Run `{ROOT_LAUNCHER} executor setup` "
+            f"or rerun `{ROOT_LAUNCHER} executor run ...` in a TTY."
         )
     print("[setup] executor run is missing local executor runtime config; launching setup.")
     _run_executor_setup_flow()
@@ -1171,7 +1181,7 @@ def _ensure_executor_runtime_configured_for_run() -> None:
     if not _executor_runtime_config_complete(refreshed_config_yaml, refreshed_values):
         raise CliError(
             "Local executor runtime config is still incomplete after setup. "
-            "Check the configured executor command paths and rerun `./synapse executor setup`."
+            f"Check the configured executor command paths and rerun `{ROOT_LAUNCHER} executor setup`."
         )
 
 
@@ -1664,7 +1674,7 @@ def report_required_env_keys(keys: list[str]) -> bool:
         if value:
             print(f"[ok] env: {key}")
         else:
-            print(f"[missing] env: {key} (run ./synapse connector setup)")
+            print(f"[missing] env: {key} (run {ROOT_LAUNCHER} connector setup)")
             ok = False
     return ok
 

@@ -1131,7 +1131,7 @@ def create_session_runtime(
         if settings.detached_executor_enabled and settings.detached_executor_types
         else "mock"
     )
-    # Load user-defined personas from ~/.synapse/personas.yaml into the blackboard.
+    # Load user-defined personas from ~/.newbro/personas.yaml into the blackboard.
     tool_registry = build_default_tool_registry(
         blackboard,
         executor_types=registry.list_executor_types(),

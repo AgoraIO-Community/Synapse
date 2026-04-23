@@ -1,5 +1,5 @@
 [project]
-name = "synapse"
+name = "newbro-cli"
 version = "0.1.0"
 description = "Communication brain / execution brain runtime prototype"
 readme = "README.md"
@@ -26,9 +26,13 @@ dev = [
   "pyright>=1.1.380,<2",
   "ruff>=0.6,<1",
 ]
+release = [
+  "build>=1.2,<2.0",
+  "twine>=5,<7",
+]
 
 [project.scripts]
-synapse = "synapse.cli.main:main"
+newbro = "synapse.cli.main:main"
 
 [build-system]
 requires = ["setuptools>=68"]

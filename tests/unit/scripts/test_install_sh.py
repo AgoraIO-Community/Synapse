@@ -19,7 +19,7 @@ def write_executable(path: Path, content: str) -> None:
 
 def prepare_repo_root(root: Path) -> None:
     (root / "src" / "synapse" / "ui").mkdir(parents=True)
-    (root / "pyproject.toml").write_text("[project]\nname='synapse'\n", encoding="utf-8")
+    (root / "pyproject.toml").write_text("[project]\nname='newbro-cli'\n", encoding="utf-8")
     (root / "src" / "synapse" / "ui" / "package.json").write_text(
         '{"name":"synapse-frontend"}\n',
         encoding="utf-8",
@@ -27,8 +27,8 @@ def prepare_repo_root(root: Path) -> None:
 
 
 def read_bootstrap_outputs(home: Path) -> tuple[str, str]:
-    env_path = home / ".synapse" / ".env"
-    config_path = home / ".synapse" / "config.yaml"
+    env_path = home / ".newbro" / ".env"
+    config_path = home / ".newbro" / "config.yaml"
 
     assert env_path.exists()
     assert config_path.exists()
@@ -37,7 +37,7 @@ def read_bootstrap_outputs(home: Path) -> tuple[str, str]:
     config_text = config_path.read_text(encoding="utf-8")
 
     assert "SYNAPSE_CODEX_EXECUTOR_ENABLED" not in env_text
-    assert '# Shared Synapse credentials written by `synapse setup` to ~/.synapse/.env' in env_text
+    assert '# Shared Newbro credentials written by `newbro setup` to ~/.newbro/.env' in env_text
     assert 'public_base_url: "http://127.0.0.1:8000"' in config_text
     assert "executor_node:" in config_text
     assert "node_id: node-bootstrap" in config_text
@@ -97,19 +97,19 @@ if [[ "${{1-}}" == "-m" && "${{2-}}" == "venv" ]]; then
 set -euo pipefail
 echo "venv-python $*" >> "$FAKE_LOG"
 if [[ "${{1-}}" == "-m" && "${{2-}}" == "synapse" && "${{3-}}" == "setup" && "${{4-}}" == "--bootstrap-defaults" ]]; then
-  mkdir -p "$HOME/.synapse"
-  cat > "$HOME/.synapse/.env" <<'BOOTSTRAP_ENV'
+  mkdir -p "$HOME/.newbro"
+  cat > "$HOME/.newbro/.env" <<'BOOTSTRAP_ENV'
 OPENAI_API_KEY=
 SYNAPSE_OPENAI_MODEL=gpt-4o-mini
 SYNAPSE_OPENAI_TIMEOUT_SECONDS=30
 # SYNAPSE_OPENAI_BASE_URL=
-# Shared Synapse credentials written by `synapse setup` to ~/.synapse/.env
+# Shared Newbro credentials written by `newbro setup` to ~/.newbro/.env
 # AGORA_APP_ID=
 # AGORA_APP_CERTIFICATE=
 # DEEPGRAM_API_KEY=
 # ELEVENLABS_API_KEY=
 BOOTSTRAP_ENV
-  cat > "$HOME/.synapse/config.yaml" <<'BOOTSTRAP_CONFIG'
+  cat > "$HOME/.newbro/config.yaml" <<'BOOTSTRAP_CONFIG'
 version: 1
 
 runtime: {{}}
@@ -202,7 +202,7 @@ def test_install_sh_macos_skips_existing_system_dependencies(tmp_path: Path):
     assert "/shell/codex" not in env_text
     assert "[install] Skipping Python install;" in completed.stdout
     assert "[install] Skipping Bun install;" in completed.stdout
-    assert "./synapse setup" in completed.stdout
+    assert "./newbro setup" in completed.stdout
 
 
 def test_install_sh_macos_installs_only_missing_bun(tmp_path: Path):

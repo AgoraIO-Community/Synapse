@@ -280,9 +280,9 @@ main() {
   bootstrap_config_files
 
   printf '\nNext:\n'
-  printf '  ./synapse setup\n'
-  printf '  ./synapse doctor\n'
-  printf '  ./synapse dev\n'
+  printf '  ./newbro setup\n'
+  printf '  ./newbro doctor\n'
+  printf '  ./newbro dev\n'
 }
 
 main "$@"

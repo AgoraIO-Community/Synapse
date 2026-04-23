@@ -20,7 +20,7 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     loaded = load_executor_node_config()
     if not loaded.node_settings.enabled_executors:
-        raise SystemExit("executor node has no local executors configured in ~/.synapse/config.yaml")
+        raise SystemExit("executor node has no local executors configured in ~/.newbro/config.yaml")
     settings = replace(
         loaded.node_settings,
         synapse_base_url=args.base_url,
