@@ -71,7 +71,7 @@ class HttpSynapseConnectorTransport:
         response = await self._request(
             "POST",
             f"{API_PREFIX}/sessions/{session_id}/messages",
-            json={"text": text},
+            json={"text": text, "source": "connector"},
         )
         payload = response.json()
         reply_text = payload.get("reply_text")
@@ -101,6 +101,7 @@ class HttpSynapseConnectorTransport:
                             "type": "send_message",
                             "request_id": request_id,
                             "text": text,
+                            "source": "connector",
                         }
                     )
                 )

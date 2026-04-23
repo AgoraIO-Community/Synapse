@@ -2,7 +2,7 @@
 
 This document records the current handoff state for `src/synapse/ui/` after the
 root shell was rebuilt to match the provided JSX layout and then wired to a
-real voice transcript flow.
+Synapse-backed interaction-memory flow.
 
 ## Current Product State
 
@@ -24,15 +24,22 @@ The shell is now voice-aware, but still narrower than the previous workbench.
 
 Current behavior:
 
-- the app creates an idle shell session on load
+- the app resumes the shell session from `?sid=...` on load when available,
+  otherwise it creates a fresh shell session
+- it writes the active session id back to the URL as `sid`
+- if that `sid` cannot be resumed, it opens a fresh session, replaces the URL,
+  and shows a non-blocking warning
 - it fetches that session snapshot for personas
 - if `personas` exist, it maps them into `Bro` cards
 - if not, it renders the seeded sample cards
 - pressing `Start` prepares and activates a gateway-backed voice session
-- the shell rebinds to the returned voice `synapse_session_id`
-- browser-local Agora transcript turns stream into `Interaction memory`
-- pressing `Stop` tears the voice session down and restores the idle shell
+- the connector attaches that voice session to the existing shell
+  `synapse_session_id`
+- `Interaction memory` hydrates from Synapse durable conversation history on
+  open and then continues from Synapse user-message and assistant stream events
+- pressing `Stop` tears the voice session down without changing the shell
 - the stopped transcript remains visible until the next live session replaces it
+- left-sidebar route navigation preserves the active `sid`
 
 The current root page does **not** expose:
 
@@ -75,5 +82,6 @@ chosen first.
 - Keep backend and protocol contracts unchanged unless the task explicitly
   requires runtime changes.
 - Preserve the componentized structure under `src/components/newbro/`.
-- Keep voice transcript as a browser-local feed; do not redefine it as durable
-  conversation history without an explicit product decision.
+- Keep browser-local voice toolkit transcript separate from the adopted
+  interaction-memory contract; the left pane now follows Synapse conversation
+  state instead of Agora transcript turns.

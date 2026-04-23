@@ -223,15 +223,23 @@ def cmd_setup(_args: argparse.Namespace) -> int:
         interactive=not args.non_interactive,
         existing_config_yaml=existing_config_yaml,
     )
+    connector_setup = resolve_connector_setup_values(
+        existing_values=existing_values,
+        environ=os.environ,
+        interactive=not args.non_interactive,
+        force_prompt=False,
+        existing_config_yaml=existing_config_yaml,
+        runtime_values=setup_values.runtime_values,
+    )
     write_env_file(
         template_lines=template_lines,
-        resolved_values=setup_values.env_values,
+        resolved_values={**setup_values.env_values, **connector_setup.env_values},
         existing_values=existing_values,
         existing_order=existing_order,
         destination=ENV_LOCAL,
     )
-    config_setup = ConnectorSetupResult(env_values={})
-    if config_load_error is not None or setup_values.runtime_values or not config_path.exists():
+    config_setup = connector_setup if connector_setup.config_text is not None else ConnectorSetupResult(env_values={})
+    if config_setup.config_text is None and (config_load_error is not None or setup_values.runtime_values or not config_path.exists()):
         config_setup = ConnectorSetupResult(
             env_values={},
             config_path=config_path,
@@ -913,20 +921,7 @@ def resolve_setup_values(
             )
         resolved[OPENAI_KEY] = openai_default
 
-    runtime_values: dict[str, object] = {}
-    if interactive:
-        detached_enabled = prompt_bool_value(
-            "Enable detached executors",
-            default=_runtime_detached_executor_enabled(existing_config_yaml),
-        )
-        runtime_values["detached_executor_enabled"] = detached_enabled
-        runtime_values["detached_executor_types"] = (
-            prompt_executor_selection(default_selected=_runtime_detached_executor_types(existing_config_yaml))
-            if detached_enabled
-            else None
-        )
-
-    return SetupValuesResult(env_values=resolved, runtime_values=runtime_values)
+    return SetupValuesResult(env_values=resolved, runtime_values={})
 
 
 def resolve_bootstrap_values(
@@ -960,9 +955,20 @@ def resolve_connector_setup_values(
     if not interactive:
         return ConnectorSetupResult(env_values={})
 
-    existing_enabled = pick_env_value(CONNECTOR_ENABLED_KEY, existing_values, environ)
-    default_enabled = parse_bool_value(existing_enabled) if existing_enabled is not None else False
-    should_configure = prompt_bool_value("Configure connector host", default=bool(default_enabled or force_prompt))
+    existing_enabled = _coerce_bool_config_value(
+        _existing_yaml_value(existing_config_yaml, "connector_host", "enabled"),
+        default=False,
+    )
+    if not existing_enabled:
+        env_enabled = pick_env_value(CONNECTOR_ENABLED_KEY, existing_values, environ)
+        if env_enabled is not None:
+            parsed = parse_bool_value(env_enabled)
+            if parsed is not None:
+                existing_enabled = parsed
+    should_configure = prompt_bool_value(
+        "Configure connector host",
+        default=bool(existing_enabled or force_prompt),
+    )
     if not should_configure:
         if not force_prompt:
             return ConnectorSetupResult(env_values={})
@@ -1053,9 +1059,7 @@ def resolve_executor_setup_values(
     del environ  # reserved for future env-backed defaults
     config_path = connector_config_path()
     enabled_executors = prompt_executor_selection(
-        default_selected=_existing_executor_enabled_types(existing_config_yaml)
-        or _runtime_detached_executor_types(existing_config_yaml)
-        or None
+        default_selected=_existing_executor_enabled_types(existing_config_yaml) or None
     )
     executors_block = _existing_executors_config(existing_config_yaml)
     for executor_type in enabled_executors:
@@ -1721,36 +1725,6 @@ def _existing_nested_value(raw_connector: dict[str, object], *path: str) -> str 
 
 def _generated_executor_node_id() -> str:
     return f"node-{uuid4().hex[:8]}"
-
-
-def _runtime_detached_executor_enabled(raw_connector_yaml: dict[str, object]) -> bool:
-    raw_runtime = raw_connector_yaml.get("runtime")
-    if not isinstance(raw_runtime, dict):
-        return False
-    raw_value = raw_runtime.get("detached_executor_enabled")
-    if isinstance(raw_value, bool):
-        return raw_value
-    if isinstance(raw_value, str):
-        parsed = parse_bool_value(raw_value)
-        if parsed is not None:
-            return parsed
-    return False
-
-
-def _runtime_detached_executor_types(raw_connector_yaml: dict[str, object]) -> list[str]:
-    raw_runtime = raw_connector_yaml.get("runtime")
-    if not isinstance(raw_runtime, dict):
-        return []
-    raw_types = raw_runtime.get("detached_executor_types")
-    if isinstance(raw_types, str):
-        return [item.strip() for item in raw_types.split(",") if item.strip()]
-    if not isinstance(raw_types, list):
-        return []
-    return [
-        item.strip()
-        for item in raw_types
-        if isinstance(item, str) and item.strip()
-    ]
 
 
 def _existing_executor_enabled_types(raw_connector_yaml: dict[str, object]) -> list[str]:

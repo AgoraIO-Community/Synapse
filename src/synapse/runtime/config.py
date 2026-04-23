@@ -16,6 +16,7 @@ LOCAL_CONFIG_FILE = SYNAPSE_CONNECTOR_CONFIG_FILE
 LEGACY_CODEX_COMMAND_KEY = "SYNAPSE_CODEX_COMMAND"
 LEGACY_ACPX_COMMAND_KEY = "SYNAPSE_ACPX_COMMAND"
 LEGACY_ACPX_AGENT_KEY = "SYNAPSE_ACPX_AGENT"
+SUPPORTED_DETACHED_EXECUTOR_TYPES = ("codex", "acpx")
 
 
 def load_local_env() -> None:
@@ -105,8 +106,6 @@ def _load_runtime_config() -> dict[str, Any]:
 def load_settings() -> Settings:
     load_local_env()
     runtime_config = _load_runtime_config()
-    yaml_detached_executor_enabled = runtime_config.get("detached_executor_enabled")
-    yaml_detached_executor_types = runtime_config.get("detached_executor_types")
     yaml_codex_command = runtime_config.get("codex_command")
     yaml_acpx_command = runtime_config.get("acpx_command")
     yaml_acpx_agent = runtime_config.get("acpx_agent")
@@ -155,17 +154,6 @@ def load_settings() -> Settings:
         if yaml_codex_blocked_wait_timeout_seconds not in (None, "")
         else float(os.getenv("SYNAPSE_CODEX_BLOCKED_WAIT_TIMEOUT_SECONDS", "900"))
     )
-    detached_executor_enabled = (
-        _parse_bool(yaml_detached_executor_enabled)
-        if yaml_detached_executor_enabled not in (None, "")
-        else _get_bool("SYNAPSE_DETACHED_EXECUTOR_ENABLED", False)
-    )
-    detached_executor_types = _parse_string_list(
-        yaml_detached_executor_types
-        if yaml_detached_executor_types is not None
-        else os.getenv("SYNAPSE_DETACHED_EXECUTOR_TYPES", "codex,acpx"),
-        field_name="runtime.detached_executor_types",
-    )
     return Settings(
         app_name=os.getenv("SYNAPSE_APP_NAME", "Synapse v2"),
         communication_backend=os.getenv("SYNAPSE_COMMUNICATION_BACKEND", "auto"),
@@ -175,8 +163,8 @@ def load_settings() -> Settings:
         openai_base_url=os.getenv("SYNAPSE_OPENAI_BASE_URL")
         or os.getenv("OPENAI_BASE_URL")
         or None,
-        detached_executor_enabled=detached_executor_enabled,
-        detached_executor_types=detached_executor_types or ("codex", "acpx"),
+        detached_executor_enabled=True,
+        detached_executor_types=SUPPORTED_DETACHED_EXECUTOR_TYPES,
         acpx_executor_enabled=_get_bool("SYNAPSE_ACPX_EXECUTOR_ENABLED", False),
         acpx_command=acpx_command,
         acpx_agent=acpx_agent,

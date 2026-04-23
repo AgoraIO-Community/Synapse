@@ -27,6 +27,9 @@ Current deployment direction:
   node
 - the main Synapse API process registers hosted executor proxies rather than
   launching real executor subprocesses directly
+- the control plane does not ask the operator to choose detached executor
+  families; executor nodes declare their enabled families through
+  `executor_node.enabled_executors` and live node registration
 
 Executor-node note:
 

@@ -221,3 +221,29 @@ def test_load_settings_reads_codex_blocked_wait_timeout(monkeypatch, tmp_path: P
 def test_parse_string_list_uses_field_name_in_error():
     with pytest.raises(RuntimeError, match="runtime.detached_executor_types must be a list of strings."):
         config_module._parse_string_list([1], field_name="runtime.detached_executor_types")
+
+
+def test_load_settings_always_enables_detached_executors_with_supported_types(monkeypatch, tmp_path: Path):
+    env_file = tmp_path / ".env"
+    config_file = tmp_path / "config.yaml"
+    clear_runtime_env(monkeypatch)
+    env_file.write_text("", encoding="utf-8")
+    config_file.write_text(
+        "\n".join(
+            [
+                "version: 1",
+                "runtime:",
+                "  detached_executor_enabled: false",
+                "  detached_executor_types:",
+                "    - codex",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    configure_runtime_paths(monkeypatch, env_file=env_file, config_file=config_file)
+
+    settings = config_module.load_settings()
+
+    assert settings.detached_executor_enabled is True
+    assert settings.detached_executor_types == config_module.SUPPORTED_DETACHED_EXECUTOR_TYPES

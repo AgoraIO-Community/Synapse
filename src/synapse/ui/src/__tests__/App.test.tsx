@@ -55,10 +55,43 @@ const voiceHarness = vi.hoisted(() => {
   return state;
 });
 
+const socketHarness = vi.hoisted(() => {
+  const state = {
+    handlers: null as
+      | {
+          onOpen: () => void;
+          onMessage: (event: any) => void;
+          onClose: () => void;
+          onError: () => void;
+        }
+      | null,
+    socket: {
+      readyState: 1,
+      close: vi.fn(),
+    },
+    emitMessage(event: any) {
+      state.handlers?.onMessage(event);
+    },
+    reset() {
+      state.handlers = null;
+      state.socket.close.mockClear();
+    },
+  };
+  return state;
+});
+
 const clientMock = vi.hoisted(() => ({
   createSession: vi.fn(),
   getSessionSnapshot: vi.fn(),
-  openSessionStream: vi.fn(() => ({ close: vi.fn() })),
+  getConversationSnapshot: vi.fn(async (sessionId: string) => ({
+    session_id: sessionId,
+    conversation_history: [],
+  })),
+  openSessionStream: vi.fn((_sessionId: string, handlers: any) => {
+    socketHarness.handlers = handlers;
+    return socketHarness.socket as any;
+  }),
+  sendSocketMessage: vi.fn(),
   createPersona: vi.fn(),
   updatePersona: vi.fn(),
   deletePersona: vi.fn(),
@@ -119,7 +152,7 @@ const connectorMock = vi.hoisted(() => ({
   activateConnectorSession: vi.fn(async () => ({
     prepared_session_id: "prepared-1",
     binding_id: "binding-1",
-    synapse_session_id: "voice-session-1",
+    synapse_session_id: "session-1",
     runtime_session_id: "runtime-1",
     chat_completions_url: "https://gateway.example.com/chat",
     app_id: "agora-app",
@@ -195,6 +228,7 @@ describe("Newbro voice shell", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     voiceHarness.reset();
+    socketHarness.reset();
     window.history.replaceState({}, "", "/");
     clientMock.createSession.mockResolvedValue({ session_id: "session-1" });
     clientMock.getSessionSnapshot.mockImplementation(async (sessionId: string) => ({
@@ -212,6 +246,10 @@ describe("Newbro voice shell", () => {
       executor_capabilities: [],
       executor_nodes: [],
       communication_persona_prompt: "",
+    }));
+    clientMock.getConversationSnapshot.mockImplementation(async (sessionId: string) => ({
+      session_id: sessionId,
+      conversation_history: [],
     }));
   });
 
@@ -231,17 +269,89 @@ describe("Newbro voice shell", () => {
 
     await waitFor(() => expect(clientMock.createSession).toHaveBeenCalled());
     await waitFor(() => expect(clientMock.getSessionSnapshot).toHaveBeenCalledWith("session-1"));
+    expect(window.location.search).toBe("?sid=session-1");
   });
 
-  it("starts voice mode and renders live transcript turns inside interaction memory", async () => {
+  it("hydrates interaction memory from durable history when the page opens", async () => {
+    clientMock.getConversationSnapshot.mockResolvedValueOnce({
+      session_id: "session-1",
+      conversation_history: [
+        { role: "assistant", text: "Hello from Synapse.", message_id: "msg-1" },
+        { role: "user", text: "Please summarize the plan.", message_id: "msg-2" },
+      ],
+    } as any);
+
     render(<App />);
 
+    expect(await screen.findByText("Hello from Synapse.")).toBeInTheDocument();
+    expect(screen.getByText("Please summarize the plan.")).toBeInTheDocument();
+    expect(screen.queryByText("Transcript will appear here.")).not.toBeInTheDocument();
+    expect(screen.getAllByText("2 turns")).toHaveLength(2);
+  });
+
+  it("resumes the shell session from the sid query parameter", async () => {
+    window.history.replaceState({}, "", "/?sid=session-existing");
+
+    render(<App />);
+
+    await waitFor(() => expect(clientMock.getSessionSnapshot).toHaveBeenCalledWith("session-existing"));
+    expect(clientMock.createSession).not.toHaveBeenCalled();
+    expect(await screen.findByText("Session session-existing")).toBeInTheDocument();
+    expect(window.location.search).toBe("?sid=session-existing");
+  });
+
+  it("falls back to a new session and warns when sid resume fails", async () => {
+    clientMock.createSession.mockResolvedValueOnce({ session_id: "session-2" });
+    clientMock.getSessionSnapshot.mockImplementation(async (sessionId: string) => {
+      if (sessionId === "session-missing") {
+        throw new Error("Request failed with status 404");
+      }
+      return {
+        session_id: sessionId,
+        tasks: [],
+        execution_sessions: [],
+        execution_runs: [],
+        execution_modes: [],
+        bindings: [],
+        summaries: [],
+        notification_candidates: [],
+        personas: [],
+        interaction_requests: [],
+        attention_items: [],
+        executor_capabilities: [],
+        executor_nodes: [],
+        communication_persona_prompt: "",
+      };
+    });
+    window.history.replaceState({}, "", "/?sid=session-missing");
+
+    render(<App />);
+
+    expect(await screen.findByTestId("shell-warning")).toBeInTheDocument();
+    expect(screen.getByText(/Could not resume the requested session/)).toBeInTheDocument();
+    expect(screen.getByText(/session-missing/)).toBeInTheDocument();
+    expect(screen.getByText("Session session-2")).toBeInTheDocument();
+    expect(clientMock.createSession).toHaveBeenCalledTimes(1);
+    expect(clientMock.getSessionSnapshot).toHaveBeenNthCalledWith(1, "session-missing");
+    expect(clientMock.getSessionSnapshot).toHaveBeenNthCalledWith(2, "session-2");
+    expect(window.location.search).toBe("?sid=session-2");
+  });
+
+  it("renders Synapse user and assistant stream events in interaction memory", async () => {
+    render(<App />);
+
+    await screen.findByText("Session session-1");
     fireEvent.click(await screen.findByTestId("voice-session-start"));
 
-    await waitFor(() => expect(connectorMock.prepareConnectorSession).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(connectorMock.prepareConnectorSession).toHaveBeenCalledWith({
+        synapse_session_id: "session-1",
+      }),
+    );
     await waitFor(() => expect(connectorMock.activateConnectorSession).toHaveBeenCalledTimes(1));
-    await waitFor(() => expect(clientMock.getSessionSnapshot).toHaveBeenCalledWith("voice-session-1"));
+    expect(clientMock.getSessionSnapshot).not.toHaveBeenCalledWith("voice-session-1");
     expect(await screen.findByText("Voice session live")).toBeInTheDocument();
+    expect(screen.getByText("Transcript will appear here.")).toBeInTheDocument();
 
     await act(async () => {
       voiceHarness.voiceEvents.TRANSCRIPT_UPDATED?.([
@@ -249,24 +359,98 @@ describe("Newbro voice shell", () => {
         { turn_id: "turn-2", uid: "101", text: "Please create a follow-up task.", status: "final" },
       ]);
     });
+    expect(screen.queryByText("Hello. How can I help you today?")).not.toBeInTheDocument();
+    expect(screen.getByText("Transcript will appear here.")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByPlaceholderText("Type a message…"), {
+      target: { value: "Please create a follow-up task." },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    expect(clientMock.sendSocketMessage).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText("Please create a follow-up task.")).not.toBeInTheDocument();
+
+    await act(async () => {
+      socketHarness.emitMessage({
+        type: "user_message_appended",
+        message_id: "msg-user-1",
+        role: "user",
+        text: "Please create a follow-up task.",
+        source: "user",
+      });
+    });
+
+    expect(await screen.findByText("Please create a follow-up task.")).toBeInTheDocument();
+    expect(screen.getByText("Me")).toBeInTheDocument();
+
+    await act(async () => {
+      socketHarness.emitMessage({
+        type: "assistant_response_completed",
+        request_id: "req-1",
+        message_id: "msg-assistant-1",
+        reply_text: "Hello. How can I help you today?",
+        conversational_act: "model_reply",
+        affected_task_ids: [],
+      });
+    });
 
     expect(await screen.findByText("Hello. How can I help you today?")).toBeInTheDocument();
-    expect(screen.getByText("Please create a follow-up task.")).toBeInTheDocument();
     expect(screen.getByText("NewBro")).toBeInTheDocument();
-    expect(screen.getByText("Me")).toBeInTheDocument();
-    expect(screen.getByText("2 transcript turns")).toBeInTheDocument();
+    expect(screen.queryByText("Transcript will appear here.")).not.toBeInTheDocument();
+    expect(screen.getAllByText("2 turns")).toHaveLength(2);
+    expect(screen.getByText("Session session-1")).toBeInTheDocument();
   });
 
-  it("keeps the last transcript visible after stop and rebinds the shell to the idle session", async () => {
+  it("does not populate interaction memory from browser transcript events alone", async () => {
     render(<App />);
 
+    await screen.findByText("Session session-1");
     fireEvent.click(await screen.findByTestId("voice-session-start"));
-    await waitFor(() => expect(clientMock.getSessionSnapshot).toHaveBeenCalledWith("voice-session-1"));
+    await waitFor(() => expect(connectorMock.activateConnectorSession).toHaveBeenCalledTimes(1));
 
     await act(async () => {
       voiceHarness.voiceEvents.TRANSCRIPT_UPDATED?.([
-        { turn_id: "turn-1", uid: "9001", text: "Hello. How can I help you today?", status: "final" },
+        { turn_id: "turn-1", uid: "101", text: "I said this locally.", status: "final" },
+        { turn_id: "turn-2", uid: "9001", text: "Toolkit assistant echo.", status: "final" },
       ]);
+    });
+
+    expect(screen.queryByText("I said this locally.")).not.toBeInTheDocument();
+    expect(screen.queryByText("Toolkit assistant echo.")).not.toBeInTheDocument();
+    expect(screen.getByText("Transcript will appear here.")).toBeInTheDocument();
+  });
+
+  it("keeps the last conversation visible after stop without rebinding the shell session", async () => {
+    render(<App />);
+
+    await screen.findByText("Session session-1");
+    fireEvent.click(await screen.findByTestId("voice-session-start"));
+    await waitFor(() => expect(connectorMock.activateConnectorSession).toHaveBeenCalledTimes(1));
+
+    fireEvent.change(screen.getByPlaceholderText("Type a message…"), {
+      target: { value: "Please create a follow-up task." },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    await act(async () => {
+      socketHarness.emitMessage({
+        type: "user_message_appended",
+        message_id: "msg-user-1",
+        role: "user",
+        text: "Please create a follow-up task.",
+        source: "user",
+      });
+    });
+
+    await act(async () => {
+      socketHarness.emitMessage({
+        type: "assistant_response_completed",
+        request_id: "req-1",
+        message_id: "msg-assistant-1",
+        reply_text: "Hello. How can I help you today?",
+        conversational_act: "model_reply",
+        affected_task_ids: [],
+      });
     });
 
     fireEvent.click(screen.getByTestId("voice-session-stop"));
@@ -274,9 +458,11 @@ describe("Newbro voice shell", () => {
     await waitFor(() => {
       expect(screen.getByTestId("voice-session-start")).toBeInTheDocument();
     });
-    await waitFor(() => expect(clientMock.getSessionSnapshot).toHaveBeenLastCalledWith("session-1"));
 
     expect(screen.getByText("Hello. How can I help you today?")).toBeInTheDocument();
+    expect(screen.getByText("Please create a follow-up task.")).toBeInTheDocument();
+    expect(clientMock.createSession).toHaveBeenCalledTimes(1);
+    expect(clientMock.getSessionSnapshot).toHaveBeenCalledTimes(1);
     expect(screen.queryByText("Last voice session")).not.toBeInTheDocument();
     expect(screen.queryByText("Voice session stopped. Transcript memory retained.")).not.toBeInTheDocument();
   });
@@ -284,6 +470,7 @@ describe("Newbro voice shell", () => {
   it("mutes and unmutes the microphone while the voice session is live", async () => {
     render(<App />);
 
+    await screen.findByText("Session session-1");
     fireEvent.click(await screen.findByTestId("voice-session-start"));
     await waitFor(() => expect(screen.getByTestId("voice-session-mic-toggle")).toBeInTheDocument());
 
@@ -304,6 +491,7 @@ describe("Newbro voice shell", () => {
     } as any);
 
     render(<App />);
+    await screen.findByText("Session session-1");
     fireEvent.click(await screen.findByTestId("voice-session-start"));
 
     expect((await screen.findAllByText(/connectors\.agora-convoai\.app_id/)).length).toBeGreaterThan(0);
@@ -313,6 +501,7 @@ describe("Newbro voice shell", () => {
   it("signals pagehide stop cleanup while a voice session is active", async () => {
     const { unmount } = render(<App />);
 
+    await screen.findByText("Session session-1");
     fireEvent.click(await screen.findByTestId("voice-session-start"));
     await waitFor(() => expect(connectorMock.activateConnectorSession).toHaveBeenCalledTimes(1));
 
@@ -389,7 +578,7 @@ describe("Newbro voice shell", () => {
   });
 
   it("loads the Bros page directly from the URL", async () => {
-    window.history.replaceState({}, "", "/bros");
+    window.history.replaceState({}, "", "/bros?sid=session-1");
     const router = getRouter();
 
     render(<RouterProvider router={router} />);
@@ -399,6 +588,9 @@ describe("Newbro voice shell", () => {
 
     expect(await screen.findByText("Worker Bros")).toBeInTheDocument();
     expect(window.location.pathname).toBe("/bros");
+    expect(window.location.search).toBe("?sid=session-1");
+    expect(clientMock.createSession).not.toHaveBeenCalled();
+    expect(clientMock.getSessionSnapshot).toHaveBeenCalledWith("session-1");
   });
 
   it("loads the Nodes page directly from the URL", async () => {
@@ -543,6 +735,7 @@ describe("Newbro voice shell", () => {
   });
 
   it("navigates between left-menu pages and preserves browser history", async () => {
+    window.history.replaceState({}, "", "/?sid=session-1");
     const router = getRouter();
     render(<RouterProvider router={router} />);
     await act(async () => {
@@ -552,10 +745,12 @@ describe("Newbro voice shell", () => {
     expect(await screen.findByText("Available Bros")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Bros" }));
     await waitFor(() => expect(window.location.pathname).toBe("/bros"));
+    expect(window.location.search).toBe("?sid=session-1");
     expect(await screen.findByText("Worker Bros")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Nodes" }));
     await waitFor(() => expect(window.location.pathname).toBe("/nodes"));
+    expect(window.location.search).toBe("?sid=session-1");
     expect(await screen.findByText("Executor Nodes")).toBeInTheDocument();
 
     await act(async () => {
@@ -564,6 +759,7 @@ describe("Newbro voice shell", () => {
     });
 
     await waitFor(() => expect(window.location.pathname).toBe("/bros"));
+    expect(window.location.search).toBe("?sid=session-1");
     expect(await screen.findByText("Worker Bros")).toBeInTheDocument();
   });
 });

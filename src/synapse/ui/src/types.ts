@@ -352,6 +352,14 @@ export interface ActionRejectedStreamEvent extends StreamEventBase {
   message: string;
 }
 
+export interface UserMessageAppendedStreamEvent extends StreamEventBase {
+  type: "user_message_appended";
+  message_id: string;
+  role: "user";
+  text: string;
+  source: "user" | "connector";
+}
+
 export interface AssistantResponseStartedStreamEvent extends StreamEventBase {
   type: "assistant_response_started";
   request_id: string;
@@ -390,6 +398,7 @@ export type SessionStreamEvent =
   | SnapshotStreamEvent
   | ActionAcceptedStreamEvent
   | ActionRejectedStreamEvent
+  | UserMessageAppendedStreamEvent
   | AssistantResponseStartedStreamEvent
   | AssistantResponseDeltaStreamEvent
   | AssistantResponseCompletedStreamEvent

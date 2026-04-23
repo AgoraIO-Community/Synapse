@@ -32,10 +32,10 @@ That value is used only for browser calls to:
 - `POST /api/connectors/agora-convoai/sessions/activate`
 - `POST /api/connectors/agora-convoai/sessions/stop`
 
-The main shell's `Voice` mode now rebinds the whole frontend to the
-connector-returned `synapse_session_id`, so deployed environments must ensure the
-public main-backend origin and the public connector origin are both reachable from
-the browser during mode switches.
+The main shell's `Voice` mode now attaches to the already-active shell
+`synapse_session_id`, so deployed environments must ensure the public
+main-backend origin and the public connector origin are both reachable from the
+browser while voice mode is started, stopped, and used live.
 
 If your main Synapse service already mounts `/api/connectors/...` routes directly, you
 may set `VITE_CONNECTOR_BASE_URL` to the same public origin as

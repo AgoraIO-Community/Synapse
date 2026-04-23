@@ -19,7 +19,7 @@ class ChatCompletionRequest(BaseModel):
 
 class ConnectorSessionDefaults(BaseModel):
     profile: str
-    channel_name: str
+    channel_name: str | None = None
     display_name: str
     agent_instructions: str
     agent_greeting: str
@@ -35,6 +35,7 @@ class ConnectorConfigResponse(BaseModel):
 
 
 class ConnectorSessionPrepareRequest(BaseModel):
+    synapse_session_id: str | None = None
     profile: str | None = None
     channel_name: str | None = None
     display_name: str | None = None

@@ -65,7 +65,8 @@ def test_setup_interactive_updates_env_file(monkeypatch, tmp_path: Path):
     assert configured.strip().endswith("EXTRA_FLAG=keep-me")
 
     configured_runtime = (root / ".synapse" / "config.yaml").read_text(encoding="utf-8")
-    assert "detached_executor_enabled: false" in configured_runtime
+    assert "runtime: {}" in configured_runtime
+    assert "detached_executor_enabled" not in configured_runtime
     assert "detached_executor_types" not in configured_runtime
     assert "executor_node:" in configured_runtime
     assert "executors: {}" in configured_runtime
@@ -74,23 +75,50 @@ def test_setup_interactive_updates_env_file(monkeypatch, tmp_path: Path):
     assert "enabled_executors: []" in configured_runtime
 
 
-def test_setup_interactive_enables_detached_executors(monkeypatch, tmp_path: Path):
+def test_setup_interactive_can_configure_connector_host(monkeypatch, tmp_path: Path):
     root = tmp_path
     (root / "src" / "synapse" / "ui").mkdir(parents=True)
     (root / ".synapse").mkdir(parents=True, exist_ok=True)
 
     configure_repo_paths(monkeypatch, root)
     monkeypatch.setattr(cli_main, "setup_can_prompt", lambda: True)
-    monkeypatch.setattr(cli_main.getpass, "getpass", lambda _prompt: "sk-test")
-    responses = iter(["yes", ""])
-    monkeypatch.setattr("builtins.input", lambda _prompt: next(responses))
+    monkeypatch.setattr(cli_main, "list_available_connector_modules", lambda: ["agora-convoai"])
+    secret_responses = iter(["sk-test", "app-cert"])
+    monkeypatch.setattr(cli_main.getpass, "getpass", lambda _prompt: next(secret_responses))
+
+    allowed_empty_prompts = {
+        "Select connectors [1]: ",
+        "Connector host [0.0.0.0]: ",
+        "Connector port [8010]: ",
+        "Connector public base URL [http://127.0.0.1:8000]: ",
+        "Synapse service base URL for connector callbacks [http://127.0.0.1:8000]: ",
+        "ASR credential mode [managed]: ",
+        "ASR model [nova-3]: ",
+        "ASR language [en-US]: ",
+        "TTS vendor [minimax]: ",
+        "TTS model [speech_2_6_turbo]: ",
+        "TTS voice [English_magnetic_voiced_man]: ",
+    }
+
+    def fake_input(prompt: str) -> str:
+        if prompt == "Configure connector host [y/N]: ":
+            return "yes"
+        if prompt.startswith("Agora App ID"):
+            return "agora-app"
+        if prompt in allowed_empty_prompts:
+            return ""
+        raise AssertionError(f"Unexpected prompt: {prompt}")
+
+    monkeypatch.setattr("builtins.input", fake_input)
 
     assert cli_main.main(["setup"]) == 0
 
     configured_runtime = (root / ".synapse" / "config.yaml").read_text(encoding="utf-8")
-    assert "detached_executor_enabled: true" in configured_runtime
-    assert "detached_executor_types:" in configured_runtime
-    assert "- codex" in configured_runtime
+    assert "detached_executor_enabled" not in configured_runtime
+    assert "detached_executor_types:" not in configured_runtime
+    assert "enabled_connectors:" in configured_runtime
+    assert "- agora-convoai" in configured_runtime
+    assert "app_id: $AGORA_APP_ID" in configured_runtime
 
 
 def test_executor_setup_uses_detected_codex_command_default(monkeypatch, tmp_path: Path):
@@ -101,10 +129,7 @@ def test_executor_setup_uses_detected_codex_command_default(monkeypatch, tmp_pat
         "\n".join(
             [
                 "version: 1",
-                "runtime:",
-                "  detached_executor_enabled: true",
-                "  detached_executor_types:",
-                "    - codex",
+                "runtime: {}",
                 "connector_host:",
                 "  enabled: false",
                 "  host: 0.0.0.0",
@@ -136,8 +161,8 @@ def test_executor_setup_uses_detected_codex_command_default(monkeypatch, tmp_pat
     assert cli_main.main(["executor", "setup"]) == 0
 
     configured_runtime = (root / ".synapse" / "config.yaml").read_text(encoding="utf-8")
-    assert "detached_executor_enabled: true" in configured_runtime
-    assert "detached_executor_types:" in configured_runtime
+    assert "detached_executor_enabled" not in configured_runtime
+    assert "detached_executor_types:" not in configured_runtime
     assert "executor_node:" in configured_runtime
     assert "command: /detected/codex" in configured_runtime
     assert "host_token" not in configured_runtime
@@ -168,10 +193,7 @@ def test_executor_setup_migrates_legacy_codex_command_over_detected_default(
         "\n".join(
             [
                 "version: 1",
-                "runtime:",
-                "  detached_executor_enabled: true",
-                "  detached_executor_types:",
-                "    - codex",
+                "runtime: {}",
                 "connector_host:",
                 "  enabled: false",
                 "  host: 0.0.0.0",
@@ -222,6 +244,7 @@ def test_connector_setup_writes_connector_module_env(monkeypatch, tmp_path: Path
     monkeypatch.setattr(cli_main.getpass, "getpass", lambda _prompt: next(secret_responses))
 
     allowed_empty_prompts = {
+        "Configure connector host [y/N]: ",
         "Configure connector host [Y/n]: ",
         "Select connectors [1]: ",
         "Connector host [0.0.0.0]: ",
@@ -446,10 +469,7 @@ def test_executor_setup_migrates_legacy_codex_command_to_config(monkeypatch, tmp
         "\n".join(
             [
                 "version: 1",
-                "runtime:",
-                "  detached_executor_enabled: true",
-                "  detached_executor_types:",
-                "    - codex",
+                "runtime: {}",
                 "connector_host:",
                 "  enabled: false",
                 "  host: 0.0.0.0",

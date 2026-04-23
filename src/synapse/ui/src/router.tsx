@@ -1,4 +1,4 @@
-import { createRoute, createRouter, useNavigate } from "@tanstack/react-router";
+import { createRoute, createRouter, useNavigate, useSearch } from "@tanstack/react-router";
 import type { PageId } from "./components/newbro";
 import { DefaultCatchBoundary } from "./components/DefaultCatchBoundary";
 import { NotFound } from "./components/NotFound";
@@ -19,8 +19,12 @@ function pageToPath(page: PageId): "/" | "/bros" | "/nodes" | "/settings" {
 
 function usePageNavigate() {
   const navigate = useNavigate();
+  const currentSearch = useSearch({ strict: false });
   return (page: PageId) => {
-    void navigate({ to: pageToPath(page) });
+    void navigate({
+      to: pageToPath(page),
+      search: currentSearch,
+    });
   };
 }
 
