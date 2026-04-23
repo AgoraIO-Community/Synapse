@@ -405,6 +405,7 @@ describe("Newbro voice shell", () => {
     });
 
     expect(await screen.findByText("Please create a follow-up task.")).toBeInTheDocument();
+    expect(screen.getAllByText("Please create a follow-up task.")).toHaveLength(1);
     expect(screen.getByText("Me")).toBeInTheDocument();
 
     await act(async () => {

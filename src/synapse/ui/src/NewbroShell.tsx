@@ -300,7 +300,6 @@ function useNewbroShellState() {
     if (!socket || socket.readyState !== WebSocket.OPEN) return false;
     const requestId = `msg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     sendSocketMessage(socket, requestId, text);
-    setChatMessages((prev) => [...prev, { role: "user" as const, text, id: requestId }]);
     return true;
   };
 
