@@ -226,24 +226,27 @@ python3 -m twine upload dist/*
 Automatic publish from GitHub Actions:
 
 ```bash
-git tag v0.1.1
-git push origin v0.1.1
+git tag v0.1.2
+git push origin v0.1.2
 ```
 
-The `publish-pypi` workflow runs on tags matching `v*` and publishes only when
-the tag exactly matches `project.version` from `pyproject.toml`. For example,
-`pyproject.toml` version `0.1.1` must be released with tag `v0.1.1`.
+The `publish-pypi` workflow runs on tags matching `v*` and derives the package
+version from the tag by stripping the leading `v`. For example, tag `v0.1.2`
+publishes package version `0.1.2` even if the checked-in `pyproject.toml`
+version has not been bumped yet.
 
 This workflow uses PyPI Trusted Publishing, so configure the `newbro-cli` PyPI
 project to trust the `AgoraIO/Synapse` GitHub repository and the
 `publish-pypi.yml` workflow before creating the first release tag.
 
-For manual publishing or recovery, use the helper script:
+For manual publishing or recovery, use the helper script. Pass `--version` when
+you want the build/upload version to follow a release tag instead of the
+checked-in `pyproject.toml` version:
 
 ```bash
-PYPI_TOKEN='pypi-...' ./scripts/publish_pypi.sh
-PYPI_TOKEN='pypi-...' ./scripts/publish_pypi.sh --testpypi
-./scripts/publish_pypi.sh --dry-run
+PYPI_TOKEN='pypi-...' ./scripts/publish_pypi.sh --version 0.1.2
+PYPI_TOKEN='pypi-...' ./scripts/publish_pypi.sh --version v0.1.2 --testpypi
+./scripts/publish_pypi.sh --version 0.1.2 --dry-run
 ```
 
 ## Deploy UI to Vercel

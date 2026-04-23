@@ -8,17 +8,20 @@ TARGET_LABEL="PyPI"
 DRY_RUN=0
 ASSUME_YES=0
 DIST_DIR=""
+VERSION_OVERRIDE=""
 
 usage() {
   cat <<'EOF'
 Usage:
-  ./scripts/publish_pypi.sh [--testpypi] [--dry-run] [--yes] [--dist-dir PATH]
+  ./scripts/publish_pypi.sh [--testpypi] [--dry-run] [--yes] [--dist-dir PATH] [--version VERSION]
 
 Options:
   --testpypi        Upload to TestPyPI instead of PyPI.
   --dry-run         Build and validate artifacts but skip upload.
   --yes             Skip the interactive confirmation prompt.
   --dist-dir PATH   Write build artifacts to PATH instead of a temporary directory.
+  --version VALUE   Override the package version for this build/upload. Accepts
+                    either 1.2.3 or v1.2.3.
   -h, --help        Show this help message.
 
 Environment:
@@ -50,6 +53,14 @@ while [[ $# -gt 0 ]]; do
         exit 1
       }
       DIST_DIR="$2"
+      shift 2
+      ;;
+    --version)
+      [[ $# -ge 2 ]] || {
+        echo "error: --version requires a value" >&2
+        exit 1
+      }
+      VERSION_OVERRIDE="$2"
       shift 2
       ;;
     -h|--help)
@@ -106,6 +117,18 @@ fi
 
 PACKAGE_NAME="${PROJECT_META[0]}"
 PACKAGE_VERSION="${PROJECT_META[1]}"
+PYPROJECT_VERSION="$PACKAGE_VERSION"
+
+if [[ -n "$VERSION_OVERRIDE" ]]; then
+  if [[ "$VERSION_OVERRIDE" == v* ]]; then
+    VERSION_OVERRIDE="${VERSION_OVERRIDE#v}"
+  fi
+  if [[ -z "$VERSION_OVERRIDE" ]]; then
+    echo "error: release version override cannot be empty" >&2
+    exit 1
+  fi
+  PACKAGE_VERSION="$VERSION_OVERRIDE"
+fi
 
 if [[ -n "${PYPI_TOKEN:-}" ]]; then
   export TWINE_USERNAME="${TWINE_USERNAME:-__token__}"
@@ -115,6 +138,7 @@ elif [[ -n "${TWINE_PASSWORD:-}" ]]; then
 fi
 
 TEMP_DIR=""
+PYPROJECT_BACKUP=""
 if [[ -z "$DIST_DIR" ]]; then
   TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/newbro-publish.XXXXXX")"
   DIST_DIR="$TEMP_DIR/dist"
@@ -123,14 +147,44 @@ else
 fi
 
 cleanup() {
+  if [[ -n "$PYPROJECT_BACKUP" && -f "$PYPROJECT_BACKUP" ]]; then
+    cp "$PYPROJECT_BACKUP" "$ROOT/pyproject.toml"
+    rm -f "$PYPROJECT_BACKUP"
+  fi
   if [[ -n "$TEMP_DIR" && -d "$TEMP_DIR" ]]; then
     rm -rf "$TEMP_DIR"
   fi
 }
 trap cleanup EXIT
 
+if [[ "$PACKAGE_VERSION" != "$PYPROJECT_VERSION" ]]; then
+  PYPROJECT_BACKUP="$(mktemp "${TMPDIR:-/tmp}/pyproject.toml.backup.XXXXXX")"
+  cp "$ROOT/pyproject.toml" "$PYPROJECT_BACKUP"
+  "$PYTHON_BIN" - "$PACKAGE_VERSION" <<'PY'
+from pathlib import Path
+import re
+import sys
+
+version = sys.argv[1]
+path = Path("pyproject.toml")
+text = path.read_text(encoding="utf-8")
+updated, count = re.subn(
+    r'(?m)^version = "[^"]+"$',
+    f'version = "{version}"',
+    text,
+    count=1,
+)
+if count != 1:
+    raise SystemExit("error: failed to override project version in pyproject.toml")
+path.write_text(updated, encoding="utf-8")
+PY
+fi
+
 echo "[publish] package: $PACKAGE_NAME"
 echo "[publish] version: $PACKAGE_VERSION"
+if [[ "$PACKAGE_VERSION" != "$PYPROJECT_VERSION" ]]; then
+  echo "[publish] pyproject version override: $PYPROJECT_VERSION -> $PACKAGE_VERSION"
+fi
 echo "[publish] target: $TARGET_LABEL"
 echo "[publish] python: $PYTHON_BIN"
 echo "[publish] dist dir: $DIST_DIR"
