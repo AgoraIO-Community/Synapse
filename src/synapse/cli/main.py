@@ -428,11 +428,12 @@ def cmd_service_install(args: argparse.Namespace) -> int:
     user = current_service_user()
     home = service_user_home()
     venv_python = ensure_service_runtime_ready()
+    cli_bin = ensure_service_cli_ready(venv_python)
     unit_text = render_service_unit(
         user=user,
         home=home,
         workdir=ROOT,
-        venv_python=venv_python,
+        cli_bin=cli_bin,
         host=args.host,
         public_port=args.port,
     )
@@ -615,16 +616,34 @@ def ensure_service_runtime_ready() -> Path:
     return venv_python
 
 
+def service_cli_bin_path(venv_python: Path) -> Path:
+    return venv_python.with_name(CLI_NAME)
+
+
+def ensure_service_cli_ready(venv_python: Path) -> Path:
+    cli_bin = service_cli_bin_path(venv_python)
+    if not cli_bin.exists():
+        raise CliError(
+            f"Installed {CLI_NAME} console script is missing at {cli_bin}. "
+            f"Run `{venv_python} -m pip install -e .` or rerun `{ROOT_LAUNCHER} service install`."
+        )
+    if not os.access(cli_bin, os.X_OK):
+        raise CliError(
+            f"Installed {CLI_NAME} console script is not executable at {cli_bin}. "
+            f"Run `{venv_python} -m pip install -e .` or rerun `{ROOT_LAUNCHER} service install`."
+        )
+    return cli_bin
+
+
 def render_service_unit(
     *,
     user: str,
     home: Path,
     workdir: Path,
-    venv_python: Path,
+    cli_bin: Path,
     host: str,
     public_port: int,
 ) -> str:
-    cli_bin = venv_python.with_name(CLI_NAME)
     path_entries = [
         str(workdir / ".venv" / "bin"),
         str(home / ".local" / "bin"),

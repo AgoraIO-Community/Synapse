@@ -860,6 +860,28 @@ def configure_root_service_environment(monkeypatch, tmp_path: Path) -> None:
     )
 
 
+def write_fake_service_console_script(root: Path, *, executable: bool = True) -> Path:
+    cli_bin = root / ".venv" / "bin" / "newbro"
+    cli_bin.parent.mkdir(parents=True, exist_ok=True)
+    cli_bin.write_text("#!/bin/sh\n", encoding="utf-8")
+    cli_bin.chmod(0o755 if executable else 0o644)
+    return cli_bin
+
+
+def bootstrap_fake_service_artifacts(cmd: list[str], root: Path, *, install_console_script: bool) -> None:
+    if len(cmd) >= 3 and cmd[1:3] == ["-m", "venv"]:
+        venv_python = root / ".venv" / "bin" / "python"
+        venv_python.parent.mkdir(parents=True, exist_ok=True)
+        venv_python.write_text("", encoding="utf-8")
+    if (
+        install_console_script
+        and len(cmd) >= 6
+        and cmd[1:4] == ["-m", "pip", "install"]
+        and cmd[-2:] == ["-e", "."]
+    ):
+        write_fake_service_console_script(root)
+
+
 def test_service_install_bootstraps_runtime_and_enables_unit(monkeypatch, tmp_path: Path, capsys):
     configure_service_environment(monkeypatch, tmp_path)
 
@@ -867,10 +889,7 @@ def test_service_install_bootstraps_runtime_and_enables_unit(monkeypatch, tmp_pa
 
     def fake_run_checked(cmd: list[str], cwd: Path) -> int:
         commands.append((cmd, cwd))
-        if len(cmd) >= 3 and cmd[1:3] == ["-m", "venv"]:
-            venv_python = tmp_path / ".venv" / "bin" / "python"
-            venv_python.parent.mkdir(parents=True, exist_ok=True)
-            venv_python.write_text("", encoding="utf-8")
+        bootstrap_fake_service_artifacts(cmd, tmp_path, install_console_script=True)
         return 0
 
     monkeypatch.setattr(cli_main, "run_checked", fake_run_checked)
@@ -898,6 +917,7 @@ def test_service_install_skips_venv_creation_when_existing(monkeypatch, tmp_path
     venv_python = tmp_path / ".venv" / "bin" / "python"
     venv_python.parent.mkdir(parents=True, exist_ok=True)
     venv_python.write_text("", encoding="utf-8")
+    write_fake_service_console_script(tmp_path)
     (tmp_path / ".newbro").mkdir(parents=True, exist_ok=True)
     (tmp_path / ".newbro" / ".env").write_text("OPENAI_API_KEY=test-key\n", encoding="utf-8")
 
@@ -918,10 +938,7 @@ def test_service_install_allows_root_and_uses_direct_systemctl(monkeypatch, tmp_
 
     def fake_run_checked(cmd: list[str], cwd: Path) -> int:
         commands.append((cmd, cwd))
-        if len(cmd) >= 3 and cmd[1:3] == ["-m", "venv"]:
-            venv_python = tmp_path / ".venv" / "bin" / "python"
-            venv_python.parent.mkdir(parents=True, exist_ok=True)
-            venv_python.write_text("", encoding="utf-8")
+        bootstrap_fake_service_artifacts(cmd, tmp_path, install_console_script=True)
         return 0
 
     monkeypatch.setattr(cli_main, "run_checked", fake_run_checked)
@@ -942,6 +959,64 @@ def test_service_install_allows_root_and_uses_direct_systemctl(monkeypatch, tmp_
     assert (tmp_path / ".newbro" / ".env").exists()
     assert (tmp_path / ".newbro" / "config.yaml").exists()
     assert "[warn] env: OPENAI_API_KEY is not configured" in capsys.readouterr().out
+
+
+def test_service_install_fails_before_unit_install_when_newbro_script_missing(
+    monkeypatch,
+    tmp_path: Path,
+    capsys,
+):
+    configure_service_environment(monkeypatch, tmp_path)
+
+    commands: list[tuple[list[str], Path]] = []
+
+    def fake_run_checked(cmd: list[str], cwd: Path) -> int:
+        commands.append((cmd, cwd))
+        bootstrap_fake_service_artifacts(cmd, tmp_path, install_console_script=False)
+        return 0
+
+    monkeypatch.setattr(cli_main, "run_checked", fake_run_checked)
+
+    assert cli_main.main(["service", "install"]) == 1
+
+    assert "Installed newbro console script is missing" in capsys.readouterr().err
+    assert all("systemctl" not in cmd for cmd, _cwd in commands)
+    assert all(
+        cmd[:2] != ["sudo", "install"] and cmd[:1] != ["install"]
+        for cmd, _cwd in commands
+    )
+
+
+def test_service_install_fails_before_unit_install_when_newbro_script_not_executable(
+    monkeypatch,
+    tmp_path: Path,
+    capsys,
+):
+    configure_service_environment(monkeypatch, tmp_path)
+
+    commands: list[tuple[list[str], Path]] = []
+
+    def fake_run_checked(cmd: list[str], cwd: Path) -> int:
+        commands.append((cmd, cwd))
+        bootstrap_fake_service_artifacts(cmd, tmp_path, install_console_script=False)
+        if (
+            len(cmd) >= 6
+            and cmd[1:4] == ["-m", "pip", "install"]
+            and cmd[-2:] == ["-e", "."]
+        ):
+            write_fake_service_console_script(tmp_path, executable=False)
+        return 0
+
+    monkeypatch.setattr(cli_main, "run_checked", fake_run_checked)
+
+    assert cli_main.main(["service", "install"]) == 1
+
+    assert "Installed newbro console script is not executable" in capsys.readouterr().err
+    assert all("systemctl" not in cmd for cmd, _cwd in commands)
+    assert all(
+        cmd[:2] != ["sudo", "install"] and cmd[:1] != ["install"]
+        for cmd, _cwd in commands
+    )
 
 
 def test_service_install_requires_systemctl(monkeypatch, tmp_path: Path, capsys):
@@ -968,7 +1043,7 @@ def test_render_service_unit_includes_expected_values():
         user="deploy",
         home=Path("/home/deploy"),
         workdir=Path("/srv/synapse"),
-        venv_python=Path("/srv/synapse/.venv/bin/python"),
+        cli_bin=Path("/srv/synapse/.venv/bin/newbro"),
         host="0.0.0.0",
         public_port=8000,
     )
@@ -991,7 +1066,7 @@ def test_render_service_unit_supports_root_values():
         user="root",
         home=Path("/root"),
         workdir=Path("/srv/synapse"),
-        venv_python=Path("/srv/synapse/.venv/bin/python"),
+        cli_bin=Path("/srv/synapse/.venv/bin/newbro"),
         host="0.0.0.0",
         public_port=8000,
     )
