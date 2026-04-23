@@ -3,7 +3,7 @@ import type { LucideIcon } from "lucide-react";
 import type { BroCardModel, NavItem } from "./types";
 
 export const navItems: Array<NavItem & { icon: LucideIcon }> = [
-  { label: "Home", icon: Home, active: true },
+  { label: "Home", icon: Home, active: false },
   { label: "Bros", icon: Users, active: false },
   { label: "Settings", icon: Settings, active: false },
 ];

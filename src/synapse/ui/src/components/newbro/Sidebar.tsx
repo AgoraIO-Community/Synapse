@@ -1,6 +1,14 @@
 import { navItems } from "./data";
 
-export function Sidebar() {
+export type PageId = "Home" | "Bros" | "Settings";
+
+export function Sidebar({
+  activePage,
+  onNavigate,
+}: {
+  activePage: PageId;
+  onNavigate: (page: PageId) => void;
+}) {
   return (
     <aside
       data-testid="newbro-sidebar"
@@ -22,12 +30,14 @@ export function Sidebar() {
         <nav className="space-y-1.5">
           {navItems.map((item) => {
             const Icon = item.icon;
+            const isActive = item.label === activePage;
             return (
               <button
                 key={item.label}
                 type="button"
+                onClick={() => onNavigate(item.label as PageId)}
                 className={`group flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-left transition ${
-                  item.active
+                  isActive
                     ? "bg-white text-neutral-950 ring-1 ring-neutral-200"
                     : "text-neutral-500 hover:bg-white/70 hover:text-neutral-800"
                 }`}
