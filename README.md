@@ -145,10 +145,13 @@ system service with:
 
 ```bash
 ./synapse service install
-./synapse service start
 ```
 
-The installed `synapse.service` unit runs `synapse start`, so it starts one
+`./synapse service install` now installs or updates the unit, reloads systemd,
+enables the unit, and restarts the service so the latest code is live
+immediately.
+
+The installed `synapse.service` unit runs `synapse start`, so it serves one
 main Synapse service on the public port.
 
 This path stays inside the repo checkout. The main service serves

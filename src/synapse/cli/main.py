@@ -423,7 +423,8 @@ def cmd_service_install(args: argparse.Namespace) -> int:
     )
     install_service_unit(unit_text)
     print(f"[ok] installed {service_unit_path()}")
-    print(f"[hint] start with: ./synapse service start")
+    print(f"[ok] restarted {SYSTEMD_UNIT_NAME}")
+    print(f"[hint] status: systemctl status {SYSTEMD_UNIT_NAME}")
     return 0
 
 
@@ -692,6 +693,7 @@ def install_service_unit(unit_text: str) -> None:
         )
         run_privileged_checked(["systemctl", "daemon-reload"], cwd=ROOT)
         run_privileged_checked(["systemctl", "enable", SYSTEMD_UNIT_NAME], cwd=ROOT)
+        run_privileged_checked(["systemctl", "restart", SYSTEMD_UNIT_NAME], cwd=ROOT)
     finally:
         if temp_path is not None:
             temp_path.unlink(missing_ok=True)

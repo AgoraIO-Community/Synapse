@@ -169,3 +169,4 @@ Short log of important design decisions and changes for Synapse.
 - Moved the `Interaction memory` pane off browser-local Agora transcript state so it now hydrates from Synapse durable conversation history on open and then continues from local user sends plus Synapse assistant stream events.
 - Folded connector configuration into `synapse setup`, removed host-side detached executor prompts from that flow, and treated detached execution as an always-on control-plane capability while executor nodes remain the place where enabled executor families are declared.
 - Added a first-class Synapse `user_message_appended` stream event and moved the `Interaction memory` pane fully onto Synapse user/assistant stream events after bootstrap, removing local user echo from the frontend.
+- Changed `synapse service install` to restart `synapse.service` after installing and enabling the unit, so service-hosted deployments pick up the latest checkout immediately.

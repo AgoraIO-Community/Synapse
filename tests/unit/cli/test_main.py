@@ -844,6 +844,7 @@ def test_service_install_bootstraps_runtime_and_enables_unit(monkeypatch, tmp_pa
     assert commands[5][0][-1] == str(cli_main.service_unit_path())
     assert commands[6] == (["sudo", "systemctl", "daemon-reload"], tmp_path)
     assert commands[7] == (["sudo", "systemctl", "enable", "synapse.service"], tmp_path)
+    assert commands[8] == (["sudo", "systemctl", "restart", "synapse.service"], tmp_path)
     assert (tmp_path / ".synapse" / ".env").exists()
     assert (tmp_path / ".synapse" / "config.yaml").exists()
     assert "[warn] env: OPENAI_API_KEY is not configured" in capsys.readouterr().out
@@ -894,6 +895,7 @@ def test_service_install_allows_root_and_uses_direct_systemctl(monkeypatch, tmp_
     assert commands[5][0][-1] == str(cli_main.service_unit_path())
     assert commands[6] == (["systemctl", "daemon-reload"], tmp_path)
     assert commands[7] == (["systemctl", "enable", "synapse.service"], tmp_path)
+    assert commands[8] == (["systemctl", "restart", "synapse.service"], tmp_path)
     assert (tmp_path / ".synapse" / ".env").exists()
     assert (tmp_path / ".synapse" / "config.yaml").exists()
     assert "[warn] env: OPENAI_API_KEY is not configured" in capsys.readouterr().out

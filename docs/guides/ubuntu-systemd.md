@@ -4,7 +4,6 @@ Synapse now supports a repo-checkout Ubuntu deployment path through the CLI:
 
 ```bash
 ./synapse service install
-./synapse service start
 ```
 
 `synapse service install` is the server bootstrap path for a single combined
@@ -16,6 +15,7 @@ systemd service:
 - installs `/etc/systemd/system/synapse.service`
 - runs `systemctl daemon-reload`
 - runs `systemctl enable synapse.service`
+- runs `systemctl restart synapse.service`
 
 The installed service runs:
 
@@ -43,6 +43,8 @@ That means:
   config from that user’s home directory.
 - This path builds the production frontend during `synapse service install` and
   serves the built UI directly from the main Synapse service.
+- `synapse service install` now starts or restarts the service automatically, so
+  use it as the normal “deploy the current checkout” command.
 - If the Codex executor is enabled, set an absolute `runtime.codex_command` in
   `~/.synapse/config.yaml`.
 - Same-origin voice mode now works through the main service `/api/connectors/...`
@@ -68,7 +70,7 @@ If you install as `root`, that means:
 
 ## Health Checks
 
-After starting the service:
+After `synapse service install` or any later start/restart:
 
 ```bash
 curl -i http://127.0.0.1:8000/api/health
