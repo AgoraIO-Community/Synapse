@@ -85,6 +85,7 @@ class HttpSynapseConnectorTransport:
         text: str,
         *,
         request_id: str,
+        target_persona_id: str | None = None,
     ):
         ws_url = self._session_stream_url(session_id)
         try:
@@ -95,16 +96,15 @@ class HttpSynapseConnectorTransport:
                 close_timeout=self._request_timeout_seconds,
             ) as websocket:
                 await self._recv_json(websocket, timeout=self._request_timeout_seconds)
-                await websocket.send(
-                    json.dumps(
-                        {
-                            "type": "send_message",
-                            "request_id": request_id,
-                            "text": text,
-                            "source": "connector",
-                        }
-                    )
-                )
+                payload: dict[str, object] = {
+                    "type": "send_message",
+                    "request_id": request_id,
+                    "text": text,
+                    "source": "connector",
+                }
+                if target_persona_id:
+                    payload["target_persona_id"] = target_persona_id
+                await websocket.send(json.dumps(payload))
                 while True:
                     event = await self._recv_json(
                         websocket,

@@ -75,6 +75,7 @@ def build_reply_prompt_request(
             build_normal_reply_task_prompt(
                 user_text=user_text,
                 available_tools=context.available_tools,
+                target_persona_id=context.target_persona_id,
             ),
         ),
         _message("system", build_tool_usage_examples_prompt(context)),
@@ -86,6 +87,25 @@ def build_reply_prompt_request(
     if persona_prompt is not None:
         messages.insert(1, _message("system", persona_prompt))
         prompt_sections.insert(1, "persona_identity")
+
+    if context.target_persona_id:
+        target_label = context.target_persona_id
+        if context.personas:
+            for p in context.personas:
+                if p.get("persona_id") == context.target_persona_id:
+                    target_label = str(p.get("name", context.target_persona_id))
+                    break
+        messages.append(
+            _message(
+                "system",
+                f"IMPORTANT: The user is directing this instruction specifically at persona_id={context.target_persona_id} "
+                f"(display name: {target_label}). "
+                f"When creating a task for this message, pass persona_name exactly as it appears in the personas list for this persona_id. "
+                f"Do NOT ask which persona should handle it. "
+                f"This OVERRIDES the rule about asking which bro to use.",
+            )
+        )
+        prompt_sections.append("target_persona")
 
     messages.extend(_message(entry.role, entry.text) for entry in context.recent_history)
 

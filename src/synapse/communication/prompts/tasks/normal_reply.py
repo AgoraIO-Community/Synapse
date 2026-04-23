@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 
-def build_normal_reply_task_prompt(*, user_text: str, available_tools: list[str]) -> str:
+def build_normal_reply_task_prompt(*, user_text: str, available_tools: list[str], target_persona_id: str | None = None) -> str:
     tool_list = ", ".join(available_tools)
-    return "\n".join(
-        [
+    lines = [
             "You are handling a normal user message.",
             f"The latest user message is: {user_text}",
             f"Available tools: {tool_list}",
@@ -19,7 +18,17 @@ def build_normal_reply_task_prompt(*, user_text: str, available_tools: list[str]
             "Each task has a persona (name + avatar) in active_tasks. Use the persona name when referring to tasks in replies (e.g. 'Mochi is working on the red-black tree demo'). When the user refers to a task by persona name, match it to the corresponding task_id.",
             "When a persona appears for the FIRST TIME in the conversation (not seen in recent_history), introduce them briefly, e.g. 'Let me bring in a new bro: Mochi, an energetic shiba inu. He will handle the red-black tree demo for us.' After the first introduction, just use the name naturally. The exact English phrase 'new bro' is REQUIRED in the first introduction — do NOT translate it to any other language. Do NOT include emoji or avatar in the reply text.",
             "When creating a task, you MUST specify persona_name. If the user did not say which persona to use, ask them. Do NOT create a task without a persona. List available idle personas from the 'personas' field in runtime_context.",
-            "CRITICAL: If the user's message does NOT explicitly mention a persona/bro name, you MUST ask which bro should handle it BEFORE calling create_task. Never auto-assign. Example: 'Who should handle this? 王大锤 and 张全蛋 are both free.'",
+    ]
+    if target_persona_id:
+        lines.append(
+            "CRITICAL: A target persona has been pre-selected for this message via push-to-talk. "
+            "You MUST use that persona when calling create_task. Do NOT ask which bro should handle it."
+        )
+    else:
+        lines.append(
+            "CRITICAL: If the user's message does NOT explicitly mention a persona/bro name, you MUST ask which bro should handle it BEFORE calling create_task. Never auto-assign. Example: 'Who should handle this? Bob and Jack are both free.'"
+        )
+    lines.extend([
             "When the user wants to continue working on a prior project (e.g. 'add tests to that red-black-tree project'), pass continue_from_task_id with the prior task's task_id so the new task shares the same workspace files.",
             "When all personas are busy, tell the user by name who is busy and what they are doing. Ask if they want someone to stop.",
             "If a task is waiting for user input and runtime_context.interaction_requests contains a pending request for it, do not treat 'continue' or 'resume' as a normal resume. Tell the user what input or approval is still needed.",
@@ -27,5 +36,5 @@ def build_normal_reply_task_prompt(*, user_text: str, available_tools: list[str]
             "When the user is resolving a pending interaction request, choose the action from the request's available_actions. Do not invent unsupported actions.",
             "If the user asks to pause a task but the relevant executor does not support pause, explain that clearly in natural language instead of pretending the pause succeeded.",
             "CRITICAL: Always use the EXACT persona name from the personas list. Never modify, abbreviate, or approximate persona names.",
-        ]
-    )
+    ])
+    return "\n".join(lines)
