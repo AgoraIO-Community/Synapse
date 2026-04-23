@@ -1,4 +1,5 @@
 from fastapi import APIRouter, HTTPException, Request
+from pydantic import BaseModel
 
 from synapse.api.models import DiagnosticTimelineResponse, SessionResponse
 from synapse.observability.schema import LEVEL_PRIORITY
@@ -95,18 +96,14 @@ async def get_session_diagnostic_timeline(
         )
     )
 
-
-from pydantic import BaseModel as _BaseModel
-
-
-class _VoiceTargetBody(_BaseModel):
-    target_persona_id: str | None = None
+class VoiceTargetRequest(BaseModel):
+    target_persona_id: str
 
 
 @router.put("/sessions/{session_id}/voice-target")
 async def set_voice_target(
     session_id: str,
-    body: _VoiceTargetBody,
+    body: VoiceTargetRequest,
     request: Request,
 ):
     container = request.app.state.runtime_container

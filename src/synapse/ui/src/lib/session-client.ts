@@ -448,11 +448,3 @@ export async function setVoiceTarget(sessionId: string, targetPersonaId: string)
     }),
   );
 }
-
-export async function clearVoiceTarget(sessionId: string): Promise<void> {
-  await ensureOk(
-    await fetch(buildHttpUrl(`${API_PREFIX}/sessions/${sessionId}/voice-target`), {
-      method: "DELETE",
-    }),
-  );
-}
