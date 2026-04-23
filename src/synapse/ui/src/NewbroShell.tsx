@@ -18,7 +18,7 @@ import { Sidebar, type PageId } from "./components/newbro/Sidebar";
 import { TopVoiceBar } from "./components/newbro/TopVoiceBar";
 import { buildBroCardModels } from "./components/newbro/adapters";
 import { useVoiceSession } from "./components/newbro/useVoiceSession";
-import type { ExecutorNodeRecord, Persona, SessionSnapshot } from "./types";
+import type { ExecutionRun, ExecutorNodeRecord, Persona, SessionSnapshot, TaskSummary } from "./types";
 
 export type PageNavigator = (page: PageId) => void;
 
@@ -74,6 +74,8 @@ function ShellLoadingPanel() {
 function useNewbroShellState() {
   const [runtimePersonas, setRuntimePersonas] = useState<Persona[]>([]);
   const [executorNodes, setExecutorNodes] = useState<ExecutorNodeRecord[]>([]);
+  const [executionRuns, setExecutionRuns] = useState<ExecutionRun[]>([]);
+  const [taskSummaries, setTaskSummaries] = useState<TaskSummary[]>([]);
   const [communicationPersonaPrompt, setCommunicationPersonaPrompt] = useState("");
   const [activeShellSessionId, setActiveShellSessionId] = useState<string | null>(null);
   const [hasLoadedShellSnapshot, setHasLoadedShellSnapshot] = useState(false);
@@ -89,6 +91,8 @@ function useNewbroShellState() {
   function applySnapshot(snapshot: SessionSnapshot) {
     setRuntimePersonas(snapshot.personas);
     setExecutorNodes(snapshot.executor_nodes ?? []);
+    setExecutionRuns(snapshot.execution_runs ?? []);
+    setTaskSummaries(snapshot.summaries ?? []);
     setCommunicationPersonaPrompt(snapshot.communication_persona_prompt ?? "");
     setHasLoadedShellSnapshot(true);
     setShellError(null);
@@ -226,8 +230,8 @@ function useNewbroShellState() {
   }, [activeShellSessionId]);
 
   const bros = useMemo(
-    () => buildBroCardModels(runtimePersonas, executorNodes),
-    [executorNodes, runtimePersonas],
+    () => buildBroCardModels(runtimePersonas, executorNodes, executionRuns, taskSummaries),
+    [executorNodes, executionRuns, runtimePersonas, taskSummaries],
   );
 
   useEffect(() => {
