@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { RouterProvider } from "@tanstack/react-router";
 import React from "react";
 import App from "../App";
@@ -615,6 +615,111 @@ describe("Newbro voice shell", () => {
     expect(screen.getByText("Vale")).toBeInTheDocument();
     expect(screen.getByText("2 live")).toBeInTheDocument();
     expect(screen.queryByText("Atlas")).not.toBeInTheDocument();
+  });
+
+  it("keeps busy bro card content stable while pressed", async () => {
+    render(<App />);
+
+    const forgeCard = await screen.findByTestId("bro-card-forge");
+    const initialForgeCard = within(forgeCard);
+
+    expect(initialForgeCard.getByText("Current task")).toBeInTheDocument();
+    expect(initialForgeCard.getByText("Prepare execution steps")).toBeInTheDocument();
+    expect(initialForgeCard.getByText("43% prepared")).toBeInTheDocument();
+    expect(initialForgeCard.getByText("Preparing fallback flow if preferred option fails.")).toBeInTheDocument();
+
+    fireEvent.pointerDown(forgeCard);
+
+    await waitFor(() => expect(screen.getByTestId("bro-card-forge")).toHaveAttribute("aria-pressed", "true"));
+    const pressedForgeCard = within(screen.getByTestId("bro-card-forge"));
+
+    expect(screen.getByTestId("bro-card-forge").className).toContain("bg-neutral-950");
+    expect(pressedForgeCard.getByText("preview")).toBeInTheDocument();
+    expect(pressedForgeCard.getByTestId("talking-bars")).toBeInTheDocument();
+    expect(pressedForgeCard.getByText("Current task")).toBeInTheDocument();
+    expect(pressedForgeCard.getByText("Prepare execution steps")).toBeInTheDocument();
+    expect(pressedForgeCard.getByText("43% prepared")).toBeInTheDocument();
+    expect(pressedForgeCard.getByText("Preparing fallback flow if preferred option fails.")).toBeInTheDocument();
+    expect(pressedForgeCard.queryByText("Previewing Forge")).not.toBeInTheDocument();
+    expect(pressedForgeCard.queryByText("Talking to Forge")).not.toBeInTheDocument();
+    expect(pressedForgeCard.queryByText("mic on")).not.toBeInTheDocument();
+
+    fireEvent.pointerUp(screen.getByTestId("bro-card-forge"));
+
+    const releasedForgeCard = within(screen.getByTestId("bro-card-forge"));
+    expect(screen.getByTestId("bro-card-forge").className).not.toContain("bg-neutral-950");
+    expect(releasedForgeCard.queryByText("preview")).not.toBeInTheDocument();
+    expect(releasedForgeCard.queryByTestId("talking-bars")).not.toBeInTheDocument();
+    expect(releasedForgeCard.getByText("busy")).toBeInTheDocument();
+    expect(releasedForgeCard.getByText("Current task")).toBeInTheDocument();
+    expect(releasedForgeCard.getByText("Prepare execution steps")).toBeInTheDocument();
+    expect(releasedForgeCard.getByText("43% prepared")).toBeInTheDocument();
+  });
+
+  it("keeps idle bro card content stable while pressed", async () => {
+    render(<App />);
+
+    const scoutCard = await screen.findByTestId("bro-card-scout");
+    const initialScoutCard = within(scoutCard);
+
+    expect(initialScoutCard.getByText("Current state")).toBeInTheDocument();
+    expect(initialScoutCard.getByText("Waiting for assignment")).toBeInTheDocument();
+    expect(initialScoutCard.getByText("Can verify timing once Travel Laptop reconnects.")).toBeInTheDocument();
+    expect(initialScoutCard.getByText("Bound node is offline and needs to reconnect.")).toBeInTheDocument();
+
+    fireEvent.pointerDown(scoutCard);
+
+    await waitFor(() => expect(screen.getByTestId("bro-card-scout")).toHaveAttribute("aria-pressed", "true"));
+    const pressedScoutCard = within(screen.getByTestId("bro-card-scout"));
+
+    expect(screen.getByTestId("bro-card-scout").className).toContain("bg-neutral-950");
+    expect(pressedScoutCard.getByText("preview")).toBeInTheDocument();
+    expect(pressedScoutCard.getByTestId("talking-bars")).toBeInTheDocument();
+    expect(pressedScoutCard.getByText("Current state")).toBeInTheDocument();
+    expect(pressedScoutCard.getByText("Waiting for assignment")).toBeInTheDocument();
+    expect(pressedScoutCard.getByText("Can verify timing once Travel Laptop reconnects.")).toBeInTheDocument();
+    expect(pressedScoutCard.getByText("Bound node is offline and needs to reconnect.")).toBeInTheDocument();
+    expect(pressedScoutCard.queryByText("Previewing Scout")).not.toBeInTheDocument();
+    expect(pressedScoutCard.queryByText("Talking to Scout")).not.toBeInTheDocument();
+
+    fireEvent.pointerUp(screen.getByTestId("bro-card-scout"));
+
+    const releasedScoutCard = within(screen.getByTestId("bro-card-scout"));
+    expect(screen.getByTestId("bro-card-scout").className).not.toContain("bg-neutral-950");
+    expect(releasedScoutCard.queryByText("preview")).not.toBeInTheDocument();
+    expect(releasedScoutCard.queryByTestId("talking-bars")).not.toBeInTheDocument();
+    expect(releasedScoutCard.getByText("idle")).toBeInTheDocument();
+    expect(releasedScoutCard.getByText("Current state")).toBeInTheDocument();
+    expect(releasedScoutCard.getByText("Waiting for assignment")).toBeInTheDocument();
+    expect(releasedScoutCard.getByText("Can verify timing once Travel Laptop reconnects.")).toBeInTheDocument();
+  });
+
+  it("shows mic on in the pressed card when the voice session is connected", async () => {
+    render(<App />);
+
+    await screen.findByText("Session session-1");
+    fireEvent.click(await screen.findByTestId("voice-session-start"));
+    await waitFor(() => expect(connectorMock.activateConnectorSession).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText("Voice session live")).toBeInTheDocument();
+
+    const forgeCard = await screen.findByTestId("bro-card-forge");
+    fireEvent.pointerDown(forgeCard);
+
+    const pressedForgeCard = within(screen.getByTestId("bro-card-forge"));
+    expect(screen.getByTestId("bro-card-forge").className).toContain("bg-neutral-950");
+    expect(pressedForgeCard.getByText("mic on")).toBeInTheDocument();
+    expect(pressedForgeCard.queryByText("preview")).not.toBeInTheDocument();
+    expect(pressedForgeCard.getByTestId("talking-bars")).toBeInTheDocument();
+    expect(pressedForgeCard.getByText("Current task")).toBeInTheDocument();
+    expect(pressedForgeCard.getByText("Prepare execution steps")).toBeInTheDocument();
+    expect(pressedForgeCard.getByText("Preparing fallback flow if preferred option fails.")).toBeInTheDocument();
+    expect(pressedForgeCard.queryByText("Talking to Forge")).not.toBeInTheDocument();
+
+    fireEvent.pointerUp(screen.getByTestId("bro-card-forge"));
+
+    const releasedForgeCard = within(screen.getByTestId("bro-card-forge"));
+    expect(releasedForgeCard.queryByText("mic on")).not.toBeInTheDocument();
+    expect(releasedForgeCard.getByText("busy")).toBeInTheDocument();
   });
 
   it("loads the Bros page directly from the URL", async () => {
