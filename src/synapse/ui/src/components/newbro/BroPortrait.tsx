@@ -121,7 +121,7 @@ export function BroPortrait({
       <div
         className={`absolute right-2 top-2 h-2.5 w-2.5 rounded-full ring-2 ${
           talking ? "ring-neutral-900 bg-white" : "ring-white"
-        } ${bro.status === "busy" ? "bg-neutral-900" : "bg-neutral-300"}`}
+        } ${bro.status === "busy" ? "bg-emerald-500" : "bg-neutral-300"}`}
       />
     </div>
   );

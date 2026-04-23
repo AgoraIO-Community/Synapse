@@ -70,7 +70,7 @@ export function BroProgress({
         }`}
       >
         <div
-          className={`h-full rounded-full ${talking ? "bg-white/75" : "bg-neutral-800"}`}
+          className={`h-full rounded-full ${talking ? "bg-white/75" : "bg-emerald-500"}`}
           style={{ width: `${bro.progress}%` }}
         />
       </div>

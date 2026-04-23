@@ -74,7 +74,7 @@ export function BroCard({
                     isBusy
                       ? talking
                         ? "border border-white/15 bg-white/10 text-white"
-                        : "border border-neutral-200 bg-neutral-100 text-neutral-700"
+                        : "border border-emerald-200 bg-emerald-50 text-emerald-700"
                       : talking
                         ? "border border-white/15 bg-white/10 text-white"
                         : "border border-neutral-200 bg-[#f6f5f2] text-neutral-600"
