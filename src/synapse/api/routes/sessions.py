@@ -1,4 +1,5 @@
 from fastapi import APIRouter, HTTPException, Request
+from pydantic import BaseModel
 
 from synapse.api.models import DiagnosticTimelineResponse, SessionResponse
 from synapse.observability.schema import LEVEL_PRIORITY
@@ -94,3 +95,35 @@ async def get_session_diagnostic_timeline(
             limit=limit,
         )
     )
+
+class VoiceTargetRequest(BaseModel):
+    target_persona_id: str
+
+
+@router.put("/sessions/{session_id}/voice-target")
+async def set_voice_target(
+    session_id: str,
+    body: VoiceTargetRequest,
+    request: Request,
+):
+    container = request.app.state.runtime_container
+    try:
+        session = container.get_session(session_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    session.set_voice_target(body.target_persona_id)
+    return {"target_persona_id": body.target_persona_id}
+
+
+@router.delete("/sessions/{session_id}/voice-target")
+async def clear_voice_target(
+    session_id: str,
+    request: Request,
+):
+    container = request.app.state.runtime_container
+    try:
+        session = container.get_session(session_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    session.set_voice_target(None)
+    return {"target_persona_id": None}

@@ -75,6 +75,7 @@ class PendingMessageRequest:
     request_id: str
     user_text: str
     completion: asyncio.Future[CommunicationTurnResult]
+    target_persona_id: str | None = None
 
 
 @dataclass(slots=True)
@@ -103,6 +104,7 @@ class SessionRuntime:
     _next_sequence: int = field(default=1, init=False, repr=False)
     _active_assistant_turns: int = field(default=0, init=False, repr=False)
     _diagnostic_seen_entities: set[tuple[str, str | None]] = field(default_factory=set, init=False, repr=False)
+    _voice_target_persona_id: str | None = field(default=None, init=False, repr=False)
 
     async def snapshot(self) -> SessionSnapshot:
         tasks = await self.blackboard.list_tasks()
@@ -145,6 +147,14 @@ class SessionRuntime:
                 await self.blackboard.get_session_config("communication_persona_prompt") or ""
             ),
         )
+    @property
+    def voice_target_persona_id(self) -> str | None:
+        return self._voice_target_persona_id
+
+    def set_voice_target(self, persona_id: str | None) -> None:
+        self._voice_target_persona_id = persona_id
+
+
 
     async def conversation_snapshot(self) -> ConversationSnapshot:
         history = [
@@ -218,6 +228,7 @@ class SessionRuntime:
         user_text: str,
         *,
         source: Literal["user", "connector"] = "user",
+        target_persona_id: str | None = None,
         start_processing: bool = True,
     ) -> tuple[str, asyncio.Future[CommunicationTurnResult]]:
         user_entry = self.communication_brain.append_user_message(self.session_id, user_text)
@@ -232,6 +243,7 @@ class SessionRuntime:
                 request_id=request_id,
                 user_text=user_text,
                 completion=completion,
+                target_persona_id=target_persona_id,
             )
         )
         self._wake_notification_pump()
@@ -831,6 +843,7 @@ class SessionRuntime:
                         result = await self.communication_brain.generate_reply(
                             self.session_id,
                             request.user_text,
+                            target_persona_id=request.target_persona_id,
                             on_text_delta=lambda delta: self._broadcast_event(
                                 AssistantResponseDeltaStreamEvent(
                                     sequence=self._next_event_sequence(),
@@ -849,6 +862,7 @@ class SessionRuntime:
                         result = await self.communication_brain.generate_reply(
                             self.session_id,
                             request.user_text,
+                            target_persona_id=request.target_persona_id,
                             on_trace=self._record_llm_trace,
                             on_tool_call=self._record_tool_call,
                         )
@@ -900,6 +914,9 @@ class SessionRuntime:
                 self.schedule_execution()
                 if not request.completion.done():
                     request.completion.set_result(result)
+                # Auto-clear voice target after processing a targeted message
+                if request.target_persona_id and self._voice_target_persona_id is not None:
+                    self._voice_target_persona_id = None
         finally:
             self._active_assistant_turns = max(0, self._active_assistant_turns - 1)
             self._wake_notification_pump()

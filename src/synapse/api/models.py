@@ -63,6 +63,7 @@ class SendMessageSocketAction(BaseModel):
     request_id: str
     text: str
     source: Literal["user", "connector"] = "user"
+    target_persona_id: str | None = None
 
 
 class SendCommandSocketAction(BaseModel):
