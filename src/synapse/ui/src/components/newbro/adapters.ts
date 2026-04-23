@@ -1,3 +1,4 @@
+import type { ExecutionRun, TaskSummary } from "../../types";
 import type { BroCardModel, RuntimeExecutorNodeInput, RuntimePersonaInput } from "./types";
 import { sampleBros } from "./data";
 
@@ -74,17 +75,62 @@ function buildIdleNote(liveState: BroCardModel["liveState"], nodeName: string | 
 export function buildBroCardModels(
   personas?: RuntimePersonaInput[] | null,
   executorNodes?: RuntimeExecutorNodeInput[] | null,
+  executionRuns?: ExecutionRun[] | null,
+  summaries?: TaskSummary[] | null,
 ): BroCardModel[] {
   if (!personas || personas.length === 0) {
     return sampleBros;
   }
   const nodesById = new Map((executorNodes ?? []).map((node) => [node.node_id, node]));
+  const runsByTaskId = new Map<string, ExecutionRun>();
+  for (const run of executionRuns ?? []) {
+    const existing = runsByTaskId.get(run.task_id);
+    if (!existing || run.run_revision > existing.run_revision) {
+      runsByTaskId.set(run.task_id, run);
+    }
+  }
+  const summaryByTaskId = new Map((summaries ?? []).map((s) => [s.task_id, s]));
 
   return personas.map((persona) => {
     const busy = persona.status === "busy" || persona.current_task_id !== null;
-    const progress = busy ? 42 + (hashValue(persona.persona_id) % 37) : 0;
     const nodeName = persona.executor_node_id ? (nodesById.get(persona.executor_node_id)?.name ?? null) : null;
     const liveState = buildLiveState(persona, nodesById);
+
+    // Pull real execution data when available
+    const activeRun = persona.current_task_id ? runsByTaskId.get(persona.current_task_id) : null;
+    const activeSummary = persona.current_task_id ? summaryByTaskId.get(persona.current_task_id) : null;
+
+    const progressText = activeRun?.latest_progress_message ?? activeRun?.output_summary ?? null;
+    const summaryText = activeSummary?.conversational_summary ?? activeSummary?.operational_summary ?? null;
+    const runStatus = activeRun?.status ?? null;
+
+    // Build progress details from real data
+    let progressDetails: string[];
+    let taskTitle: string;
+    let progressLabel: string;
+    let progress: number;
+
+    if (busy && (progressText || summaryText)) {
+      const details: string[] = [];
+      if (progressText) details.push(progressText);
+      if (summaryText && summaryText !== progressText) details.push(summaryText);
+      if (activeRun?.block_reason) details.push(`Blocked: ${activeRun.block_reason}`);
+      progressDetails = details.length > 0 ? details : buildBusyDetails(persona, liveState, nodeName);
+      taskTitle = activeSummary?.latest_user_visible_status ?? "Handle active runtime work";
+      progressLabel = runStatus === "running" ? "Running" : runStatus ?? "Syncing";
+      progress = runStatus === "completed" ? 100 : runStatus === "running" ? 60 : 30;
+    } else if (busy) {
+      progressDetails = buildBusyDetails(persona, liveState, nodeName);
+      taskTitle = "Handle active runtime work";
+      progress = 42 + (hashValue(persona.persona_id) % 37);
+      progressLabel = `${progress}% synced`;
+    } else {
+      progressDetails = buildIdleDetails(liveState, nodeName);
+      taskTitle = "Waiting for assignment";
+      progress = 0;
+      progressLabel = "Idle";
+    }
+
     return {
       id: persona.persona_id,
       name: persona.name.trim() || "Unnamed Bro",
@@ -94,15 +140,11 @@ export function buildBroCardModels(
       executorNodeId: persona.executor_node_id,
       nodeName,
       avatarType: selectAvatarType(persona),
-      taskTitle: busy ? "Handle active runtime work" : "Waiting for assignment",
+      taskTitle,
       progress,
-      progressLabel: busy ? `${progress}% synced` : "Idle",
-      progressDetails: busy
-        ? buildBusyDetails(persona, liveState, nodeName)
-        : buildIdleDetails(liveState, nodeName),
-      idleNote: busy
-        ? buildIdleNote(liveState, nodeName)
-        : buildIdleNote(liveState, nodeName),
+      progressLabel,
+      progressDetails,
+      idleNote: buildIdleNote(liveState, nodeName),
       source: "runtime",
     };
   });
