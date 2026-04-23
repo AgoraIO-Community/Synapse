@@ -23,6 +23,7 @@ async def submit_message(
     _, completion = await session.submit_message(
         request_id,
         request.text,
+        source=request.source,
         start_processing=False,
     )
     session.observability.api.message_accepted(

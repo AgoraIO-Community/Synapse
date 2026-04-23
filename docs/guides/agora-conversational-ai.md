@@ -102,8 +102,9 @@ The main workbench under `src/synapse/ui/` now supports an explicit `Text` /
   browser does not provide an explicit channel override
 - tears down only the live voice transport and connector binding on `Stop`
   without swapping the shell to a different Synapse session
-- uses browser-local transcript/state from the Agora toolkit for the left-pane
-  voice transcript feed while the workbench follows the bound Synapse session
+- uses Synapse conversation history plus Synapse user/assistant stream events
+  for the left-pane interaction memory while the Agora toolkit remains
+  responsible for browser-local RTC/RTM/session behavior
 
 ## Run
 

@@ -60,6 +60,7 @@ from .models import (
     SessionSnapshot,
     SessionStreamEventBase,
     SnapshotStreamEvent,
+    UserMessageAppendedStreamEvent,
 )
 
 
@@ -215,9 +216,15 @@ class SessionRuntime:
         request_id: str,
         user_text: str,
         *,
+        source: str = "user",
         start_processing: bool = True,
     ) -> tuple[str, asyncio.Future[CommunicationTurnResult]]:
         user_entry = self.communication_brain.append_user_message(self.session_id, user_text)
+        await self._broadcast_user_message_append(
+            message_id=user_entry.message_id,
+            text=user_text,
+            source=source,
+        )
         completion = asyncio.get_running_loop().create_future()
         await self._message_queue.put(
             PendingMessageRequest(
@@ -1030,6 +1037,22 @@ class SessionRuntime:
                 role="assistant",
                 text=text,
                 source="notification" if source == "notification" else "system_fallback",
+            )
+        )
+
+    async def _broadcast_user_message_append(
+        self,
+        *,
+        message_id: str,
+        text: str,
+        source: str,
+    ) -> None:
+        await self._broadcast_event(
+            UserMessageAppendedStreamEvent(
+                sequence=self._next_event_sequence(),
+                message_id=message_id,
+                text=text,
+                source="connector" if source == "connector" else "user",
             )
         )
 

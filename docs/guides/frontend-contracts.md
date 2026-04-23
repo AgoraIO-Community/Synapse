@@ -33,6 +33,11 @@ Preferred direction:
   frontend should attempt to resume it on load before creating a fresh session
 - when a fresh session is created or resume falls back, the frontend should
   replace the current URL `sid` with the active session id
+- the frontend may hydrate user-visible conversation history from
+  `GET /api/sessions/{session_id}/conversation` when a session opens, but the
+  live pane should then continue from Synapse user-message and assistant stream
+  events instead of repeatedly refetching, locally echoing user turns, or
+  using browser transcript
 - voice mode attaches its connector binding to that already-active shell
   session instead of switching the shell to a connector-created session
 - Bro liveness is derived in the frontend from `persona.executor_node_id`
@@ -50,7 +55,7 @@ User-visible conversation history should contain only:
 - assistant replies
 - emitted proactive messages
 
-Voice transcript from the Agora toolkit is not part of that durable conversation
-history projection. It remains a separate browser-local feed for voice mode
-while the workbench and task state come from the active Synapse session
-websocket.
+Voice transcript from the Agora toolkit is not part of that conversation
+projection. It remains a separate browser-local voice-toolkit feed, while the
+left-pane interaction memory and the rest of the workbench come from Synapse
+session state.

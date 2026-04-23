@@ -55,6 +55,31 @@ const voiceHarness = vi.hoisted(() => {
   return state;
 });
 
+const socketHarness = vi.hoisted(() => {
+  const state = {
+    handlers: null as
+      | {
+          onOpen: () => void;
+          onMessage: (event: any) => void;
+          onClose: () => void;
+          onError: () => void;
+        }
+      | null,
+    socket: {
+      readyState: 1,
+      close: vi.fn(),
+    },
+    emitMessage(event: any) {
+      state.handlers?.onMessage(event);
+    },
+    reset() {
+      state.handlers = null;
+      state.socket.close.mockClear();
+    },
+  };
+  return state;
+});
+
 const clientMock = vi.hoisted(() => ({
   createSession: vi.fn(),
   getSessionSnapshot: vi.fn(),
@@ -62,7 +87,10 @@ const clientMock = vi.hoisted(() => ({
     session_id: sessionId,
     conversation_history: [],
   })),
-  openSessionStream: vi.fn(() => ({ close: vi.fn() })),
+  openSessionStream: vi.fn((_sessionId: string, handlers: any) => {
+    socketHarness.handlers = handlers;
+    return socketHarness.socket as any;
+  }),
   sendSocketMessage: vi.fn(),
   createPersona: vi.fn(),
   updatePersona: vi.fn(),
@@ -200,6 +228,7 @@ describe("Newbro voice shell", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     voiceHarness.reset();
+    socketHarness.reset();
     window.history.replaceState({}, "", "/");
     clientMock.createSession.mockResolvedValue({ session_id: "session-1" });
     clientMock.getSessionSnapshot.mockImplementation(async (sessionId: string) => ({
@@ -241,6 +270,23 @@ describe("Newbro voice shell", () => {
     await waitFor(() => expect(clientMock.createSession).toHaveBeenCalled());
     await waitFor(() => expect(clientMock.getSessionSnapshot).toHaveBeenCalledWith("session-1"));
     expect(window.location.search).toBe("?sid=session-1");
+  });
+
+  it("hydrates interaction memory from durable history when the page opens", async () => {
+    clientMock.getConversationSnapshot.mockResolvedValueOnce({
+      session_id: "session-1",
+      conversation_history: [
+        { role: "assistant", text: "Hello from Synapse.", message_id: "msg-1" },
+        { role: "user", text: "Please summarize the plan.", message_id: "msg-2" },
+      ],
+    } as any);
+
+    render(<App />);
+
+    expect(await screen.findByText("Hello from Synapse.")).toBeInTheDocument();
+    expect(screen.getByText("Please summarize the plan.")).toBeInTheDocument();
+    expect(screen.queryByText("Transcript will appear here.")).not.toBeInTheDocument();
+    expect(screen.getByText("2 transcript turns")).toBeInTheDocument();
   });
 
   it("resumes the shell session from the sid query parameter", async () => {
@@ -291,7 +337,7 @@ describe("Newbro voice shell", () => {
     expect(window.location.search).toBe("?sid=session-2");
   });
 
-  it("starts voice mode and renders live transcript turns inside interaction memory", async () => {
+  it("renders Synapse user and assistant stream events in interaction memory", async () => {
     render(<App />);
 
     await screen.findByText("Session session-1");
@@ -305,6 +351,7 @@ describe("Newbro voice shell", () => {
     await waitFor(() => expect(connectorMock.activateConnectorSession).toHaveBeenCalledTimes(1));
     expect(clientMock.getSessionSnapshot).not.toHaveBeenCalledWith("voice-session-1");
     expect(await screen.findByText("Voice session live")).toBeInTheDocument();
+    expect(screen.getByText("Transcript will appear here.")).toBeInTheDocument();
 
     await act(async () => {
       voiceHarness.voiceEvents.TRANSCRIPT_UPDATED?.([
@@ -312,16 +359,49 @@ describe("Newbro voice shell", () => {
         { turn_id: "turn-2", uid: "101", text: "Please create a follow-up task.", status: "final" },
       ]);
     });
+    expect(screen.queryByText("Hello. How can I help you today?")).not.toBeInTheDocument();
+    expect(screen.getByText("Transcript will appear here.")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByPlaceholderText("Type a message…"), {
+      target: { value: "Please create a follow-up task." },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    expect(clientMock.sendSocketMessage).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText("Please create a follow-up task.")).not.toBeInTheDocument();
+
+    await act(async () => {
+      socketHarness.emitMessage({
+        type: "user_message_appended",
+        message_id: "msg-user-1",
+        role: "user",
+        text: "Please create a follow-up task.",
+        source: "user",
+      });
+    });
+
+    expect(await screen.findByText("Please create a follow-up task.")).toBeInTheDocument();
+    expect(screen.getByText("Me")).toBeInTheDocument();
+
+    await act(async () => {
+      socketHarness.emitMessage({
+        type: "assistant_response_completed",
+        request_id: "req-1",
+        message_id: "msg-assistant-1",
+        reply_text: "Hello. How can I help you today?",
+        conversational_act: "model_reply",
+        affected_task_ids: [],
+      });
+    });
 
     expect(await screen.findByText("Hello. How can I help you today?")).toBeInTheDocument();
-    expect(screen.getByText("Please create a follow-up task.")).toBeInTheDocument();
     expect(screen.getByText("NewBro")).toBeInTheDocument();
-    expect(screen.getByText("Me")).toBeInTheDocument();
+    expect(screen.queryByText("Transcript will appear here.")).not.toBeInTheDocument();
     expect(screen.getByText("2 transcript turns")).toBeInTheDocument();
     expect(screen.getByText("Session session-1")).toBeInTheDocument();
   });
 
-  it("keeps the last transcript visible after stop without rebinding the shell session", async () => {
+  it("does not populate interaction memory from browser transcript events alone", async () => {
     render(<App />);
 
     await screen.findByText("Session session-1");
@@ -330,8 +410,47 @@ describe("Newbro voice shell", () => {
 
     await act(async () => {
       voiceHarness.voiceEvents.TRANSCRIPT_UPDATED?.([
-        { turn_id: "turn-1", uid: "9001", text: "Hello. How can I help you today?", status: "final" },
+        { turn_id: "turn-1", uid: "101", text: "I said this locally.", status: "final" },
+        { turn_id: "turn-2", uid: "9001", text: "Toolkit assistant echo.", status: "final" },
       ]);
+    });
+
+    expect(screen.queryByText("I said this locally.")).not.toBeInTheDocument();
+    expect(screen.queryByText("Toolkit assistant echo.")).not.toBeInTheDocument();
+    expect(screen.getByText("Transcript will appear here.")).toBeInTheDocument();
+  });
+
+  it("keeps the last conversation visible after stop without rebinding the shell session", async () => {
+    render(<App />);
+
+    await screen.findByText("Session session-1");
+    fireEvent.click(await screen.findByTestId("voice-session-start"));
+    await waitFor(() => expect(connectorMock.activateConnectorSession).toHaveBeenCalledTimes(1));
+
+    fireEvent.change(screen.getByPlaceholderText("Type a message…"), {
+      target: { value: "Please create a follow-up task." },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    await act(async () => {
+      socketHarness.emitMessage({
+        type: "user_message_appended",
+        message_id: "msg-user-1",
+        role: "user",
+        text: "Please create a follow-up task.",
+        source: "user",
+      });
+    });
+
+    await act(async () => {
+      socketHarness.emitMessage({
+        type: "assistant_response_completed",
+        request_id: "req-1",
+        message_id: "msg-assistant-1",
+        reply_text: "Hello. How can I help you today?",
+        conversational_act: "model_reply",
+        affected_task_ids: [],
+      });
     });
 
     fireEvent.click(screen.getByTestId("voice-session-stop"));
@@ -341,6 +460,7 @@ describe("Newbro voice shell", () => {
     });
 
     expect(screen.getByText("Hello. How can I help you today?")).toBeInTheDocument();
+    expect(screen.getByText("Please create a follow-up task.")).toBeInTheDocument();
     expect(clientMock.createSession).toHaveBeenCalledTimes(1);
     expect(clientMock.getSessionSnapshot).toHaveBeenCalledTimes(1);
     expect(screen.queryByText("Last voice session")).not.toBeInTheDocument();

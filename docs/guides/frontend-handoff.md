@@ -2,7 +2,7 @@
 
 This document records the current handoff state for `src/synapse/ui/` after the
 root shell was rebuilt to match the provided JSX layout and then wired to a
-real voice transcript flow.
+Synapse-backed interaction-memory flow.
 
 ## Current Product State
 
@@ -35,7 +35,8 @@ Current behavior:
 - pressing `Start` prepares and activates a gateway-backed voice session
 - the connector attaches that voice session to the existing shell
   `synapse_session_id`
-- browser-local Agora transcript turns stream into `Interaction memory`
+- `Interaction memory` hydrates from Synapse durable conversation history on
+  open and then continues from Synapse user-message and assistant stream events
 - pressing `Stop` tears the voice session down without changing the shell
 - the stopped transcript remains visible until the next live session replaces it
 - left-sidebar route navigation preserves the active `sid`
@@ -81,5 +82,6 @@ chosen first.
 - Keep backend and protocol contracts unchanged unless the task explicitly
   requires runtime changes.
 - Preserve the componentized structure under `src/components/newbro/`.
-- Keep voice transcript as a browser-local feed; do not redefine it as durable
-  conversation history without an explicit product decision.
+- Keep browser-local voice toolkit transcript separate from the adopted
+  interaction-memory contract; the left pane now follows Synapse conversation
+  state instead of Agora transcript turns.

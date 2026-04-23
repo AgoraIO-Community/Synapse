@@ -15,6 +15,7 @@ class SessionResponse(BaseModel):
 
 class MessageRequest(BaseModel):
     text: str
+    source: Literal["user", "connector"] = "user"
 
 
 class ToolInvocationSummary(BaseModel):
@@ -61,6 +62,7 @@ class SendMessageSocketAction(BaseModel):
     type: Literal["send_message"] = "send_message"
     request_id: str
     text: str
+    source: Literal["user", "connector"] = "user"
 
 
 class SendCommandSocketAction(BaseModel):

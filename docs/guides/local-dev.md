@@ -39,9 +39,8 @@ Typical local real-executor flow:
 ./synapse executor run
 ```
 
-`./synapse setup` configures the main control plane, including whether detached
-executors are enabled and which executor families the control plane should
-expect.
+`./synapse setup` configures the main control plane plus optional connector
+modules in the shared `~/.synapse/.env` and `~/.synapse/config.yaml` files.
 `./synapse executor setup` configures the detached executor node itself,
 including local Codex or ACPX command settings plus the enabled executor
 families this client machine should advertise.

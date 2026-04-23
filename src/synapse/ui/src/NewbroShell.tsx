@@ -224,13 +224,29 @@ function useNewbroShellState() {
           startTransition(() => applySnapshot(event.snapshot));
           return;
         }
+        if (event.type === "user_message_appended") {
+          const e = event as unknown as { message_id: string; text: string };
+          startTransition(() => {
+            setChatMessages((prev) => {
+              if (prev.some((m) => m.id === e.message_id)) return prev;
+              return [
+                ...prev,
+                { role: "user" as const, text: e.text, id: e.message_id },
+              ];
+            });
+          });
+          return;
+        }
         if (event.type === "assistant_response_completed") {
           const e = event as unknown as { message_id: string; reply_text: string };
           startTransition(() => {
-            setChatMessages((prev) => [
-              ...prev,
-              { role: "assistant" as const, text: e.reply_text, id: e.message_id },
-            ]);
+            setChatMessages((prev) => {
+              if (prev.some((m) => m.id === e.message_id)) return prev;
+              return [
+                ...prev,
+                { role: "assistant" as const, text: e.reply_text, id: e.message_id },
+              ];
+            });
           });
           return;
         }
@@ -283,7 +299,6 @@ function useNewbroShellState() {
     if (!socket || socket.readyState !== WebSocket.OPEN) return false;
     const requestId = `msg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     sendSocketMessage(socket, requestId, text);
-    setChatMessages((prev) => [...prev, { role: "user" as const, text, id: requestId }]);
     return true;
   };
 
@@ -388,7 +403,7 @@ export function HomeShellPage({ onNavigate }: { onNavigate: PageNavigator }) {
         voicePhase={shell.voiceSession.phase}
         error={shell.voiceSession.error}
         isMicMuted={shell.voiceSession.isMicMuted}
-        transcriptCount={shell.voiceSession.transcript.filter((item) => Boolean(item.text?.trim())).length}
+        transcriptCount={shell.chatMessages.length}
         sessionId={shell.activeShellSessionId}
         onStart={() => {
           void shell.start(shell.activeShellSessionId);
@@ -412,43 +427,17 @@ export function HomeShellPage({ onNavigate }: { onNavigate: PageNavigator }) {
       {shell.hasLoadedShellSnapshot ? (
         <div className="grid min-h-0 flex-1 grid-cols-1 gap-8 px-8 py-8 lg:grid-cols-[minmax(220px,0.56fr)_minmax(840px,1.74fr)] xl:px-10 xl:py-10">
           <section className="flex min-h-0 flex-col pt-4">
-            {/* Scrollable conversation area */}
             <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
               <ConversationMemory
                 phase={shell.voiceSession.phase}
-                transcript={shell.voiceSession.transcript}
-                transcriptSession={shell.voiceSession.transcriptSession}
+                messages={shell.chatMessages.map((msg) => ({
+                  role: msg.role,
+                  text: msg.text,
+                  message_id: msg.id,
+                }))}
                 error={shell.voiceSession.error}
-                lastTranscriptUpdateAt={shell.voiceSession.lastTranscriptUpdateAt}
                 lastToolkitMessage={shell.voiceSession.lastToolkitMessage}
               />
-
-              {/* Text chat messages */}
-              {shell.chatMessages.length > 0 && (
-                <div className="mt-4 max-w-[400px] space-y-2">
-                  {shell.chatMessages.map((msg) => (
-                    <div
-                      key={msg.id}
-                      className={msg.role === "user" ? "ml-8" : "mr-8"}
-                    >
-                      <div
-                        className={`rounded-[22px] border px-4 py-3 ${
-                          msg.role === "user"
-                            ? "rounded-tr-md border-neutral-200 bg-white"
-                            : "rounded-tl-md border-neutral-200 bg-[#f1ede5]"
-                        }`}
-                      >
-                        <div className="mb-1 text-[11px] uppercase tracking-[0.18em] text-neutral-400">
-                          {msg.role === "user" ? "Me" : "NewBro"}
-                        </div>
-                        <div className="whitespace-pre-wrap text-[13px] leading-6 text-neutral-800">
-                          {msg.text}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
             </div>
 
             {/* Pinned input */}

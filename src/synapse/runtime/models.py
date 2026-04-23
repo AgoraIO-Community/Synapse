@@ -70,6 +70,14 @@ class ActionRejectedStreamEvent(SessionStreamEventBase):
     message: str
 
 
+class UserMessageAppendedStreamEvent(SessionStreamEventBase):
+    type: Literal["user_message_appended"] = "user_message_appended"
+    message_id: str
+    role: Literal["user"] = "user"
+    text: str
+    source: Literal["user", "connector"]
+
+
 class AssistantResponseStartedStreamEvent(SessionStreamEventBase):
     type: Literal["assistant_response_started"] = "assistant_response_started"
     request_id: str

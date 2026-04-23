@@ -61,8 +61,10 @@ Current behavior:
   `Copy connect command` action on ordinary node cards
 - sidebar navigation preserves the current `sid` query parameter across
   `Home`, `Bros`, `Nodes`, and `Settings`
-- `Interaction memory` remains a browser-local live transcript surface driven by
-  the Agora toolkit
+- `Interaction memory` hydrates from Synapse durable conversation history when
+  the page/session opens, then continues from Synapse user-message and
+  assistant stream events instead of relying on local user echo or
+  browser-local Agora transcript turns
 - pressing `Start` prepares a connector-backed voice session against the
   current shell `session_id`, so the voice binding attaches to the existing
   Synapse session instead of swapping the shell to a new one
@@ -97,8 +99,9 @@ The visual language should stay close to the reference shell:
 ## Constraints
 
 - Do not change backend or protocol contracts for cosmetic reasons.
-- Keep the transport/runtime separation intact: voice transcript stays a
-  browser-local feed while shell state comes from Synapse projections.
+- Keep the transport/runtime separation intact: the left-pane interaction
+  memory comes from Synapse conversation state, while the voice connector owns
+  RTC/RTM/session lifecycle and browser-local microphone/media behavior.
 - Keep `example-ui/` separate from the main frontend.
 - Do not reintroduce the old chat/workbench root experience unless a later task
   explicitly broadens scope.

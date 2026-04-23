@@ -137,6 +137,7 @@ async def test_session_stream_accepts_message_actions_and_keeps_snapshot_events(
             events = await _receive_until(
                 websocket,
                 lambda items: any(item["type"] == "assistant_response_completed" for item in items)
+                and any(item["type"] == "user_message_appended" for item in items)
                 and sum(1 for item in items if item["type"] == "snapshot") >= 2,
             )
 
@@ -144,6 +145,7 @@ async def test_session_stream_accepts_message_actions_and_keeps_snapshot_events(
 
     event_types = [event["type"] for event in events]
     assert "action_accepted" in event_types
+    assert "user_message_appended" in event_types
     assert "assistant_response_started" in event_types
     assert "assistant_response_delta" in event_types
     assert "assistant_response_completed" in event_types
@@ -153,7 +155,55 @@ async def test_session_stream_accepts_message_actions_and_keeps_snapshot_events(
 
     final_snapshot = [event["snapshot"] for event in events if event["type"] == "snapshot"][-1]
     assert len(final_snapshot["tasks"]) == 1
+    appended = [event for event in events if event["type"] == "user_message_appended"]
+    assert appended[-1]["role"] == "user"
+    assert appended[-1]["text"] == "Check flights"
+    assert appended[-1]["source"] == "user"
     assert conversation["conversation_history"][-1]["text"] == "I'll take care of that."
+
+
+@pytest.mark.anyio
+async def test_http_messages_emit_user_message_appended_to_stream_subscribers():
+    app = create_app()
+    app.state.runtime_container = RuntimeContainer(
+        communication_model=ScriptedCommunicationModel(
+            {
+                "__default__": ScriptedPlan(
+                    conversational_act="model_reply",
+                    reply_override="Noted.",
+                )
+            }
+        ),
+        settings=Settings(),
+    )
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        session_id = (await client.post("/api/sessions")).json()["session_id"]
+
+        async with ASGIWebSocketSession(app, f"/api/sessions/{session_id}/stream") as websocket:
+            initial_event = await websocket.receive_json()
+            assert initial_event["type"] == "snapshot"
+
+            message_response = await client.post(
+                f"/api/sessions/{session_id}/messages",
+                json={"text": "Hello from HTTP"},
+            )
+            assert message_response.status_code == 200
+
+            events = await _receive_until(
+                websocket,
+                lambda items: any(item["type"] == "user_message_appended" for item in items)
+                and any(item["type"] == "assistant_response_completed" for item in items),
+                limit=20,
+            )
+
+    user_events = [event for event in events if event["type"] == "user_message_appended"]
+    assert user_events
+    assert user_events[-1]["text"] == "Hello from HTTP"
+    assert user_events[-1]["source"] == "user"
 
 
 @pytest.mark.anyio

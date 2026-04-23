@@ -141,7 +141,12 @@ async def _handle_send_message(session, queue: asyncio.Queue, payload: dict[str,
         )
         return
 
-    await session.submit_message(action.request_id, text, start_processing=False)
+    await session.submit_message(
+        action.request_id,
+        text,
+        source=action.source,
+        start_processing=False,
+    )
     session.observability.api.message_accepted(
         conversation_id=session.session_id,
         request_id=action.request_id,
