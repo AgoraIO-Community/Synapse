@@ -223,7 +223,22 @@ python3 -m twine check dist/*
 python3 -m twine upload dist/*
 ```
 
-Or use the helper script:
+Automatic publish from GitHub Actions:
+
+```bash
+git tag v0.1.1
+git push origin v0.1.1
+```
+
+The `publish-pypi` workflow runs on tags matching `v*` and publishes only when
+the tag exactly matches `project.version` from `pyproject.toml`. For example,
+`pyproject.toml` version `0.1.1` must be released with tag `v0.1.1`.
+
+This workflow uses PyPI Trusted Publishing, so configure the `newbro-cli` PyPI
+project to trust the `AgoraIO/Synapse` GitHub repository and the
+`publish-pypi.yml` workflow before creating the first release tag.
+
+For manual publishing or recovery, use the helper script:
 
 ```bash
 PYPI_TOKEN='pypi-...' ./scripts/publish_pypi.sh

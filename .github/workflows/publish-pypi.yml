@@ -1,0 +1,65 @@
+name: Publish Python Package
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: publish-pypi-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install release tooling
+        run: python -m pip install '.[release]'
+
+      - name: Validate tag matches project version
+        env:
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import os
+          import tomllib
+
+          pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
+          project = pyproject["project"]
+          package_name = project["name"]
+          package_version = project["version"]
+          tag_name = os.environ["GITHUB_REF_NAME"]
+          expected_tag = f"v{package_version}"
+
+          print(f"Package: {package_name}")
+          print(f"Version: {package_version}")
+          print(f"Tag: {tag_name}")
+
+          if tag_name != expected_tag:
+            raise SystemExit(
+              f"Tag {tag_name!r} does not match project version tag {expected_tag!r}."
+            )
+          PY
+
+      - name: Build distributions
+        run: python -m build
+
+      - name: Check distributions
+        run: python -m twine check dist/*
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
