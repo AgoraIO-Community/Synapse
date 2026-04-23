@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from synapse.api.logging import install_access_log_filters
+from synapse.api.paths import API_PREFIX, api_path
 from synapse.api.routes.commands import router as commands_router
 from synapse.api.routes.executor_nodes import router as executor_nodes_router
 from synapse.api.routes.health import router as health_router
@@ -20,7 +21,12 @@ from synapse.runtime.config import Settings
 
 def create_app(*, settings: Settings | None = None) -> FastAPI:
     container = build_runtime_container(settings=settings)
-    app = FastAPI(title="Synapse v2")
+    app = FastAPI(
+        title="Synapse v2",
+        openapi_url=api_path("/openapi.json"),
+        docs_url=api_path("/docs"),
+        redoc_url=api_path("/redoc"),
+    )
     app.state.runtime_container = container
 
     install_access_log_filters(container.settings)
@@ -31,16 +37,16 @@ def create_app(*, settings: Settings | None = None) -> FastAPI:
             allow_methods=["*"],
             allow_headers=["*"],
         )
-    app.include_router(health_router)
-    app.include_router(sessions_router)
-    app.include_router(messages_router)
-    app.include_router(commands_router)
-    app.include_router(interaction_requests_router)
-    app.include_router(personas_router)
-    app.include_router(executor_nodes_router)
-    app.include_router(session_config_router)
-    app.include_router(stream_router)
-    app.include_router(executor_control_router)
+    app.include_router(health_router, prefix=API_PREFIX)
+    app.include_router(sessions_router, prefix=API_PREFIX)
+    app.include_router(messages_router, prefix=API_PREFIX)
+    app.include_router(commands_router, prefix=API_PREFIX)
+    app.include_router(interaction_requests_router, prefix=API_PREFIX)
+    app.include_router(personas_router, prefix=API_PREFIX)
+    app.include_router(executor_nodes_router, prefix=API_PREFIX)
+    app.include_router(session_config_router, prefix=API_PREFIX)
+    app.include_router(stream_router, prefix=API_PREFIX)
+    app.include_router(executor_control_router, prefix=API_PREFIX)
 
     return app
 

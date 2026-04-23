@@ -21,16 +21,16 @@ def _access_record(method: str, path: str) -> logging.LogRecord:
 def test_diagnostics_timeline_access_filter_suppresses_polling_requests():
     record = _access_record(
         "GET",
-        "/sessions/session-1/diagnostics/timeline?after_sequence=75&min_level=DEBUG",
+        "/api/sessions/session-1/diagnostics/timeline?after_sequence=75&min_level=DEBUG",
     )
 
     assert DiagnosticsTimelineAccessFilter().filter(record) is False
 
 
 def test_diagnostics_timeline_access_filter_keeps_other_requests():
-    assert DiagnosticsTimelineAccessFilter().filter(_access_record("GET", "/sessions/session-1")) is True
+    assert DiagnosticsTimelineAccessFilter().filter(_access_record("GET", "/api/sessions/session-1")) is True
     assert DiagnosticsTimelineAccessFilter().filter(
-        _access_record("POST", "/sessions/session-1/messages")
+        _access_record("POST", "/api/sessions/session-1/messages")
     ) is True
 
 

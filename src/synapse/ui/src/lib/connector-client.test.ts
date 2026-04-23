@@ -31,7 +31,7 @@ describe("connector-client transport base URL handling", () => {
 
     await client.getConnectorConfig();
 
-    expect(fetchMock).toHaveBeenCalledWith("/connectors/agora-convoai/config");
+    expect(fetchMock).toHaveBeenCalledWith("/api/connectors/agora-convoai/config");
   });
 
   it("uses the configured connector base URL for fetches", async () => {
@@ -53,11 +53,11 @@ describe("connector-client transport base URL handling", () => {
 
     expect(fetchMock).toHaveBeenNthCalledWith(
       1,
-      "https://connectors.example.com/connectors/agora-convoai/config",
+      "https://connectors.example.com/api/connectors/agora-convoai/config",
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
       2,
-      "https://connectors.example.com/connectors/agora-convoai/sessions/stop",
+      "https://connectors.example.com/api/connectors/agora-convoai/sessions/stop",
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -110,7 +110,7 @@ describe("connector-client transport base URL handling", () => {
     await client.prepareConnectorSession();
 
     expect(fetchMock).toHaveBeenCalledWith(
-      "https://connectors.example.com/runtime/connectors/agora-convoai/sessions/prepare",
+      "https://connectors.example.com/runtime/api/connectors/agora-convoai/sessions/prepare",
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -135,7 +135,7 @@ describe("connector-client transport base URL handling", () => {
     expect(sendBeaconMock).toHaveBeenCalledTimes(1);
     const firstCall = sendBeaconMock.mock.calls[0] as unknown as [string, unknown];
     expect(firstCall[0]).toBe(
-      "https://connectors.example.com/runtime/connectors/agora-convoai/sessions/stop",
+      "https://connectors.example.com/runtime/api/connectors/agora-convoai/sessions/stop",
     );
   });
 });

@@ -9,6 +9,7 @@ import type {
   TaskCommandType,
 } from "../types";
 
+const API_PREFIX = "/api";
 const configuredApiBaseUrl = getConfiguredApiBaseUrl();
 
 async function ensureOk(response: Response) {
@@ -91,19 +92,19 @@ function buildWebSocketUrl(path: string): string {
 }
 
 export async function createSession(): Promise<SessionResponse> {
-  const response = await fetch(buildHttpUrl("/sessions"), {
+  const response = await fetch(buildHttpUrl(`${API_PREFIX}/sessions`), {
     method: "POST",
   });
   return (await ensureOk(response)).json();
 }
 
 export async function getSessionSnapshot(sessionId: string): Promise<SessionSnapshot> {
-  const response = await fetch(buildHttpUrl(`/sessions/${sessionId}`));
+  const response = await fetch(buildHttpUrl(`${API_PREFIX}/sessions/${sessionId}`));
   return (await ensureOk(response)).json();
 }
 
 export async function getConversationSnapshot(sessionId: string): Promise<ConversationSnapshot> {
-  const response = await fetch(buildHttpUrl(`/sessions/${sessionId}/conversation`));
+  const response = await fetch(buildHttpUrl(`${API_PREFIX}/sessions/${sessionId}/conversation`));
   return (await ensureOk(response)).json();
 }
 
@@ -146,7 +147,9 @@ export async function getDiagnosticTimeline(
     query.set("limit", String(params.limit));
   }
   const suffix = query.size > 0 ? `?${query.toString()}` : "";
-  const response = await fetch(buildHttpUrl(`/sessions/${sessionId}/diagnostics/timeline${suffix}`));
+  const response = await fetch(
+    buildHttpUrl(`${API_PREFIX}/sessions/${sessionId}/diagnostics/timeline${suffix}`),
+  );
   return (await ensureOk(response)).json();
 }
 
@@ -181,7 +184,7 @@ export function openSessionStream(
     onError: () => void;
   },
 ): WebSocket {
-  return openSocket<SessionStreamEvent>(`/sessions/${sessionId}/stream`, handlers);
+  return openSocket<SessionStreamEvent>(`${API_PREFIX}/sessions/${sessionId}/stream`, handlers);
 }
 
 export function sendSocketMessage(socket: WebSocket, requestId: string, text: string) {
@@ -245,7 +248,9 @@ export async function resolveInteractionRequest(
   },
 ) {
   const response = await fetch(
-    buildHttpUrl(`/sessions/${sessionId}/interaction-requests/${interactionRequestId}/resolve`),
+    buildHttpUrl(
+      `${API_PREFIX}/sessions/${sessionId}/interaction-requests/${interactionRequestId}/resolve`,
+    ),
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -273,12 +278,12 @@ export interface PersonaUpdatePayload {
 }
 
 export async function listPersonas(sessionId: string) {
-  const response = await fetch(buildHttpUrl(`/sessions/${sessionId}/personas`));
+  const response = await fetch(buildHttpUrl(`${API_PREFIX}/sessions/${sessionId}/personas`));
   return (await ensureOk(response)).json();
 }
 
 export async function createPersona(sessionId: string, payload: PersonaCreatePayload) {
-  const response = await fetch(buildHttpUrl(`/sessions/${sessionId}/personas`), {
+  const response = await fetch(buildHttpUrl(`${API_PREFIX}/sessions/${sessionId}/personas`), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -291,18 +296,24 @@ export async function updatePersona(
   personaId: string,
   payload: PersonaUpdatePayload,
 ) {
-  const response = await fetch(buildHttpUrl(`/sessions/${sessionId}/personas/${personaId}`), {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
+  const response = await fetch(
+    buildHttpUrl(`${API_PREFIX}/sessions/${sessionId}/personas/${personaId}`),
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    },
+  );
   return (await ensureOk(response)).json();
 }
 
 export async function deletePersona(sessionId: string, personaId: string) {
-  const response = await fetch(buildHttpUrl(`/sessions/${sessionId}/personas/${personaId}`), {
-    method: "DELETE",
-  });
+  const response = await fetch(
+    buildHttpUrl(`${API_PREFIX}/sessions/${sessionId}/personas/${personaId}`),
+    {
+      method: "DELETE",
+    },
+  );
   return (await ensureOk(response)).json();
 }
 
@@ -320,7 +331,7 @@ export interface ExecutorNodeUpdatePayload {
 }
 
 export async function listExecutorNodes(sessionId: string): Promise<ExecutorNodeRecord[]> {
-  const response = await fetch(buildHttpUrl(`/sessions/${sessionId}/executor-nodes`));
+  const response = await fetch(buildHttpUrl(`${API_PREFIX}/sessions/${sessionId}/executor-nodes`));
   return (await ensureOk(response)).json();
 }
 
@@ -328,7 +339,7 @@ export async function createExecutorNode(
   sessionId: string,
   payload: ExecutorNodeCreatePayload,
 ): Promise<ExecutorNodeCredentialIssue> {
-  const response = await fetch(buildHttpUrl(`/sessions/${sessionId}/executor-nodes`), {
+  const response = await fetch(buildHttpUrl(`${API_PREFIX}/sessions/${sessionId}/executor-nodes`), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -341,11 +352,14 @@ export async function updateExecutorNode(
   nodeId: string,
   payload: ExecutorNodeUpdatePayload,
 ): Promise<ExecutorNodeRecord> {
-  const response = await fetch(buildHttpUrl(`/sessions/${sessionId}/executor-nodes/${nodeId}`), {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
+  const response = await fetch(
+    buildHttpUrl(`${API_PREFIX}/sessions/${sessionId}/executor-nodes/${nodeId}`),
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    },
+  );
   return (await ensureOk(response)).json();
 }
 
@@ -354,7 +368,7 @@ export async function rotateExecutorNodeCredentials(
   nodeId: string,
 ): Promise<ExecutorNodeCredentialIssue> {
   const response = await fetch(
-    buildHttpUrl(`/sessions/${sessionId}/executor-nodes/${nodeId}/credentials/rotate`),
+    buildHttpUrl(`${API_PREFIX}/sessions/${sessionId}/executor-nodes/${nodeId}/credentials/rotate`),
     {
       method: "POST",
     },
@@ -367,7 +381,7 @@ export async function revealExecutorNodeConnectCommand(
   nodeId: string,
 ): Promise<ExecutorNodeCredentialIssue> {
   const response = await fetch(
-    buildHttpUrl(`/sessions/${sessionId}/executor-nodes/${nodeId}/connect-command`),
+    buildHttpUrl(`${API_PREFIX}/sessions/${sessionId}/executor-nodes/${nodeId}/connect-command`),
     {
       method: "POST",
     },
@@ -376,9 +390,12 @@ export async function revealExecutorNodeConnectCommand(
 }
 
 export async function deleteExecutorNode(sessionId: string, nodeId: string) {
-  const response = await fetch(buildHttpUrl(`/sessions/${sessionId}/executor-nodes/${nodeId}`), {
-    method: "DELETE",
-  });
+  const response = await fetch(
+    buildHttpUrl(`${API_PREFIX}/sessions/${sessionId}/executor-nodes/${nodeId}`),
+    {
+      method: "DELETE",
+    },
+  );
   return (await ensureOk(response)).json();
 }
 
@@ -386,7 +403,7 @@ export async function deleteExecutorNode(sessionId: string, nodeId: string) {
 // --- Session Config API ---
 
 export async function getSessionConfig(sessionId: string, key: string): Promise<{ key: string; value: string | null }> {
-  const response = await fetch(buildHttpUrl(`/sessions/${sessionId}/config/${key}`));
+  const response = await fetch(buildHttpUrl(`${API_PREFIX}/sessions/${sessionId}/config/${key}`));
   return (await ensureOk(response)).json();
 }
 
@@ -395,7 +412,7 @@ export async function putSessionConfig(
   key: string,
   value: string,
 ): Promise<{ key: string; value: string }> {
-  const response = await fetch(buildHttpUrl(`/sessions/${sessionId}/config/${key}`), {
+  const response = await fetch(buildHttpUrl(`${API_PREFIX}/sessions/${sessionId}/config/${key}`), {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ value }),

@@ -29,7 +29,7 @@ starter `~/.synapse/.env` plus `~/.synapse/config.yaml` files when they do not
 already exist.
 
 `./synapse setup` fills in `~/.synapse/.env` plus the shared
-`~/.synapse/config.yaml` runtime/connectors config. By default it prompts for
+`~/.synapse/config.yaml` runtime/api/connectors config. By default it prompts for
 required runtime values such as `OPENAI_API_KEY`, and it can also enter the
 connector-host setup flow. For connector-only reconfiguration, use:
 
@@ -153,7 +153,7 @@ main Synapse service on the public port.
 
 This path stays inside the repo checkout. The main service serves
 `src/synapse/ui/dist` at `/`, keeps the normal API and websocket routes on the
-same origin, and mounts `/connectors/...` routes directly when connectors are
+same origin, and mounts `/api/connectors/...` routes directly when connectors are
 enabled.
 
 The systemd unit runs as the user who invoked `./synapse service install` and
@@ -206,7 +206,7 @@ The main UI lives under `src/synapse/ui/`.
 
 Before deploying the frontend separately, make sure the backend is reachable on
 its own public HTTPS origin, that the public backend origin preserves secure
-websocket upgrades for `WS /sessions/{session_id}/stream`, and that the backend
+websocket upgrades for `WS /api/sessions/{session_id}/stream`, and that the backend
 allows the Vercel frontend origin through CORS:
 
 ```env
@@ -244,9 +244,9 @@ connector_host:
 ```
 
 If the backend is served behind Nginx on your server, proxy the public session
-routes to the main Synapse API on port `8000`, proxy `/connectors/...` to the
+routes to the main Synapse API on port `8000`, proxy `/api/connectors/...` to the
 connector host on `8010`, and keep websocket upgrade headers intact for
-`/sessions/{session_id}/stream`. See
+`/api/sessions/{session_id}/stream`. See
 [`docs/guides/vercel-ui-deployment.md`](./docs/guides/vercel-ui-deployment.md)
 for the full deployment contract and an example reverse-proxy shape.
 

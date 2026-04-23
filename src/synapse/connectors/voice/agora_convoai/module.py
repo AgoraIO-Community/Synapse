@@ -9,6 +9,7 @@ from uuid import uuid4
 from fastapi import APIRouter, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
+from synapse.api.paths import API_PREFIX, api_path
 from synapse.connectors.base import (
     BaseConnectorModule,
     ConnectorBindingRegistry,
@@ -66,7 +67,7 @@ class AgoraConvoAIConnectorModule(BaseConnectorModule):
                 await transport.close()
 
         router = APIRouter(
-            prefix="/connectors/agora-convoai",
+            prefix=f"{API_PREFIX}/connectors/agora-convoai",
             tags=["connector:agora-convoai"],
             lifespan=lifespan,
         )
@@ -167,7 +168,12 @@ class AgoraConvoAIConnectorModule(BaseConnectorModule):
 
 
 def create_headless_app(settings: AgoraConvoAIConnectorSettings | None = None) -> FastAPI:
-    app = FastAPI(title="Synapse Agora ConvoAI Connector")
+    app = FastAPI(
+        title="Synapse Agora ConvoAI Connector",
+        openapi_url=api_path("/openapi.json"),
+        docs_url=api_path("/docs"),
+        redoc_url=api_path("/redoc"),
+    )
     app.include_router(AgoraConvoAIConnectorModule(settings=settings).build_router())
     return app
 

@@ -2,7 +2,7 @@
 
 The session websocket is the mixed live transport for a session:
 
-- path: `WS /sessions/{session_id}/stream`
+- path: `WS /api/sessions/{session_id}/stream`
 - direction: bidirectional
 
 Client actions:

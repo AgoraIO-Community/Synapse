@@ -14,7 +14,7 @@ from synapse.runtime.container import RuntimeContainer
 async def _wait_for_timeline_event(client: AsyncClient, session_id: str, predicate, timeout: float = 1.0):
     deadline = asyncio.get_running_loop().time() + timeout
     while True:
-        response = await client.get(f"/sessions/{session_id}/diagnostics/timeline")
+        response = await client.get(f"/api/sessions/{session_id}/diagnostics/timeline")
         body = response.json()
         if predicate(body["events"]):
             return body["events"]
@@ -42,9 +42,9 @@ async def test_diagnostics_timeline_tracks_message_flow_by_request():
         transport=ASGITransport(app=app),
         base_url="http://testserver",
     ) as client:
-        session_id = (await client.post("/sessions")).json()["session_id"]
+        session_id = (await client.post("/api/sessions")).json()["session_id"]
         response = await client.post(
-            f"/sessions/{session_id}/messages",
+            f"/api/sessions/{session_id}/messages",
             json={"text": "hello there"},
         )
 
@@ -60,7 +60,7 @@ async def test_diagnostics_timeline_tracks_message_flow_by_request():
             item["request_id"] for item in events if item["event_name"] == "api.message.accepted"
         )
         response = await client.get(
-            f"/sessions/{session_id}/diagnostics/timeline",
+            f"/api/sessions/{session_id}/diagnostics/timeline",
             params={"request_id": request_id},
         )
         request_events = response.json()["events"]
@@ -101,9 +101,9 @@ async def test_diagnostics_timeline_filters_execution_events_by_task_id():
         transport=ASGITransport(app=app),
         base_url="http://testserver",
     ) as client:
-        session_id = (await client.post("/sessions")).json()["session_id"]
+        session_id = (await client.post("/api/sessions")).json()["session_id"]
         response = await client.post(
-            f"/sessions/{session_id}/messages",
+            f"/api/sessions/{session_id}/messages",
             json={"text": "Check flights"},
         )
 
@@ -117,13 +117,13 @@ async def test_diagnostics_timeline_filters_execution_events_by_task_id():
         )
 
         response = await client.get(
-            f"/sessions/{session_id}/diagnostics/timeline",
+            f"/api/sessions/{session_id}/diagnostics/timeline",
             params={"task_id": task_id},
         )
         task_events = response.json()["events"]
 
         invalid = await client.get(
-            f"/sessions/{session_id}/diagnostics/timeline",
+            f"/api/sessions/{session_id}/diagnostics/timeline",
             params={"min_level": "bad-level"},
         )
 
@@ -165,9 +165,9 @@ async def test_diagnostics_timeline_request_filter_keeps_blackboard_events_for_m
         transport=ASGITransport(app=app),
         base_url="http://testserver",
     ) as client:
-        session_id = (await client.post("/sessions")).json()["session_id"]
+        session_id = (await client.post("/api/sessions")).json()["session_id"]
         response = await client.post(
-            f"/sessions/{session_id}/messages",
+            f"/api/sessions/{session_id}/messages",
             json={"text": "Check flights"},
         )
 
@@ -184,7 +184,7 @@ async def test_diagnostics_timeline_request_filter_keeps_blackboard_events_for_m
 
         request_events = (
             await client.get(
-                f"/sessions/{session_id}/diagnostics/timeline",
+                f"/api/sessions/{session_id}/diagnostics/timeline",
                 params={"request_id": request_id},
             )
         ).json()["events"]
@@ -226,9 +226,9 @@ async def test_diagnostics_timeline_records_tool_calls_for_scripted_backend():
         transport=ASGITransport(app=app),
         base_url="http://testserver",
     ) as client:
-        session_id = (await client.post("/sessions")).json()["session_id"]
+        session_id = (await client.post("/api/sessions")).json()["session_id"]
         response = await client.post(
-            f"/sessions/{session_id}/messages",
+            f"/api/sessions/{session_id}/messages",
             json={"text": "Check flights"},
         )
 
@@ -264,13 +264,13 @@ async def test_diagnostics_timeline_supports_after_sequence_incremental_polling(
         transport=ASGITransport(app=app),
         base_url="http://testserver",
     ) as client:
-        session_id = (await client.post("/sessions")).json()["session_id"]
+        session_id = (await client.post("/api/sessions")).json()["session_id"]
         initial = (
-            await client.get(f"/sessions/{session_id}/diagnostics/timeline")
+            await client.get(f"/api/sessions/{session_id}/diagnostics/timeline")
         ).json()["events"]
         after_sequence = initial[-1]["sequence"]
 
-        await client.post(f"/sessions/{session_id}/messages", json={"text": "hello"})
+        await client.post(f"/api/sessions/{session_id}/messages", json={"text": "hello"})
 
         events = await _wait_for_timeline_event(
             client,
@@ -281,7 +281,7 @@ async def test_diagnostics_timeline_supports_after_sequence_incremental_polling(
 
         incremental = (
             await client.get(
-                f"/sessions/{session_id}/diagnostics/timeline",
+                f"/api/sessions/{session_id}/diagnostics/timeline",
                 params={"after_sequence": after_sequence},
             )
         ).json()["events"]
@@ -310,9 +310,9 @@ async def test_diagnostics_timeline_includes_reply_failed_error_details():
         transport=ASGITransport(app=app),
         base_url="http://testserver",
     ) as client:
-        session_id = (await client.post("/sessions")).json()["session_id"]
+        session_id = (await client.post("/api/sessions")).json()["session_id"]
         response = await client.post(
-            f"/sessions/{session_id}/messages",
+            f"/api/sessions/{session_id}/messages",
             json={"text": "hello"},
         )
 

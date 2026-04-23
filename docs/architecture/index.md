@@ -10,7 +10,7 @@ Use this section when you want to understand the system by subsystem.
 - [Communication Brain](./communication-brain.md)
 - [Execution Brain](./execution-brain.md)
 - [Blackboard](./blackboard.md)
-- [Sessions and Runs](./sessions-and-runs.md)
+- [Sessions and Runs](./api/sessions-and-runs.md)
 - [Notifications and Interruptions](./notifications-and-interruptions.md)
 - [Observability](./observability.md)
 - [Executors](./executors.md)

@@ -321,15 +321,31 @@ function NodeCard({
   );
 }
 
-export function NodesPage({ sessionId }: { sessionId: string }) {
-  const [nodes, setNodes] = useState<ExecutorNodeRecord[]>([]);
-  const [personas, setPersonas] = useState<Persona[]>([]);
+export function NodesPage({
+  sessionId,
+  initialNodes,
+  initialPersonas,
+}: {
+  sessionId: string;
+  initialNodes: ExecutorNodeRecord[];
+  initialPersonas: Persona[];
+}) {
+  const [nodes, setNodes] = useState<ExecutorNodeRecord[]>(initialNodes);
+  const [personas, setPersonas] = useState<Persona[]>(initialPersonas);
   const [mode, setMode] = useState<"list" | "add" | "edit">("list");
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [latestIssue, setLatestIssue] = useState<ExecutorNodeCredentialIssue | null>(null);
   const [copiedNodeId, setCopiedNodeId] = useState<string | null>(null);
+
+  useEffect(() => {
+    setNodes(initialNodes);
+  }, [initialNodes]);
+
+  useEffect(() => {
+    setPersonas(initialPersonas);
+  }, [initialPersonas]);
 
   const refreshData = useCallback(async () => {
     try {
@@ -339,8 +355,10 @@ export function NodesPage({ sessionId }: { sessionId: string }) {
       ]);
       setNodes(Array.isArray(loadedNodes) ? loadedNodes : []);
       setPersonas(Array.isArray(loadedPersonas) ? loadedPersonas : []);
-    } catch {
-      // Preserve current UI on refresh failure.
+      setError(null);
+    } catch (e: unknown) {
+      const detail = e instanceof Error ? e.message : "Could not refresh node data.";
+      setError(`${detail} Showing the latest shell snapshot instead.`);
     }
   }, [sessionId]);
 

@@ -79,7 +79,7 @@ class FakeClient:
 async def _wait_for_snapshot(client: AsyncClient, session_id: str, predicate, timeout: float = 1.0):
     deadline = asyncio.get_running_loop().time() + timeout
     while True:
-        snapshot = (await client.get(f"/sessions/{session_id}")).json()
+        snapshot = (await client.get(f"/api/sessions/{session_id}")).json()
         if predicate(snapshot):
             return snapshot
         if asyncio.get_running_loop().time() >= deadline:
@@ -98,16 +98,16 @@ async def test_messages_v2_with_openai_model_mock():
         transport=ASGITransport(app=app),
         base_url="http://testserver",
     ) as client:
-        session_id = (await client.post("/sessions")).json()["session_id"]
+        session_id = (await client.post("/api/sessions")).json()["session_id"]
         response = await client.post(
-            f"/sessions/{session_id}/messages",
+            f"/api/sessions/{session_id}/messages",
             json={"text": "Check flights"},
         )
 
         assert response.status_code == 200
         body = response.json()
         assert body["reply_text"] == "I'll take care of that."
-        snapshot = (await client.get(f"/sessions/{session_id}")).json()
+        snapshot = (await client.get(f"/api/sessions/{session_id}")).json()
         assert len(snapshot["tasks"]) == 1
 
 
@@ -137,7 +137,7 @@ async def test_messages_v2_invalid_control_task_alias_does_not_500():
         transport=ASGITransport(app=app),
         base_url="http://testserver",
     ) as client:
-        session_id = (await client.post("/sessions")).json()["session_id"]
+        session_id = (await client.post("/api/sessions")).json()["session_id"]
         session = app.state.runtime_container.get_session(session_id)
         await session.blackboard.put_task(
             Task(
@@ -149,7 +149,7 @@ async def test_messages_v2_invalid_control_task_alias_does_not_500():
         )
 
         response = await client.post(
-            f"/sessions/{session_id}/messages",
+            f"/api/sessions/{session_id}/messages",
             json={"text": "Resume the email"},
         )
 
@@ -158,10 +158,10 @@ async def test_messages_v2_invalid_control_task_alias_does_not_500():
             "I couldn't resume that because the control command was invalid."
         )
 
-        snapshot = (await client.get(f"/sessions/{session_id}")).json()
+        snapshot = (await client.get(f"/api/sessions/{session_id}")).json()
         diagnostics = (
             await client.get(
-                f"/sessions/{session_id}/diagnostics/timeline",
+                f"/api/sessions/{session_id}/diagnostics/timeline",
                 params={"event_prefix": "bb.command"},
             )
         ).json()
@@ -191,10 +191,10 @@ async def test_messages_v2_follow_up_replays_local_history():
         transport=ASGITransport(app=app),
         base_url="http://testserver",
     ) as client:
-        session_id = (await client.post("/sessions")).json()["session_id"]
+        session_id = (await client.post("/api/sessions")).json()["session_id"]
 
-        await client.post(f"/sessions/{session_id}/messages", json={"text": "hello a1"})
-        await client.post(f"/sessions/{session_id}/messages", json={"text": "hello a2"})
+        await client.post(f"/api/sessions/{session_id}/messages", json={"text": "hello a1"})
+        await client.post(f"/api/sessions/{session_id}/messages", json={"text": "hello a2"})
 
     first_messages = fake_client.chat.completions.calls[0]["messages"]
     second_messages = fake_client.chat.completions.calls[1]["messages"]
@@ -235,14 +235,14 @@ async def test_messages_v2_invalid_executor_alias_does_not_persist_bad_task():
         transport=ASGITransport(app=app),
         base_url="http://testserver",
     ) as client:
-        session_id = (await client.post("/sessions")).json()["session_id"]
+        session_id = (await client.post("/api/sessions")).json()["session_id"]
         response = await client.post(
-            f"/sessions/{session_id}/messages",
+            f"/api/sessions/{session_id}/messages",
             json={"text": "Do something with executor User"},
         )
 
         assert response.status_code == 200
-        snapshot = (await client.get(f"/sessions/{session_id}")).json()
+        snapshot = (await client.get(f"/api/sessions/{session_id}")).json()
         assert snapshot["tasks"] == []
 
 
@@ -272,9 +272,9 @@ async def test_messages_v2_capability_gated_request_is_blocked_when_only_mock_ex
         transport=ASGITransport(app=app),
         base_url="http://testserver",
     ) as client:
-        session_id = (await client.post("/sessions")).json()["session_id"]
+        session_id = (await client.post("/api/sessions")).json()["session_id"]
         response = await client.post(
-            f"/sessions/{session_id}/messages",
+            f"/api/sessions/{session_id}/messages",
             json={"text": "check my pc cpu usage"},
         )
 
@@ -283,7 +283,7 @@ async def test_messages_v2_capability_gated_request_is_blocked_when_only_mock_ex
             "I can't actually check your machine right now because I don't have a real executor connected."
         )
 
-        snapshot = (await client.get(f"/sessions/{session_id}")).json()
+        snapshot = (await client.get(f"/api/sessions/{session_id}")).json()
         assert snapshot["tasks"] == []
 
 
@@ -303,7 +303,7 @@ async def test_messages_v2_preseeded_bad_executor_task_fails_instead_of_500():
         transport=ASGITransport(app=app),
         base_url="http://testserver",
     ) as client:
-        session_id = (await client.post("/sessions")).json()["session_id"]
+        session_id = (await client.post("/api/sessions")).json()["session_id"]
         session = app.state.runtime_container.get_session(session_id)
         await session.blackboard.put_task(
             Task(
@@ -316,7 +316,7 @@ async def test_messages_v2_preseeded_bad_executor_task_fails_instead_of_500():
         )
 
         response = await client.post(
-            f"/sessions/{session_id}/messages",
+            f"/api/sessions/{session_id}/messages",
             json={"text": "hello"},
         )
 

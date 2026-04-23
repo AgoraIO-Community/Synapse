@@ -16,7 +16,7 @@ from synapse.runtime.container import RuntimeContainer
 async def _wait_for_snapshot(client: AsyncClient, session_id: str, predicate, timeout: float = 4.0):
     deadline = asyncio.get_running_loop().time() + timeout
     while True:
-        snapshot = (await client.get(f"/sessions/{session_id}")).json()
+        snapshot = (await client.get(f"/api/sessions/{session_id}")).json()
         if predicate(snapshot):
             return snapshot
         if asyncio.get_running_loop().time() >= deadline:
@@ -32,7 +32,7 @@ async def _wait_for_conversation(
 ):
     deadline = asyncio.get_running_loop().time() + timeout
     while True:
-        snapshot = (await client.get(f"/sessions/{session_id}/conversation")).json()
+        snapshot = (await client.get(f"/api/sessions/{session_id}/conversation")).json()
         if predicate(snapshot):
             return snapshot
         if asyncio.get_running_loop().time() >= deadline:
@@ -139,7 +139,7 @@ async def test_completed_notification_is_emitted_into_conversation_history():
         transport=ASGITransport(app=app),
         base_url="http://testserver",
     ) as client:
-        session_id = (await client.post("/sessions")).json()["session_id"]
+        session_id = (await client.post("/api/sessions")).json()["session_id"]
         session = app.state.runtime_container.get_session(session_id)
         await session.blackboard.put_task(
             Task(
@@ -162,7 +162,7 @@ async def test_completed_notification_is_emitted_into_conversation_history():
                 for entry in snap["conversation_history"]
             ),
         )
-        snapshot = (await client.get(f"/sessions/{session_id}")).json()
+        snapshot = (await client.get(f"/api/sessions/{session_id}")).json()
 
         assert any(
             candidate["candidate_type"] == "completed"
@@ -180,7 +180,7 @@ async def test_blocked_notification_is_emitted_immediately():
         transport=ASGITransport(app=app),
         base_url="http://testserver",
     ) as client:
-        session_id = (await client.post("/sessions")).json()["session_id"]
+        session_id = (await client.post("/api/sessions")).json()["session_id"]
         session = app.state.runtime_container.get_session(session_id)
         await session.blackboard.put_task(
             Task(
@@ -204,7 +204,7 @@ async def test_blocked_notification_is_emitted_immediately():
             ),
             timeout=2.0,
         )
-        snapshot = (await client.get(f"/sessions/{session_id}")).json()
+        snapshot = (await client.get(f"/api/sessions/{session_id}")).json()
 
         assert any(
             candidate["candidate_type"] == "blocked"
@@ -222,7 +222,7 @@ async def test_needs_input_summary_notification_can_emit_without_run_event():
         transport=ASGITransport(app=app),
         base_url="http://testserver",
     ) as client:
-        session_id = (await client.post("/sessions")).json()["session_id"]
+        session_id = (await client.post("/api/sessions")).json()["session_id"]
         session = app.state.runtime_container.get_session(session_id)
         await session.blackboard.put_task(
             Task(
@@ -251,7 +251,7 @@ async def test_needs_input_summary_notification_can_emit_without_run_event():
             ),
             timeout=2.0,
         )
-        snapshot = (await client.get(f"/sessions/{session_id}")).json()
+        snapshot = (await client.get(f"/api/sessions/{session_id}")).json()
 
         assert any(
             candidate["candidate_type"] == "needs_input"
@@ -269,7 +269,7 @@ async def test_interaction_request_resolution_requeues_blocked_task_and_complete
         transport=ASGITransport(app=app),
         base_url="http://testserver",
     ) as client:
-        session_id = (await client.post("/sessions")).json()["session_id"]
+        session_id = (await client.post("/api/sessions")).json()["session_id"]
         session = app.state.runtime_container.get_session(session_id)
         session.registry.register(QuestionThenCompleteExecutor())
         await session.blackboard.put_task(
@@ -297,7 +297,7 @@ async def test_interaction_request_resolution_requeues_blocked_task_and_complete
         request_id = waiting_snapshot["interaction_requests"][0]["request_id"]
 
         response = await client.post(
-            f"/sessions/{session_id}/interaction-requests/{request_id}/resolve",
+            f"/api/sessions/{session_id}/interaction-requests/{request_id}/resolve",
             json={"action": "answer", "answer_text": "Use Synopse"},
         )
         assert response.status_code == 200
@@ -347,7 +347,7 @@ async def test_cancelled_task_does_not_emit_stale_completion_notification():
         transport=ASGITransport(app=app),
         base_url="http://testserver",
     ) as client:
-        session_id = (await client.post("/sessions")).json()["session_id"]
+        session_id = (await client.post("/api/sessions")).json()["session_id"]
         session = app.state.runtime_container.get_session(session_id)
         session.registry.register(CancelAwareExecutor())
         await session.blackboard.put_task(
@@ -375,7 +375,7 @@ async def test_cancelled_task_does_not_emit_stale_completion_notification():
         )
 
         response = await client.post(
-            f"/sessions/{session_id}/messages",
+            f"/api/sessions/{session_id}/messages",
             json={"text": "forget it"},
         )
 
@@ -388,8 +388,8 @@ async def test_cancelled_task_does_not_emit_stale_completion_notification():
         )
         await asyncio.sleep(0.2)
 
-        snapshot = (await client.get(f"/sessions/{session_id}")).json()
-        conversation = (await client.get(f"/sessions/{session_id}/conversation")).json()
+        snapshot = (await client.get(f"/api/sessions/{session_id}")).json()
+        conversation = (await client.get(f"/api/sessions/{session_id}/conversation")).json()
 
         assert snapshot["tasks"][0]["status"] == "cancelled"
         assert snapshot["execution_runs"][0]["status"] == "cancelled"
