@@ -153,19 +153,25 @@ def _write_persona_store(store: PersonaStore, path: Path) -> None:
     ]
     for persona in store.personas:
         lines.append(f"  - name: {_yaml_quote(persona.name)}")
+        lines.append(f"    persona_id: {_yaml_quote(persona.persona_id)}")
         lines.append(f"    avatar: {_yaml_quote(persona.avatar)}")
         lines.append(f"    base_prompt: {_yaml_quote(persona.base_prompt)}")
+        lines.append(
+            "    executor_node_id: "
+            + (_yaml_quote(persona.executor_node_id) if persona.executor_node_id else "null")
+        )
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def _build_persona(fields: dict[str, str]) -> Persona:
     name = fields.get("name", "")
-    persona_id = f"persona-{name.lower().replace(' ', '-')}"
+    persona_id = fields.get("persona_id") or f"persona-{name.lower().replace(' ', '-')}"
     return Persona(
         persona_id=persona_id,
         name=name,
         avatar=fields.get("avatar", ""),
         base_prompt=fields.get("base_prompt", ""),
+        executor_node_id=_optional_value(fields.get("executor_node_id", "")),
     )
 
 
@@ -186,3 +192,9 @@ def _unquote(value: str) -> str:
 def _yaml_quote(value: str) -> str:
     escaped = value.replace("\\", "\\\\").replace("\n", "\\n").replace('"', '\\"')
     return f'"{escaped}"'
+
+
+def _optional_value(value: str | None) -> str | None:
+    if value in (None, "", "null", "~"):
+        return None
+    return value

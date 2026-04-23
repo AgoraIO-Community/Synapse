@@ -43,8 +43,21 @@ Typical local real-executor flow:
 executors are enabled and which executor families the control plane should
 expect.
 `./synapse executor setup` configures the detached executor node itself,
-including the Synapse base URL, a generated executor-node id, and local
-Codex or ACPX command settings.
+including local Codex or ACPX command settings plus the enabled executor
+families this client machine should advertise.
+The intended operator flow is:
+
+1. create the node from the frontend `Nodes` page
+2. optionally run `./synapse executor setup` on the client machine if you want
+   to preconfigure local executor families and command paths
+3. copy the generated connect command from the `Nodes` page
+4. start the node with that command, for example:
+   `./synapse executor run --base-url https://synapse.example.com --node-id node-1234 --token secret`
+
+If local executor runtime config is still missing when you run that command,
+`./synapse executor run` now launches the same local setup flow automatically
+when a TTY is available.
+
 `./synapse executor run` now reports foreground lifecycle state directly in the
 terminal:
 

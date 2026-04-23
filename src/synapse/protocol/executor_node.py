@@ -15,9 +15,26 @@ class ExecutorNodeExecutor(BaseModel):
     supports_cancel: bool = True
 
 
+class ExecutorNodeRecord(BaseModel):
+    node_id: str
+    name: str
+    enabled_executors: list[str] = Field(default_factory=list)
+    connected_executors: list[str] = Field(default_factory=list)
+    connection_status: Literal["connected", "disconnected"] = "disconnected"
+    token_hint: str | None = None
+    last_connected_at: str | None = None
+    last_seen_at: str | None = None
+
+
+class ExecutorNodeCredentialIssue(BaseModel):
+    node: ExecutorNodeRecord
+    token: str
+
+
 class RegisterNodeMessage(BaseModel):
     type: Literal["register_node"] = "register_node"
     node_id: str
+    token: str
     executors: list[ExecutorNodeExecutor] = Field(default_factory=list)
     metadata: dict[str, object] = Field(default_factory=dict)
 

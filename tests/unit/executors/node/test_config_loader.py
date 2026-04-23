@@ -17,8 +17,6 @@ def test_load_executor_node_config_reads_enabled_executors(tmp_path: Path):
                 "version: 1",
                 "executor_node:",
                 "  enabled: true",
-                "  synapse_base_url: http://127.0.0.1:8000",
-                "  node_id: node-1",
                 "  enabled_executors:",
                 "    - codex",
                 "executors:",
@@ -32,8 +30,6 @@ def test_load_executor_node_config_reads_enabled_executors(tmp_path: Path):
 
     loaded = load_executor_node_config(env_file=env_file, config_file=config_file)
 
-    assert loaded.node_settings.enabled is True
-    assert loaded.node_settings.node_id == "node-1"
     assert loaded.node_settings.enabled_executors == ["codex"]
     assert loaded.executors["codex"]["command"] == "/opt/codex"
 
@@ -59,7 +55,7 @@ def test_load_executor_node_config_rejects_invalid_enabled_executors(tmp_path: P
         load_executor_node_config(env_file=env_file, config_file=config_file)
 
 
-def test_load_executor_node_config_requires_node_id_when_enabled(tmp_path: Path):
+def test_load_executor_node_config_allows_connection_values_to_be_missing(tmp_path: Path):
     env_file = tmp_path / ".env"
     config_file = tmp_path / "config.yaml"
     env_file.write_text("", encoding="utf-8")
@@ -77,5 +73,6 @@ def test_load_executor_node_config_requires_node_id_when_enabled(tmp_path: Path)
         encoding="utf-8",
     )
 
-    with pytest.raises(RuntimeError, match="executor_node.node_id"):
-        load_executor_node_config(env_file=env_file, config_file=config_file)
+    loaded = load_executor_node_config(env_file=env_file, config_file=config_file)
+    assert loaded.node_settings.node_id == ""
+    assert loaded.node_settings.token == ""

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from uuid import uuid4
+
 from fastapi import APIRouter, HTTPException, Request
 
 from synapse.api.models import PersonaCreateRequest, PersonaUpdateRequest
@@ -30,17 +32,23 @@ async def create_persona(
         container.get_session(session_id)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    persona_id = f"persona-{body.name.lower().replace(' ', '-')}"
+    if not body.name.strip():
+        raise HTTPException(status_code=400, detail="Persona name is required.")
+    if body.executor_node_id is not None and not await container.executor_node_manager.node_exists(body.executor_node_id):
+        raise HTTPException(status_code=400, detail=f"Executor node '{body.executor_node_id}' not found.")
+    normalized_name = body.name.strip()
+    persona_id = _generated_persona_id(normalized_name)
     personas = load_personas_from_file()
-    if any(persona.persona_id == persona_id for persona in personas):
-        raise HTTPException(status_code=409, detail=f"Persona '{body.name}' already exists.")
     persona = Persona(
         persona_id=persona_id,
-        name=body.name,
+        name=normalized_name,
         avatar=body.avatar,
         base_prompt=body.base_prompt,
+        executor_node_id=body.executor_node_id,
     )
-    save_personas_to_file([*personas, persona])
+    updated_personas = [*personas, persona]
+    save_personas_to_file(updated_personas)
+    await container.sync_persisted_personas(updated_personas)
     return persona
 
 
@@ -61,20 +69,30 @@ async def update_persona(
     if persona is None:
         raise HTTPException(status_code=404, detail=f"Persona '{persona_id}' not found.")
     updates: dict[str, object] = {}
-    if body.name is not None:
-        updates["name"] = body.name
-    if body.avatar is not None:
+    if "name" in body.model_fields_set:
+        if body.name is None or not body.name.strip():
+            raise HTTPException(status_code=400, detail="Persona name is required.")
+        updates["name"] = body.name.strip()
+    if "avatar" in body.model_fields_set:
+        if body.avatar is None:
+            raise HTTPException(status_code=400, detail="Persona avatar is required.")
         updates["avatar"] = body.avatar
-    if body.base_prompt is not None:
+    if "base_prompt" in body.model_fields_set:
+        if body.base_prompt is None:
+            raise HTTPException(status_code=400, detail="Persona base prompt is required.")
         updates["base_prompt"] = body.base_prompt
+    if "executor_node_id" in body.model_fields_set:
+        if body.executor_node_id is not None and not await container.executor_node_manager.node_exists(body.executor_node_id):
+            raise HTTPException(status_code=400, detail=f"Executor node '{body.executor_node_id}' not found.")
+        updates["executor_node_id"] = body.executor_node_id
     updated = persona.model_copy(update=updates) if updates else persona
     if updates:
-        save_personas_to_file(
-            [
-                updated if item.persona_id == persona_id else item
-                for item in personas
-            ]
-        )
+        updated_personas = [
+            updated if item.persona_id == persona_id else item
+            for item in personas
+        ]
+        save_personas_to_file(updated_personas)
+        await container.sync_persisted_personas(updated_personas)
     return updated
 
 
@@ -93,5 +111,14 @@ async def delete_persona(
     persona = next((item for item in personas if item.persona_id == persona_id), None)
     if persona is None:
         raise HTTPException(status_code=404, detail=f"Persona '{persona_id}' not found.")
-    save_personas_to_file([item for item in personas if item.persona_id != persona_id])
+    if await container.persona_is_busy(persona_id):
+        raise HTTPException(status_code=409, detail=f"Persona '{persona_id}' is busy and cannot be deleted.")
+    updated_personas = [item for item in personas if item.persona_id != persona_id]
+    save_personas_to_file(updated_personas)
+    await container.sync_persisted_personas(updated_personas)
     return {"deleted": persona_id}
+
+
+def _generated_persona_id(name: str) -> str:
+    slug = "-".join(name.strip().lower().split())
+    return f"persona-{slug or 'bro'}-{uuid4().hex[:8]}"

@@ -96,4 +96,48 @@ describe("session-client transport base URL handling", () => {
       "https://api.example.com/runtime/sessions/session-1/conversation",
     );
   });
+
+  it("builds an executor run command from the effective backend base URL", async () => {
+    vi.stubEnv("VITE_API_BASE_URL", "https://api.example.com/runtime/");
+    const client = await import("./session-client");
+
+    expect(client.buildExecutorRunCommand("node-1", "tok'en")).toBe(
+      "./synapse executor run --base-url 'https://api.example.com/runtime' --node-id 'node-1' --token 'tok'\"'\"'en'",
+    );
+  });
+
+  it("uses the Synapse service port for executor commands during local Vite dev", async () => {
+    const client = await import("./session-client");
+
+    expect(client.buildExecutorRunCommand("node-1", "token-1")).toBe(
+      "./synapse executor run --base-url 'http://localhost:8000' --node-id 'node-1' --token 'token-1'",
+    );
+  });
+
+  it("calls the explicit connect-command reveal endpoint", async () => {
+    const fetchMock = vi.fn(async () =>
+      okJsonResponse({
+        node: {
+          node_id: "node-1",
+          name: "Studio Mac",
+          enabled_executors: ["codex"],
+          connected_executors: [],
+          connection_status: "disconnected",
+          token_hint: "tok...1111",
+          last_connected_at: null,
+          last_seen_at: null,
+        },
+        token: "token-1",
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = await import("./session-client");
+    const revealed = await client.revealExecutorNodeConnectCommand("session-1", "node-1");
+
+    expect(fetchMock).toHaveBeenCalledWith("/sessions/session-1/executor-nodes/node-1/connect-command", {
+      method: "POST",
+    });
+    expect(revealed.token).toBe("token-1");
+  });
 });

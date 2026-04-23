@@ -17,9 +17,9 @@ class ExecutorNodeConfigError(RuntimeError):
 
 @dataclass(slots=True)
 class ExecutorNodeSettings:
-    enabled: bool = False
     synapse_base_url: str = "http://127.0.0.1:8000"
     node_id: str = ""
+    token: str = ""
     enabled_executors: list[str] = field(default_factory=list)
 
 
@@ -59,7 +59,7 @@ def load_executor_node_config(
         _resolve_env_placeholders(raw.get("executor_node") or {}, config_path),
         config_path,
     )
-    if not node_settings.enabled:
+    if not node_settings.enabled_executors:
         return LoadedExecutorNodeConfig(
             node_settings=node_settings,
             executors={},
@@ -114,31 +114,12 @@ def _parse_node_settings(raw_host: Any, config_path: Path) -> ExecutorNodeSettin
         field_name="executor_node.enabled_executors",
         config_path=config_path,
     )
-    settings = ExecutorNodeSettings(
-        enabled=_parse_bool_value(
-            raw_host.get("enabled", bool(enabled_executors)),
-            field_name="executor_node.enabled",
-            config_path=config_path,
-        ),
+    return ExecutorNodeSettings(
         synapse_base_url=str(raw_host.get("synapse_base_url", "http://127.0.0.1:8000")),
         node_id=str(raw_host.get("node_id", "")),
+        token=str(raw_host.get("token", "")),
         enabled_executors=enabled_executors,
     )
-    if settings.enabled and not settings.node_id.strip():
-        raise ExecutorNodeConfigError(f"'executor_node.node_id' must be set in {config_path}")
-    return settings
-
-
-def _parse_bool_value(value: Any, *, field_name: str, config_path: Path) -> bool:
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, str):
-        normalized = value.strip().lower()
-        if normalized in {"1", "true", "yes", "on"}:
-            return True
-        if normalized in {"0", "false", "no", "off"}:
-            return False
-    raise ExecutorNodeConfigError(f"'{field_name}' must be a boolean in {config_path}")
 
 
 def _parse_string_list(value: Any, *, field_name: str, config_path: Path) -> list[str]:

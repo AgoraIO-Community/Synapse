@@ -37,6 +37,7 @@ def test_save_personas_preserves_communication_persona_prompt(tmp_path):
                 name="Alex",
                 avatar="A",
                 base_prompt="Be direct.\nStay concise.",
+                executor_node_id="node-1",
             )
         ],
         path=personas_file,
@@ -47,5 +48,7 @@ def test_save_personas_preserves_communication_persona_prompt(tmp_path):
     )
     personas = load_personas_from_file(personas_file)
     assert len(personas) == 1
+    assert personas[0].persona_id == "persona-alex"
     assert personas[0].name == "Alex"
     assert personas[0].base_prompt == "Be direct.\nStay concise."
+    assert personas[0].executor_node_id == "node-1"

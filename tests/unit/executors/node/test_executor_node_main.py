@@ -13,9 +13,9 @@ def test_main_returns_130_on_keyboard_interrupt(monkeypatch, capsys):
         "load_executor_node_config",
         lambda: LoadedExecutorNodeConfig(
             node_settings=ExecutorNodeSettings(
-                enabled=True,
                 synapse_base_url="http://127.0.0.1:8000",
                 node_id="node-1",
+                token="token-1",
                 enabled_executors=["codex"],
             ),
             executors={},
@@ -37,5 +37,8 @@ def test_main_returns_130_on_keyboard_interrupt(monkeypatch, capsys):
         lambda _awaitable: (_ for _ in ()).throw(KeyboardInterrupt()),
     )
 
-    assert executor_node_main.main() == 130
+    assert (
+        executor_node_main.main(["--base-url", "http://127.0.0.1:8000", "--node-id", "node-1", "--token", "token-1"])
+        == 130
+    )
     assert "[stop] executor node interrupted" in capsys.readouterr().out

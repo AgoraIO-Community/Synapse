@@ -2,17 +2,18 @@
 import { HeadContent, Outlet, createRootRoute } from "@tanstack/react-router";
 import { DefaultCatchBoundary } from "../components/DefaultCatchBoundary";
 import { NotFound } from "../components/NotFound";
+import { NewbroShellProvider } from "../NewbroShell";
 
 export const Route = createRootRoute({
   head: () => ({
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "NewBro Workbench" },
+      { title: "Newbro Voice Command Center" },
       {
         name: "description",
         content:
-          "Chat-first workbench for the NewBro communication-brain and execution-brain runtime.",
+          "Sample-style Newbro voice command center shell for the Synapse frontend.",
       },
     ],
     links: [
@@ -41,7 +42,9 @@ function RootDocument() {
   return (
     <>
       <HeadContent />
-      <Outlet />
+      <NewbroShellProvider>
+        <Outlet />
+      </NewbroShellProvider>
     </>
   );
 }

@@ -148,7 +148,13 @@ def build_parser() -> argparse.ArgumentParser:
     executor_parser = subparsers.add_parser("executor", help="Configure and run the detached executor node.")
     executor_subparsers = executor_parser.add_subparsers(dest="executor_command", required=True)
     executor_subparsers.add_parser("setup", help="Interactively configure the detached executor node.")
-    executor_subparsers.add_parser("run", help="Run the detached executor node.")
+    executor_run_parser = executor_subparsers.add_parser(
+        "run",
+        help="Run the detached executor node. Requires --base-url, --node-id, and --token.",
+    )
+    executor_run_parser.add_argument("--base-url", required=True, help="Public Synapse service base URL.")
+    executor_run_parser.add_argument("--node-id", required=True, help="Executor node id issued by Synapse.")
+    executor_run_parser.add_argument("--token", required=True, help="Executor node token issued by Synapse.")
 
     service_parser = subparsers.add_parser("service", help="Install and control the Ubuntu systemd service.")
     service_subparsers = service_parser.add_subparsers(dest="service_command", required=True)
@@ -375,38 +381,22 @@ def cmd_connector_run(args: argparse.Namespace) -> int:
 def cmd_executor_setup(_args: argparse.Namespace) -> int:
     if not setup_can_prompt():
         raise CliError("synapse executor setup requires a TTY.")
-
-    template_lines = load_env_template()
-    existing_values, existing_order = load_env_assignments(ENV_LOCAL)
-    existing_config_yaml = _load_existing_connector_yaml(connector_config_path())
-    executor_setup = resolve_executor_setup_values(
-        existing_values=existing_values,
-        environ=os.environ,
-        existing_config_yaml=existing_config_yaml,
-    )
-    filtered_existing_values = {
-        key: value
-        for key, value in existing_values.items()
-        if key not in LEGACY_REAL_EXECUTOR_ENV_KEYS
-    }
-    filtered_existing_order = [
-        key for key in existing_order if key not in LEGACY_REAL_EXECUTOR_ENV_KEYS
-    ]
-    write_env_file(
-        template_lines=template_lines,
-        resolved_values={**filtered_existing_values, **executor_setup.env_values},
-        existing_values=filtered_existing_values,
-        existing_order=filtered_existing_order,
-        destination=ENV_LOCAL,
-    )
-    _write_connector_config_if_needed(executor_setup)
-    print(f"[write] configured {format_user_path(ENV_LOCAL)}")
+    _run_executor_setup_flow()
     return 0
 
 
-def cmd_executor_run(_args: argparse.Namespace) -> int:
+def cmd_executor_run(args: argparse.Namespace) -> int:
+    _ensure_executor_runtime_configured_for_run()
     venv_python = require_venv_python()
-    return run_checked(executor_node_command(venv_python), cwd=ROOT)
+    return run_checked(
+        executor_node_command(
+            venv_python,
+            base_url=args.base_url,
+            node_id=args.node_id,
+            token=args.token,
+        ),
+        cwd=ROOT,
+    )
 
 
 def cmd_service_install(args: argparse.Namespace) -> int:
@@ -482,11 +472,23 @@ def connector_command(venv_python: Path, host: str, port: int, *, reload: bool) 
     return command
 
 
-def executor_node_command(venv_python: Path) -> list[str]:
+def executor_node_command(
+    venv_python: Path,
+    *,
+    base_url: str,
+    node_id: str,
+    token: str,
+) -> list[str]:
     return [
         str(venv_python),
         "-m",
         "synapse.executors.node",
+        "--base-url",
+        base_url,
+        "--node-id",
+        node_id,
+        "--token",
+        token,
     ]
 
 
@@ -1050,25 +1052,10 @@ def resolve_executor_setup_values(
 ) -> ConnectorSetupResult:
     del environ  # reserved for future env-backed defaults
     config_path = connector_config_path()
-    runtime_values = _existing_runtime_config(existing_config_yaml)
-    if not runtime_values.get("detached_executor_enabled"):
-        raise CliError("Detached executors are disabled. Run `./synapse setup` first.")
-    runtime_executor_types = _runtime_detached_executor_types(existing_config_yaml)
-    if not runtime_executor_types:
-        raise CliError("No detached executor types are configured. Run `./synapse setup` first.")
     enabled_executors = prompt_executor_selection(
-        default_selected=_existing_executor_enabled_types(existing_config_yaml) or runtime_executor_types
-    )
-    synapse_base_url = prompt_text_value(
-        "Synapse service base URL for executor node",
-        default_value=_existing_yaml_value(existing_config_yaml, "executor_node", "synapse_base_url")
-        or "http://127.0.0.1:8000",
-        required=True,
-    )
-    node_id = prompt_text_value(
-        "Executor node id",
-        default_value=_executor_node_id_default(existing_config_yaml),
-        required=True,
+        default_selected=_existing_executor_enabled_types(existing_config_yaml)
+        or _runtime_detached_executor_types(existing_config_yaml)
+        or None
     )
     executors_block = _existing_executors_config(existing_config_yaml)
     for executor_type in enabled_executors:
@@ -1084,7 +1071,7 @@ def resolve_executor_setup_values(
                 ),
                 required=True,
             )
-            if not _codex_command_available(command):
+            if not _command_available(command):
                 print(f"[warn] command '{command}' is not currently available on PATH")
             executors_block["codex"] = {
                 "command": command,
@@ -1114,13 +1101,10 @@ def resolve_executor_setup_values(
             }
 
     config_text = render_connector_config(
-        runtime=runtime_values,
+        runtime=_existing_runtime_config(existing_config_yaml),
         connector_host=_existing_connector_host_config(existing_config_yaml),
         connectors=_existing_connectors_config(existing_config_yaml),
         executor_node={
-            "enabled": True,
-            "synapse_base_url": synapse_base_url,
-            "node_id": node_id,
             "enabled_executors": enabled_executors,
         },
         executors={
@@ -1134,6 +1118,98 @@ def resolve_executor_setup_values(
         config_path=config_path,
         config_text=config_text,
     )
+
+
+def _run_executor_setup_flow() -> None:
+    template_lines = load_env_template()
+    existing_values, existing_order = load_env_assignments(ENV_LOCAL)
+    existing_config_yaml = _load_existing_connector_yaml(connector_config_path())
+    executor_setup = resolve_executor_setup_values(
+        existing_values=existing_values,
+        environ=os.environ,
+        existing_config_yaml=existing_config_yaml,
+    )
+    filtered_existing_values = {
+        key: value
+        for key, value in existing_values.items()
+        if key not in LEGACY_REAL_EXECUTOR_ENV_KEYS
+    }
+    filtered_existing_order = [
+        key for key in existing_order if key not in LEGACY_REAL_EXECUTOR_ENV_KEYS
+    ]
+    write_env_file(
+        template_lines=template_lines,
+        resolved_values={**filtered_existing_values, **executor_setup.env_values},
+        existing_values=filtered_existing_values,
+        existing_order=filtered_existing_order,
+        destination=ENV_LOCAL,
+    )
+    _write_connector_config_if_needed(executor_setup)
+    print(f"[write] configured {format_user_path(ENV_LOCAL)}")
+
+
+def _ensure_executor_runtime_configured_for_run() -> None:
+    existing_values, _ = load_env_assignments(ENV_LOCAL)
+    existing_config_yaml = _load_existing_connector_yaml(connector_config_path())
+    if _executor_runtime_config_complete(existing_config_yaml, existing_values):
+        return
+    if not setup_can_prompt():
+        raise CliError(
+            "Local executor runtime config is incomplete. Run `./synapse executor setup` "
+            "or rerun `./synapse executor run ...` in a TTY."
+        )
+    print("[setup] executor run is missing local executor runtime config; launching setup.")
+    _run_executor_setup_flow()
+    refreshed_values, _ = load_env_assignments(ENV_LOCAL)
+    refreshed_config_yaml = _load_existing_connector_yaml(connector_config_path())
+    if not _executor_runtime_config_complete(refreshed_config_yaml, refreshed_values):
+        raise CliError(
+            "Local executor runtime config is still incomplete after setup. "
+            "Check the configured executor command paths and rerun `./synapse executor setup`."
+        )
+
+
+def _executor_runtime_config_complete(
+    existing_config_yaml: dict[str, object],
+    existing_values: dict[str, str],
+) -> bool:
+    enabled_executors = _existing_executor_enabled_types(existing_config_yaml)
+    if not enabled_executors:
+        return False
+    executors_block = _existing_executors_config(existing_config_yaml)
+    return all(
+        _executor_runtime_ready(
+            executor_type,
+            existing_block=executors_block.get(executor_type, {}),
+            existing_values=existing_values,
+        )
+        for executor_type in enabled_executors
+    )
+
+
+def _executor_runtime_ready(
+    executor_type: str,
+    *,
+    existing_block: dict[str, object],
+    existing_values: dict[str, str],
+) -> bool:
+    if executor_type == "codex":
+        command = str(
+            existing_block.get("command")
+            or existing_values.get(CODEX_COMMAND_KEY)
+            or _detected_codex_command()
+            or ""
+        ).strip()
+        return bool(command) and _command_available(command)
+    if executor_type == "acpx":
+        command = str(
+            existing_block.get("command")
+            or existing_values.get(ACPX_COMMAND_KEY)
+            or "acpx"
+        ).strip()
+        return bool(command) and _command_available(command)
+    command = str(existing_block.get("command") or "").strip()
+    return bool(command) and _command_available(command)
 
 
 def bootstrap_setup_files() -> None:
@@ -1386,7 +1462,7 @@ def _detected_codex_command() -> str | None:
     return shutil.which("codex")
 
 
-def _codex_command_available(command: str) -> bool:
+def _command_available(command: str) -> bool:
     return shutil.which(command) is not None
 
 
@@ -1404,7 +1480,7 @@ def resolve_codex_enabled(explicit_value: str | None, *, interactive: bool) -> b
     if not interactive:
         return explicit_default if explicit_default is not None else False
 
-    default_value = explicit_default if explicit_default is not None else _codex_command_available("codex")
+    default_value = explicit_default if explicit_default is not None else _command_available("codex")
     return prompt_bool_value("Enable Codex executor", default=default_value)
 
 
@@ -1741,9 +1817,6 @@ def _existing_executor_node_config(raw_connector_yaml: dict[str, object]) -> dic
     raw_executor_node = raw_connector_yaml.get("executor_node")
     if isinstance(raw_executor_node, dict):
         return {
-            "enabled": _coerce_bool_config_value(raw_executor_node.get("enabled", False), default=False),
-            "synapse_base_url": raw_executor_node.get("synapse_base_url", "http://127.0.0.1:8000"),
-            "node_id": _executor_node_id_default(raw_connector_yaml),
             "enabled_executors": _existing_executor_enabled_types(raw_connector_yaml),
         }
     return _default_executor_node_config()
@@ -1786,9 +1859,6 @@ def _default_connector_host_config() -> dict[str, object]:
 
 def _default_executor_node_config() -> dict[str, object]:
     return {
-        "enabled": False,
-        "synapse_base_url": "http://127.0.0.1:8000",
-        "node_id": _generated_executor_node_id(),
         "enabled_executors": [],
     }
 

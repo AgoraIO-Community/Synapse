@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from uuid import uuid4
 
 from synapse.communication.model import CommunicationModel
+from synapse.protocol import Persona
 
 from .config import Settings
 from .executor_node_manager import ExecutorNodeManager
@@ -40,15 +41,62 @@ class RuntimeContainer:
             raise KeyError(f"Unknown session: {session_id}") from exc
 
     async def handle_executor_node_connected(self) -> list[str]:
-        available = {
-            executor_type
-            for executor_type in self.executor_node_manager.detached_executor_types
-            if self.executor_node_manager.is_executor_connected(executor_type)
-        }
         updated_task_ids: list[str] = []
         for session in self._sessions.values():
-            changed = await session.requeue_waiting_executor_tasks(available)
+            changed = await session.requeue_waiting_executor_tasks()
             if changed:
                 session.schedule_execution()
                 updated_task_ids.extend(changed)
+        await self.publish_session_snapshots()
         return updated_task_ids
+
+    async def handle_executor_node_disconnected(self) -> None:
+        await self.publish_session_snapshots()
+
+    async def publish_session_snapshots(self) -> None:
+        for session in self._sessions.values():
+            if session.subscribers:
+                await session.publish_snapshot()
+
+    async def persona_is_busy(self, persona_id: str) -> bool:
+        for session in self._sessions.values():
+            persona = await session.blackboard.get_persona(persona_id)
+            if persona is not None and (persona.status == "busy" or persona.current_task_id is not None):
+                return True
+        return False
+
+    async def bound_persona_names_for_node(self, node_id: str) -> list[str]:
+        bound_names: set[str] = set()
+        for session in self._sessions.values():
+            for persona in await session.blackboard.list_personas():
+                if persona.executor_node_id == node_id:
+                    bound_names.add(persona.name)
+        return sorted(bound_names)
+
+    async def sync_persisted_personas(self, personas: list[Persona]) -> None:
+        persisted_by_id = {persona.persona_id: persona for persona in personas}
+        for session in self._sessions.values():
+            current_personas = {
+                persona.persona_id: persona
+                for persona in await session.blackboard.list_personas()
+            }
+            for persona_id, persisted in persisted_by_id.items():
+                current = current_personas.get(persona_id)
+                if current is None:
+                    await session.blackboard.put_persona(persisted)
+                    continue
+                await session.blackboard.put_persona(
+                    persisted.model_copy(
+                        update={
+                            "status": current.status,
+                            "current_task_id": current.current_task_id,
+                        }
+                    )
+                )
+            for persona_id, current in current_personas.items():
+                if persona_id in persisted_by_id:
+                    continue
+                if current.status == "busy" or current.current_task_id is not None:
+                    continue
+                await session.blackboard.delete_persona(persona_id)
+        await self.publish_session_snapshots()

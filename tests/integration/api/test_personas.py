@@ -23,7 +23,7 @@ def _build_app():
 
 
 @pytest.mark.anyio
-async def test_persona_changes_apply_only_to_next_session(monkeypatch, tmp_path):
+async def test_persona_changes_sync_into_active_sessions(monkeypatch, tmp_path):
     monkeypatch.setattr(persona_pool, "PERSONAS_FILE", tmp_path / "personas.yaml")
     app = _build_app()
 
@@ -45,10 +45,33 @@ async def test_persona_changes_apply_only_to_next_session(monkeypatch, tmp_path)
         assert len(list_response.json()) == 1
 
         first_snapshot = (await client.get(f"/sessions/{first_session_id}")).json()
-        assert first_snapshot["personas"] == []
+        assert len(first_snapshot["personas"]) == 1
+        assert first_snapshot["personas"][0]["name"] == "Alex"
 
         second_session_id = (await client.post("/sessions")).json()["session_id"]
         second_snapshot = (await client.get(f"/sessions/{second_session_id}")).json()
 
         assert len(second_snapshot["personas"]) == 1
         assert second_snapshot["personas"][0]["name"] == "Alex"
+
+
+@pytest.mark.anyio
+async def test_persona_ids_do_not_collide_for_similar_names(monkeypatch, tmp_path):
+    monkeypatch.setattr(persona_pool, "PERSONAS_FILE", tmp_path / "personas.yaml")
+    app = _build_app()
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+        session_id = (await client.post("/sessions")).json()["session_id"]
+
+        first = await client.post(
+            f"/sessions/{session_id}/personas",
+            json={"name": "Alice", "avatar": "A", "base_prompt": "One"},
+        )
+        second = await client.post(
+            f"/sessions/{session_id}/personas",
+            json={"name": "alice", "avatar": "B", "base_prompt": "Two"},
+        )
+
+    assert first.status_code == 201
+    assert second.status_code == 201
+    assert first.json()["persona_id"] != second.json()["persona_id"]

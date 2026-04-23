@@ -24,7 +24,12 @@ class SessionManager:
         task: Task,
         binding: SessionBinding,
     ) -> tuple[ExecutionSession, SessionBinding, ExecutorSession]:
-        executor_node_id = getattr(executor, "executor_node_id", None)
+        metadata_node_id = task.metadata.get("executor_node_id")
+        executor_node_id = (
+            metadata_node_id
+            if isinstance(metadata_node_id, str) and metadata_node_id
+            else getattr(executor, "executor_node_id", None)
+        )
         if binding.execution_session_id:
             existing = await store.get_session(binding.execution_session_id)
             if existing is not None:

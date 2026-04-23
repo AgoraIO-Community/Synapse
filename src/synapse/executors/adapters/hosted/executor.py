@@ -38,10 +38,6 @@ class HostedExecutor:
             supports_setup=False,
         )
 
-    @property
-    def executor_node_id(self) -> str | None:
-        return self._manager.node_id
-
     def get_capabilities(self) -> ExecutorCapabilities:
         return self._capabilities
 
@@ -75,6 +71,7 @@ class HostedExecutor:
             workspace_id=task.session_affinity,
             task_metadata=dict(task.metadata),
             latest_resume_handle=_resume_handle_from_session(session),
+            node_id=_node_id_from_task(task),
         )
         try:
             while True:
@@ -91,3 +88,8 @@ class HostedExecutor:
 def _resume_handle_from_session(session: ExecutorSession) -> dict[str, object] | None:
     value = session.metadata.get("latest_resume_handle")
     return dict(value) if isinstance(value, dict) else None
+
+
+def _node_id_from_task(task: Task) -> str | None:
+    value = task.metadata.get("executor_node_id")
+    return value if isinstance(value, str) and value else None

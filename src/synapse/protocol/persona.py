@@ -14,5 +14,6 @@ class Persona(BaseModel):
     name: str
     avatar: str = ""
     base_prompt: str = ""
+    executor_node_id: str | None = None
     status: str = "idle"  # "idle" | "busy"
     current_task_id: str | None = None

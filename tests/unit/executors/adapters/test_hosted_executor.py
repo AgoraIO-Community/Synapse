@@ -5,6 +5,7 @@ import asyncio
 import pytest
 
 from synapse.executors.adapters import HostedExecutor
+from synapse.executors.node.registry import ExecutorNodeRegistry
 from synapse.executors.core import ExecutorEventType, ExecutorSession
 from synapse.protocol import ExecutionRun, ExecutorNodeExecutor, RegisterNodeMessage, Task
 from synapse.runtime.executor_node_manager import ExecutorNodeManager
@@ -23,10 +24,21 @@ async def _collect_events(executor: HostedExecutor, run: ExecutionRun, task: Tas
 
 
 @pytest.mark.anyio
-async def test_hosted_executor_finishes_waiting_on_disconnect_before_reconnect():
-    manager = ExecutorNodeManager(detached_executor_types=("codex",))
+async def test_hosted_executor_finishes_waiting_on_disconnect_before_reconnect(tmp_path):
+    manager = ExecutorNodeManager(
+        detached_executor_types=("codex",),
+        registry=ExecutorNodeRegistry(path=tmp_path / "executor_nodes.yaml"),
+    )
     first_socket = FakeWebSocket()
     second_socket = FakeWebSocket()
+    first_issue = await manager.create_node(
+        name="Node One",
+        enabled_executors=["codex"],
+    )
+    second_issue = await manager.create_node(
+        name="Node Two",
+        enabled_executors=["codex"],
+    )
     executor = HostedExecutor(
         executor_type="codex",
         manager=manager,
@@ -41,6 +53,7 @@ async def test_hosted_executor_finishes_waiting_on_disconnect_before_reconnect()
         title="Hosted task",
         goal="Hosted task",
         preferred_executor="codex",
+        metadata={"executor_node_id": first_issue.node.node_id},
     )
     run = ExecutionRun(
         run_id="run-1",
@@ -52,7 +65,8 @@ async def test_hosted_executor_finishes_waiting_on_disconnect_before_reconnect()
     await manager.register_connection(
         first_socket,
         RegisterNodeMessage(
-            node_id="node-1",
+            node_id=first_issue.node.node_id,
+            token=first_issue.token,
             executors=[ExecutorNodeExecutor(executor_type="codex")],
         ),
     )
@@ -65,11 +79,12 @@ async def test_hosted_executor_finishes_waiting_on_disconnect_before_reconnect()
             raise AssertionError("Timed out waiting for dispatch command.")
         await asyncio.sleep(0)
 
-    await manager.disconnect(reason="connection_closed")
+    await manager.disconnect(websocket=first_socket, reason="connection_closed")
     await manager.register_connection(
         second_socket,
         RegisterNodeMessage(
-            node_id="node-2",
+            node_id=second_issue.node.node_id,
+            token=second_issue.token,
             executors=[ExecutorNodeExecutor(executor_type="codex")],
         ),
     )
@@ -77,9 +92,8 @@ async def test_hosted_executor_finishes_waiting_on_disconnect_before_reconnect()
     events = await asyncio.wait_for(collector, timeout=1.0)
 
     assert [event.event_type for event in events] == [ExecutorEventType.WAITING_EXECUTOR]
-    assert events[0].message == "Waiting for executor node 'node-1' to reconnect."
+    assert events[0].message == f"Waiting for executor node '{first_issue.node.node_id}' to reconnect."
     assert events[0].metadata == {
-        "executor_node_id": "node-1",
+        "executor_node_id": first_issue.node.node_id,
         "availability_reason": "connection_closed",
     }
-
