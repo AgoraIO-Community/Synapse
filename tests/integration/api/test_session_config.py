@@ -31,25 +31,25 @@ async def test_session_config_persists_communication_persona_prompt_for_new_sess
     app = _build_app()
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
-        first_session_id = (await client.post("/sessions")).json()["session_id"]
+        first_session_id = (await client.post("/api/sessions")).json()["session_id"]
 
         response = await client.put(
-            f"/sessions/{first_session_id}/config/communication_persona_prompt",
+            f"/api/sessions/{first_session_id}/config/communication_persona_prompt",
             json={"value": "You are warm and concise."},
         )
 
         assert response.status_code == 200
         assert (tmp_path / "personas.yaml").exists()
         saved = await client.get(
-            f"/sessions/{first_session_id}/config/communication_persona_prompt",
+            f"/api/sessions/{first_session_id}/config/communication_persona_prompt",
         )
         assert saved.status_code == 200
         assert saved.json()["value"] == "You are warm and concise."
 
-        first_snapshot = (await client.get(f"/sessions/{first_session_id}")).json()
+        first_snapshot = (await client.get(f"/api/sessions/{first_session_id}")).json()
         assert first_snapshot["communication_persona_prompt"] == ""
 
-        second_session_id = (await client.post("/sessions")).json()["session_id"]
-        snapshot = (await client.get(f"/sessions/{second_session_id}")).json()
+        second_session_id = (await client.post("/api/sessions")).json()["session_id"]
+        snapshot = (await client.get(f"/api/sessions/{second_session_id}")).json()
 
         assert snapshot["communication_persona_prompt"] == "You are warm and concise."

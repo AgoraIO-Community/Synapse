@@ -247,5 +247,5 @@ class AgoraConnectorSessionService:
     def _build_chat_completions_url(self, binding_id: str) -> str:
         return (
             f"{self._settings.service_base_url.rstrip('/')}"
-            f"/connectors/agora-convoai/chat/completions?binding_id={binding_id}"
+            f"/api/connectors/agora-convoai/chat/completions?binding_id={binding_id}"
         )

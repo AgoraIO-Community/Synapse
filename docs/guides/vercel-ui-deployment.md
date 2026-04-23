@@ -8,15 +8,15 @@ backend stays on a separate HTTPS origin on your own server.
 The deployed UI expects one public backend base URL that serves both:
 
 - HTTPS requests for:
-  - `POST /sessions`
-  - `GET /sessions/{session_id}`
-  - `GET /sessions/{session_id}/conversation`
-  - `GET /sessions/{session_id}/diagnostics/timeline`
+  - `POST /api/sessions`
+  - `GET /api/sessions/{session_id}`
+  - `GET /api/sessions/{session_id}/conversation`
+  - `GET /api/sessions/{session_id}/diagnostics/timeline`
 - secure websocket upgrades for:
-  - `WS /sessions/{session_id}/stream`
+  - `WS /api/sessions/{session_id}/stream`
 
 Point `VITE_API_BASE_URL` at that public backend origin itself. Do not point it
-at `/sessions`, `/connectors`, or the connector host on port `8010`.
+at `/api/sessions`, `/api/connectors`, or the connector host on port `8010`.
 
 If the deployed UI also enables the compact Agora voice accessory in the main
 workbench, set a second frontend env var:
@@ -27,17 +27,17 @@ VITE_CONNECTOR_BASE_URL=https://connectors.example.com
 
 That value is used only for browser calls to:
 
-- `GET /connectors/agora-convoai/config`
-- `POST /connectors/agora-convoai/sessions/prepare`
-- `POST /connectors/agora-convoai/sessions/activate`
-- `POST /connectors/agora-convoai/sessions/stop`
+- `GET /api/connectors/agora-convoai/config`
+- `POST /api/connectors/agora-convoai/sessions/prepare`
+- `POST /api/connectors/agora-convoai/sessions/activate`
+- `POST /api/connectors/agora-convoai/sessions/stop`
 
 The main shell's `Voice` mode now rebinds the whole frontend to the
 connector-returned `synapse_session_id`, so deployed environments must ensure the
 public main-backend origin and the public connector origin are both reachable from
 the browser during mode switches.
 
-If your main Synapse service already mounts `/connectors/...` routes directly, you
+If your main Synapse service already mounts `/api/connectors/...` routes directly, you
 may set `VITE_CONNECTOR_BASE_URL` to the same public origin as
 `VITE_API_BASE_URL`.
 
@@ -105,20 +105,20 @@ If your public backend origin is served through Nginx, proxy the session routes
 to the main Synapse API on `127.0.0.1:8000`.
 
 If you choose not to expose a separate `VITE_CONNECTOR_BASE_URL`, the same public
-origin must still expose `/connectors/agora-convoai/*`, either directly from the
+origin must still expose `/api/connectors/agora-convoai/*`, either directly from the
 main Synapse service or by forwarding those routes to a standalone connector host.
 
 Typical requirements:
 
 - preserve the original `Host`
 - forward `X-Forwarded-For` and `X-Forwarded-Proto`
-- do not rewrite the `/sessions` path prefix
-- keep websocket upgrade handling on `/sessions/{session_id}/stream`
+- do not rewrite the `/api/sessions` path prefix
+- keep websocket upgrade handling on `/api/sessions/{session_id}/stream`
 
 Example shape:
 
 ```nginx
-location ~ ^/sessions/[^/]+/stream$ {
+location ~ ^/api/sessions/[^/]+/stream$ {
     proxy_pass http://127.0.0.1:8000;
     proxy_http_version 1.1;
     proxy_set_header Upgrade $http_upgrade;
@@ -129,7 +129,7 @@ location ~ ^/sessions/[^/]+/stream$ {
     proxy_set_header X-Forwarded-Proto $scheme;
 }
 
-location = /sessions {
+location = /api/sessions {
     proxy_pass http://127.0.0.1:8000;
     proxy_http_version 1.1;
     proxy_set_header Host $host;
@@ -138,7 +138,7 @@ location = /sessions {
     proxy_set_header X-Forwarded-Proto $scheme;
 }
 
-location /sessions/ {
+location /api/sessions/ {
     proxy_pass http://127.0.0.1:8000;
     proxy_http_version 1.1;
     proxy_set_header Host $host;
@@ -152,10 +152,10 @@ location /sessions/ {
 
 After deployment:
 
-- verify `POST https://your-backend-origin/sessions`
+- verify `POST https://your-backend-origin/api/sessions`
 - verify the deployed Vercel UI can load a session and conversation snapshot
-- verify the websocket stream opens over `wss://.../sessions/{session_id}/stream`
-- verify `GET https://your-connector-origin/connectors/agora-convoai/config` when
+- verify the websocket stream opens over `wss://.../api/sessions/{session_id}/stream`
+- verify `GET https://your-connector-origin/api/connectors/agora-convoai/config` when
   `VITE_CONNECTOR_BASE_URL` is set
 - verify the main UI can start and stop the voice accessory without CORS or
   mixed-origin failures

@@ -29,11 +29,11 @@ The connector host runs separately from the main Synapse API server:
 
 The `agora-convoai` module exposes headless routes:
 
-- `GET /connectors/agora-convoai/config`
-- `POST /connectors/agora-convoai/sessions/prepare`
-- `POST /connectors/agora-convoai/sessions/activate`
-- `POST /connectors/agora-convoai/sessions/stop`
-- `POST /connectors/agora-convoai/chat/completions`
+- `GET /api/connectors/agora-convoai/config`
+- `POST /api/connectors/agora-convoai/sessions/prepare`
+- `POST /api/connectors/agora-convoai/sessions/activate`
+- `POST /api/connectors/agora-convoai/sessions/stop`
+- `POST /api/connectors/agora-convoai/chat/completions`
 
 ## Behavior
 
@@ -50,11 +50,11 @@ The `agora-convoai` module exposes headless routes:
 
 For this module, Agora does not call OpenAI directly.
 
-Instead, `POST /connectors/agora-convoai/sessions/activate` reserves a connector
+Instead, `POST /api/connectors/agora-convoai/sessions/activate` reserves a connector
 binding first and builds:
 
 ```text
-${SYNAPSE_CONNECTOR_PUBLIC_BASE_URL}/connectors/agora-convoai/chat/completions?binding_id=...
+${SYNAPSE_CONNECTOR_PUBLIC_BASE_URL}/api/connectors/agora-convoai/chat/completions?binding_id=...
 ```
 
 and passes that full URL into the Agora SDK as the OpenAI-compatible LLM endpoint.
@@ -92,13 +92,13 @@ The frontend uses the agent RTM uid for toolkit messaging calls and the agent RT
 The main workbench under `src/synapse/ui/` now supports an explicit `Text` /
 `Voice` mode switch. That UI path:
 
-- calls the connector host through `/connectors/agora-convoai/*` when entering voice
+- calls the connector host through `/api/connectors/agora-convoai/*` when entering voice
   mode
 - recreates a fresh frontend-owned session on every mode switch
 - starts voice mode in an idle shell state first, then rebinds the whole shell
   to the voice session's returned `synapse_session_id` only after the user
   presses `Start`
-- returns to a fresh normal `POST /sessions` session when switching back to
+- returns to a fresh normal `POST /api/sessions` session when switching back to
   text mode
 - uses browser-local transcript/state from the Agora toolkit for the left-pane
   voice transcript feed while the workbench follows the bound Synapse session

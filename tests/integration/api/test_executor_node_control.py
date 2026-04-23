@@ -29,7 +29,7 @@ from tests.helpers.asgi_websocket import ASGIWebSocketSession
 async def _wait_for_snapshot(client: AsyncClient, session_id: str, predicate, timeout: float = 4.0):
     deadline = asyncio.get_running_loop().time() + timeout
     while True:
-        snapshot = (await client.get(f"/sessions/{session_id}")).json()
+        snapshot = (await client.get(f"/api/sessions/{session_id}")).json()
         if predicate(snapshot):
             return snapshot
         if asyncio.get_running_loop().time() >= deadline:
@@ -57,7 +57,7 @@ async def test_detached_executor_waits_for_host_when_unavailable(monkeypatch, tm
     monkeypatch.setattr(node_registry, "EXECUTOR_NODES_FILE", tmp_path / "executor_nodes.yaml")
     app = _build_app()
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
-        session_id = (await client.post("/sessions")).json()["session_id"]
+        session_id = (await client.post("/api/sessions")).json()["session_id"]
         session = app.state.runtime_container.get_session(session_id)
         await session.blackboard.put_task(
             Task(
@@ -94,7 +94,7 @@ async def test_executor_node_registration_requeues_waiting_task_and_completes(mo
     app = _build_app()
     issue = await _issue_node(app, name="Node 1")
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
-        session_id = (await client.post("/sessions")).json()["session_id"]
+        session_id = (await client.post("/api/sessions")).json()["session_id"]
         session = app.state.runtime_container.get_session(session_id)
         await session.blackboard.put_task(
             Task(
@@ -114,7 +114,7 @@ async def test_executor_node_registration_requeues_waiting_task_and_completes(mo
             lambda snap: snap["tasks"][0]["status"] == "waiting_executor",
         )
 
-        async with ASGIWebSocketSession(app, "/executors/control") as websocket:
+        async with ASGIWebSocketSession(app, "/api/executors/control") as websocket:
             await websocket.send_json(
                 {
                     "type": "register_node",
@@ -212,7 +212,7 @@ async def test_executor_control_invalid_message_ack_does_not_close_connection(
     app = _build_app()
     issue = await _issue_node(app, name="Node 1")
 
-    async with ASGIWebSocketSession(app, "/executors/control") as websocket:
+    async with ASGIWebSocketSession(app, "/api/executors/control") as websocket:
         await websocket.send_json(
             {
                 "type": "register_node",
@@ -264,7 +264,7 @@ async def test_resolve_interaction_request_routes_native_response_to_executor_no
     app = _build_app()
     issue = await _issue_node(app, name="Node 1")
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
-        session_id = (await client.post("/sessions")).json()["session_id"]
+        session_id = (await client.post("/api/sessions")).json()["session_id"]
         session = app.state.runtime_container.get_session(session_id)
         await session.blackboard.put_task(
             Task(
@@ -331,7 +331,7 @@ async def test_resolve_interaction_request_routes_native_response_to_executor_no
             )
         )
 
-        async with ASGIWebSocketSession(app, "/executors/control") as websocket:
+        async with ASGIWebSocketSession(app, "/api/executors/control") as websocket:
             await websocket.send_json(
                 {
                     "type": "register_node",
@@ -350,7 +350,7 @@ async def test_resolve_interaction_request_routes_native_response_to_executor_no
             )
             assert (await websocket.receive_json())["type"] == "ack"
             response = await client.post(
-                f"/sessions/{session_id}/interaction-requests/ireq-native/resolve",
+                f"/api/sessions/{session_id}/interaction-requests/ireq-native/resolve",
                 json={"action": "approve"},
             )
             assert response.status_code == 200

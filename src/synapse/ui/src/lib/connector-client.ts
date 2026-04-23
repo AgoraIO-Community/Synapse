@@ -86,6 +86,7 @@ export interface ConnectorActivateResponse {
   diagnostics: ConnectorSessionDiagnostics;
 }
 
+const API_PREFIX = "/api";
 const configuredConnectorBaseUrl = getConfiguredConnectorBaseUrl();
 
 async function ensureOk(response: Response) {
@@ -120,38 +121,47 @@ function buildConnectorHttpUrl(path: string): string {
 }
 
 export async function getConnectorConfig(): Promise<ConnectorConfig> {
-  const response = await fetch(buildConnectorHttpUrl("/connectors/agora-convoai/config"));
+  const response = await fetch(buildConnectorHttpUrl(`${API_PREFIX}/connectors/agora-convoai/config`));
   return (await ensureOk(response)).json();
 }
 
 export async function prepareConnectorSession(
   payload: ConnectorSessionPrepareRequest = {},
 ): Promise<ConnectorPrepareResponse> {
-  const response = await fetch(buildConnectorHttpUrl("/connectors/agora-convoai/sessions/prepare"), {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
+  const response = await fetch(
+    buildConnectorHttpUrl(`${API_PREFIX}/connectors/agora-convoai/sessions/prepare`),
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    },
+  );
   return (await ensureOk(response)).json();
 }
 
 export async function activateConnectorSession(
   payload: ConnectorSessionActivateRequest,
 ): Promise<ConnectorActivateResponse> {
-  const response = await fetch(buildConnectorHttpUrl("/connectors/agora-convoai/sessions/activate"), {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
+  const response = await fetch(
+    buildConnectorHttpUrl(`${API_PREFIX}/connectors/agora-convoai/sessions/activate`),
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    },
+  );
   return (await ensureOk(response)).json();
 }
 
 export async function stopConnectorSession(bindingId: string): Promise<void> {
-  const response = await fetch(buildConnectorHttpUrl("/connectors/agora-convoai/sessions/stop"), {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ binding_id: bindingId }),
-  });
+  const response = await fetch(
+    buildConnectorHttpUrl(`${API_PREFIX}/connectors/agora-convoai/sessions/stop`),
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ binding_id: bindingId }),
+    },
+  );
   await ensureOk(response);
 }
 
@@ -161,7 +171,7 @@ export function stopConnectorSessionBeacon(bindingId: string): boolean {
   }
   const payload = JSON.stringify({ binding_id: bindingId });
   return navigator.sendBeacon(
-    buildConnectorHttpUrl("/connectors/agora-convoai/sessions/stop"),
+    buildConnectorHttpUrl(`${API_PREFIX}/connectors/agora-convoai/sessions/stop`),
     new Blob([payload], { type: "application/json" }),
   );
 }

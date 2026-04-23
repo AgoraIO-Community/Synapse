@@ -3,7 +3,7 @@
 Synapse supports a separate, headless connector host for vendor-facing connector modules.
 
 The standalone connector host is now an optional deployment path. In the default
-service-hosted runtime, the main Synapse service mounts enabled `/connectors/...`
+service-hosted runtime, the main Synapse service mounts enabled `/api/connectors/...`
 routes directly and serves them on the same public origin as the rest of the
 app.
 
@@ -55,8 +55,8 @@ start the main Synapse service again before retesting. If you are using
 Useful health endpoints:
 
 ```bash
-curl -i http://127.0.0.1:8010/health
-curl -i http://127.0.0.1:8010/connectors/agora-convoai/health
+curl -i http://127.0.0.1:8010/api/health
+curl -i http://127.0.0.1:8010/api/connectors/agora-convoai/health
 ```
 
 The responses include:
@@ -69,7 +69,7 @@ The responses include:
 If the connector cannot create Synapse sessions, first verify:
 
 ```bash
-curl -i -X POST http://127.0.0.1:8000/sessions
+curl -i -X POST http://127.0.0.1:8000/api/sessions
 ```
 
 from the same machine running the connector host.
@@ -97,9 +97,9 @@ Synapse runtime also reads the shared `runtime` section.
 
 For deployed browser voice-mode access, `connector_host` may also include
 `cors_allowed_origins`, which is the list of browser origins allowed to call
-`/connectors/...` routes cross-origin.
+`/api/connectors/...` routes cross-origin.
 
-`connector_host.public_base_url` should be the public base URL where `/connectors/...` is
+`connector_host.public_base_url` should be the public base URL where `/api/connectors/...` is
 reachable:
 
 - in the default service-hosted path, set it to the public main Synapse
@@ -112,7 +112,7 @@ Upgrade note:
 - older standalone gateway/connector setups often pointed `public_base_url` at
   `http://127.0.0.1:8010`
 - the tracked example now defaults it to `http://127.0.0.1:8000` because the
-  unified-service path exposes `/connectors/...` from the main Synapse service
+  unified-service path exposes `/api/connectors/...` from the main Synapse service
 
 The tracked template is:
 

@@ -3,6 +3,8 @@ from __future__ import annotations
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from synapse.api.paths import api_path
+
 from .config import ConnectorHostSettings, load_connector_host_settings
 from .registry import create_connector_module_registry
 
@@ -26,7 +28,12 @@ def include_enabled_connector_routes(
 
 def create_app(settings: ConnectorHostSettings | None = None) -> FastAPI:
     settings = settings or load_connector_host_settings()
-    app = FastAPI(title="Synapse Connector Host")
+    app = FastAPI(
+        title="Synapse Connector Host",
+        openapi_url=api_path("/openapi.json"),
+        docs_url=api_path("/docs"),
+        redoc_url=api_path("/redoc"),
+    )
     if settings.cors_allowed_origins:
         app.add_middleware(
             CORSMiddleware,
@@ -35,7 +42,7 @@ def create_app(settings: ConnectorHostSettings | None = None) -> FastAPI:
             allow_headers=["*"],
         )
 
-    @app.get("/health")
+    @app.get(api_path("/health"))
     async def health() -> dict[str, object]:
         return {
             "status": "ok",

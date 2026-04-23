@@ -11,6 +11,7 @@ from urllib.parse import urlparse, urlunparse
 
 import websockets
 
+from synapse.api.paths import API_PREFIX
 from synapse.communication.persona_pool import resolve_workspace
 from synapse.executors.adapters.acpx import AcpxExecutor, AcpxExecutorSession
 from synapse.executors.adapters.codex import CodexExecutor, CodexExecutorSession
@@ -346,7 +347,7 @@ class ExecutorNodeService:
     def _ws_url(self) -> str:
         parsed = urlparse(self._settings.synapse_base_url)
         scheme = "wss" if parsed.scheme == "https" else "ws"
-        path = parsed.path.rstrip("/") + "/executors/control"
+        path = parsed.path.rstrip("/") + f"{API_PREFIX}/executors/control"
         return urlunparse((scheme, parsed.netloc, path, "", "", ""))
 
 

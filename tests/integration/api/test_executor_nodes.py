@@ -31,10 +31,10 @@ async def test_executor_node_crud_and_rotation(monkeypatch, tmp_path):
     app = _build_app()
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
-        session_id = (await client.post("/sessions")).json()["session_id"]
+        session_id = (await client.post("/api/sessions")).json()["session_id"]
 
         create_response = await client.post(
-            f"/sessions/{session_id}/executor-nodes",
+            f"/api/sessions/{session_id}/executor-nodes",
             json={
                 "name": "Studio Mac",
                 "enabled_executors": ["codex"],
@@ -47,7 +47,7 @@ async def test_executor_node_crud_and_rotation(monkeypatch, tmp_path):
         assert created["node"]["name"] == "Studio Mac"
         assert created["node"]["connection_status"] == "disconnected"
 
-        list_response = await client.get(f"/sessions/{session_id}/executor-nodes")
+        list_response = await client.get(f"/api/sessions/{session_id}/executor-nodes")
         assert list_response.status_code == 200
         listed = list_response.json()
         assert len(listed) == 1
@@ -56,7 +56,7 @@ async def test_executor_node_crud_and_rotation(monkeypatch, tmp_path):
         assert "token" not in listed[0]
 
         reveal_response = await client.post(
-            f"/sessions/{session_id}/executor-nodes/{node_id}/connect-command",
+            f"/api/sessions/{session_id}/executor-nodes/{node_id}/connect-command",
         )
         assert reveal_response.status_code == 200
         revealed = reveal_response.json()
@@ -64,7 +64,7 @@ async def test_executor_node_crud_and_rotation(monkeypatch, tmp_path):
         assert revealed["token"] == created["token"]
 
         patch_response = await client.patch(
-            f"/sessions/{session_id}/executor-nodes/{node_id}",
+            f"/api/sessions/{session_id}/executor-nodes/{node_id}",
             json={"name": "Studio Mac Mini", "enabled_executors": ["codex", "acpx"]},
         )
         assert patch_response.status_code == 200
@@ -72,7 +72,7 @@ async def test_executor_node_crud_and_rotation(monkeypatch, tmp_path):
         assert patch_response.json()["enabled_executors"] == ["codex", "acpx"]
 
         rotate_response = await client.post(
-            f"/sessions/{session_id}/executor-nodes/{node_id}/credentials/rotate",
+            f"/api/sessions/{session_id}/executor-nodes/{node_id}/credentials/rotate",
         )
         assert rotate_response.status_code == 200
         rotated = rotate_response.json()
@@ -80,7 +80,7 @@ async def test_executor_node_crud_and_rotation(monkeypatch, tmp_path):
         assert rotated["token"] != created["token"]
 
         reveal_response = await client.post(
-            f"/sessions/{session_id}/executor-nodes/{node_id}/connect-command",
+            f"/api/sessions/{session_id}/executor-nodes/{node_id}/connect-command",
         )
         assert reveal_response.status_code == 200
         assert reveal_response.json()["token"] == rotated["token"]
@@ -93,9 +93,9 @@ async def test_delete_executor_node_rejects_bound_bros_until_unbound(monkeypatch
     app = _build_app()
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
-        session_id = (await client.post("/sessions")).json()["session_id"]
+        session_id = (await client.post("/api/sessions")).json()["session_id"]
         create_response = await client.post(
-            f"/sessions/{session_id}/executor-nodes",
+            f"/api/sessions/{session_id}/executor-nodes",
             json={
                 "name": "Travel Laptop",
                 "enabled_executors": ["codex"],
@@ -104,7 +104,7 @@ async def test_delete_executor_node_rejects_bound_bros_until_unbound(monkeypatch
         node_id = create_response.json()["node"]["node_id"]
 
         persona_response = await client.post(
-            f"/sessions/{session_id}/personas",
+            f"/api/sessions/{session_id}/personas",
             json={
                 "name": "Alex",
                 "avatar": "A",
@@ -132,16 +132,16 @@ async def test_delete_executor_node_rejects_bound_bros_until_unbound(monkeypatch
             encoding="utf-8",
         )
 
-        delete_response = await client.delete(f"/sessions/{session_id}/executor-nodes/{node_id}")
+        delete_response = await client.delete(f"/api/sessions/{session_id}/executor-nodes/{node_id}")
         assert delete_response.status_code == 409
 
         patch_persona = await client.patch(
-            f"/sessions/{session_id}/personas/{persona_response.json()['persona_id']}",
+            f"/api/sessions/{session_id}/personas/{persona_response.json()['persona_id']}",
             json={"executor_node_id": None},
         )
         assert patch_persona.status_code == 200
 
-        delete_response = await client.delete(f"/sessions/{session_id}/executor-nodes/{node_id}")
+        delete_response = await client.delete(f"/api/sessions/{session_id}/executor-nodes/{node_id}")
         assert delete_response.status_code == 200
         assert delete_response.json() == {"deleted": node_id}
 
@@ -172,9 +172,9 @@ async def test_reveal_connect_command_requires_rotation_for_legacy_hash_only_nod
     app = _build_app()
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
-        session_id = (await client.post("/sessions")).json()["session_id"]
+        session_id = (await client.post("/api/sessions")).json()["session_id"]
         reveal_response = await client.post(
-            f"/sessions/{session_id}/executor-nodes/node-legacy/connect-command",
+            f"/api/sessions/{session_id}/executor-nodes/node-legacy/connect-command",
         )
 
     assert reveal_response.status_code == 409

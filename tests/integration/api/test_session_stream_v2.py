@@ -120,9 +120,9 @@ async def test_session_stream_accepts_message_actions_and_keeps_snapshot_events(
         transport=ASGITransport(app=app),
         base_url="http://testserver",
     ) as client:
-        session_id = (await client.post("/sessions")).json()["session_id"]
+        session_id = (await client.post("/api/sessions")).json()["session_id"]
 
-        async with ASGIWebSocketSession(app, f"/sessions/{session_id}/stream") as websocket:
+        async with ASGIWebSocketSession(app, f"/api/sessions/{session_id}/stream") as websocket:
             initial_event = await websocket.receive_json()
             assert initial_event["type"] == "snapshot"
 
@@ -140,7 +140,7 @@ async def test_session_stream_accepts_message_actions_and_keeps_snapshot_events(
                 and sum(1 for item in items if item["type"] == "snapshot") >= 2,
             )
 
-        conversation = (await client.get(f"/sessions/{session_id}/conversation")).json()
+        conversation = (await client.get(f"/api/sessions/{session_id}/conversation")).json()
 
     event_types = [event["type"] for event in events]
     assert "action_accepted" in event_types
@@ -175,10 +175,10 @@ async def test_session_stream_emits_conversation_appended_for_notification_messa
         transport=ASGITransport(app=app),
         base_url="http://testserver",
     ) as client:
-        session_id = (await client.post("/sessions")).json()["session_id"]
+        session_id = (await client.post("/api/sessions")).json()["session_id"]
         session = app.state.runtime_container.get_session(session_id)
 
-        async with ASGIWebSocketSession(app, f"/sessions/{session_id}/stream") as websocket:
+        async with ASGIWebSocketSession(app, f"/api/sessions/{session_id}/stream") as websocket:
             initial_event = await websocket.receive_json()
             assert initial_event["type"] == "snapshot"
 
@@ -219,9 +219,9 @@ async def test_openai_message_flow_logs_summary_llm_diagnostics_without_trace_ui
         transport=ASGITransport(app=app),
         base_url="http://testserver",
     ) as client:
-        session_id = (await client.post("/sessions")).json()["session_id"]
+        session_id = (await client.post("/api/sessions")).json()["session_id"]
 
-        async with ASGIWebSocketSession(app, f"/sessions/{session_id}/stream") as websocket:
+        async with ASGIWebSocketSession(app, f"/api/sessions/{session_id}/stream") as websocket:
             initial_event = await websocket.receive_json()
             assert initial_event["type"] == "snapshot"
 
@@ -241,7 +241,7 @@ async def test_openai_message_flow_logs_summary_llm_diagnostics_without_trace_ui
 
         diagnostics = (
             await client.get(
-                f"/sessions/{session_id}/diagnostics/timeline",
+                f"/api/sessions/{session_id}/diagnostics/timeline",
                 params={"event_prefix": "comm.llm", "min_level": "INFO"},
             )
         ).json()["events"]
@@ -278,15 +278,15 @@ async def test_openai_message_flow_can_log_verbose_llm_diagnostics_when_enabled(
         transport=ASGITransport(app=app),
         base_url="http://testserver",
     ) as client:
-        session_id = (await client.post("/sessions")).json()["session_id"]
+        session_id = (await client.post("/api/sessions")).json()["session_id"]
         await client.post(
-            f"/sessions/{session_id}/messages",
+            f"/api/sessions/{session_id}/messages",
             json={"text": "what is today's weather"},
         )
 
         diagnostics = (
             await client.get(
-                f"/sessions/{session_id}/diagnostics/timeline",
+                f"/api/sessions/{session_id}/diagnostics/timeline",
                 params={"event_prefix": "comm.llm", "min_level": "INFO"},
             )
         ).json()["events"]
@@ -310,9 +310,9 @@ async def test_session_stream_keeps_tool_calls_out_of_websocket_and_in_diagnosti
         transport=ASGITransport(app=app),
         base_url="http://testserver",
     ) as client:
-        session_id = (await client.post("/sessions")).json()["session_id"]
+        session_id = (await client.post("/api/sessions")).json()["session_id"]
 
-        async with ASGIWebSocketSession(app, f"/sessions/{session_id}/stream") as websocket:
+        async with ASGIWebSocketSession(app, f"/api/sessions/{session_id}/stream") as websocket:
             initial_event = await websocket.receive_json()
             assert initial_event["type"] == "snapshot"
 
@@ -332,7 +332,7 @@ async def test_session_stream_keeps_tool_calls_out_of_websocket_and_in_diagnosti
 
         diagnostics = (
             await client.get(
-                f"/sessions/{session_id}/diagnostics/timeline",
+                f"/api/sessions/{session_id}/diagnostics/timeline",
                 params={"event_prefix": "comm.tool", "min_level": "INFO"},
             )
         ).json()["events"]
@@ -357,7 +357,7 @@ async def test_session_stream_keeps_failed_tool_calls_out_of_websocket_and_in_di
         transport=ASGITransport(app=app),
         base_url="http://testserver",
     ) as client:
-        session_id = (await client.post("/sessions")).json()["session_id"]
+        session_id = (await client.post("/api/sessions")).json()["session_id"]
         session = app.state.runtime_container.get_session(session_id)
         await session.blackboard.put_task(
             Task(
@@ -368,7 +368,7 @@ async def test_session_stream_keeps_failed_tool_calls_out_of_websocket_and_in_di
             )
         )
 
-        async with ASGIWebSocketSession(app, f"/sessions/{session_id}/stream") as websocket:
+        async with ASGIWebSocketSession(app, f"/api/sessions/{session_id}/stream") as websocket:
             initial_event = await websocket.receive_json()
             assert initial_event["type"] == "snapshot"
 
@@ -388,7 +388,7 @@ async def test_session_stream_keeps_failed_tool_calls_out_of_websocket_and_in_di
 
         diagnostics = (
             await client.get(
-                f"/sessions/{session_id}/diagnostics/timeline",
+                f"/api/sessions/{session_id}/diagnostics/timeline",
                 params={"event_prefix": "comm.tool", "min_level": "WARNING"},
             )
         ).json()["events"]
@@ -420,7 +420,7 @@ async def test_session_stream_accepts_command_actions_and_returns_snapshot_updat
         transport=ASGITransport(app=app),
         base_url="http://testserver",
     ) as client:
-        session_id = (await client.post("/sessions")).json()["session_id"]
+        session_id = (await client.post("/api/sessions")).json()["session_id"]
         session = app.state.runtime_container.get_session(session_id)
         await session.blackboard.put_task(
             Task(
@@ -431,7 +431,7 @@ async def test_session_stream_accepts_command_actions_and_returns_snapshot_updat
             )
         )
 
-        async with ASGIWebSocketSession(app, f"/sessions/{session_id}/stream") as websocket:
+        async with ASGIWebSocketSession(app, f"/api/sessions/{session_id}/stream") as websocket:
             initial_event = await websocket.receive_json()
             assert initial_event["type"] == "snapshot"
 
@@ -481,9 +481,9 @@ async def test_session_stream_rejects_invalid_command_targets():
         transport=ASGITransport(app=app),
         base_url="http://testserver",
     ) as client:
-        session_id = (await client.post("/sessions")).json()["session_id"]
+        session_id = (await client.post("/api/sessions")).json()["session_id"]
 
-        async with ASGIWebSocketSession(app, f"/sessions/{session_id}/stream") as websocket:
+        async with ASGIWebSocketSession(app, f"/api/sessions/{session_id}/stream") as websocket:
             initial_event = await websocket.receive_json()
             assert initial_event["type"] == "snapshot"
 

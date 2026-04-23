@@ -67,5 +67,5 @@ Detached-host availability rule:
 Related docs:
 
 - [Blackboard](./blackboard.md)
-- [Sessions and Runs](./sessions-and-runs.md)
+- [Sessions and Runs](./api/sessions-and-runs.md)
 - [Executors](./executors.md)

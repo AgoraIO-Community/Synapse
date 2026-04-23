@@ -126,7 +126,7 @@ Short log of important design decisions and changes for Synapse.
 
 ## 2026-04-18
 
-- Documented the production Vercel UI deployment contract in stable docs, including `VITE_API_BASE_URL`, backend `SYNAPSE_CORS_ALLOWED_ORIGINS`, and the requirement for an HTTPS reverse proxy to preserve `/sessions` routing plus websocket upgrades to the main `8000` Synapse API.
+- Documented the production Vercel UI deployment contract in stable docs, including `VITE_API_BASE_URL`, backend `SYNAPSE_CORS_ALLOWED_ORIGINS`, and the requirement for an HTTPS reverse proxy to preserve `/api/sessions` routing plus websocket upgrades to the main `8000` Synapse API.
 - Updated the GitHub Actions Vercel production deploy to inject `VITE_API_BASE_URL=https://newbro.plutoless.com` during the build and accept `VERCEL_ORG_ID` / `VERCEL_PROJECT_ID` from Actions variables with secrets as a fallback, so merge-to-`main` deploys do not depend on one GitHub storage location for those IDs.
 - Added dedicated gateway-host browser CORS config under `host.cors_allowed_origins` and updated the production deploy contract so deployed voice mode can call `/gateway/agora-convoai/*` on the same public server origin as text mode.
 - Added a compact Agora voice accessory to the main frontend that starts and stops gateway-backed ConvoAI sessions through `/gateway/agora-convoai/*`, keeps the main text workbench session separate, and allows a distinct `VITE_GATEWAY_BASE_URL` for browser gateway calls.
@@ -141,7 +141,7 @@ Short log of important design decisions and changes for Synapse.
 - Added append-only `TaskExecutionDetailEntry` blackboard storage plus bounded communication-context injection for the 5 most recently detail-active tasks, with the last 20 execution-detail entries per included task.
 - Extended `query_task_detail` to return bounded execution detail and command history, and added always-on `system_messages` audit logging on `comm.llm.request_built` for Communication Brain message turns.
 - Filtered low-value Codex progress chatter out of task execution detail, made run/task projection writes change-aware, and demoted repetitive progress-refresh blackboard logs out of normal `INFO` output.
-- Cut real executor runtime over to a detached executor-host process with a dedicated `/executors/control` websocket, keeping Synapse as the durable control plane while `mock` remains the only in-process executor.
+- Cut real executor runtime over to a detached executor-host process with a dedicated `/api/executors/control` websocket, keeping Synapse as the durable control plane while `mock` remains the only in-process executor.
 - Added executor-node-aware execution state including `waiting_executor`, persisted `executor_node_id` on execution lineage/binding objects, opaque workspace ids for `session_affinity`, and dedicated `synapse executor setup` / `synapse executor run` CLI flows.
 
 ## 2026-04-22
@@ -151,12 +151,13 @@ Short log of important design decisions and changes for Synapse.
 - Changed `synapse start` / systemd deployment so the main FastAPI origin now serves the built frontend UI from `/`, while same-origin `/gateway/...` requests are proxied back to the separate gateway host.
 - Replaced the adopted Caddy-based `synapse start` front door with an in-repo `synapse.edge` transport layer that serves the built UI and proxies API, websocket, and gateway traffic to internal backend and gateway listeners.
 - Made detached executor host foreground lifecycle explicit so `synapse executor run` now prints start, connect, ready, disconnect, retry, and interrupt state instead of failing silently during control-channel connection issues.
-- Merged the temporary `synapse.edge` transport back into the main Synapse service so `synapse start` now runs one public service process that serves the built UI, exposes `/sessions` and `/executors/control`, and mounts enabled `/gateway/...` routes directly.
-- Renamed the executor substrate packages to `src/synapse/executors/{core,adapters,host}`, moved connector runtime code under `src/synapse/connectors/{base,host,voice/...}`, and renamed the public connector contract to `connector_host`, `connectors`, `SYNAPSE_CONNECTOR_*`, `VITE_CONNECTOR_BASE_URL`, `synapse connector ...`, and `/connectors/...`.
+- Merged the temporary `synapse.edge` transport back into the main Synapse service so `synapse start` now runs one public service process that serves the built UI, exposes `/api/sessions` and `/api/executors/control`, and mounts enabled `/gateway/...` routes directly.
+- Renamed the executor substrate packages to `src/synapse/executors/{core,adapters,host}`, moved connector runtime code under `src/synapse/connectors/{base,host,voice/...}`, and renamed the public connector contract to `connector_host`, `connectors`, `SYNAPSE_CONNECTOR_*`, `VITE_CONNECTOR_BASE_URL`, `synapse connector ...`, and `/api/connectors/...`.
 - Renamed the detached executor worker contract from `host` to `node`, moving code under `src/synapse/executors/node` and renaming the current executor control-plane fields to `executor_node`, `executor_node_id`, and `node_id`.
 
 ## 2026-04-23
 
+- Moved the adopted public runtime contract under `/api/*`, including session HTTP routes, connector routes, health/OpenAPI/docs endpoints, and both websocket paths, so frontend-serving origins can proxy all non-frontend traffic with a single `/api/` rule.
 - Replaced the main frontend root shell with a componentized `Newbro` command-center concept layout, using a light persona-to-card adapter with seeded sample fallbacks instead of the prior live workbench root experience.
 - Wired the `Newbro` shell's `Interaction memory` panel to live Agora transcript state, with explicit top-bar start/stop/mute controls, shell rebinding to the gateway-backed voice `synapse_session_id`, and retained transcript history after stop.
 - Added operator-managed executor-node CRUD with issued node-token enrollment, per-Bro `executor_node_id` binding, derived Bro liveness from the bound node's live control-channel connection state, and a copyable `synapse executor run --base-url ... --node-id ... --token ...` connect command in the UI.

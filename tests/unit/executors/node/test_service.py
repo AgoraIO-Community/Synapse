@@ -90,7 +90,7 @@ async def test_run_forever_reports_retry_then_ready(monkeypatch: pytest.MonkeyPa
     delays: list[float] = []
 
     def fake_connect(url: str, **kwargs) -> FakeConnection:
-        assert url == "ws://127.0.0.1:8000/executors/control"
+        assert url == "ws://127.0.0.1:8000/api/executors/control"
         assert kwargs["proxy"] is None
         attempt = attempts.pop(0)
         if isinstance(attempt, Exception):
@@ -108,13 +108,13 @@ async def test_run_forever_reports_retry_then_ready(monkeypatch: pytest.MonkeyPa
 
     output = stream.getvalue()
     assert "[start] executor node node_id=node-1 executors=codex synapse=http://127.0.0.1:8000" in output
-    assert "[connect] executor node attempt=1 url=ws://127.0.0.1:8000/executors/control" in output
+    assert "[connect] executor node attempt=1 url=ws://127.0.0.1:8000/api/executors/control" in output
     assert (
         "[warn] executor node attempt=1 connect_failed=OSError: connection refused "
-        "url=ws://127.0.0.1:8000/executors/control"
+        "url=ws://127.0.0.1:8000/api/executors/control"
     ) in output
     assert "[retry] executor node retrying in 1.0s" in output
-    assert "[connect] executor node attempt=2 url=ws://127.0.0.1:8000/executors/control" in output
+    assert "[connect] executor node attempt=2 url=ws://127.0.0.1:8000/api/executors/control" in output
     assert "[ready] executor node node_id=node-1 executors=codex synapse=http://127.0.0.1:8000" in output
     assert output.index("[connect] executor node attempt=2") < output.index("[ready] executor node")
     assert delays == [1.0]
@@ -136,7 +136,7 @@ async def test_run_forever_reports_disconnect_after_ready(monkeypatch: pytest.Mo
     delays: list[float] = []
 
     def fake_connect(url: str, **kwargs) -> FakeConnection:
-        assert url == "ws://127.0.0.1:8000/executors/control"
+        assert url == "ws://127.0.0.1:8000/api/executors/control"
         assert kwargs["proxy"] is None
         return FakeConnection(websocket)
 
@@ -154,7 +154,7 @@ async def test_run_forever_reports_disconnect_after_ready(monkeypatch: pytest.Mo
     assert "[ready] executor node node_id=node-1 executors=codex synapse=http://127.0.0.1:8000" in output
     assert (
         "[warn] executor node disconnected=RuntimeError: connection lost "
-        "url=ws://127.0.0.1:8000/executors/control"
+        "url=ws://127.0.0.1:8000/api/executors/control"
     ) in output
     assert "[retry] executor node retrying in 1.0s" in output
     assert delays == [1.0]

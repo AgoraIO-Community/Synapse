@@ -179,7 +179,7 @@ create an `InteractionRequest` and `AttentionItem` from the summary alone.
 ### HTTP
 
 ```text
-POST /sessions/{session_id}/interaction-requests/{request_id}/resolve
+POST /api/sessions/{session_id}/interaction-requests/{request_id}/resolve
 ```
 
 ### Websocket

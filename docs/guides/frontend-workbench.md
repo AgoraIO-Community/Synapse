@@ -31,15 +31,15 @@ The root shell remains a fixed-height command center:
 
 Current reads and live transport:
 
-- `POST /sessions`
-- `GET /sessions/{session_id}`
-- `WS /sessions/{session_id}/stream`
-- `GET /sessions/{session_id}/personas`
-- `GET /sessions/{session_id}/executor-nodes`
-- `GET /connectors/agora-convoai/config`
-- `POST /connectors/agora-convoai/sessions/prepare`
-- `POST /connectors/agora-convoai/sessions/activate`
-- `POST /connectors/agora-convoai/sessions/stop`
+- `POST /api/sessions`
+- `GET /api/sessions/{session_id}`
+- `WS /api/sessions/{session_id}/stream`
+- `GET /api/sessions/{session_id}/personas`
+- `GET /api/sessions/{session_id}/executor-nodes`
+- `GET /api/connectors/agora-convoai/config`
+- `POST /api/connectors/agora-convoai/sessions/prepare`
+- `POST /api/connectors/agora-convoai/sessions/activate`
+- `POST /api/connectors/agora-convoai/sessions/stop`
 
 Current behavior:
 

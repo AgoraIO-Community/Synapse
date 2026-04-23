@@ -18,18 +18,10 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      "/connectors": {
-        target: "http://127.0.0.1:8000",
-        changeOrigin: true,
-      },
-      "/sessions": {
+      "/api": {
         target: "http://127.0.0.1:8000",
         changeOrigin: true,
         ws: true,
-      },
-      "/health": {
-        target: "http://127.0.0.1:8000",
-        changeOrigin: true,
       },
     },
   },

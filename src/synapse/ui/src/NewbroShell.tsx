@@ -22,11 +22,62 @@ import type { ExecutorNodeRecord, Persona, SessionSnapshot } from "./types";
 
 export type PageNavigator = (page: PageId) => void;
 
+const SHELL_API_ERROR_TITLE = "Unable to reach the Synapse API";
+const SHELL_API_ERROR_HINT =
+  "This deployment must proxy /api/* requests to the backend before the shell can load live data.";
+
+function describeApiFailure(error: unknown, fallback: string): string {
+  if (!(error instanceof Error)) {
+    return fallback;
+  }
+
+  const message = error.message.trim();
+  if (!message) {
+    return fallback;
+  }
+  if (message.length > 240) {
+    return fallback;
+  }
+  if (/<(?:!doctype|html|body)/i.test(message)) {
+    return fallback;
+  }
+  return message;
+}
+
+function ShellApiErrorPanel({ detail }: { detail: string }) {
+  return (
+    <div
+      data-testid="shell-api-error"
+      className="mx-8 my-8 rounded-[28px] border border-red-200 bg-red-50 px-6 py-6 xl:mx-10 xl:my-10"
+    >
+      <div className="text-[12px] uppercase tracking-[0.22em] text-red-500">Connection problem</div>
+      <div className="mt-2 text-[28px] font-medium tracking-[-0.04em] text-red-950">
+        {SHELL_API_ERROR_TITLE}
+      </div>
+      <div className="mt-3 max-w-[720px] text-[14px] leading-7 text-red-800">{detail}</div>
+      <div className="mt-3 max-w-[720px] text-[13px] leading-6 text-red-700/90">{SHELL_API_ERROR_HINT}</div>
+    </div>
+  );
+}
+
+function ShellLoadingPanel() {
+  return (
+    <div
+      data-testid="shell-connecting"
+      className="mx-8 my-8 rounded-[28px] border border-neutral-200 bg-white px-6 py-6 text-[14px] text-neutral-500 xl:mx-10 xl:my-10"
+    >
+      Connecting to session…
+    </div>
+  );
+}
+
 function useNewbroShellState() {
   const [runtimePersonas, setRuntimePersonas] = useState<Persona[]>([]);
   const [executorNodes, setExecutorNodes] = useState<ExecutorNodeRecord[]>([]);
   const [communicationPersonaPrompt, setCommunicationPersonaPrompt] = useState("");
   const [activeShellSessionId, setActiveShellSessionId] = useState<string | null>(null);
+  const [hasLoadedShellSnapshot, setHasLoadedShellSnapshot] = useState(false);
+  const [shellError, setShellError] = useState<string | null>(null);
   const [activeBroId, setActiveBroId] = useState<string | null>(null);
   const [isTalking, setIsTalking] = useState(false);
   const mountedRef = useRef(false);
@@ -37,12 +88,15 @@ function useNewbroShellState() {
     setRuntimePersonas(snapshot.personas);
     setExecutorNodes(snapshot.executor_nodes ?? []);
     setCommunicationPersonaPrompt(snapshot.communication_persona_prompt ?? "");
+    setHasLoadedShellSnapshot(true);
+    setShellError(null);
   }
 
   const syncShellSession = useEffectEvent(
     async (sessionId: string, options: { rememberIdle?: boolean } = {}) => {
       const loadSequence = ++shellLoadSequenceRef.current;
       setActiveShellSessionId(sessionId);
+      setShellError(null);
 
       if (options.rememberIdle) {
         idleSessionIdRef.current = sessionId;
@@ -52,11 +106,12 @@ function useNewbroShellState() {
         const snapshot = await getSessionSnapshot(sessionId);
         if (!mountedRef.current || shellLoadSequenceRef.current !== loadSequence) return;
         startTransition(() => applySnapshot(snapshot));
-      } catch {
+      } catch (error: unknown) {
         if (!mountedRef.current || shellLoadSequenceRef.current !== loadSequence) return;
         startTransition(() => {
-          setRuntimePersonas([]);
-          setCommunicationPersonaPrompt("");
+          setShellError(
+            describeApiFailure(error, "Session snapshot request failed before the shell could load."),
+          );
         });
       }
     },
@@ -90,11 +145,14 @@ function useNewbroShellState() {
         if (!mountedRef.current) return;
         idleSessionIdRef.current = session.session_id;
         await syncShellSession(session.session_id, { rememberIdle: true });
-      } catch {
+      } catch (error: unknown) {
         if (!mountedRef.current) return;
         startTransition(() => {
-          setRuntimePersonas([]);
-          setCommunicationPersonaPrompt("");
+          setActiveShellSessionId(null);
+          setHasLoadedShellSnapshot(false);
+          setShellError(
+            describeApiFailure(error, "Session bootstrap failed before the shell could start."),
+          );
         });
       }
     }
@@ -143,6 +201,10 @@ function useNewbroShellState() {
     bros,
     voiceSession,
     activeShellSessionId,
+    hasLoadedShellSnapshot,
+    runtimePersonas,
+    executorNodes,
+    shellError,
     activeBroId,
     setActiveBroId,
     isTalking,
@@ -222,32 +284,44 @@ export function HomeShellPage({ onNavigate }: { onNavigate: PageNavigator }) {
         }}
       />
 
-      <div className="grid min-h-0 flex-1 grid-cols-1 gap-8 overflow-auto px-8 py-8 lg:grid-cols-[minmax(220px,0.56fr)_minmax(840px,1.74fr)] xl:px-10 xl:py-10">
-        <section className="flex min-h-0 flex-col pt-4">
-          <ConversationMemory
-            phase={shell.voiceSession.phase}
-            transcript={shell.voiceSession.transcript}
-            transcriptSession={shell.voiceSession.transcriptSession}
-            error={shell.voiceSession.error}
-            lastTranscriptUpdateAt={shell.voiceSession.lastTranscriptUpdateAt}
-            lastToolkitMessage={shell.voiceSession.lastToolkitMessage}
-          />
-        </section>
+      {shell.shellError && shell.hasLoadedShellSnapshot ? (
+        <div className="mx-8 mt-8 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-[13px] text-amber-800 xl:mx-10">
+          {shell.shellError}
+        </div>
+      ) : null}
 
-        <section className="flex items-start justify-stretch lg:pt-4">
-          <BrosPanel
-            bros={shell.bros}
-            activeBroId={shell.activeBroId}
-            isTalking={shell.isTalking}
-            voiceConnected={shell.voiceConnected}
-            onBroPressStart={(broId) => {
-              shell.setActiveBroId(broId);
-              shell.setIsTalking(true);
-            }}
-            onBroPressEnd={() => shell.setIsTalking(false)}
-          />
-        </section>
-      </div>
+      {shell.hasLoadedShellSnapshot ? (
+        <div className="grid min-h-0 flex-1 grid-cols-1 gap-8 overflow-auto px-8 py-8 lg:grid-cols-[minmax(220px,0.56fr)_minmax(840px,1.74fr)] xl:px-10 xl:py-10">
+          <section className="flex min-h-0 flex-col pt-4">
+            <ConversationMemory
+              phase={shell.voiceSession.phase}
+              transcript={shell.voiceSession.transcript}
+              transcriptSession={shell.voiceSession.transcriptSession}
+              error={shell.voiceSession.error}
+              lastTranscriptUpdateAt={shell.voiceSession.lastTranscriptUpdateAt}
+              lastToolkitMessage={shell.voiceSession.lastToolkitMessage}
+            />
+          </section>
+
+          <section className="flex items-start justify-stretch lg:pt-4">
+            <BrosPanel
+              bros={shell.bros}
+              activeBroId={shell.activeBroId}
+              isTalking={shell.isTalking}
+              voiceConnected={shell.voiceConnected}
+              onBroPressStart={(broId) => {
+                shell.setActiveBroId(broId);
+                shell.setIsTalking(true);
+              }}
+              onBroPressEnd={() => shell.setIsTalking(false)}
+            />
+          </section>
+        </div>
+      ) : shell.shellError ? (
+        <ShellApiErrorPanel detail={shell.shellError} />
+      ) : (
+        <ShellLoadingPanel />
+      )}
     </ShellFrame>
   );
 }
@@ -257,17 +331,19 @@ export function BrosShellPage({ onNavigate }: { onNavigate: PageNavigator }) {
 
   return (
     <ShellFrame activePage="Bros" onNavigate={onNavigate}>
-      {shell.activeShellSessionId ? (
+      {shell.activeShellSessionId && shell.hasLoadedShellSnapshot ? (
         <div className="min-h-0 flex-1 overflow-auto">
           <BrosPage
             sessionId={shell.activeShellSessionId}
             communicationPersonaPrompt={shell.communicationPersonaPrompt}
+            initialPersonas={shell.runtimePersonas}
+            initialNodes={shell.executorNodes}
           />
         </div>
+      ) : shell.shellError ? (
+        <ShellApiErrorPanel detail={shell.shellError} />
       ) : (
-        <div className="flex flex-1 items-center justify-center">
-          <div className="text-[14px] text-neutral-400">Connecting to session…</div>
-        </div>
+        <ShellLoadingPanel />
       )}
     </ShellFrame>
   );
@@ -278,14 +354,18 @@ export function NodesShellPage({ onNavigate }: { onNavigate: PageNavigator }) {
 
   return (
     <ShellFrame activePage="Nodes" onNavigate={onNavigate}>
-      {shell.activeShellSessionId ? (
+      {shell.activeShellSessionId && shell.hasLoadedShellSnapshot ? (
         <div className="min-h-0 flex-1 overflow-auto">
-          <NodesPage sessionId={shell.activeShellSessionId} />
+          <NodesPage
+            sessionId={shell.activeShellSessionId}
+            initialNodes={shell.executorNodes}
+            initialPersonas={shell.runtimePersonas}
+          />
         </div>
+      ) : shell.shellError ? (
+        <ShellApiErrorPanel detail={shell.shellError} />
       ) : (
-        <div className="flex flex-1 items-center justify-center">
-          <div className="text-[14px] text-neutral-400">Connecting to session…</div>
-        </div>
+        <ShellLoadingPanel />
       )}
     </ShellFrame>
   );

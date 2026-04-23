@@ -365,16 +365,28 @@ function BroRow({
 export function BrosPage({
   sessionId,
   communicationPersonaPrompt,
+  initialPersonas,
+  initialNodes,
 }: {
   sessionId: string;
   communicationPersonaPrompt: string;
+  initialPersonas: Persona[];
+  initialNodes: ExecutorNodeRecord[];
 }) {
-  const [personas, setPersonas] = useState<Persona[]>([]);
-  const [nodes, setNodes] = useState<ExecutorNodeRecord[]>([]);
+  const [personas, setPersonas] = useState<Persona[]>(initialPersonas);
+  const [nodes, setNodes] = useState<ExecutorNodeRecord[]>(initialNodes);
   const [mode, setMode] = useState<"list" | "add" | "edit">("list");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
+
+  useEffect(() => {
+    setPersonas(initialPersonas);
+  }, [initialPersonas]);
+
+  useEffect(() => {
+    setNodes(initialNodes);
+  }, [initialNodes]);
 
   async function refreshData() {
     try {
@@ -384,8 +396,10 @@ export function BrosPage({
       ]);
       setPersonas(Array.isArray(loadedPersonas) ? loadedPersonas : []);
       setNodes(Array.isArray(loadedNodes) ? loadedNodes : []);
-    } catch {
-      // Keep the current view if refresh fails.
+      setError(null);
+    } catch (e: unknown) {
+      const detail = e instanceof Error ? e.message : "Could not refresh Bro data.";
+      setError(`${detail} Showing the latest shell snapshot instead.`);
     }
   }
 

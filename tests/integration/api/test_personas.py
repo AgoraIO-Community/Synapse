@@ -28,10 +28,10 @@ async def test_persona_changes_sync_into_active_sessions(monkeypatch, tmp_path):
     app = _build_app()
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
-        first_session_id = (await client.post("/sessions")).json()["session_id"]
+        first_session_id = (await client.post("/api/sessions")).json()["session_id"]
 
         create_response = await client.post(
-            f"/sessions/{first_session_id}/personas",
+            f"/api/sessions/{first_session_id}/personas",
             json={
                 "name": "Alex",
                 "avatar": "A",
@@ -40,16 +40,16 @@ async def test_persona_changes_sync_into_active_sessions(monkeypatch, tmp_path):
         )
 
         assert create_response.status_code == 201
-        list_response = await client.get(f"/sessions/{first_session_id}/personas")
+        list_response = await client.get(f"/api/sessions/{first_session_id}/personas")
         assert list_response.status_code == 200
         assert len(list_response.json()) == 1
 
-        first_snapshot = (await client.get(f"/sessions/{first_session_id}")).json()
+        first_snapshot = (await client.get(f"/api/sessions/{first_session_id}")).json()
         assert len(first_snapshot["personas"]) == 1
         assert first_snapshot["personas"][0]["name"] == "Alex"
 
-        second_session_id = (await client.post("/sessions")).json()["session_id"]
-        second_snapshot = (await client.get(f"/sessions/{second_session_id}")).json()
+        second_session_id = (await client.post("/api/sessions")).json()["session_id"]
+        second_snapshot = (await client.get(f"/api/sessions/{second_session_id}")).json()
 
         assert len(second_snapshot["personas"]) == 1
         assert second_snapshot["personas"][0]["name"] == "Alex"
@@ -61,14 +61,14 @@ async def test_persona_ids_do_not_collide_for_similar_names(monkeypatch, tmp_pat
     app = _build_app()
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
-        session_id = (await client.post("/sessions")).json()["session_id"]
+        session_id = (await client.post("/api/sessions")).json()["session_id"]
 
         first = await client.post(
-            f"/sessions/{session_id}/personas",
+            f"/api/sessions/{session_id}/personas",
             json={"name": "Alice", "avatar": "A", "base_prompt": "One"},
         )
         second = await client.post(
-            f"/sessions/{session_id}/personas",
+            f"/api/sessions/{session_id}/personas",
             json={"name": "alice", "avatar": "B", "base_prompt": "Two"},
         )
 

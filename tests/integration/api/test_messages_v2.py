@@ -79,7 +79,7 @@ class CancelAwareExecutor:
 async def _wait_for_snapshot(client: AsyncClient, session_id: str, predicate, timeout: float = 1.0):
     deadline = asyncio.get_running_loop().time() + timeout
     while True:
-        snapshot = (await client.get(f"/sessions/{session_id}")).json()
+        snapshot = (await client.get(f"/api/sessions/{session_id}")).json()
         if predicate(snapshot):
             return snapshot
         if asyncio.get_running_loop().time() >= deadline:
@@ -114,9 +114,9 @@ async def test_messages_v2_create_task_and_run_tick():
         transport=ASGITransport(app=app),
         base_url="http://testserver",
     ) as client:
-        session_id = (await client.post("/sessions")).json()["session_id"]
+        session_id = (await client.post("/api/sessions")).json()["session_id"]
         response = await client.post(
-            f"/sessions/{session_id}/messages",
+            f"/api/sessions/{session_id}/messages",
             json={"text": "Check flights"},
         )
 
@@ -152,7 +152,7 @@ async def test_messages_v2_returns_before_background_execution_finishes():
         transport=ASGITransport(app=app),
         base_url="http://testserver",
     ) as client:
-        session_id = (await client.post("/sessions")).json()["session_id"]
+        session_id = (await client.post("/api/sessions")).json()["session_id"]
         session = app.state.runtime_container.get_session(session_id)
         session.registry.register(SlowExecutor())
         await session.blackboard.put_task(
@@ -168,7 +168,7 @@ async def test_messages_v2_returns_before_background_execution_finishes():
 
         started = asyncio.get_running_loop().time()
         response = await client.post(
-            f"/sessions/{session_id}/messages",
+            f"/api/sessions/{session_id}/messages",
             json={"text": "hello"},
         )
         elapsed = asyncio.get_running_loop().time() - started
@@ -218,7 +218,7 @@ async def test_messages_v2_conversational_cancel_applies_runtime_command_and_sto
         transport=ASGITransport(app=app),
         base_url="http://testserver",
     ) as client:
-        session_id = (await client.post("/sessions")).json()["session_id"]
+        session_id = (await client.post("/api/sessions")).json()["session_id"]
         session = app.state.runtime_container.get_session(session_id)
         session.registry.register(executor)
         await session.blackboard.put_task(
@@ -246,7 +246,7 @@ async def test_messages_v2_conversational_cancel_applies_runtime_command_and_sto
         )
 
         response = await client.post(
-            f"/sessions/{session_id}/messages",
+            f"/api/sessions/{session_id}/messages",
             json={"text": "forget it"},
         )
 
@@ -288,7 +288,7 @@ async def test_messages_v2_current_work_reply_prefers_active_task_over_cancelled
         transport=ASGITransport(app=app),
         base_url="http://testserver",
     ) as client:
-        session_id = (await client.post("/sessions")).json()["session_id"]
+        session_id = (await client.post("/api/sessions")).json()["session_id"]
         session = app.state.runtime_container.get_session(session_id)
         session.registry.register(SlowExecutor(delay_seconds=1.0))
         await session.blackboard.put_task(
@@ -313,7 +313,7 @@ async def test_messages_v2_current_work_reply_prefers_active_task_over_cancelled
         )
 
         response = await client.post(
-            f"/sessions/{session_id}/messages",
+            f"/api/sessions/{session_id}/messages",
             json={"text": "what are you working with?"},
         )
 
@@ -347,7 +347,7 @@ async def test_messages_v2_short_stop_cancels_last_focused_task_not_unrelated_ta
         transport=ASGITransport(app=app),
         base_url="http://testserver",
     ) as client:
-        session_id = (await client.post("/sessions")).json()["session_id"]
+        session_id = (await client.post("/api/sessions")).json()["session_id"]
         session = app.state.runtime_container.get_session(session_id)
         session.registry.register(SlowExecutor(delay_seconds=1.0))
         await session.blackboard.put_task(
@@ -379,7 +379,7 @@ async def test_messages_v2_short_stop_cancels_last_focused_task_not_unrelated_ta
         )
 
         second = await client.post(
-            f"/sessions/{session_id}/messages",
+            f"/api/sessions/{session_id}/messages",
             json={"text": "forget it"},
         )
         assert second.status_code == 200
@@ -449,7 +449,7 @@ async def test_messages_v2_continue_after_cancel_creates_new_task():
         transport=ASGITransport(app=app),
         base_url="http://testserver",
     ) as client:
-        session_id = (await client.post("/sessions")).json()["session_id"]
+        session_id = (await client.post("/api/sessions")).json()["session_id"]
         session = app.state.runtime_container.get_session(session_id)
         await session.blackboard.put_task(
             Task(
@@ -477,7 +477,7 @@ async def test_messages_v2_continue_after_cancel_creates_new_task():
         )
 
         response = await client.post(
-            f"/sessions/{session_id}/messages",
+            f"/api/sessions/{session_id}/messages",
             json={"text": "i don't want to cancel it"},
         )
 
@@ -513,7 +513,7 @@ async def test_messages_v2_ambiguous_bundle_destination_correction_asks_clarific
         transport=ASGITransport(app=app),
         base_url="http://testserver",
     ) as client:
-        session_id = (await client.post("/sessions")).json()["session_id"]
+        session_id = (await client.post("/api/sessions")).json()["session_id"]
         session = app.state.runtime_container.get_session(session_id)
         await session.blackboard.put_task(
             Task(
@@ -544,13 +544,13 @@ async def test_messages_v2_ambiguous_bundle_destination_correction_asks_clarific
         )
 
         response = await client.post(
-            f"/sessions/{session_id}/messages",
+            f"/api/sessions/{session_id}/messages",
             json={"text": "oh it should be shanghai"},
         )
 
         assert response.status_code == 200
         assert response.json()["reply_text"] == "Do you mean the destination should be Shanghai instead of Beijing?"
-        snapshot = (await client.get(f"/sessions/{session_id}")).json()
+        snapshot = (await client.get(f"/api/sessions/{session_id}")).json()
         assert len(snapshot["tasks"]) == 2
         assert {task["task_id"] for task in snapshot["tasks"]} == {"task-flight", "task-hotel"}
 
@@ -602,7 +602,7 @@ async def test_messages_v2_explicit_bundle_destination_correction_replaces_beiji
         transport=ASGITransport(app=app),
         base_url="http://testserver",
     ) as client:
-        session_id = (await client.post("/sessions")).json()["session_id"]
+        session_id = (await client.post("/api/sessions")).json()["session_id"]
         session = app.state.runtime_container.get_session(session_id)
         await session.blackboard.put_task(
             Task(
@@ -633,7 +633,7 @@ async def test_messages_v2_explicit_bundle_destination_correction_replaces_beiji
         )
 
         response = await client.post(
-            f"/sessions/{session_id}/messages",
+            f"/api/sessions/{session_id}/messages",
             json={"text": "travel to Shanghai instead of Beijing"},
         )
 
@@ -707,7 +707,7 @@ async def test_messages_v2_explicit_to_correction_updates_destination_like_slots
         transport=ASGITransport(app=app),
         base_url="http://testserver",
     ) as client:
-        session_id = (await client.post("/sessions")).json()["session_id"]
+        session_id = (await client.post("/api/sessions")).json()["session_id"]
         session = app.state.runtime_container.get_session(session_id)
         await session.blackboard.put_task(
             Task(
@@ -738,7 +738,7 @@ async def test_messages_v2_explicit_to_correction_updates_destination_like_slots
         )
 
         response = await client.post(
-            f"/sessions/{session_id}/messages",
+            f"/api/sessions/{session_id}/messages",
             json={"text": "i mean to shanghai"},
         )
 

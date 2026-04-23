@@ -5,6 +5,7 @@ from fastapi import APIRouter
 from httpx import ASGITransport, AsyncClient
 
 import synapse.connectors.host.app as connector_host_app_module
+from synapse.executors.node import registry as node_registry
 from synapse.connectors.host.config import ConnectorHostSettings
 from synapse.connectors.base import BaseConnectorModule, ConnectorModuleRegistry
 from synapse.runtime import Settings
@@ -19,7 +20,7 @@ class FakeConnectorModule(BaseConnectorModule):
     def build_router(self) -> APIRouter:
         router = APIRouter()
 
-        @router.get("/connectors/agora-convoai/config")
+        @router.get("/api/connectors/agora-convoai/config")
         async def config() -> dict[str, object]:
             return {"ready": True, "service_base_url": "http://127.0.0.1:8000"}
 
@@ -47,8 +48,11 @@ async def test_service_app_serves_frontend_routes_and_preserves_api_routes(tmp_p
         root_response = await client.get("/")
         asset_response = await client.get("/assets/app.js")
         spa_response = await client.get("/workbench/tasks")
-        health_response = await client.get("/health")
-        connector_response = await client.get("/connectors/agora-convoai/config")
+        health_response = await client.get("/api/health")
+        connector_response = await client.get("/api/connectors/agora-convoai/config")
+        legacy_health_response = await client.get("/health")
+        legacy_sessions_response = await client.post("/sessions")
+        legacy_connector_response = await client.get("/connectors/agora-convoai/config")
 
     assert root_response.status_code == 200
     assert "Workbench" in root_response.text
@@ -59,6 +63,9 @@ async def test_service_app_serves_frontend_routes_and_preserves_api_routes(tmp_p
     assert health_response.status_code == 200
     assert health_response.json() == {"status": "ok"}
     assert connector_response.status_code == 404
+    assert legacy_health_response.status_code == 404
+    assert legacy_sessions_response.status_code == 404
+    assert legacy_connector_response.status_code == 404
 
 
 @pytest.mark.anyio
@@ -87,14 +94,15 @@ async def test_service_app_mounts_enabled_connector_routes(monkeypatch, tmp_path
         transport=ASGITransport(app=app),
         base_url="http://testserver",
     ) as client:
-        response = await client.get("/connectors/agora-convoai/config")
+        response = await client.get("/api/connectors/agora-convoai/config")
 
     assert response.status_code == 200
     assert response.json() == {"ready": True, "service_base_url": "http://127.0.0.1:8000"}
 
 
 @pytest.mark.anyio
-async def test_service_app_keeps_session_stream_and_executor_control_websockets(tmp_path):
+async def test_service_app_keeps_session_stream_and_executor_control_websockets(monkeypatch, tmp_path):
+    monkeypatch.setattr(node_registry, "EXECUTOR_NODES_FILE", tmp_path / "executor_nodes.yaml")
     dist_dir = tmp_path / "dist"
     dist_dir.mkdir(parents=True)
     (dist_dir / "index.html").write_text("<html>ok</html>", encoding="utf-8")
@@ -108,17 +116,24 @@ async def test_service_app_keeps_session_stream_and_executor_control_websockets(
         transport=ASGITransport(app=app),
         base_url="http://testserver",
     ) as client:
-        session_id = (await client.post("/sessions")).json()["session_id"]
+        session_id = (await client.post("/api/sessions")).json()["session_id"]
+        created_node = await client.post(
+            f"/api/sessions/{session_id}/executor-nodes",
+            json={"name": "Node 1", "enabled_executors": ["codex"]},
+        )
+        assert created_node.status_code == 201
+        issued = created_node.json()
 
-        async with ASGIWebSocketSession(app, f"/sessions/{session_id}/stream") as websocket:
+        async with ASGIWebSocketSession(app, f"/api/sessions/{session_id}/stream") as websocket:
             initial_event = await websocket.receive_json()
             assert initial_event["type"] == "snapshot"
 
-        async with ASGIWebSocketSession(app, "/executors/control") as websocket:
+        async with ASGIWebSocketSession(app, "/api/executors/control") as websocket:
             await websocket.send_json(
                 {
                     "type": "register_node",
-                    "node_id": "node-1",
+                    "node_id": issued["node"]["node_id"],
+                    "token": issued["token"],
                     "executors": [
                         {
                             "executor_type": "codex",

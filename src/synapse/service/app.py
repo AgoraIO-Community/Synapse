@@ -6,6 +6,7 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import Response
 
+from synapse.api.paths import SERVICE_RESERVED_ROUTE_PREFIXES
 from synapse.api.app import create_app as create_api_app
 from synapse.connectors.host.app import include_enabled_connector_routes
 from synapse.connectors.host.config import ConnectorHostSettings, load_connector_host_settings
@@ -14,19 +15,6 @@ from synapse.runtime.config import Settings
 
 ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_FRONTEND_DIST_DIR = ROOT / "src" / "synapse" / "ui" / "dist"
-RESERVED_ROUTE_PREFIXES = {
-    "health",
-    "sessions",
-    "messages",
-    "commands",
-    "interaction-requests",
-    "personas",
-    "executors",
-    "connectors",
-    "openapi.json",
-    "docs",
-    "redoc",
-}
 
 
 def create_app(
@@ -43,6 +31,14 @@ def create_app(
 
 def _install_frontend_routes(app: FastAPI, frontend_dist: Path) -> None:
     resolved_frontend_dist = Path(frontend_dist)
+
+    @app.api_route(
+        "/{path:path}",
+        methods=["POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+        include_in_schema=False,
+    )
+    async def frontend_non_get(path: str) -> Response:
+        raise HTTPException(status_code=404, detail="Not found.")
 
     @app.get("/", include_in_schema=False)
     async def frontend_root() -> Response:
@@ -94,7 +90,7 @@ def _frontend_response(frontend_dist: Path, frontend_path: str) -> Response:
 def _is_reserved_path(path: str) -> bool:
     if not path:
         return False
-    return path.split("/", 1)[0] in RESERVED_ROUTE_PREFIXES
+    return path.split("/", 1)[0] in SERVICE_RESERVED_ROUTE_PREFIXES
 
 
 app = create_app()

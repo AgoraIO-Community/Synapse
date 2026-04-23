@@ -24,7 +24,7 @@ class FakeConnectorModule(BaseConnectorModule):
     def build_router(self) -> APIRouter:
         router = APIRouter()
 
-        @router.get("/connectors/agora-convoai/health")
+        @router.get("/api/connectors/agora-convoai/health")
         async def health() -> dict[str, object]:
             return {
                 "status": "ok",
@@ -33,7 +33,7 @@ class FakeConnectorModule(BaseConnectorModule):
                 "upstream_transport_mode": "direct",
             }
 
-        @router.post("/connectors/agora-convoai/sessions/prepare")
+        @router.post("/api/connectors/agora-convoai/sessions/prepare")
         async def prepare() -> dict[str, object]:
             return {"prepared": True}
 
@@ -59,9 +59,11 @@ async def test_connector_host_mounts_enabled_module_routes(monkeypatch):
         transport=ASGITransport(app=app),
         base_url="http://testserver",
     ) as client:
-        response = await client.get("/connectors/agora-convoai/health")
+        response = await client.get("/api/connectors/agora-convoai/health")
+        legacy_response = await client.get("/connectors/agora-convoai/health")
 
     assert response.status_code == 200
+    assert legacy_response.status_code == 404
     payload = response.json()
     assert payload["status"] == "ok"
     assert payload["implementation_version"] == "agora-convoai-connector.v1"
@@ -82,13 +84,15 @@ async def test_connector_host_skips_disabled_module_routes():
         transport=ASGITransport(app=app),
         base_url="http://testserver",
     ) as client:
-        health_response = await client.get("/health")
-        response = await client.get("/connectors/agora-convoai/health")
+        health_response = await client.get("/api/health")
+        response = await client.get("/api/connectors/agora-convoai/health")
+        legacy_health_response = await client.get("/health")
 
     assert health_response.status_code == 200
     assert health_response.json()["enabled"] is False
     assert health_response.json()["connectors"] == ["agora-convoai"]
     assert response.status_code == 404
+    assert legacy_health_response.status_code == 404
 
 
 @pytest.mark.anyio
@@ -112,7 +116,7 @@ async def test_connector_host_applies_cors_to_connector_routes(monkeypatch):
         base_url="http://testserver",
     ) as client:
         response = await client.options(
-            "/connectors/agora-convoai/sessions/prepare",
+            "/api/connectors/agora-convoai/sessions/prepare",
             headers={
                 "Origin": "https://app.example.com",
                 "Access-Control-Request-Method": "POST",
@@ -253,7 +257,7 @@ async def test_agora_connector_prepare_route_uses_real_loader_path_before_fake_s
         base_url="http://testserver",
     ) as client:
         response = await client.post(
-            "/connectors/agora-convoai/sessions/prepare",
+            "/api/connectors/agora-convoai/sessions/prepare",
             json={
                 "profile": "VOICE",
                 "channel_name": "demo-room",
@@ -382,7 +386,7 @@ async def test_agora_connector_activate_ignores_proxy_env_for_synapse_upstream(m
         base_url="http://testserver",
     ) as client:
         prepared = await client.post(
-            "/connectors/agora-convoai/sessions/prepare",
+            "/api/connectors/agora-convoai/sessions/prepare",
             json={
                 "profile": "VOICE",
                 "channel_name": "demo-room",
@@ -394,7 +398,7 @@ async def test_agora_connector_activate_ignores_proxy_env_for_synapse_upstream(m
         prepared_session_id = prepared.json()["prepared_session_id"]
 
         activated = await client.post(
-            "/connectors/agora-convoai/sessions/activate",
+            "/api/connectors/agora-convoai/sessions/activate",
             json={"prepared_session_id": prepared_session_id},
         )
 

@@ -48,11 +48,11 @@ describe("session-client transport base URL handling", () => {
       onError: vi.fn(),
     });
 
-    expect(fetchMock).toHaveBeenCalledWith("/sessions", {
+    expect(fetchMock).toHaveBeenCalledWith("/api/sessions", {
       method: "POST",
     });
     expect(MockWebSocket.instances[0]?.url).toBe(
-      `${window.location.protocol === "https:" ? "wss:" : "ws:"}//${window.location.host}/sessions/session-1/stream`,
+      `${window.location.protocol === "https:" ? "wss:" : "ws:"}//${window.location.host}/api/sessions/session-1/stream`,
     );
   });
 
@@ -72,10 +72,10 @@ describe("session-client transport base URL handling", () => {
       onError: vi.fn(),
     });
 
-    expect(fetchMock).toHaveBeenCalledWith("https://api.example.com/sessions", {
+    expect(fetchMock).toHaveBeenCalledWith("https://api.example.com/api/sessions", {
       method: "POST",
     });
-    expect(MockWebSocket.instances[0]?.url).toBe("wss://api.example.com/sessions/session-1/stream");
+    expect(MockWebSocket.instances[0]?.url).toBe("wss://api.example.com/api/sessions/session-1/stream");
   });
 
   it("normalizes trailing slashes on the configured backend base URL", async () => {
@@ -93,7 +93,7 @@ describe("session-client transport base URL handling", () => {
     await client.getConversationSnapshot("session-1");
 
     expect(fetchMock).toHaveBeenCalledWith(
-      "https://api.example.com/runtime/sessions/session-1/conversation",
+      "https://api.example.com/runtime/api/sessions/session-1/conversation",
     );
   });
 
@@ -135,7 +135,7 @@ describe("session-client transport base URL handling", () => {
     const client = await import("./session-client");
     const revealed = await client.revealExecutorNodeConnectCommand("session-1", "node-1");
 
-    expect(fetchMock).toHaveBeenCalledWith("/sessions/session-1/executor-nodes/node-1/connect-command", {
+    expect(fetchMock).toHaveBeenCalledWith("/api/sessions/session-1/executor-nodes/node-1/connect-command", {
       method: "POST",
     });
     expect(revealed.token).toBe("token-1");

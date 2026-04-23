@@ -9,6 +9,8 @@ from urllib.parse import urlparse, urlunparse
 import httpx
 import websockets
 
+from synapse.api.paths import API_PREFIX
+
 
 class SynapseConnectorError(RuntimeError):
     pass
@@ -58,7 +60,7 @@ class HttpSynapseConnectorTransport:
         )
 
     async def create_session(self) -> str:
-        response = await self._request("POST", "/sessions")
+        response = await self._request("POST", f"{API_PREFIX}/sessions")
         payload = response.json()
         session_id = payload.get("session_id")
         if not isinstance(session_id, str) or not session_id:
@@ -68,7 +70,7 @@ class HttpSynapseConnectorTransport:
     async def send_message(self, session_id: str, text: str) -> SynapseMessageResult:
         response = await self._request(
             "POST",
-            f"/sessions/{session_id}/messages",
+            f"{API_PREFIX}/sessions/{session_id}/messages",
             json={"text": text},
         )
         payload = response.json()
@@ -195,5 +197,5 @@ class HttpSynapseConnectorTransport:
     def _session_stream_url(self, session_id: str) -> str:
         parsed = urlparse(self._base_url)
         scheme = "wss" if parsed.scheme == "https" else "ws"
-        path = parsed.path.rstrip("/") + f"/sessions/{session_id}/stream"
+        path = parsed.path.rstrip("/") + f"{API_PREFIX}/sessions/{session_id}/stream"
         return urlunparse((scheme, parsed.netloc, path, "", "", ""))

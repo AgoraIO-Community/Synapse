@@ -32,7 +32,7 @@ Use the topic docs in this directory for detail:
 - [Communication Brain](./communication-brain.md)
 - [Execution Brain](./execution-brain.md)
 - [Blackboard](./blackboard.md)
-- [Sessions and Runs](./sessions-and-runs.md)
+- [Sessions and Runs](./api/sessions-and-runs.md)
 - [Notifications and Interruptions](./notifications-and-interruptions.md)
 - [Observability](./observability.md)
 - [Executors](./executors.md)

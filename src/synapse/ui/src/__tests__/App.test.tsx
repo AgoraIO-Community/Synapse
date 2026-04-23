@@ -414,6 +414,134 @@ describe("Newbro voice shell", () => {
     expect(window.location.pathname).toBe("/nodes");
   });
 
+  it("shows a shell-level API error instead of blank data when bootstrap fails", async () => {
+    clientMock.createSession.mockRejectedValueOnce(new Error("Request failed with status 404"));
+
+    const router = getRouter();
+    render(<RouterProvider router={router} />);
+    await act(async () => {
+      await router.load();
+    });
+
+    expect(await screen.findByText("Unable to reach the Synapse API")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "This deployment must proxy /api/* requests to the backend before the shell can load live data.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Atlas")).not.toBeInTheDocument();
+  });
+
+  it("keeps shell snapshot bros visible when the Bros page refresh fails", async () => {
+    clientMock.getSessionSnapshot.mockResolvedValueOnce({
+      session_id: "session-1",
+      tasks: [],
+      execution_sessions: [],
+      execution_runs: [],
+      execution_modes: [],
+      bindings: [],
+      summaries: [],
+      notification_candidates: [],
+      personas: [
+        {
+          persona_id: "persona-1",
+          name: "Rook",
+          avatar: "fox",
+          base_prompt: "Stay direct.",
+          executor_node_id: "node-1",
+          status: "busy",
+          current_task_id: "task-1",
+        },
+      ],
+      interaction_requests: [],
+      attention_items: [],
+      executor_capabilities: [],
+      executor_nodes: [
+        {
+          node_id: "node-1",
+          name: "Studio Mac",
+          enabled_executors: ["codex"],
+          connected_executors: ["codex"],
+          connection_status: "connected",
+          token_hint: "tok...1111",
+          last_connected_at: null,
+          last_seen_at: null,
+        },
+      ],
+      communication_persona_prompt: "",
+    });
+    clientMock.listPersonas.mockRejectedValueOnce(new Error("Bros refresh failed."));
+    clientMock.listExecutorNodes.mockRejectedValueOnce(new Error("Nodes refresh failed."));
+
+    window.history.replaceState({}, "", "/bros");
+    const router = getRouter();
+    render(<RouterProvider router={router} />);
+    await act(async () => {
+      await router.load();
+    });
+
+    expect(await screen.findByText("Worker Bros")).toBeInTheDocument();
+    expect(screen.getByText("Rook")).toBeInTheDocument();
+    expect(
+      screen.getByText("Bros refresh failed. Showing the latest shell snapshot instead."),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps shell snapshot nodes visible when the Nodes page refresh fails", async () => {
+    clientMock.getSessionSnapshot.mockResolvedValueOnce({
+      session_id: "session-1",
+      tasks: [],
+      execution_sessions: [],
+      execution_runs: [],
+      execution_modes: [],
+      bindings: [],
+      summaries: [],
+      notification_candidates: [],
+      personas: [
+        {
+          persona_id: "persona-1",
+          name: "Rook",
+          avatar: "fox",
+          base_prompt: "Stay direct.",
+          executor_node_id: "node-1",
+          status: "busy",
+          current_task_id: "task-1",
+        },
+      ],
+      interaction_requests: [],
+      attention_items: [],
+      executor_capabilities: [],
+      executor_nodes: [
+        {
+          node_id: "node-1",
+          name: "Studio Mac",
+          enabled_executors: ["codex"],
+          connected_executors: ["codex"],
+          connection_status: "connected",
+          token_hint: "tok...1111",
+          last_connected_at: null,
+          last_seen_at: null,
+        },
+      ],
+      communication_persona_prompt: "",
+    });
+    clientMock.listExecutorNodes.mockRejectedValueOnce(new Error("Node refresh failed."));
+    clientMock.listPersonas.mockRejectedValueOnce(new Error("Persona refresh failed."));
+
+    window.history.replaceState({}, "", "/nodes");
+    const router = getRouter();
+    render(<RouterProvider router={router} />);
+    await act(async () => {
+      await router.load();
+    });
+
+    expect(await screen.findByText("Executor Nodes")).toBeInTheDocument();
+    expect(screen.getByText("Studio Mac")).toBeInTheDocument();
+    expect(
+      screen.getByText("Node refresh failed. Showing the latest shell snapshot instead."),
+    ).toBeInTheDocument();
+  });
+
   it("navigates between left-menu pages and preserves browser history", async () => {
     const router = getRouter();
     render(<RouterProvider router={router} />);
