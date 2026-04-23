@@ -55,6 +55,7 @@ class CommunicationContext:
     personas: list[dict[str, object]] | None = None
     interaction_requests: list[dict[str, object]] | None = None
     communication_persona_prompt: str = ""
+    target_persona_id: str | None = None
 
 
 class CommunicationContextBuilder:
@@ -78,6 +79,7 @@ class CommunicationContextBuilder:
         *,
         available_tools: list[str],
         history_limit: int = DEFAULT_HISTORY_LIMIT,
+        target_persona_id: str | None = None,
     ) -> CommunicationContext:
         tasks = await self._store.list_tasks()
         summaries = {
@@ -129,6 +131,7 @@ class CommunicationContextBuilder:
             communication_persona_prompt=(
                 await self._store.get_session_config("communication_persona_prompt") or ""
             ),
+            target_persona_id=target_persona_id,
         )
 
     def _build_task_brief(

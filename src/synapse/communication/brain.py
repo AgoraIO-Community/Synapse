@@ -145,6 +145,7 @@ class CommunicationBrain:
         conversation_id: str,
         user_text: str,
         *,
+        target_persona_id: str | None = None,
         on_text_delta: TextDeltaCallback | None = None,
         on_trace: LlmTraceCallback | None = None,
         on_tool_call: ToolCallCallback | None = None,
@@ -157,6 +158,7 @@ class CommunicationBrain:
         context = await self._context_builder.build(
             conversation_id,
             available_tools=self._tool_usage_policy.available_tools,
+            target_persona_id=target_persona_id,
         )
         local_result = await self._handle_local_intent(
             conversation_id,

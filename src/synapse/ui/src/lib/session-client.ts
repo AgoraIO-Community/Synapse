@@ -435,3 +435,24 @@ export async function putSessionConfig(
   });
   return (await ensureOk(response)).json();
 }
+
+
+// --- Voice Target API ---
+
+export async function setVoiceTarget(sessionId: string, targetPersonaId: string): Promise<void> {
+  await ensureOk(
+    await fetch(buildHttpUrl(`${API_PREFIX}/sessions/${sessionId}/voice-target`), {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ target_persona_id: targetPersonaId }),
+    }),
+  );
+}
+
+export async function clearVoiceTarget(sessionId: string): Promise<void> {
+  await ensureOk(
+    await fetch(buildHttpUrl(`${API_PREFIX}/sessions/${sessionId}/voice-target`), {
+      method: "DELETE",
+    }),
+  );
+}

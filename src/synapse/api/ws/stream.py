@@ -145,6 +145,7 @@ async def _handle_send_message(session, queue: asyncio.Queue, payload: dict[str,
         action.request_id,
         text,
         source=action.source,
+        target_persona_id=action.target_persona_id,
         start_processing=False,
     )
     session.observability.api.message_accepted(

@@ -9,7 +9,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { createSession, getConversationSnapshot, getSessionSnapshot, openSessionStream, sendSocketMessage } from "./lib/session-client";
+import { createSession, getConversationSnapshot, getSessionSnapshot, openSessionStream, sendSocketMessage, setVoiceTarget } from "./lib/session-client";
 import { readSessionIdFromUrl, replaceSessionIdInUrl } from "./lib/session-url";
 import { BrosPage } from "./components/newbro/BrosPage";
 import { BrosPanel } from "./components/newbro/BrosPanel";
@@ -300,7 +300,24 @@ function useNewbroShellState() {
     if (!socket || socket.readyState !== WebSocket.OPEN) return false;
     const requestId = `msg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     sendSocketMessage(socket, requestId, text);
+    setChatMessages((prev) => [...prev, { role: "user" as const, text, id: requestId }]);
     return true;
+  };
+
+  const startTalkToBro = (broId: string) => {
+    if (voiceSession.phase !== "connected") return;
+    const sessionId = activeShellSessionId;
+    if (!sessionId) return;
+    setActiveBroId(broId);
+    setIsTalking(true);
+    void setVoiceTarget(sessionId, broId);
+  };
+
+  const endTalkToBro = () => {
+    if (!isTalking) return;
+    setIsTalking(false);
+    // Don't clear voice target here — it will be cleared after the next
+    // user message is processed by the backend.
   };
 
   return {
@@ -315,7 +332,8 @@ function useNewbroShellState() {
     activeBroId,
     setActiveBroId,
     isTalking,
-    setIsTalking,
+    startTalkToBro,
+    endTalkToBro,
     communicationPersonaPrompt,
     start,
     stop,
@@ -472,10 +490,9 @@ export function HomeShellPage({ onNavigate }: { onNavigate: PageNavigator }) {
               isTalking={shell.isTalking}
               voiceConnected={shell.voiceConnected}
               onBroPressStart={(broId) => {
-                shell.setActiveBroId(broId);
-                shell.setIsTalking(true);
+                shell.startTalkToBro(broId);
               }}
-              onBroPressEnd={() => shell.setIsTalking(false)}
+              onBroPressEnd={() => shell.endTalkToBro()}
             />
           </section>
         </div>

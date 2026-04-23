@@ -87,6 +87,24 @@ def build_reply_prompt_request(
         messages.insert(1, _message("system", persona_prompt))
         prompt_sections.insert(1, "persona_identity")
 
+    if context.target_persona_id:
+        target_name = context.target_persona_id
+        if context.personas:
+            for p in context.personas:
+                if p.get("persona_id") == context.target_persona_id:
+                    target_name = str(p.get("name", context.target_persona_id))
+                    break
+        messages.append(
+            _message(
+                "system",
+                f"IMPORTANT: The user is directing this instruction specifically at persona '{target_name}' "
+                f"(persona_id: {context.target_persona_id}). "
+                f"When creating a task for this message, assign it to this persona. "
+                f"Do NOT ask which persona should handle it.",
+            )
+        )
+        prompt_sections.append("target_persona")
+
     messages.extend(_message(entry.role, entry.text) for entry in context.recent_history)
 
     return PromptBuildResult(

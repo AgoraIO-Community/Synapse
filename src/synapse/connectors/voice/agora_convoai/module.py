@@ -139,6 +139,16 @@ class AgoraConvoAIConnectorModule(BaseConnectorModule):
             if user_text is None:
                 raise HTTPException(status_code=400, detail="No user message found in messages.")
 
+            # Read voice target persona from the live session if available.
+            target_persona_id: str | None = None
+            container = getattr(request.app.state, "runtime_container", None)
+            if container is not None:
+                try:
+                    live_session = container.get_session(binding.synapse_session_id)
+                    target_persona_id = live_session.voice_target_persona_id
+                except (KeyError, AttributeError):
+                    pass
+
             if payload.stream:
                 return StreamingResponse(
                     _stream_completion(
@@ -146,6 +156,7 @@ class AgoraConvoAIConnectorModule(BaseConnectorModule):
                         synapse_session_id=binding.synapse_session_id,
                         user_text=user_text,
                         model_name=payload.model or AGORA_BRIDGE_MODEL,
+                        target_persona_id=target_persona_id,
                     ),
                     media_type="text/event-stream",
                     headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
@@ -184,6 +195,7 @@ async def _stream_completion(
     synapse_session_id: str,
     user_text: str,
     model_name: str,
+    target_persona_id: str | None = None,
 ) -> AsyncIterator[str]:
     request_id = f"agora-chat-{uuid4().hex[:8]}"
     completion_id = f"chatcmpl-{uuid4().hex[:8]}"
@@ -194,6 +206,7 @@ async def _stream_completion(
             synapse_session_id,
             user_text,
             request_id=request_id,
+            target_persona_id=target_persona_id,
         ):
             event_type = event.get("type")
             if event_type == "assistant_response_started":
