@@ -44,11 +44,7 @@ export function ConversationMemory({
       />
 
       <div ref={viewportRef} className="min-h-[420px] flex-1 overflow-y-auto pr-2">
-        {phase === "loading" ? (
-          <div className="px-1 py-2 text-[13px] leading-6 text-neutral-500">
-            Preparing voice session and waiting for Synapse conversation updates.
-          </div>
-        ) : phase === "error" && messageItems.length === 0 ? (
+        {phase === "error" && messageItems.length === 0 ? (
           <div className="px-1 py-2 text-[13px] leading-6 text-rose-700">
             {error ?? lastToolkitMessage ?? "Voice session failed to start."}
           </div>
