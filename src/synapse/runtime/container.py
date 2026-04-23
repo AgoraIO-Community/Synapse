@@ -65,6 +65,14 @@ class RuntimeContainer:
                 return True
         return False
 
+    async def bound_persona_names_for_node(self, node_id: str) -> list[str]:
+        bound_names: set[str] = set()
+        for session in self._sessions.values():
+            for persona in await session.blackboard.list_personas():
+                if persona.executor_node_id == node_id:
+                    bound_names.add(persona.name)
+        return sorted(bound_names)
+
     async def sync_persisted_personas(self, personas: list[Persona]) -> None:
         persisted_by_id = {persona.persona_id: persona for persona in personas}
         for session in self._sessions.values():

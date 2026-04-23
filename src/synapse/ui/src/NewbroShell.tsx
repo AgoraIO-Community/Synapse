@@ -140,19 +140,17 @@ function useNewbroShellState() {
   }, [activeBroId, bros]);
 
   return {
-    runtimePersonas,
-    executorNodes,
-    communicationPersonaPrompt,
+    bros,
+    voiceSession,
     activeShellSessionId,
     activeBroId,
     setActiveBroId,
     isTalking,
     setIsTalking,
-    voiceSession,
+    communicationPersonaPrompt,
     start,
     stop,
     toggleMute,
-    bros,
     voiceConnected: voiceSession.phase === "connected",
   };
 }

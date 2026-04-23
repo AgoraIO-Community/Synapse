@@ -71,7 +71,7 @@ const clientMock = vi.hoisted(() => ({
   rotateExecutorNodeCredentials: vi.fn(),
   revealExecutorNodeConnectCommand: vi.fn(),
   deleteExecutorNode: vi.fn(),
-  buildExecutorRunCommand: vi.fn(() => "./synapse executor run --base-url 'http://localhost:3000' --node-id 'node-1' --token 'token-1'"),
+  buildExecutorRunCommand: vi.fn(() => "./synapse executor run --base-url 'http://localhost:8000' --node-id 'node-1' --token 'token-1'"),
 }));
 
 const connectorMock = vi.hoisted(() => ({

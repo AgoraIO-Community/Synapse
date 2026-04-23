@@ -148,10 +148,13 @@ def build_parser() -> argparse.ArgumentParser:
     executor_parser = subparsers.add_parser("executor", help="Configure and run the detached executor node.")
     executor_subparsers = executor_parser.add_subparsers(dest="executor_command", required=True)
     executor_subparsers.add_parser("setup", help="Interactively configure the detached executor node.")
-    executor_run_parser = executor_subparsers.add_parser("run", help="Run the detached executor node.")
-    executor_run_parser.add_argument("--base-url", required=True)
-    executor_run_parser.add_argument("--node-id", required=True)
-    executor_run_parser.add_argument("--token", required=True)
+    executor_run_parser = executor_subparsers.add_parser(
+        "run",
+        help="Run the detached executor node. Requires --base-url, --node-id, and --token.",
+    )
+    executor_run_parser.add_argument("--base-url", required=True, help="Public Synapse service base URL.")
+    executor_run_parser.add_argument("--node-id", required=True, help="Executor node id issued by Synapse.")
+    executor_run_parser.add_argument("--token", required=True, help="Executor node token issued by Synapse.")
 
     service_parser = subparsers.add_parser("service", help="Install and control the Ubuntu systemd service.")
     service_subparsers = service_parser.add_subparsers(dest="service_command", required=True)
@@ -1068,7 +1071,7 @@ def resolve_executor_setup_values(
                 ),
                 required=True,
             )
-            if not _codex_command_available(command):
+            if not _command_available(command):
                 print(f"[warn] command '{command}' is not currently available on PATH")
             executors_block["codex"] = {
                 "command": command,
@@ -1197,16 +1200,16 @@ def _executor_runtime_ready(
             or _detected_codex_command()
             or ""
         ).strip()
-        return bool(command) and _codex_command_available(command)
+        return bool(command) and _command_available(command)
     if executor_type == "acpx":
         command = str(
             existing_block.get("command")
             or existing_values.get(ACPX_COMMAND_KEY)
             or "acpx"
         ).strip()
-        return bool(command) and _executor_command_available(command)
+        return bool(command) and _command_available(command)
     command = str(existing_block.get("command") or "").strip()
-    return bool(command) and _executor_command_available(command)
+    return bool(command) and _command_available(command)
 
 
 def bootstrap_setup_files() -> None:
@@ -1459,11 +1462,7 @@ def _detected_codex_command() -> str | None:
     return shutil.which("codex")
 
 
-def _codex_command_available(command: str) -> bool:
-    return shutil.which(command) is not None
-
-
-def _executor_command_available(command: str) -> bool:
+def _command_available(command: str) -> bool:
     return shutil.which(command) is not None
 
 
@@ -1481,7 +1480,7 @@ def resolve_codex_enabled(explicit_value: str | None, *, interactive: bool) -> b
     if not interactive:
         return explicit_default if explicit_default is not None else False
 
-    default_value = explicit_default if explicit_default is not None else _codex_command_available("codex")
+    default_value = explicit_default if explicit_default is not None else _command_available("codex")
     return prompt_bool_value("Enable Codex executor", default=default_value)
 
 

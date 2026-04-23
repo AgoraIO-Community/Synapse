@@ -53,11 +53,11 @@ export function Sidebar({
       <div className="rounded-2xl border border-neutral-200 bg-white px-3 py-3">
         <div className="flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-full bg-neutral-950 text-sm font-medium text-white">
-            P
+            O
           </div>
           <div className="min-w-0">
-            <div className="truncate text-[14px] font-medium text-neutral-900">Plutoless</div>
-            <div className="truncate text-[12px] text-neutral-500">Central operator</div>
+            <div className="truncate text-[14px] font-medium text-neutral-900">Operator Console</div>
+            <div className="truncate text-[12px] text-neutral-500">Shared control plane</div>
           </div>
         </div>
       </div>

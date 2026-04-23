@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from uuid import uuid4
+
 from fastapi import APIRouter, HTTPException, Request
 
 from synapse.api.models import PersonaCreateRequest, PersonaUpdateRequest
@@ -35,10 +37,8 @@ async def create_persona(
     if body.executor_node_id is not None and not await container.executor_node_manager.node_exists(body.executor_node_id):
         raise HTTPException(status_code=400, detail=f"Executor node '{body.executor_node_id}' not found.")
     normalized_name = body.name.strip()
-    persona_id = f"persona-{normalized_name.lower().replace(' ', '-')}"
+    persona_id = _generated_persona_id(normalized_name)
     personas = load_personas_from_file()
-    if any(persona.persona_id == persona_id for persona in personas):
-        raise HTTPException(status_code=409, detail=f"Persona '{normalized_name}' already exists.")
     persona = Persona(
         persona_id=persona_id,
         name=normalized_name,
@@ -117,3 +117,8 @@ async def delete_persona(
     save_personas_to_file(updated_personas)
     await container.sync_persisted_personas(updated_personas)
     return {"deleted": persona_id}
+
+
+def _generated_persona_id(name: str) -> str:
+    slug = "-".join(name.strip().lower().split())
+    return f"persona-{slug or 'bro'}-{uuid4().hex[:8]}"

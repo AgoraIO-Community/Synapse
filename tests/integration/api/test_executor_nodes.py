@@ -114,6 +114,24 @@ async def test_delete_executor_node_rejects_bound_bros_until_unbound(monkeypatch
         )
         assert persona_response.status_code == 201
 
+        # Simulate file drift: the persisted file says the bro is unbound, but
+        # the live blackboard for this active session still has the binding.
+        (tmp_path / "personas.yaml").write_text(
+            "\n".join(
+                [
+                    'communication_persona_prompt: ""',
+                    "personas:",
+                    '  - name: "Alex"',
+                    f'    persona_id: "{persona_response.json()["persona_id"]}"',
+                    '    avatar: "A"',
+                    '    base_prompt: "Be direct."',
+                    "    executor_node_id: null",
+                ]
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
         delete_response = await client.delete(f"/sessions/{session_id}/executor-nodes/{node_id}")
         assert delete_response.status_code == 409
 

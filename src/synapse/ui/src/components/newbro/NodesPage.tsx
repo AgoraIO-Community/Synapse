@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Cable, Copy, KeyRound, Pencil, RotateCcw, Server, Trash2, Plus } from "lucide-react";
 import {
   buildExecutorRunCommand,
@@ -114,24 +114,17 @@ function CredentialsPanel({
   boundBroCount: number;
 }) {
   const [copied, setCopied] = useState(false);
+  const [copyError, setCopyError] = useState<string | null>(null);
   const command = buildExecutorRunCommand(issue.node.node_id, issue.token);
 
   async function handleCopy() {
     const clipboard = navigator.clipboard;
-    if (clipboard?.writeText) {
-      await clipboard.writeText(command);
-    } else {
-      const textarea = document.createElement("textarea");
-      textarea.value = command;
-      textarea.setAttribute("readonly", "true");
-      textarea.style.position = "absolute";
-      textarea.style.left = "-9999px";
-      document.body.appendChild(textarea);
-      textarea.select();
-      document.execCommand("copy");
-      document.body.removeChild(textarea);
+    if (!clipboard?.writeText) {
+      throw new Error("Clipboard access is unavailable. Copy the visible command manually.");
     }
+    await clipboard.writeText(command);
     setCopied(true);
+    setCopyError(null);
     window.setTimeout(() => setCopied(false), 1600);
   }
 
@@ -185,13 +178,20 @@ function CredentialsPanel({
           <button
             type="button"
             onClick={() => {
-              void handleCopy();
+              void handleCopy().catch((error: unknown) => {
+                setCopyError(error instanceof Error ? error.message : "Copy failed. Copy the visible command manually.");
+              });
             }}
             className="mt-4 flex min-h-[44px] w-full items-center justify-center gap-2 rounded-full border border-white/10 bg-white/10 px-4 py-2 text-[12px] font-medium text-white transition hover:bg-white/15"
           >
             <Copy className="h-3.5 w-3.5" strokeWidth={1.8} />
             {copied ? "Copied" : "Copy connect command"}
           </button>
+          {copyError && (
+            <div className="mt-3 rounded-[18px] border border-red-400/20 bg-red-500/10 px-4 py-3 text-[12px] leading-5 text-red-100">
+              {copyError}
+            </div>
+          )}
           <div className="mt-4 rounded-[18px] border border-white/10 bg-white/5 px-4 py-3 text-[12px] leading-5 text-white/60">
             The Bro becomes live only after this node connects back to Synapse with the matching node id and token.
           </div>
@@ -331,7 +331,7 @@ export function NodesPage({ sessionId }: { sessionId: string }) {
   const [latestIssue, setLatestIssue] = useState<ExecutorNodeCredentialIssue | null>(null);
   const [copiedNodeId, setCopiedNodeId] = useState<string | null>(null);
 
-  async function refreshData() {
+  const refreshData = useCallback(async () => {
     try {
       const [loadedNodes, loadedPersonas] = await Promise.all([
         listExecutorNodes(sessionId),
@@ -342,11 +342,11 @@ export function NodesPage({ sessionId }: { sessionId: string }) {
     } catch {
       // Preserve current UI on refresh failure.
     }
-  }
+  }, [sessionId]);
 
   useEffect(() => {
     void refreshData();
-  }, [sessionId]);
+  }, [refreshData]);
 
   async function handleCreate(data: { name: string; enabledExecutors: string[] }) {
     setError(null);
@@ -418,19 +418,10 @@ export function NodesPage({ sessionId }: { sessionId: string }) {
       const issue = await revealExecutorNodeConnectCommand(sessionId, nodeId);
       const command = buildExecutorRunCommand(issue.node.node_id, issue.token);
       const clipboard = navigator.clipboard;
-      if (clipboard?.writeText) {
-        await clipboard.writeText(command);
-      } else {
-        const textarea = document.createElement("textarea");
-        textarea.value = command;
-        textarea.setAttribute("readonly", "true");
-        textarea.style.position = "absolute";
-        textarea.style.left = "-9999px";
-        document.body.appendChild(textarea);
-        textarea.select();
-        document.execCommand("copy");
-        document.body.removeChild(textarea);
+      if (!clipboard?.writeText) {
+        throw new Error("Clipboard access is unavailable. Copy the visible command manually.");
       }
+      await clipboard.writeText(command);
       setLatestIssue(issue);
       setCopiedNodeId(nodeId);
       setStatus("Connect command copied.");

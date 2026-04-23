@@ -3,7 +3,6 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Request
 
 from synapse.api.models import ExecutorNodeCreateRequest, ExecutorNodeUpdateRequest
-from synapse.communication.persona_pool import load_personas_from_file
 
 router = APIRouter()
 
@@ -113,11 +112,7 @@ async def delete_executor_node(
 ):
     container = request.app.state.runtime_container
     _require_session(container, session_id)
-    bound_personas = [
-        persona.name
-        for persona in load_personas_from_file()
-        if persona.executor_node_id == node_id
-    ]
+    bound_personas = await container.bound_persona_names_for_node(node_id)
     if bound_personas:
         raise HTTPException(
             status_code=409,

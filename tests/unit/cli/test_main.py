@@ -127,7 +127,7 @@ def test_executor_setup_uses_detected_codex_command_default(monkeypatch, tmp_pat
     monkeypatch.setattr(cli_main, "_detected_codex_command", lambda: "/detected/codex")
     monkeypatch.setattr(
         cli_main,
-        "_codex_command_available",
+        "_command_available",
         lambda command: command == "/detected/codex",
     )
     responses = iter(["", "", "", ""])
@@ -194,7 +194,7 @@ def test_executor_setup_migrates_legacy_codex_command_over_detected_default(
     monkeypatch.setattr(cli_main, "_detected_codex_command", lambda: "/detected/codex")
     monkeypatch.setattr(
         cli_main,
-        "_codex_command_available",
+        "_command_available",
         lambda command: command in {"/legacy/codex", "/detected/codex"},
     )
     responses = iter(["", "", "", ""])
@@ -469,7 +469,7 @@ def test_executor_setup_migrates_legacy_codex_command_to_config(monkeypatch, tmp
 
     configure_repo_paths(monkeypatch, root)
     monkeypatch.setattr(cli_main, "setup_can_prompt", lambda: True)
-    monkeypatch.setattr(cli_main, "_codex_command_available", lambda command: command == "/legacy/codex")
+    monkeypatch.setattr(cli_main, "_command_available", lambda command: command == "/legacy/codex")
     responses = iter(["", "", "", ""])
     monkeypatch.setattr("builtins.input", lambda _prompt: next(responses))
 
@@ -495,7 +495,7 @@ def test_executor_setup_works_without_runtime_config(monkeypatch, tmp_path: Path
     configure_repo_paths(monkeypatch, root)
     monkeypatch.setattr(cli_main, "setup_can_prompt", lambda: True)
     monkeypatch.setattr(cli_main, "_detected_codex_command", lambda: "/detected/codex")
-    monkeypatch.setattr(cli_main, "_codex_command_available", lambda command: command == "/detected/codex")
+    monkeypatch.setattr(cli_main, "_command_available", lambda command: command == "/detected/codex")
     responses = iter(["", ""])
     monkeypatch.setattr("builtins.input", lambda _prompt: next(responses))
 

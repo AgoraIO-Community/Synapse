@@ -45,6 +45,7 @@ class NodeConnectionState:
     connected_at: str
     metadata: dict[str, object] = field(default_factory=dict)
     executors: dict[str, ExecutorNodeExecutor] = field(default_factory=dict)
+    send_lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)
 
 
 class ExecutorNodeAuthError(RuntimeError):
@@ -61,8 +62,7 @@ class ExecutorNodeManager:
         self._detached_executor_types = detached_executor_types
         self._registry = registry or ExecutorNodeRegistry()
         self._connections_by_node: dict[str, NodeConnectionState] = {}
-        self._node_ids_by_websocket: dict[Any, str] = {}
-        self._send_lock = asyncio.Lock()
+        self._connections_lock = asyncio.Lock()
         self._run_queues: dict[str, asyncio.Queue[NodeRunEnvelope]] = {}
         self._run_states: dict[str, RunDispatchState] = {}
 
@@ -145,51 +145,35 @@ class ExecutorNodeManager:
         )
         if record is None:
             raise ExecutorNodeAuthError("Invalid executor node credentials.")
-        existing_node_id = self._node_ids_by_websocket.get(websocket)
-        if existing_node_id is not None and existing_node_id != register.node_id:
-            await self.disconnect(websocket=websocket, reason="re_registered")
-        if register.node_id in self._connections_by_node and self._connections_by_node[register.node_id].websocket is not websocket:
-            raise ExecutorNodeAuthError(f"Executor node '{register.node_id}' is already connected.")
-        connected_at = _timestamp()
-        self._connections_by_node[register.node_id] = NodeConnectionState(
-            websocket=websocket,
-            node_id=register.node_id,
-            connected_at=connected_at,
-            metadata=dict(register.metadata),
-            executors={executor.executor_type: executor for executor in register.executors},
-        )
-        self._node_ids_by_websocket[websocket] = register.node_id
+        displaced_node_id: str | None = None
+        async with self._connections_lock:
+            existing_node_id = self._node_id_for_websocket_locked(websocket)
+            if existing_node_id is not None and existing_node_id != register.node_id:
+                displaced_node_id = existing_node_id
+                self._connections_by_node.pop(existing_node_id, None)
+            existing_state = self._connections_by_node.get(register.node_id)
+            if existing_state is not None and existing_state.websocket is not websocket:
+                raise ExecutorNodeAuthError(f"Executor node '{register.node_id}' is already connected.")
+            self._connections_by_node[register.node_id] = NodeConnectionState(
+                websocket=websocket,
+                node_id=register.node_id,
+                connected_at=_timestamp(),
+                metadata=dict(register.metadata),
+                executors={executor.executor_type: executor for executor in register.executors},
+            )
+        if displaced_node_id is not None:
+            await self._handle_node_disconnected(displaced_node_id, reason="re_registered")
         await self._registry.note_connected(register.node_id)
         return AckMessage(message_type=register.type, detail="registered")
 
     async def disconnect(self, *, websocket: Any, reason: str) -> None:
-        node_id = self._node_ids_by_websocket.pop(websocket, None)
+        async with self._connections_lock:
+            node_id = self._node_id_for_websocket_locked(websocket)
+            if node_id is not None:
+                self._connections_by_node.pop(node_id, None)
         if node_id is None:
             return
-        self._connections_by_node.pop(node_id, None)
-        await self._registry.note_seen(node_id)
-        for run_id, state in list(self._run_states.items()):
-            if state.node_id != node_id:
-                continue
-            queue = self._run_queues.get(run_id)
-            if queue is None:
-                continue
-            await queue.put(
-                NodeRunEnvelope(
-                    event=ExecutorEvent(
-                        run_id=run_id,
-                        session_id=state.execution_session_id,
-                        event_type=ExecutorEventType.WAITING_EXECUTOR,
-                        message=f"Waiting for executor node '{node_id}' to reconnect.",
-                        metadata={
-                            "executor_node_id": node_id,
-                            "availability_reason": reason,
-                        },
-                    )
-                )
-            )
-            self._run_queues.pop(run_id, None)
-            self._run_states.pop(run_id, None)
+        await self._handle_node_disconnected(node_id, reason=reason)
 
     async def dispatch_run(
         self,
@@ -263,7 +247,7 @@ class ExecutorNodeManager:
             task_metadata=task_metadata,
             latest_resume_handle=latest_resume_handle,
         )
-        connection = self._connections_by_node.get(node_id)
+        connection = await self._connection_for_node(node_id)
         if connection is None:
             await queue.put(
                 NodeRunEnvelope(
@@ -281,7 +265,7 @@ class ExecutorNodeManager:
             )
             return queue
         try:
-            await self._send_json(connection.websocket, command.model_dump(mode="json"))
+            await self._send_json(connection, command.model_dump(mode="json"))
         except Exception:
             await self.disconnect(websocket=connection.websocket, reason="dispatch_failed")
         return queue
@@ -290,7 +274,7 @@ class ExecutorNodeManager:
         state = self._run_states.get(run_id)
         if state is None or state.node_id is None:
             return
-        connection = self._connections_by_node.get(state.node_id)
+        connection = await self._connection_for_node(state.node_id)
         if connection is None:
             return
         command = CancelRunCommand(
@@ -299,7 +283,7 @@ class ExecutorNodeManager:
             mode="pause" if mode == "pause" else "cancel",
         )
         try:
-            await self._send_json(connection.websocket, command.model_dump(mode="json"))
+            await self._send_json(connection, command.model_dump(mode="json"))
         except Exception:
             await self.disconnect(websocket=connection.websocket, reason="cancel_failed")
 
@@ -329,7 +313,7 @@ class ExecutorNodeManager:
         target_node_id = state.node_id if state is not None else node_id
         if target_node_id is None:
             return False
-        connection = self._connections_by_node.get(target_node_id)
+        connection = await self._connection_for_node(target_node_id)
         if connection is None:
             return False
         command = SupplyInteractionResponseCommand(
@@ -341,14 +325,14 @@ class ExecutorNodeManager:
             native_response=native_response,
         )
         try:
-            await self._send_json(connection.websocket, command.model_dump(mode="json"))
+            await self._send_json(connection, command.model_dump(mode="json"))
         except Exception:
             await self.disconnect(websocket=connection.websocket, reason="interaction_response_failed")
             return False
         return True
 
     async def publish_run_event(self, websocket: Any, message: RunEventMessage) -> AckMessage:
-        node_id = self._node_ids_by_websocket.get(websocket)
+        node_id = await self._node_id_for_websocket(websocket)
         queue = self._run_queues.get(message.run_id)
         if queue is None:
             return AckMessage(message_type=message.type, run_id=message.run_id, ok=False, detail="unknown_run")
@@ -418,7 +402,7 @@ class ExecutorNodeManager:
             node_id,
             connection=self._connection_views().get(node_id),
         )
-        connection = self._connections_by_node.get(node_id)
+        connection = await self._connection_for_node(node_id)
         if connection is not None:
             with contextlib.suppress(Exception):
                 await connection.websocket.close(code=4403)
@@ -429,16 +413,16 @@ class ExecutorNodeManager:
         return await self._registry.reveal_token(node_id)
 
     async def delete_node(self, node_id: str) -> bool:
-        connection = self._connections_by_node.get(node_id)
+        connection = await self._connection_for_node(node_id)
         if connection is not None:
             with contextlib.suppress(Exception):
                 await connection.websocket.close(code=4403)
             await self.disconnect(websocket=connection.websocket, reason="credentials_revoked")
         return await self._registry.delete_node(node_id)
 
-    async def _send_json(self, websocket: Any, payload: dict[str, object]) -> None:
-        async with self._send_lock:
-            await websocket.send_json(payload)
+    async def _send_json(self, connection: NodeConnectionState, payload: dict[str, object]) -> None:
+        async with connection.send_lock:
+            await connection.websocket.send_json(payload)
 
     def _connection_views(self) -> dict[str, ExecutorNodeConnectionView]:
         return {
@@ -448,6 +432,45 @@ class ExecutorNodeManager:
             )
             for node_id, state in self._connections_by_node.items()
         }
+
+    async def _connection_for_node(self, node_id: str) -> NodeConnectionState | None:
+        async with self._connections_lock:
+            return self._connections_by_node.get(node_id)
+
+    async def _node_id_for_websocket(self, websocket: Any) -> str | None:
+        async with self._connections_lock:
+            return self._node_id_for_websocket_locked(websocket)
+
+    def _node_id_for_websocket_locked(self, websocket: Any) -> str | None:
+        for node_id, state in self._connections_by_node.items():
+            if state.websocket is websocket:
+                return node_id
+        return None
+
+    async def _handle_node_disconnected(self, node_id: str, *, reason: str) -> None:
+        await self._registry.note_seen(node_id)
+        for run_id, state in list(self._run_states.items()):
+            if state.node_id != node_id:
+                continue
+            queue = self._run_queues.get(run_id)
+            if queue is None:
+                continue
+            await queue.put(
+                NodeRunEnvelope(
+                    event=ExecutorEvent(
+                        run_id=run_id,
+                        session_id=state.execution_session_id,
+                        event_type=ExecutorEventType.WAITING_EXECUTOR,
+                        message=f"Waiting for executor node '{node_id}' to reconnect.",
+                        metadata={
+                            "executor_node_id": node_id,
+                            "availability_reason": reason,
+                        },
+                    )
+                )
+            )
+            self._run_queues.pop(run_id, None)
+            self._run_states.pop(run_id, None)
 
 
 def _timestamp() -> str:
