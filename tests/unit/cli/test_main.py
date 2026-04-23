@@ -1145,6 +1145,54 @@ def test_executor_run_returns_130_when_child_interrupts(monkeypatch, tmp_path: P
     )
 
 
+def test_executor_run_uses_current_python_when_installed_from_package(monkeypatch, tmp_path: Path):
+    configure_repo_paths(monkeypatch, tmp_path)
+    monkeypatch.setattr(cli_main, "running_from_repo_checkout", lambda: False)
+    monkeypatch.setattr(cli_main, "_executor_runtime_config_complete", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(cli_main.sys, "executable", "/opt/newbro/bin/python3")
+
+    run_calls: list[tuple[list[str], Path, bool]] = []
+
+    def fake_run(cmd, cwd, check=False):
+        run_calls.append((cmd, cwd, check))
+        return FakeCompletedProcess(returncode=0)
+
+    monkeypatch.setattr(cli_main.subprocess, "run", fake_run)
+
+    assert (
+        cli_main.main(
+            [
+                "executor",
+                "run",
+                "--base-url",
+                "https://newbro.plutoless.com",
+                "--node-id",
+                "node-faa287f7",
+                "--token",
+                "token-1",
+            ]
+        )
+        == 0
+    )
+    assert run_calls == [
+        (
+            [
+                "/opt/newbro/bin/python3",
+                "-m",
+                "synapse.executors.node",
+                "--base-url",
+                "https://newbro.plutoless.com",
+                "--node-id",
+                "node-faa287f7",
+                "--token",
+                "token-1",
+            ],
+            Path.cwd(),
+            False,
+        )
+    ]
+
+
 def test_executor_run_triggers_setup_when_local_runtime_config_missing(monkeypatch, tmp_path: Path):
     venv_python = tmp_path / ".venv" / "bin" / "python"
     venv_python.parent.mkdir(parents=True, exist_ok=True)

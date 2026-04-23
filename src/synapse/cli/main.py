@@ -26,7 +26,8 @@ from synapse.config_home import (
 from synapse.yaml_support import load_yaml_file
 
 
-ROOT = Path(__file__).resolve().parents[3]
+MODULE_ROOT = Path(__file__).resolve().parents[3]
+ROOT = MODULE_ROOT
 FRONTEND = ROOT / "src" / "synapse" / "ui"
 VENV_DIR = ROOT / ".venv"
 ENV_LOCAL = SYNAPSE_ENV_FILE
@@ -410,7 +411,7 @@ def cmd_executor_setup(_args: argparse.Namespace) -> int:
 
 def cmd_executor_run(args: argparse.Namespace) -> int:
     _ensure_executor_runtime_configured_for_run()
-    venv_python = require_venv_python()
+    venv_python = executor_run_python_path()
     return run_checked(
         executor_node_command(
             venv_python,
@@ -418,7 +419,7 @@ def cmd_executor_run(args: argparse.Namespace) -> int:
             node_id=args.node_id,
             token=args.token,
         ),
-        cwd=ROOT,
+        cwd=executor_run_cwd(),
     )
 
 
@@ -751,6 +752,34 @@ def venv_python_path() -> Path:
     if os.name == "nt":
         return VENV_DIR / "Scripts" / "python.exe"
     return VENV_DIR / "bin" / "python"
+
+
+def running_from_repo_checkout() -> bool:
+    return (
+        (MODULE_ROOT / "pyproject.toml").is_file()
+        and (MODULE_ROOT / "install.sh").is_file()
+        and (MODULE_ROOT / "src" / "synapse" / "__main__.py").is_file()
+    )
+
+
+def executor_run_python_path() -> Path:
+    if running_from_repo_checkout():
+        return require_venv_python()
+    if not sys.executable:
+        raise CliError("Current Python interpreter is unavailable for executor run.")
+    return Path(sys.executable)
+
+
+def executor_run_cwd() -> Path:
+    if running_from_repo_checkout():
+        return ROOT
+    return Path.cwd()
+
+
+def executor_cli_invocation() -> str:
+    if running_from_repo_checkout():
+        return ROOT_LAUNCHER
+    return CLI_NAME
 
 
 def run_checked(cmd: list[str], cwd: Path) -> int:
@@ -1188,14 +1217,15 @@ def _run_executor_setup_flow() -> None:
 
 
 def _ensure_executor_runtime_configured_for_run() -> None:
+    cli_invocation = executor_cli_invocation()
     existing_values, _ = load_env_assignments(ENV_LOCAL)
     existing_config_yaml = _load_existing_connector_yaml(connector_config_path())
     if _executor_runtime_config_complete(existing_config_yaml, existing_values):
         return
     if not setup_can_prompt():
         raise CliError(
-            f"Local executor runtime config is incomplete. Run `{ROOT_LAUNCHER} executor setup` "
-            f"or rerun `{ROOT_LAUNCHER} executor run ...` in a TTY."
+            f"Local executor runtime config is incomplete. Run `{cli_invocation} executor setup` "
+            f"or rerun `{cli_invocation} executor run ...` in a TTY."
         )
     print("[setup] executor run is missing local executor runtime config; launching setup.")
     _run_executor_setup_flow()
@@ -1204,7 +1234,7 @@ def _ensure_executor_runtime_configured_for_run() -> None:
     if not _executor_runtime_config_complete(refreshed_config_yaml, refreshed_values):
         raise CliError(
             "Local executor runtime config is still incomplete after setup. "
-            f"Check the configured executor command paths and rerun `{ROOT_LAUNCHER} executor setup`."
+            f"Check the configured executor command paths and rerun `{cli_invocation} executor setup`."
         )
 
 
