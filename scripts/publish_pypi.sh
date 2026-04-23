@@ -85,7 +85,10 @@ then
   exit 1
 fi
 
-mapfile -t PROJECT_META < <("$PYTHON_BIN" - <<'PY'
+PROJECT_META=()
+while IFS= read -r line; do
+  PROJECT_META+=("$line")
+done < <("$PYTHON_BIN" - <<'PY'
 from pathlib import Path
 import tomllib
 
@@ -95,6 +98,11 @@ print(project["name"])
 print(project["version"])
 PY
 )
+
+if [[ ${#PROJECT_META[@]} -lt 2 ]]; then
+  echo "error: failed to read project metadata from pyproject.toml" >&2
+  exit 1
+fi
 
 PACKAGE_NAME="${PROJECT_META[0]}"
 PACKAGE_VERSION="${PROJECT_META[1]}"

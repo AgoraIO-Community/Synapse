@@ -16,12 +16,14 @@ import time
 from uuid import uuid4
 
 from synapse.config_home import (
+    LEGACY_SYNAPSE_HOME_DIR,
+    NEWBRO_HOME_DIR,
     SYNAPSE_ENV_FILE,
     ConfigHomeMigrationError,
     ensure_newbro_home,
     format_user_path,
 )
-from synapse.yaml_support import YAMLParseError, load_yaml_file
+from synapse.yaml_support import load_yaml_file
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -185,12 +187,14 @@ def _add_host_port(parser: argparse.ArgumentParser, backend_port: int, frontend_
 def main(argv: list[str] | None = None) -> int:
     try:
         try:
-            ensure_newbro_home(
-                legacy_home=ENV_LOCAL.parent.with_name(".synapse"),
-                new_home=ENV_LOCAL.parent,
+            migration_result = ensure_newbro_home(
+                legacy_home=LEGACY_SYNAPSE_HOME_DIR,
+                new_home=NEWBRO_HOME_DIR,
             )
         except ConfigHomeMigrationError as exc:
             raise CliError(str(exc)) from exc
+        if migration_result.warning:
+            print(f"[warn] {migration_result.warning}", file=sys.stderr)
         parser = build_parser()
         args = parser.parse_args(argv)
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 import shutil
 
@@ -15,24 +16,30 @@ class ConfigHomeMigrationError(RuntimeError):
     pass
 
 
+@dataclass(frozen=True, slots=True)
+class ConfigHomeMigrationResult:
+    migrated: bool
+    warning: str | None = None
+
+
 def ensure_newbro_home(
     *,
     legacy_home: Path | None = None,
     new_home: Path | None = None,
-) -> bool:
+) -> ConfigHomeMigrationResult:
     target_home = new_home or SYNAPSE_HOME_DIR
     source_home = legacy_home or LEGACY_SYNAPSE_HOME_DIR
     if target_home.exists():
-        return False
+        return ConfigHomeMigrationResult(migrated=False)
     if not source_home.exists():
-        return False
+        return ConfigHomeMigrationResult(migrated=False)
     if not source_home.is_dir():
         raise ConfigHomeMigrationError(
             f"Legacy config path is not a directory: {source_home}"
         )
     try:
         source_home.rename(target_home)
-        return True
+        return ConfigHomeMigrationResult(migrated=True)
     except OSError:
         try:
             shutil.copytree(source_home, target_home)
@@ -45,11 +52,16 @@ def ensure_newbro_home(
         try:
             shutil.rmtree(source_home)
         except Exception as exc:
-            raise ConfigHomeMigrationError(
-                f"Migrated config to {format_user_path(target_home)} "
-                f"but could not remove {format_user_path(source_home)}: {exc}"
-            ) from exc
-        return True
+            return ConfigHomeMigrationResult(
+                migrated=True,
+                warning=(
+                    f"Migrated config to {format_user_path(target_home)} "
+                    f"but could not remove {format_user_path(source_home)}: {exc}. "
+                    f"Continue using {format_user_path(target_home)} and remove "
+                    f"{format_user_path(source_home)} manually if it is no longer needed."
+                ),
+            )
+        return ConfigHomeMigrationResult(migrated=True)
 
 
 def format_user_path(path: Path) -> str:

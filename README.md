@@ -58,6 +58,10 @@ newbro executor setup
 newbro executor run --base-url https://synapse.example.com --node-id node-1234 --token secret
 ```
 
+The published package name is `newbro-cli` and the installed console script is
+`newbro`, but the Python module namespace is still `synapse` in this release.
+Use `import synapse` for Python imports; `import newbro` is not supported.
+
 `~/.newbro/.env` is auto-loaded by the backend at startup. You do not need to export
 variables manually. OpenAI is required for normal development and demo runtime,
 so set `OPENAI_API_KEY` in `~/.newbro/.env` before starting the app.

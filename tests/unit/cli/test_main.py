@@ -3,7 +3,8 @@ from __future__ import annotations
 import builtins
 import importlib
 from pathlib import Path
-import re
+
+from synapse.config_home import ConfigHomeMigrationResult
 
 cli_main = importlib.import_module("synapse.cli.main")
 
@@ -29,6 +30,8 @@ def configure_repo_paths(monkeypatch, root: Path) -> None:
     monkeypatch.setattr(cli_main, "ROOT", root)
     monkeypatch.setattr(cli_main, "FRONTEND", root / "src" / "synapse" / "ui")
     monkeypatch.setattr(cli_main, "VENV_DIR", root / ".venv")
+    monkeypatch.setattr(cli_main, "LEGACY_SYNAPSE_HOME_DIR", root / ".synapse")
+    monkeypatch.setattr(cli_main, "NEWBRO_HOME_DIR", root / ".newbro")
     monkeypatch.setattr(cli_main, "ENV_LOCAL", root / ".newbro" / ".env")
 
 
@@ -45,16 +48,42 @@ def force_yaml_fallback(monkeypatch) -> None:
 
 def test_main_runs_newbro_home_migration_before_commands(monkeypatch, tmp_path: Path):
     configure_repo_paths(monkeypatch, tmp_path)
-    migration_calls: list[bool] = []
+    migration_calls: list[dict[str, Path]] = []
     monkeypatch.setattr(
         cli_main,
         "ensure_newbro_home",
-        lambda **_kwargs: migration_calls.append(True) or False,
+        lambda **kwargs: migration_calls.append(kwargs) or ConfigHomeMigrationResult(migrated=False),
     )
     monkeypatch.setattr(cli_main, "bootstrap_setup_files", lambda: None)
 
     assert cli_main.main(["setup", "--bootstrap-defaults"]) == 0
-    assert migration_calls == [True]
+    assert migration_calls == [
+        {
+            "legacy_home": tmp_path / ".synapse",
+            "new_home": tmp_path / ".newbro",
+        }
+    ]
+
+
+def test_main_prints_non_fatal_newbro_home_migration_warning(
+    monkeypatch,
+    tmp_path: Path,
+    capsys,
+):
+    configure_repo_paths(monkeypatch, tmp_path)
+    monkeypatch.setattr(
+        cli_main,
+        "ensure_newbro_home",
+        lambda **_kwargs: ConfigHomeMigrationResult(
+            migrated=True,
+            warning="Migrated config to ~/.newbro but could not remove ~/.synapse.",
+        ),
+    )
+    monkeypatch.setattr(cli_main, "bootstrap_setup_files", lambda: None)
+
+    assert cli_main.main(["setup", "--bootstrap-defaults"]) == 0
+
+    assert "[warn] Migrated config to ~/.newbro but could not remove ~/.synapse." in capsys.readouterr().err
 
 
 def test_setup_interactive_updates_env_file(monkeypatch, tmp_path: Path):
