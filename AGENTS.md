@@ -21,8 +21,8 @@ Core concepts:
 ## Run
 ```bash
 ./install.sh
-./synapse setup
-./synapse backend
+./newbro setup
+./newbro backend
 ```
 
 ## Test

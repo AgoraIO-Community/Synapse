@@ -17,43 +17,54 @@ For a fresh clone, use the repo bootstrap launcher:
 
 ```bash
 ./install.sh
-./synapse setup
-./synapse connector setup
-./synapse doctor
-./synapse dev
+./newbro setup
+./newbro connector setup
+./newbro doctor
+./newbro dev
 ```
 
 `./install.sh` installs supported local development dependencies, creates `.venv`,
 installs the project in editable mode, installs frontend dependencies, and writes
-starter `~/.synapse/.env` plus `~/.synapse/config.yaml` files when they do not
+starter `~/.newbro/.env` plus `~/.newbro/config.yaml` files when they do not
 already exist.
 
-`./synapse setup` fills in `~/.synapse/.env` plus the shared
-`~/.synapse/config.yaml` runtime/api/connectors config. By default it prompts for
+`./newbro setup` fills in `~/.newbro/.env` plus the shared
+`~/.newbro/config.yaml` runtime/api/connectors config. By default it prompts for
 required runtime values such as `OPENAI_API_KEY`, and it can also enter the
 connector-host setup flow. For connector-only reconfiguration, use:
 
 ```bash
-./synapse connector setup
+./newbro connector setup
 ```
 
 For automation, use:
 
 ```bash
-OPENAI_API_KEY=... ./synapse setup --non-interactive
+OPENAI_API_KEY=... ./newbro setup --non-interactive
 ```
 
-If you prefer the module entrypoint, it is available from the repo root and after
-editable install:
+If you already have legacy Synapse config under `~/.synapse` and `~/.newbro`
+does not exist yet, the CLI migrates that home directory to `~/.newbro` on the
+first run.
+
+## Install From PyPI
+
+Install the public package with:
 
 ```bash
-python3 -m synapse --help
-.venv/bin/python -m synapse --help
+python3 -m pip install newbro-cli
+newbro --help
+newbro executor setup
+newbro executor run --base-url https://synapse.example.com --node-id node-1234 --token secret
 ```
 
-`~/.synapse/.env` is auto-loaded by the backend at startup. You do not need to export
+The published package name is `newbro-cli` and the installed console script is
+`newbro`, but the Python module namespace is still `synapse` in this release.
+Use `import synapse` for Python imports; `import newbro` is not supported.
+
+`~/.newbro/.env` is auto-loaded by the backend at startup. You do not need to export
 variables manually. OpenAI is required for normal development and demo runtime,
-so set `OPENAI_API_KEY` in `~/.synapse/.env` before starting the app.
+so set `OPENAI_API_KEY` in `~/.newbro/.env` before starting the app.
 
 ## Optional ACPX Executor
 
@@ -71,7 +82,7 @@ acpx --version
 codex --version
 ```
 
-Then add at least this to `~/.synapse/.env`:
+Then add at least this to `~/.newbro/.env`:
 
 ```env
 SYNAPSE_ACPX_EXECUTOR_ENABLED=true
@@ -93,27 +104,27 @@ If both ACPX and the direct Codex executor are enabled, Synapse prefers ACPX.
 
 ```bash
 ./install.sh
-./synapse setup
-./synapse connector setup
-./synapse doctor
-./synapse dev
-./synapse backend
-./synapse frontend
-./synapse start
-./synapse connector run
-./synapse service install
-./synapse service start
-./synapse service stop
-./synapse service restart
+./newbro setup
+./newbro connector setup
+./newbro doctor
+./newbro dev
+./newbro backend
+./newbro frontend
+./newbro start
+./newbro connector run
+./newbro service install
+./newbro service start
+./newbro service stop
+./newbro service restart
 ```
 
-The installed console script is also named `synapse`, so after setup you can run
-`.venv/bin/synapse dev` or activate the virtual environment and use `synapse dev`.
+The installed console script is named `newbro`, so after setup you can run
+`.venv/bin/newbro dev` or activate the virtual environment and use `newbro dev`.
 
 ## Run Backend
 
 ```bash
-./synapse backend
+./newbro backend
 ```
 
 FastAPI docs will be available at:
@@ -129,13 +140,13 @@ installed.
 To run only the frontend:
 
 ```bash
-./synapse frontend
+./newbro frontend
 ```
 
 To run only the headless connector host:
 
 ```bash
-./synapse connector run
+./newbro connector run
 ```
 
 ## Ubuntu Systemd
@@ -144,14 +155,14 @@ For an Ubuntu server deployment from a repo checkout, install the combined
 system service with:
 
 ```bash
-./synapse service install
+./newbro service install
 ```
 
-`./synapse service install` now installs or updates the unit, reloads systemd,
+`./newbro service install` now installs or updates the unit, reloads systemd,
 enables the unit, and restarts the service so the latest code is live
 immediately.
 
-The installed `synapse.service` unit runs `synapse start`, so it serves one
+The installed `newbro.service` unit runs `newbro start`, so it serves one
 main Synapse service on the public port.
 
 This path stays inside the repo checkout. The main service serves
@@ -159,30 +170,30 @@ This path stays inside the repo checkout. The main service serves
 same origin, and mounts `/api/connectors/...` routes directly when connectors are
 enabled.
 
-The systemd unit runs as the user who invoked `./synapse service install` and
+The systemd unit runs as the user who invoked `./newbro service install` and
 reads shared runtime-plus-connector config from that user’s home directory:
 
 ```text
-~/.synapse/.env
-~/.synapse/config.yaml
+~/.newbro/.env
+~/.newbro/config.yaml
 ```
 
 If you install the service as `root`, it will run as `root` and use:
 
 ```text
-/root/.synapse/.env
-/root/.synapse/config.yaml
+/root/.newbro/.env
+/root/.newbro/config.yaml
 ```
 
 If the Codex executor is enabled, set an absolute
-`runtime.codex_command` in `~/.synapse/config.yaml` so the service does not
+`runtime.codex_command` in `~/.newbro/config.yaml` so the service does not
 depend on an interactive shell PATH.
 
-`./synapse dev` and `./synapse start` do not auto-start the standalone connector
-host. Run `./synapse connector run` separately when you want the detached connector
+`./newbro dev` and `./newbro start` do not auto-start the standalone connector
+host. Run `./newbro connector run` separately when you want the detached connector
 process for direct connector testing or separate deployment.
 
-`./synapse dev` is the reload-capable local iteration path. `./synapse start`
+`./newbro dev` is the reload-capable local iteration path. `./newbro start`
 does not reload Python code changes, so restart it after editing backend,
 connector modules, or other Python service code.
 
@@ -201,6 +212,23 @@ Frontend build check:
 ```bash
 cd src/synapse/ui
 npm run build
+```
+
+Release build and publish:
+
+```bash
+python3 -m pip install '.[release]'
+python3 -m build
+python3 -m twine check dist/*
+python3 -m twine upload dist/*
+```
+
+Or use the helper script:
+
+```bash
+PYPI_TOKEN='pypi-...' ./scripts/publish_pypi.sh
+PYPI_TOKEN='pypi-...' ./scripts/publish_pypi.sh --testpypi
+./scripts/publish_pypi.sh --dry-run
 ```
 
 ## Deploy UI to Vercel
@@ -238,7 +266,7 @@ If you also use Vercel preview deployments, add the same variable for the
 `SYNAPSE_CORS_ALLOWED_ORIGINS`.
 
 If the deployed UI enables voice mode, the connector host must also allow the
-frontend origin. Configure that in `~/.synapse/config.yaml` under:
+frontend origin. Configure that in `~/.newbro/config.yaml` under:
 
 ```yaml
 connector_host:

@@ -249,11 +249,13 @@ bootstrap_repo_dependencies() {
 
 bootstrap_config_files() {
   local venv_python="$ROOT/.venv/bin/python"
+  local venv_newbro="$ROOT/.venv/bin/newbro"
 
   [[ -x "$venv_python" ]] || die "Expected virtualenv python at $venv_python"
+  [[ -x "$venv_newbro" ]] || die "Expected installed newbro console script at $venv_newbro"
 
   log "Creating starter Synapse config files"
-  "$venv_python" -m synapse setup --bootstrap-defaults
+  "$venv_newbro" setup --bootstrap-defaults
 }
 
 main() {
@@ -280,9 +282,9 @@ main() {
   bootstrap_config_files
 
   printf '\nNext:\n'
-  printf '  ./synapse setup\n'
-  printf '  ./synapse doctor\n'
-  printf '  ./synapse dev\n'
+  printf '  ./newbro setup\n'
+  printf '  ./newbro doctor\n'
+  printf '  ./newbro dev\n'
 }
 
 main "$@"

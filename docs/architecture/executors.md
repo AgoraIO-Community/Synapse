@@ -41,15 +41,15 @@ Executor-node note:
 - detached nodes authenticate to Synapse with `node_id` and `token` on
   `WS /api/executors/control`
 - the executor node's Synapse URL is a client-side runtime input passed to
-  `synapse executor run --base-url ...`, not server-owned node metadata
+  `newbro executor run --base-url ...`, not server-owned node metadata
 - local executor-family/tool config no longer uses an `executor_node.enabled`
-  toggle; `synapse executor run` may trigger the same local setup flow when
+  toggle; `newbro executor run` may trigger the same local setup flow when
   executor commands or enabled families are missing
 - each Bro may be bound to one executor node; a Bro is considered live only
   when its bound node is currently connected back to Synapse
 - detached executor nodes connect to the main Synapse service origin through
   `WS /api/executors/control`
-- foreground `synapse executor run` output should make connect, ready,
+- foreground `newbro executor run` output should make connect, ready,
   disconnect, and retry state explicit, and should only report ready after the
   control-channel registration handshake succeeds
 

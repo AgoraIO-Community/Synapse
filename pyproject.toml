@@ -1,9 +1,10 @@
 [project]
-name = "synapse"
+name = "newbro-cli"
 version = "0.1.0"
-description = "Communication brain / execution brain runtime prototype"
+description = "Newbro CLI for the Synapse communication-brain / execution-brain runtime prototype"
 readme = "README.md"
 requires-python = ">=3.12"
+keywords = ["newbro", "synapse", "cli", "agent-runtime", "communication-brain", "execution-brain"]
 dependencies = [
   "agora-agent-server-sdk>=1.1.1",
   "agora-token-builder>=1.0.0",
@@ -26,9 +27,17 @@ dev = [
   "pyright>=1.1.380,<2",
   "ruff>=0.6,<1",
 ]
+release = [
+  "build>=1.2,<2.0",
+  "twine>=5,<7",
+]
 
 [project.scripts]
-synapse = "synapse.cli.main:main"
+newbro = "synapse.cli.main:main"
+
+[project.urls]
+Repository = "https://github.com/AgoraIO/Synapse"
+Documentation = "https://github.com/AgoraIO/Synapse#readme"
 
 [build-system]
 requires = ["setuptools>=68"]

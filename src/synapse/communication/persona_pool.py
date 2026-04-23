@@ -1,6 +1,6 @@
 """User-defined persona persistence and session loading.
 
-Personas are stored in ~/.synapse/personas.yaml and loaded into the
+Personas are stored in ~/.newbro/personas.yaml and loaded into the
 blackboard at session start. The same file also persists the optional
 communication-brain persona prompt. Runtime state (status,
 current_task_id) lives on the blackboard only.
@@ -39,7 +39,7 @@ def resolve_workspace(workspace_id: str) -> Path:
     )
     candidates = [
         WORKSPACES_DIR / resolved_id,
-        Path.cwd() / ".synapse" / "workspaces" / resolved_id,
+        Path.cwd() / ".newbro" / "workspaces" / resolved_id,
     ]
     last_error: OSError | None = None
     for workspace in candidates:

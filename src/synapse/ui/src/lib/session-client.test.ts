@@ -102,7 +102,7 @@ describe("session-client transport base URL handling", () => {
     const client = await import("./session-client");
 
     expect(client.buildExecutorRunCommand("node-1", "tok'en")).toBe(
-      "./synapse executor run --base-url 'https://api.example.com/runtime' --node-id 'node-1' --token 'tok'\"'\"'en'",
+      "newbro executor run --base-url 'https://api.example.com/runtime' --node-id 'node-1' --token 'tok'\"'\"'en'",
     );
   });
 
@@ -110,7 +110,7 @@ describe("session-client transport base URL handling", () => {
     const client = await import("./session-client");
 
     expect(client.buildExecutorRunCommand("node-1", "token-1")).toBe(
-      "./synapse executor run --base-url 'http://localhost:8000' --node-id 'node-1' --token 'token-1'",
+      "newbro executor run --base-url 'http://localhost:8000' --node-id 'node-1' --token 'token-1'",
     );
   });
 

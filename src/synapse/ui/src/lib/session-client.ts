@@ -49,7 +49,7 @@ function shellQuote(value: string): string {
 
 export function buildExecutorRunCommand(nodeId: string, token: string): string {
   return [
-    "./synapse",
+    "newbro",
     "executor",
     "run",
     "--base-url",

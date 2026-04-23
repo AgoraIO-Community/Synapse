@@ -20,5 +20,5 @@ def isolate_test_runtime_env(monkeypatch, tmp_path: Path):
         if name.startswith(("SYNAPSE_", "OPENAI_")):
             monkeypatch.delenv(name, raising=False)
 
-    # Tests should opt into local config explicitly instead of inheriting a developer's ~/.synapse env.
+    # Tests should opt into local config explicitly instead of inheriting a developer's ~/.newbro env.
     monkeypatch.setattr(config_module, "LOCAL_ENV_FILE", tmp_path / ".env")
