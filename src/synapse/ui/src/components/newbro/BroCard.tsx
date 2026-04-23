@@ -48,6 +48,7 @@ export function BroCard({
     <motion.button
       data-testid={`bro-card-${bro.id}`}
       type="button"
+      aria-pressed={active}
       whileTap={{ scale: 0.992 }}
       onPointerDown={() => onPressStart(bro.id)}
       onPointerUp={onPressEnd}
@@ -57,8 +58,8 @@ export function BroCard({
         talking
           ? "border-neutral-900 bg-neutral-950 text-white"
           : active
-            ? "border-neutral-300 bg-white text-neutral-950"
-            : "border-neutral-200 bg-white text-neutral-900 hover:border-neutral-300 hover:bg-[#fffdfa]"
+            ? "border-neutral-300 bg-white text-neutral-950 shadow-[0_12px_24px_rgba(23,23,23,0.05)]"
+          : "border-neutral-200 bg-white text-neutral-900 hover:border-neutral-300 hover:bg-[#fffdfa]"
       }`}
     >
       <div className="flex items-start gap-4">
@@ -71,12 +72,10 @@ export function BroCard({
                 <div className="text-[15px] font-medium tracking-[-0.02em]">{bro.name}</div>
                 <div
                   className={`rounded-full px-2 py-0.5 text-[10px] uppercase tracking-[0.16em] ${
-                    isBusy
-                      ? talking
-                        ? "border border-white/15 bg-white/10 text-white"
-                        : "border border-emerald-200 bg-emerald-50 text-emerald-700"
-                      : talking
-                        ? "border border-white/15 bg-white/10 text-white"
+                    talking
+                      ? "border border-white/15 bg-white/10 text-white"
+                      : isBusy
+                        ? "border border-emerald-200 bg-emerald-50 text-emerald-700"
                         : "border border-neutral-200 bg-[#f6f5f2] text-neutral-600"
                   }`}
                 >
@@ -100,7 +99,7 @@ export function BroCard({
             ) : null}
           </div>
 
-          <BroProgress bro={bro} talking={talking} voiceConnected={voiceConnected} />
+          <BroProgress bro={bro} talking={talking} />
         </div>
       </div>
     </motion.button>

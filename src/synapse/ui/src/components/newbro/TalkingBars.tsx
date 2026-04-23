@@ -2,7 +2,7 @@ import { motion } from "framer-motion";
 
 export function TalkingBars({ active = false }: { active?: boolean }) {
   return (
-    <div className="flex items-end gap-1.5">
+    <div data-testid="talking-bars" className="flex items-end gap-1.5">
       {[0, 1, 2, 3].map((index) => (
         <motion.span
           key={index}
