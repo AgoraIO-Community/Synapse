@@ -289,6 +289,30 @@ describe("Newbro voice shell", () => {
     expect(screen.getAllByText("2 turns")).toHaveLength(2);
   });
 
+  it("keeps hydrated interaction memory visible while voice startup is loading", async () => {
+    clientMock.getConversationSnapshot.mockResolvedValueOnce({
+      session_id: "session-1",
+      conversation_history: [
+        { role: "assistant", text: "Hello from Synapse.", message_id: "msg-1" },
+        { role: "user", text: "Please summarize the plan.", message_id: "msg-2" },
+      ],
+    } as any);
+    connectorMock.activateConnectorSession.mockImplementationOnce(() => new Promise(() => {}));
+
+    render(<App />);
+
+    expect(await screen.findByText("Hello from Synapse.")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("voice-session-start"));
+
+    await waitFor(() => expect(connectorMock.activateConnectorSession).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText("Starting voice session")).toBeInTheDocument();
+    expect(screen.getByText("Hello from Synapse.")).toBeInTheDocument();
+    expect(screen.getByText("Please summarize the plan.")).toBeInTheDocument();
+    expect(
+      screen.queryByText("Preparing voice session and waiting for Synapse conversation updates."),
+    ).not.toBeInTheDocument();
+  });
+
   it("resumes the shell session from the sid query parameter", async () => {
     window.history.replaceState({}, "", "/?sid=session-existing");
 
@@ -399,6 +423,22 @@ describe("Newbro voice shell", () => {
     expect(screen.queryByText("Transcript will appear here.")).not.toBeInTheDocument();
     expect(screen.getAllByText("2 turns")).toHaveLength(2);
     expect(screen.getByText("Session session-1")).toBeInTheDocument();
+  });
+
+  it("keeps the empty interaction-memory state visible while voice startup is loading", async () => {
+    connectorMock.activateConnectorSession.mockImplementationOnce(() => new Promise(() => {}));
+
+    render(<App />);
+
+    expect(await screen.findByText("Transcript will appear here.")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("voice-session-start"));
+
+    await waitFor(() => expect(connectorMock.activateConnectorSession).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText("Starting voice session")).toBeInTheDocument();
+    expect(screen.getByText("Transcript will appear here.")).toBeInTheDocument();
+    expect(
+      screen.queryByText("Preparing voice session and waiting for Synapse conversation updates."),
+    ).not.toBeInTheDocument();
   });
 
   it("does not populate interaction memory from browser transcript events alone", async () => {
