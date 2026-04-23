@@ -7,7 +7,7 @@ export function TopVoiceBar({
   voicePhase,
   error,
   isMicMuted,
-  transcriptCount,
+  messageCount,
   sessionId,
   onStart,
   onStop,
@@ -17,7 +17,7 @@ export function TopVoiceBar({
   voicePhase: "idle" | "loading" | "connected" | "error";
   error: string | null;
   isMicMuted: boolean;
-  transcriptCount: number;
+  messageCount: number;
   sessionId: string | null;
   onStart: () => void;
   onStop: () => void;
@@ -55,7 +55,7 @@ export function TopVoiceBar({
               {workingCount}/{bros.length} Bros Working
             </div>
             <div className="rounded-full border border-neutral-200 px-2.5 py-1">
-              {transcriptCount} transcript turns
+              {messageCount} turns
             </div>
             {sessionId ? (
               <div className="rounded-full border border-neutral-200 px-2.5 py-1">

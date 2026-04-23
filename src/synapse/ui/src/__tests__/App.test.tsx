@@ -286,7 +286,7 @@ describe("Newbro voice shell", () => {
     expect(await screen.findByText("Hello from Synapse.")).toBeInTheDocument();
     expect(screen.getByText("Please summarize the plan.")).toBeInTheDocument();
     expect(screen.queryByText("Transcript will appear here.")).not.toBeInTheDocument();
-    expect(screen.getByText("2 transcript turns")).toBeInTheDocument();
+    expect(screen.getAllByText("2 turns")).toHaveLength(2);
   });
 
   it("resumes the shell session from the sid query parameter", async () => {
@@ -397,7 +397,7 @@ describe("Newbro voice shell", () => {
     expect(await screen.findByText("Hello. How can I help you today?")).toBeInTheDocument();
     expect(screen.getByText("NewBro")).toBeInTheDocument();
     expect(screen.queryByText("Transcript will appear here.")).not.toBeInTheDocument();
-    expect(screen.getByText("2 transcript turns")).toBeInTheDocument();
+    expect(screen.getAllByText("2 turns")).toHaveLength(2);
     expect(screen.getByText("Session session-1")).toBeInTheDocument();
   });
 

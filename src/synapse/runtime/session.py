@@ -4,6 +4,7 @@ import asyncio
 import logging
 from dataclasses import replace
 from dataclasses import dataclass, field
+from typing import Literal
 
 from synapse.blackboard import InMemoryBlackboard
 from synapse.communication import CommunicationBrain
@@ -216,7 +217,7 @@ class SessionRuntime:
         request_id: str,
         user_text: str,
         *,
-        source: str = "user",
+        source: Literal["user", "connector"] = "user",
         start_processing: bool = True,
     ) -> tuple[str, asyncio.Future[CommunicationTurnResult]]:
         user_entry = self.communication_brain.append_user_message(self.session_id, user_text)
@@ -1045,14 +1046,14 @@ class SessionRuntime:
         *,
         message_id: str,
         text: str,
-        source: str,
+        source: Literal["user", "connector"],
     ) -> None:
         await self._broadcast_event(
             UserMessageAppendedStreamEvent(
                 sequence=self._next_event_sequence(),
                 message_id=message_id,
                 text=text,
-                source="connector" if source == "connector" else "user",
+                source=source,
             )
         )
 

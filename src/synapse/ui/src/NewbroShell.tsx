@@ -225,40 +225,37 @@ function useNewbroShellState() {
           return;
         }
         if (event.type === "user_message_appended") {
-          const e = event as unknown as { message_id: string; text: string };
           startTransition(() => {
             setChatMessages((prev) => {
-              if (prev.some((m) => m.id === e.message_id)) return prev;
+              if (prev.some((m) => m.id === event.message_id)) return prev;
               return [
                 ...prev,
-                { role: "user" as const, text: e.text, id: e.message_id },
+                { role: "user" as const, text: event.text, id: event.message_id },
               ];
             });
           });
           return;
         }
         if (event.type === "assistant_response_completed") {
-          const e = event as unknown as { message_id: string; reply_text: string };
           startTransition(() => {
             setChatMessages((prev) => {
-              if (prev.some((m) => m.id === e.message_id)) return prev;
+              if (prev.some((m) => m.id === event.message_id)) return prev;
               return [
                 ...prev,
-                { role: "assistant" as const, text: e.reply_text, id: e.message_id },
+                { role: "assistant" as const, text: event.reply_text, id: event.message_id },
               ];
             });
           });
           return;
         }
         if (event.type === "conversation_appended") {
-          const e = event as unknown as { message_id: string; text: string; source: string };
           startTransition(() => {
             setChatMessages((prev) => {
               // Deduplicate — assistant_response_completed may have already added this
-              if (prev.some((m) => m.id === e.message_id)) return prev;
+              if (prev.some((m) => m.id === event.message_id)) return prev;
               return [
                 ...prev,
-                { role: "assistant" as const, text: e.text, id: e.message_id },
+                { role: "assistant" as const, text: event.text, id: event.message_id },
               ];
             });
           });
@@ -403,7 +400,7 @@ export function HomeShellPage({ onNavigate }: { onNavigate: PageNavigator }) {
         voicePhase={shell.voiceSession.phase}
         error={shell.voiceSession.error}
         isMicMuted={shell.voiceSession.isMicMuted}
-        transcriptCount={shell.chatMessages.length}
+        messageCount={shell.chatMessages.length}
         sessionId={shell.activeShellSessionId}
         onStart={() => {
           void shell.start(shell.activeShellSessionId);
