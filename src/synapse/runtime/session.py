@@ -915,7 +915,7 @@ class SessionRuntime:
                 if not request.completion.done():
                     request.completion.set_result(result)
                 # Auto-clear voice target after processing a targeted message
-                if request.target_persona_id and self._voice_target_persona_id == request.target_persona_id:
+                if request.target_persona_id and self._voice_target_persona_id is not None:
                     self._voice_target_persona_id = None
         finally:
             self._active_assistant_turns = max(0, self._active_assistant_turns - 1)

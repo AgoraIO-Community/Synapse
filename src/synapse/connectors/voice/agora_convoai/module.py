@@ -148,6 +148,8 @@ class AgoraConvoAIConnectorModule(BaseConnectorModule):
                     target_persona_id = live_session.voice_target_persona_id
                 except (KeyError, AttributeError):
                     pass
+            import logging as _log
+            _log.getLogger(__name__).warning("chat_completions target=%s user=%s", target_persona_id, user_text[:40] if user_text else "")
 
             if payload.stream:
                 return StreamingResponse(

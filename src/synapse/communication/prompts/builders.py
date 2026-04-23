@@ -75,6 +75,7 @@ def build_reply_prompt_request(
             build_normal_reply_task_prompt(
                 user_text=user_text,
                 available_tools=context.available_tools,
+                target_persona_id=context.target_persona_id,
             ),
         ),
         _message("system", build_tool_usage_examples_prompt(context)),
@@ -99,8 +100,9 @@ def build_reply_prompt_request(
                 "system",
                 f"IMPORTANT: The user is directing this instruction specifically at persona '{target_name}' "
                 f"(persona_id: {context.target_persona_id}). "
-                f"When creating a task for this message, assign it to this persona. "
-                f"Do NOT ask which persona should handle it.",
+                f"When creating a task for this message, assign it to this persona using persona_name='{target_name}'. "
+                f"Do NOT ask which persona should handle it. "
+                f"This OVERRIDES the rule about asking which bro to use.",
             )
         )
         prompt_sections.append("target_persona")
