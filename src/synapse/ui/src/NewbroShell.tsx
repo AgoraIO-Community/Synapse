@@ -9,7 +9,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { createSession, getSessionSnapshot, openSessionStream } from "./lib/session-client";
+import { createSession, getConversationSnapshot, getSessionSnapshot, openSessionStream, sendSocketMessage } from "./lib/session-client";
 import { BrosPage } from "./components/newbro/BrosPage";
 import { BrosPanel } from "./components/newbro/BrosPanel";
 import { ConversationMemory } from "./components/newbro/ConversationMemory";
@@ -80,9 +80,11 @@ function useNewbroShellState() {
   const [shellError, setShellError] = useState<string | null>(null);
   const [activeBroId, setActiveBroId] = useState<string | null>(null);
   const [isTalking, setIsTalking] = useState(false);
+  const [chatMessages, setChatMessages] = useState<Array<{ role: "user" | "assistant"; text: string; id: string }>>([]);
   const mountedRef = useRef(false);
   const idleSessionIdRef = useRef<string | null>(null);
   const shellLoadSequenceRef = useRef(0);
+  const socketRef = useRef<WebSocket | null>(null);
 
   function applySnapshot(snapshot: SessionSnapshot) {
     setRuntimePersonas(snapshot.personas);
@@ -97,15 +99,29 @@ function useNewbroShellState() {
       const loadSequence = ++shellLoadSequenceRef.current;
       setActiveShellSessionId(sessionId);
       setShellError(null);
+      // Reset chat messages for the new session
+      setChatMessages([]);
 
       if (options.rememberIdle) {
         idleSessionIdRef.current = sessionId;
       }
 
       try {
-        const snapshot = await getSessionSnapshot(sessionId);
+        const [snapshot, conversation] = await Promise.all([
+          getSessionSnapshot(sessionId),
+          getConversationSnapshot(sessionId),
+        ]);
         if (!mountedRef.current || shellLoadSequenceRef.current !== loadSequence) return;
-        startTransition(() => applySnapshot(snapshot));
+        startTransition(() => {
+          applySnapshot(snapshot);
+          // Hydrate chat messages from server conversation history
+          const hydrated = (conversation.conversation_history ?? []).map((entry) => ({
+            role: entry.role as "user" | "assistant",
+            text: entry.text,
+            id: entry.message_id,
+          }));
+          setChatMessages(hydrated);
+        });
       } catch (error: unknown) {
         if (!mountedRef.current || shellLoadSequenceRef.current !== loadSequence) return;
         startTransition(() => {
@@ -164,21 +180,48 @@ function useNewbroShellState() {
 
   useEffect(() => {
     if (!activeShellSessionId) {
+      socketRef.current = null;
       return undefined;
     }
     const socket = openSessionStream(activeShellSessionId, {
       onOpen: () => {},
-      onClose: () => {},
-      onError: () => {},
+      onClose: () => { socketRef.current = null; },
+      onError: () => { socketRef.current = null; },
       onMessage: (event) => {
-        if (event.type !== "snapshot" || !mountedRef.current) {
+        if (!mountedRef.current) return;
+        if (event.type === "snapshot") {
+          startTransition(() => applySnapshot(event.snapshot));
           return;
         }
-        startTransition(() => applySnapshot(event.snapshot));
+        if (event.type === "assistant_response_completed") {
+          const e = event as unknown as { message_id: string; reply_text: string };
+          startTransition(() => {
+            setChatMessages((prev) => [
+              ...prev,
+              { role: "assistant" as const, text: e.reply_text, id: e.message_id },
+            ]);
+          });
+          return;
+        }
+        if (event.type === "conversation_appended") {
+          const e = event as unknown as { message_id: string; text: string; source: string };
+          startTransition(() => {
+            setChatMessages((prev) => {
+              // Deduplicate — assistant_response_completed may have already added this
+              if (prev.some((m) => m.id === e.message_id)) return prev;
+              return [
+                ...prev,
+                { role: "assistant" as const, text: e.text, id: e.message_id },
+              ];
+            });
+          });
+        }
       },
     });
+    socketRef.current = socket;
     return () => {
       socket.close();
+      socketRef.current = null;
     };
   }, [activeShellSessionId]);
 
@@ -197,6 +240,15 @@ function useNewbroShellState() {
     }
   }, [activeBroId, bros]);
 
+  const sendMessage = (text: string): boolean => {
+    const socket = socketRef.current;
+    if (!socket || socket.readyState !== WebSocket.OPEN) return false;
+    const requestId = `msg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    sendSocketMessage(socket, requestId, text);
+    setChatMessages((prev) => [...prev, { role: "user" as const, text, id: requestId }]);
+    return true;
+  };
+
   return {
     bros,
     voiceSession,
@@ -213,6 +265,8 @@ function useNewbroShellState() {
     start,
     stop,
     toggleMute,
+    sendMessage,
+    chatMessages,
     voiceConnected: voiceSession.phase === "connected",
   };
 }
@@ -263,6 +317,30 @@ function ShellFrame({
 
 export function HomeShellPage({ onNavigate }: { onNavigate: PageNavigator }) {
   const shell = useNewbroShell();
+  const [composer, setComposer] = useState("");
+  const [sendError, setSendError] = useState<string | null>(null);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+
+  // Auto-scroll when chat messages change
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el) {
+      el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+    }
+  }, [shell.chatMessages.length]);
+
+  function handleSend(e: React.FormEvent) {
+    e.preventDefault();
+    const text = composer.trim();
+    if (!text) return;
+    setSendError(null);
+    const sent = shell.sendMessage(text);
+    if (sent) {
+      setComposer("");
+    } else {
+      setSendError("Not connected. Message was not sent.");
+    }
+  }
 
   return (
     <ShellFrame activePage="Home" onNavigate={onNavigate}>
@@ -291,19 +369,72 @@ export function HomeShellPage({ onNavigate }: { onNavigate: PageNavigator }) {
       ) : null}
 
       {shell.hasLoadedShellSnapshot ? (
-        <div className="grid min-h-0 flex-1 grid-cols-1 gap-8 overflow-auto px-8 py-8 lg:grid-cols-[minmax(220px,0.56fr)_minmax(840px,1.74fr)] xl:px-10 xl:py-10">
+        <div className="grid min-h-0 flex-1 grid-cols-1 gap-8 px-8 py-8 lg:grid-cols-[minmax(220px,0.56fr)_minmax(840px,1.74fr)] xl:px-10 xl:py-10">
           <section className="flex min-h-0 flex-col pt-4">
-            <ConversationMemory
-              phase={shell.voiceSession.phase}
-              transcript={shell.voiceSession.transcript}
-              transcriptSession={shell.voiceSession.transcriptSession}
-              error={shell.voiceSession.error}
-              lastTranscriptUpdateAt={shell.voiceSession.lastTranscriptUpdateAt}
-              lastToolkitMessage={shell.voiceSession.lastToolkitMessage}
-            />
+            {/* Scrollable conversation area */}
+            <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
+              <ConversationMemory
+                phase={shell.voiceSession.phase}
+                transcript={shell.voiceSession.transcript}
+                transcriptSession={shell.voiceSession.transcriptSession}
+                error={shell.voiceSession.error}
+                lastTranscriptUpdateAt={shell.voiceSession.lastTranscriptUpdateAt}
+                lastToolkitMessage={shell.voiceSession.lastToolkitMessage}
+              />
+
+              {/* Text chat messages */}
+              {shell.chatMessages.length > 0 && (
+                <div className="mt-4 max-w-[400px] space-y-2">
+                  {shell.chatMessages.map((msg) => (
+                    <div
+                      key={msg.id}
+                      className={msg.role === "user" ? "ml-8" : "mr-8"}
+                    >
+                      <div
+                        className={`rounded-[22px] border px-4 py-3 ${
+                          msg.role === "user"
+                            ? "rounded-tr-md border-neutral-200 bg-white"
+                            : "rounded-tl-md border-neutral-200 bg-[#f1ede5]"
+                        }`}
+                      >
+                        <div className="mb-1 text-[11px] uppercase tracking-[0.18em] text-neutral-400">
+                          {msg.role === "user" ? "Me" : "NewBro"}
+                        </div>
+                        <div className="whitespace-pre-wrap text-[13px] leading-6 text-neutral-800">
+                          {msg.text}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Pinned input */}
+            {sendError && (
+              <div className="mt-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-[12px] text-red-600">
+                {sendError}
+              </div>
+            )}
+            <form onSubmit={handleSend} className="mt-3 flex shrink-0 gap-2">
+              <input
+                type="text"
+                value={composer}
+                onChange={(e) => setComposer(e.target.value)}
+                placeholder="Type a message…"
+                className="min-w-0 flex-1 rounded-2xl border border-neutral-200 bg-white px-4 py-2.5 text-[14px] text-neutral-900 placeholder-neutral-400 outline-none transition focus:border-neutral-400 focus:ring-1 focus:ring-neutral-300"
+              />
+              <button
+                type="submit"
+                disabled={!composer.trim()}
+                className="shrink-0 rounded-2xl border border-neutral-900 bg-neutral-950 px-4 py-2.5 text-[13px] font-medium text-white transition hover:bg-neutral-800 disabled:opacity-30"
+              >
+                Send
+              </button>
+            </form>
           </section>
 
-          <section className="flex items-start justify-stretch lg:pt-4">
+          <section className="flex min-h-0 items-start justify-stretch overflow-y-auto lg:pt-4">
             <BrosPanel
               bros={shell.bros}
               activeBroId={shell.activeBroId}

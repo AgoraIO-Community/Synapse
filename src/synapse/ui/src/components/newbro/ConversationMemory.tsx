@@ -38,7 +38,7 @@ export function ConversationMemory({
   }, [phase, transcriptItems.length, lastTranscriptUpdateAt]);
 
   return (
-    <div data-testid="conversation-memory" className="flex min-h-0 max-w-[400px] flex-1 flex-col space-y-3">
+    <div data-testid="conversation-memory" className="max-w-[400px] space-y-3">
       <SectionHeader
         title="Interaction memory"
         trailing={
@@ -59,7 +59,7 @@ export function ConversationMemory({
         }
       />
 
-      <div ref={viewportRef} className="min-h-[420px] flex-1 overflow-y-auto pr-2">
+      <div ref={viewportRef} className="overflow-y-auto pr-2">
         {phase === "loading" ? (
           <div className="px-1 py-2 text-[13px] leading-6 text-neutral-500">
             Preparing voice session and waiting for live transcript.
@@ -69,7 +69,7 @@ export function ConversationMemory({
             {error ?? lastToolkitMessage ?? "Voice session failed to start."}
           </div>
         ) : transcriptItems.length === 0 ? (
-          <div className="flex h-full min-h-[280px] items-center justify-center text-center text-[13px] leading-6 text-neutral-400">
+          <div className="flex items-center justify-center py-10 text-center text-[13px] leading-6 text-neutral-400">
             Transcript will appear here.
           </div>
         ) : (

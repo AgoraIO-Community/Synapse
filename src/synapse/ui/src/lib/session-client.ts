@@ -103,6 +103,22 @@ export async function getSessionSnapshot(sessionId: string): Promise<SessionSnap
   return (await ensureOk(response)).json();
 }
 
+export interface MessageResponse {
+  message_id: string;
+  reply_text: string;
+  conversational_act: string;
+  affected_task_ids: string[];
+}
+
+export async function sendSessionMessage(sessionId: string, text: string): Promise<MessageResponse> {
+  const response = await fetch(buildHttpUrl(`${API_PREFIX}/sessions/${sessionId}/messages`), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text }),
+  });
+  return (await ensureOk(response)).json();
+}
+
 export async function getConversationSnapshot(sessionId: string): Promise<ConversationSnapshot> {
   const response = await fetch(buildHttpUrl(`${API_PREFIX}/sessions/${sessionId}/conversation`));
   return (await ensureOk(response)).json();
