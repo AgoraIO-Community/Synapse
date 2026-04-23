@@ -5,7 +5,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from synapse.observability.schema import DiagnosticEvent
-from synapse.protocol import TaskCommandType
+from synapse.protocol import ExecutorNodeCredentialIssue, ExecutorNodeRecord, TaskCommandType
 from synapse.runtime.models import SessionSnapshot
 
 
@@ -91,18 +91,34 @@ class PersonaCreateRequest(BaseModel):
     name: str
     avatar: str = ""
     base_prompt: str = ""
+    executor_node_id: str | None = None
 
 
 class PersonaUpdateRequest(BaseModel):
     name: str | None = None
     avatar: str | None = None
     base_prompt: str | None = None
+    executor_node_id: str | None = None
+
+
+class ExecutorNodeCreateRequest(BaseModel):
+    name: str
+    enabled_executors: list[str] = Field(default_factory=list)
+
+
+class ExecutorNodeUpdateRequest(BaseModel):
+    name: str | None = None
+    enabled_executors: list[str] | None = None
 
 
 __all__ = [
     "CommandRequest",
     "CommandResponse",
     "DiagnosticTimelineResponse",
+    "ExecutorNodeCreateRequest",
+    "ExecutorNodeCredentialIssue",
+    "ExecutorNodeRecord",
+    "ExecutorNodeUpdateRequest",
     "MessageRequest",
     "MessageResponse",
     "ResolveInteractionRequest",

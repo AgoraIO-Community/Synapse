@@ -4,6 +4,29 @@ import { BroProgress } from "./BroProgress";
 import { TalkingBars } from "./TalkingBars";
 import type { BroCardModel } from "./types";
 
+function liveStateLabel(bro: BroCardModel) {
+  if (bro.liveState === "live") {
+    return "live";
+  }
+  if (bro.liveState === "offline") {
+    return "bound offline";
+  }
+  return "unbound";
+}
+
+function liveStateClasses(bro: BroCardModel, talking: boolean) {
+  if (talking) {
+    return "border border-white/15 bg-white/10 text-white";
+  }
+  if (bro.liveState === "live") {
+    return "border border-emerald-200 bg-emerald-50 text-emerald-700";
+  }
+  if (bro.liveState === "offline") {
+    return "border border-amber-200 bg-amber-50 text-amber-700";
+  }
+  return "border border-neutral-200 bg-[#f6f5f2] text-neutral-600";
+}
+
 export function BroCard({
   bro,
   active,
@@ -48,18 +71,25 @@ export function BroCard({
                 <div className="text-[15px] font-medium tracking-[-0.02em]">{bro.name}</div>
                 <div
                   className={`rounded-full px-2 py-0.5 text-[10px] uppercase tracking-[0.16em] ${
-                    talking
-                      ? "border border-white/15 bg-white/10 text-white"
-                      : isBusy
-                        ? "border border-neutral-200 bg-neutral-100 text-neutral-700"
+                    isBusy
+                      ? talking
+                        ? "border border-white/15 bg-white/10 text-white"
+                        : "border border-neutral-200 bg-neutral-100 text-neutral-700"
+                      : talking
+                        ? "border border-white/15 bg-white/10 text-white"
                         : "border border-neutral-200 bg-[#f6f5f2] text-neutral-600"
                   }`}
                 >
-                  {talking ? (voiceConnected ? "live" : "preview") : bro.status}
+                  {talking ? (voiceConnected ? "mic on" : "preview") : bro.status}
+                </div>
+                <div
+                  className={`rounded-full px-2 py-0.5 text-[10px] uppercase tracking-[0.16em] ${liveStateClasses(bro, talking)}`}
+                >
+                  {liveStateLabel(bro)}
                 </div>
               </div>
               <div className={`mt-1 text-[12px] ${talking ? "text-neutral-300" : "text-neutral-500"}`}>
-                {bro.role}
+                {bro.nodeName ? `${bro.role} · ${bro.nodeName}` : `${bro.role} · needs binding`}
               </div>
             </div>
 

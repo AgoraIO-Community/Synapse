@@ -228,6 +228,22 @@ export interface ExecutorCapability {
   supports_follow_up: boolean;
 }
 
+export interface ExecutorNodeRecord {
+  node_id: string;
+  name: string;
+  enabled_executors: string[];
+  connected_executors: string[];
+  connection_status: "connected" | "disconnected";
+  token_hint: string | null;
+  last_connected_at: string | null;
+  last_seen_at: string | null;
+}
+
+export interface ExecutorNodeCredentialIssue {
+  node: ExecutorNodeRecord;
+  token: string;
+}
+
 export interface ConversationHistoryEntry {
   role: string;
   text: string;
@@ -247,6 +263,7 @@ export interface SessionSnapshot {
   interaction_requests: InteractionRequest[];
   attention_items: AttentionItem[];
   executor_capabilities: ExecutorCapability[];
+  executor_nodes: ExecutorNodeRecord[];
   communication_persona_prompt: string;
 }
 
@@ -255,6 +272,7 @@ export interface Persona {
   name: string;
   avatar: string;
   base_prompt: string;
+  executor_node_id: string | null;
   status: "idle" | "busy";
   current_task_id: string | null;
 }

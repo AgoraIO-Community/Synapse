@@ -30,7 +30,7 @@ async def executor_control(websocket: WebSocket):
 
         while True:
             payload = await websocket.receive_json()
-            ack = await _handle_control_message(container, payload)
+            ack = await _handle_control_message(container, websocket, payload)
             await websocket.send_json(ack.model_dump(mode="json"))
     except ValidationError:
         await websocket.close(code=4400)
@@ -40,10 +40,11 @@ async def executor_control(websocket: WebSocket):
         pass
     finally:
         if registered:
-            await container.executor_node_manager.disconnect(reason="connection_closed")
+            await container.executor_node_manager.disconnect(websocket=websocket, reason="connection_closed")
+            await container.handle_executor_node_disconnected()
 
 
-async def _handle_control_message(container, payload: object) -> AckMessage:
+async def _handle_control_message(container, websocket: WebSocket, payload: object) -> AckMessage:
     if not isinstance(payload, dict):
         return AckMessage(message_type="unknown", ok=False, detail="invalid_payload")
     message_type = payload.get("type")
@@ -52,7 +53,7 @@ async def _handle_control_message(container, payload: object) -> AckMessage:
             message = RunEventMessage.model_validate(payload)
         except ValidationError:
             return AckMessage(message_type="run_event", ok=False, detail="invalid_payload")
-        return await container.executor_node_manager.publish_run_event(message)
+        return await container.executor_node_manager.publish_run_event(websocket, message)
     if message_type == "interaction_state":
         try:
             InteractionStateMessage.model_validate(payload)

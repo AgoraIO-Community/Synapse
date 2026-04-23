@@ -1,22 +1,45 @@
 /**
- * BrosPage — full-page management view for communication brain persona
- * and worker bro configuration. Matches the newbro design language.
+ * BrosPage — management view for communication persona and worker bro bindings.
+ * Keeps the Newbro visual language while exposing executor-node assignment.
  */
 
 import { useEffect, useState } from "react";
-import { Plus, Pencil, Trash2, Brain } from "lucide-react";
+import { Plus, Pencil, Trash2, Brain, Link2, Server } from "lucide-react";
 import {
   createPersona,
   deletePersona,
-  listPersonas,
-  updatePersona,
   getSessionConfig,
+  listExecutorNodes,
+  listPersonas,
   putSessionConfig,
+  updatePersona,
 } from "../../lib/session-client";
 import { SectionHeader } from "./SectionHeader";
 import { BroPortrait } from "./BroPortrait";
 import type { BroCardModel, AvatarType } from "./types";
-import type { Persona } from "../../types";
+import type { ExecutorNodeRecord, Persona } from "../../types";
+
+function nodeStateLabel(persona: Persona, nodesById: Map<string, ExecutorNodeRecord>) {
+  if (!persona.executor_node_id) {
+    return "unbound";
+  }
+  const node = nodesById.get(persona.executor_node_id);
+  if (node?.connection_status === "connected") {
+    return "live";
+  }
+  return "bound offline";
+}
+
+function nodeStateClasses(persona: Persona, nodesById: Map<string, ExecutorNodeRecord>) {
+  const state = nodeStateLabel(persona, nodesById);
+  if (state === "live") {
+    return "border-emerald-200 bg-emerald-50 text-emerald-700";
+  }
+  if (state === "bound offline") {
+    return "border-amber-200 bg-amber-50 text-amber-700";
+  }
+  return "border-neutral-200 bg-[#f6f5f2] text-neutral-600";
+}
 
 /* ------------------------------------------------------------------ */
 /*  Communication Brain Persona                                       */
@@ -38,7 +61,6 @@ function CommBrainSection({
   const [error, setError] = useState<string | null>(null);
   const dirty = value !== savedValue;
 
-  // Load the persisted (next-session) value on mount.
   useEffect(() => {
     let active = true;
     getSessionConfig(sessionId, "communication_persona_prompt")
@@ -49,7 +71,9 @@ function CommBrainSection({
         setSavedValue(persisted);
       })
       .catch(() => {});
-    return () => { active = false; };
+    return () => {
+      active = false;
+    };
   }, [sessionId]);
 
   async function handleSave() {
@@ -77,7 +101,7 @@ function CommBrainSection({
         <div>
           <div className="text-[14px] font-medium text-neutral-900">Communication Persona</div>
           <div className="text-[12px] text-neutral-500">
-            Controls the conversation brain's tone and style
+            Controls the conversation brain&apos;s tone and style
           </div>
         </div>
       </div>
@@ -85,7 +109,10 @@ function CommBrainSection({
       <textarea
         placeholder="e.g. You are a friendly and concise assistant who speaks casually in Chinese."
         value={value}
-        onChange={(e) => { setValue(e.target.value); setSaved(false); }}
+        onChange={(e) => {
+          setValue(e.target.value);
+          setSaved(false);
+        }}
         rows={3}
         className="w-full rounded-2xl border border-neutral-200 bg-[#f7f5f0] px-4 py-3 text-[14px] text-neutral-900 placeholder-neutral-400 outline-none transition focus:border-neutral-400 focus:ring-1 focus:ring-neutral-300"
       />
@@ -111,7 +138,10 @@ function CommBrainSection({
         </button>
         {dirty && (
           <button
-            onClick={() => { setValue(savedValue); setSaved(false); }}
+            onClick={() => {
+              setValue(savedValue);
+              setSaved(false);
+            }}
             className="rounded-full border border-neutral-200 px-4 py-1.5 text-[12px] font-medium text-neutral-600 transition hover:bg-neutral-100"
           >
             Reset
@@ -122,7 +152,6 @@ function CommBrainSection({
   );
 }
 
-
 /* ------------------------------------------------------------------ */
 /*  Worker Bro Form                                                   */
 /* ------------------------------------------------------------------ */
@@ -131,18 +160,26 @@ const AVATAR_TYPES = ["fox", "cat", "bunny", "bro"] as const;
 
 function BroForm({
   initial,
+  nodes,
   onSubmit,
   onCancel,
   submitLabel,
 }: {
-  initial?: { name: string; basePrompt: string; avatarType: string };
-  onSubmit: (data: { name: string; basePrompt: string; avatarType: string }) => void;
+  initial?: { name: string; basePrompt: string; avatarType: string; executorNodeId: string | null };
+  nodes: ExecutorNodeRecord[];
+  onSubmit: (data: {
+    name: string;
+    basePrompt: string;
+    avatarType: string;
+    executorNodeId: string | null;
+  }) => void;
   onCancel: () => void;
   submitLabel: string;
 }) {
   const [name, setName] = useState(initial?.name ?? "");
   const [basePrompt, setBasePrompt] = useState(initial?.basePrompt ?? "");
   const [avatarType, setAvatarType] = useState(initial?.avatarType ?? "fox");
+  const [executorNodeId, setExecutorNodeId] = useState(initial?.executorNodeId ?? "");
 
   return (
     <div className="space-y-3 rounded-[24px] border border-neutral-200 bg-white px-6 py-5">
@@ -171,6 +208,28 @@ function BroForm({
         ))}
       </div>
 
+      <div className="space-y-2">
+        <div className="flex items-center gap-2 text-[12px] uppercase tracking-[0.18em] text-neutral-400">
+          <Link2 className="h-3.5 w-3.5" strokeWidth={1.8} />
+          Executor Node
+        </div>
+        <select
+          value={executorNodeId}
+          onChange={(e) => setExecutorNodeId(e.target.value)}
+          className="w-full rounded-2xl border border-neutral-200 bg-[#f7f5f0] px-4 py-2.5 text-[14px] text-neutral-900 outline-none transition focus:border-neutral-400 focus:ring-1 focus:ring-neutral-300"
+        >
+          <option value="">Unbound</option>
+          {nodes.map((node) => (
+            <option key={node.node_id} value={node.node_id}>
+              {node.name} · {node.connection_status === "connected" ? "live" : "offline"}
+            </option>
+          ))}
+        </select>
+        <div className="text-[12px] leading-5 text-neutral-500">
+          Unbound Bros stay dark until you attach them to a local executor node.
+        </div>
+      </div>
+
       <textarea
         placeholder="Base prompt — personality and instructions for this worker"
         value={basePrompt}
@@ -181,7 +240,14 @@ function BroForm({
 
       <div className="flex gap-2">
         <button
-          onClick={() => onSubmit({ name: name.trim(), basePrompt, avatarType })}
+          onClick={() =>
+            onSubmit({
+              name: name.trim(),
+              basePrompt,
+              avatarType,
+              executorNodeId: executorNodeId || null,
+            })
+          }
           disabled={!name.trim()}
           className="rounded-full border border-neutral-900 bg-neutral-950 px-4 py-1.5 text-[12px] font-medium text-white transition hover:bg-neutral-800 disabled:opacity-30"
         >
@@ -211,6 +277,9 @@ function personaToBroCard(persona: Persona): BroCardModel {
     name: persona.name,
     role: "",
     status: "idle",
+    liveState: "unbound",
+    executorNodeId: persona.executor_node_id,
+    nodeName: null,
     avatarType,
     taskTitle: "",
     progress: 0,
@@ -223,26 +292,35 @@ function personaToBroCard(persona: Persona): BroCardModel {
 
 function BroRow({
   persona,
+  nodesById,
   onEdit,
   onDelete,
 }: {
   persona: Persona;
+  nodesById: Map<string, ExecutorNodeRecord>;
   onEdit: () => void;
   onDelete: () => void;
 }) {
   const avatarType = VALID_AVATARS.has(persona.avatar) ? persona.avatar : "bro";
+  const node = persona.executor_node_id ? nodesById.get(persona.executor_node_id) : null;
+  const nodeState = nodeStateLabel(persona, nodesById);
 
   return (
     <div className="flex items-center gap-4 rounded-[24px] border border-neutral-200 bg-white px-5 py-4 transition hover:border-neutral-300">
       <BroPortrait bro={personaToBroCard(persona)} talking={false} />
 
       <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <div className="text-[15px] font-medium tracking-[-0.02em] text-neutral-900">
             {persona.name}
           </div>
           <div className="rounded-full border border-neutral-200 bg-[#f6f5f2] px-2 py-0.5 text-[10px] uppercase tracking-[0.16em] text-neutral-600">
             {avatarType}
+          </div>
+          <div
+            className={`rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-[0.16em] ${nodeStateClasses(persona, nodesById)}`}
+          >
+            {nodeState}
           </div>
         </div>
         {persona.base_prompt ? (
@@ -252,6 +330,14 @@ function BroRow({
         ) : (
           <div className="mt-1 text-[12px] italic text-neutral-400">No prompt configured</div>
         )}
+        <div className="mt-3 flex items-center gap-2 text-[12px] text-neutral-500">
+          <Server className="h-3.5 w-3.5 text-neutral-400" strokeWidth={1.8} />
+          <span>
+            {node
+              ? `${node.name} · ${node.connection_status === "connected" ? "connected" : "offline"}`
+              : "No executor node bound"}
+          </span>
+        </div>
       </div>
 
       <div className="flex shrink-0 gap-1.5">
@@ -272,7 +358,6 @@ function BroRow({
   );
 }
 
-
 /* ------------------------------------------------------------------ */
 /*  Main BrosPage                                                     */
 /* ------------------------------------------------------------------ */
@@ -285,26 +370,35 @@ export function BrosPage({
   communicationPersonaPrompt: string;
 }) {
   const [personas, setPersonas] = useState<Persona[]>([]);
+  const [nodes, setNodes] = useState<ExecutorNodeRecord[]>([]);
   const [mode, setMode] = useState<"list" | "add" | "edit">("list");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
 
-  // Load the persisted persona list (from file, not the frozen session).
-  async function refreshPersonas() {
+  async function refreshData() {
     try {
-      const result = await listPersonas(sessionId);
-      setPersonas(Array.isArray(result) ? result : []);
+      const [loadedPersonas, loadedNodes] = await Promise.all([
+        listPersonas(sessionId),
+        listExecutorNodes(sessionId),
+      ]);
+      setPersonas(Array.isArray(loadedPersonas) ? loadedPersonas : []);
+      setNodes(Array.isArray(loadedNodes) ? loadedNodes : []);
     } catch {
-      // keep whatever we had
+      // Keep the current view if refresh fails.
     }
   }
 
   useEffect(() => {
-    void refreshPersonas();
+    void refreshData();
   }, [sessionId]);
 
-  async function handleCreate(data: { name: string; basePrompt: string; avatarType: string }) {
+  async function handleCreate(data: {
+    name: string;
+    basePrompt: string;
+    avatarType: string;
+    executorNodeId: string | null;
+  }) {
     setError(null);
     setStatus(null);
     try {
@@ -312,16 +406,22 @@ export function BrosPage({
         name: data.name,
         avatar: data.avatarType,
         base_prompt: data.basePrompt,
+        executor_node_id: data.executorNodeId,
       });
       setMode("list");
-      setStatus("Bro created. Takes effect on the next session.");
-      await refreshPersonas();
+      setStatus("Bro created.");
+      await refreshData();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to create");
     }
   }
 
-  async function handleUpdate(data: { name: string; basePrompt: string; avatarType: string }) {
+  async function handleUpdate(data: {
+    name: string;
+    basePrompt: string;
+    avatarType: string;
+    executorNodeId: string | null;
+  }) {
     if (!editingId) return;
     setError(null);
     setStatus(null);
@@ -330,11 +430,12 @@ export function BrosPage({
         name: data.name,
         avatar: data.avatarType,
         base_prompt: data.basePrompt,
+        executor_node_id: data.executorNodeId,
       });
       setMode("list");
       setEditingId(null);
-      setStatus("Bro updated. Takes effect on the next session.");
-      await refreshPersonas();
+      setStatus("Bro updated.");
+      await refreshData();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to update");
     }
@@ -345,8 +446,8 @@ export function BrosPage({
     setStatus(null);
     try {
       await deletePersona(sessionId, personaId);
-      setStatus("Bro removed. Takes effect on the next session.");
-      await refreshPersonas();
+      setStatus("Bro removed.");
+      await refreshData();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to delete");
     }
@@ -357,9 +458,11 @@ export function BrosPage({
     setMode("edit");
   }
 
+  const nodesById = new Map(nodes.map((node) => [node.node_id, node]));
+  const liveCount = personas.filter((persona) => nodeStateLabel(persona, nodesById) === "live").length;
+
   return (
-    <div className="grid min-h-0 flex-1 grid-cols-1 gap-8 overflow-auto px-8 py-8 lg:grid-cols-[minmax(220px,0.56fr)_minmax(840px,1.74fr)] xl:px-10 xl:py-10">
-      {/* Left column — Communication Brain Persona */}
+    <div className="grid min-h-0 flex-1 grid-cols-1 gap-8 overflow-auto px-8 py-8 lg:grid-cols-[minmax(240px,0.58fr)_minmax(820px,1.72fr)] xl:px-10 xl:py-10">
       <section className="flex min-h-0 flex-col pt-4">
         <SectionHeader title="Brain Persona" />
         <CommBrainSection
@@ -368,7 +471,6 @@ export function BrosPage({
         />
       </section>
 
-      {/* Right column — Worker Bros */}
       <section className="flex flex-col items-stretch lg:pt-4">
         <SectionHeader
           title="Worker Bros"
@@ -377,9 +479,17 @@ export function BrosPage({
               <div className="rounded-full border border-neutral-200 px-2.5 py-1 text-[11px] text-neutral-500">
                 {personas.length} configured
               </div>
+              <div className="rounded-full border border-neutral-200 px-2.5 py-1 text-[11px] text-neutral-500">
+                {liveCount} live
+              </div>
               {!editingId && mode !== "add" && (
                 <button
-                  onClick={() => { setMode("add"); setEditingId(null); setError(null); setStatus(null); }}
+                  onClick={() => {
+                    setMode("add");
+                    setEditingId(null);
+                    setError(null);
+                    setStatus(null);
+                  }}
                   className="flex items-center gap-1.5 rounded-full border border-neutral-200 px-3 py-1.5 text-[11px] font-medium text-neutral-600 transition hover:border-neutral-300 hover:bg-white"
                 >
                   <Plus className="h-3 w-3" strokeWidth={2} />
@@ -401,9 +511,38 @@ export function BrosPage({
           </div>
         )}
 
+        <div className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-3">
+          <div className="rounded-[22px] border border-neutral-200 bg-white px-4 py-4">
+            <div className="text-[11px] uppercase tracking-[0.18em] text-neutral-400">Live Bros</div>
+            <div className="mt-2 text-[24px] font-medium tracking-[-0.04em] text-neutral-950">{liveCount}</div>
+            <div className="mt-1 text-[12px] leading-5 text-neutral-500">
+              Bound to a node that is actively connected to Synapse.
+            </div>
+          </div>
+          <div className="rounded-[22px] border border-neutral-200 bg-white px-4 py-4">
+            <div className="text-[11px] uppercase tracking-[0.18em] text-neutral-400">Offline Bindings</div>
+            <div className="mt-2 text-[24px] font-medium tracking-[-0.04em] text-neutral-950">
+              {personas.filter((persona) => nodeStateLabel(persona, nodesById) === "bound offline").length}
+            </div>
+            <div className="mt-1 text-[12px] leading-5 text-neutral-500">
+              Bros already assigned to a node, but the node still needs to reconnect.
+            </div>
+          </div>
+          <div className="rounded-[22px] border border-neutral-200 bg-white px-4 py-4">
+            <div className="text-[11px] uppercase tracking-[0.18em] text-neutral-400">Unbound Bros</div>
+            <div className="mt-2 text-[24px] font-medium tracking-[-0.04em] text-neutral-950">
+              {personas.filter((persona) => nodeStateLabel(persona, nodesById) === "unbound").length}
+            </div>
+            <div className="mt-1 text-[12px] leading-5 text-neutral-500">
+              Bind these Bros to a node from here or create one in the Nodes page.
+            </div>
+          </div>
+        </div>
+
         {mode === "add" && (
           <div className="mb-4">
             <BroForm
+              nodes={nodes}
               submitLabel="Create"
               onSubmit={handleCreate}
               onCancel={() => setMode("list")}
@@ -416,7 +555,7 @@ export function BrosPage({
             <div className="rounded-[24px] border border-dashed border-neutral-300 bg-white/60 px-6 py-8 text-center">
               <div className="text-[14px] text-neutral-500">No worker bros yet.</div>
               <div className="mt-1 text-[12px] text-neutral-400">
-                Create one to start delegating tasks.
+                Create one, then bind it to a node to bring it live.
               </div>
             </div>
           ) : (
@@ -424,19 +563,25 @@ export function BrosPage({
               editingId === persona.persona_id ? (
                 <BroForm
                   key={persona.persona_id}
+                  nodes={nodes}
                   initial={{
                     name: persona.name,
                     basePrompt: persona.base_prompt || "",
                     avatarType: VALID_AVATARS.has(persona.avatar) ? persona.avatar : "bro",
+                    executorNodeId: persona.executor_node_id,
                   }}
                   submitLabel="Save"
                   onSubmit={handleUpdate}
-                  onCancel={() => { setEditingId(null); setMode("list"); }}
+                  onCancel={() => {
+                    setEditingId(null);
+                    setMode("list");
+                  }}
                 />
               ) : (
                 <BroRow
                   key={persona.persona_id}
                   persona={persona}
+                  nodesById={nodesById}
                   onEdit={() => startEdit(persona)}
                   onDelete={() => handleDelete(persona.persona_id)}
                 />

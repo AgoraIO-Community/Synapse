@@ -8,9 +8,12 @@ Preferred direction:
 - consume stable task/session/run/summary projections
 - avoid depending on low-level executor events
 - use `GET /sessions/{session_id}` for durable task/session state reads
+  including `personas`, `executor_capabilities`, and `executor_nodes`
 - use `GET /sessions/{session_id}/conversation` for durable conversation history reads
 - use `GET /sessions/{session_id}/diagnostics/timeline` for debugger-oriented
   inspection data
+- use `GET /sessions/{session_id}/executor-nodes` plus the related
+  create/update/rotate/delete routes for operator-managed executor-node CRUD
 - treat `WS /sessions/{session_id}/stream` as the live transport for:
   - `snapshot` for durable task/execution state refresh
   - `assistant_response_*` plus request ack/reject events for chat transport
@@ -28,6 +31,8 @@ Preferred direction:
 - the whole frontend shell should follow exactly one active session at a time
 - in voice mode, that active session is the connector-returned
   `synapse_session_id`
+- Bro liveness is derived in the frontend from `persona.executor_node_id`
+  plus the matching `executor_nodes[*].connection_status`
 - voice mode may also exist without an active session binding before the user
   presses `Start`
 - switching modes abandons the previous frontend-owned session and creates a

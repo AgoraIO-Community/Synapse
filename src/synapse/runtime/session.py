@@ -138,6 +138,7 @@ class SessionRuntime:
             interaction_requests=sanitized_interaction_requests,
             attention_items=attention_items,
             executor_capabilities=self._executor_capabilities_snapshot(),
+            executor_nodes=await self.executor_node_manager.list_nodes(),
             communication_persona_prompt=(
                 await self.blackboard.get_session_config("communication_persona_prompt") or ""
             ),
@@ -477,16 +478,22 @@ class SessionRuntime:
         await self.blackboard.put_task(task)
         return [task.task_id]
 
-    async def requeue_waiting_executor_tasks(
-        self,
-        available_executor_types: set[str],
-    ) -> list[str]:
+    async def requeue_waiting_executor_tasks(self) -> list[str]:
         changed_task_ids: list[str] = []
         for task in await self.blackboard.list_tasks():
             preferred_executor = task.preferred_executor
             if task.status != TaskStatus.WAITING_EXECUTOR:
                 continue
-            if not isinstance(preferred_executor, str) or preferred_executor not in available_executor_types:
+            if not isinstance(preferred_executor, str):
+                continue
+            executor_node_id = task.metadata.get("executor_node_id")
+            if executor_node_id is not None and not isinstance(executor_node_id, str):
+                executor_node_id = None
+            availability = self.executor_node_manager.executor_availability(
+                preferred_executor,
+                node_id=executor_node_id,
+            )
+            if not availability["connected"]:
                 continue
             task.status = TaskStatus.QUEUED
             await self.blackboard.put_task(task)
@@ -598,10 +605,17 @@ class SessionRuntime:
         action: str,
         answer_text: str | None,
     ) -> bool:
+        execution_session_id = request.execution_session_id
+        executor_node_id: str | None = None
+        if isinstance(execution_session_id, str) and execution_session_id:
+            execution_session = await self.blackboard.get_session(execution_session_id)
+            if execution_session is not None and isinstance(execution_session.executor_node_id, str):
+                executor_node_id = execution_session.executor_node_id
         if await self.executor_node_manager.supply_interaction_response(
             request,
             action=action,
             answer_text=answer_text,
+            node_id=executor_node_id,
         ):
             return True
         native_response = request.opaque.get("native_response")
@@ -612,7 +626,6 @@ class SessionRuntime:
         request_id = native_response.get("request_id")
         if not isinstance(method, str) or not isinstance(params, dict):
             return False
-        execution_session_id = request.execution_session_id
         if not isinstance(execution_session_id, str) or not execution_session_id:
             return False
         live_session = self.execution_brain.get_live_session(execution_session_id)

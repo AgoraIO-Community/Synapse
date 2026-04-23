@@ -1,7 +1,9 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { RouterProvider } from "@tanstack/react-router";
 import React from "react";
 import App from "../App";
 import { buildBroCardModels } from "../components/newbro";
+import { getRouter } from "../router";
 
 const voiceHarness = vi.hoisted(() => {
   const state = {
@@ -56,6 +58,20 @@ const voiceHarness = vi.hoisted(() => {
 const clientMock = vi.hoisted(() => ({
   createSession: vi.fn(),
   getSessionSnapshot: vi.fn(),
+  openSessionStream: vi.fn(() => ({ close: vi.fn() })),
+  createPersona: vi.fn(),
+  updatePersona: vi.fn(),
+  deletePersona: vi.fn(),
+  listPersonas: vi.fn(async () => []),
+  getSessionConfig: vi.fn(async () => ({ key: "communication_persona_prompt", value: "" })),
+  putSessionConfig: vi.fn(async () => ({ key: "communication_persona_prompt", value: "" })),
+  listExecutorNodes: vi.fn(async () => []),
+  createExecutorNode: vi.fn(),
+  updateExecutorNode: vi.fn(),
+  rotateExecutorNodeCredentials: vi.fn(),
+  revealExecutorNodeConnectCommand: vi.fn(),
+  deleteExecutorNode: vi.fn(),
+  buildExecutorRunCommand: vi.fn(() => "./synapse executor run --base-url 'http://localhost:3000' --node-id 'node-1' --token 'token-1'"),
 }));
 
 const connectorMock = vi.hoisted(() => ({
@@ -179,6 +195,7 @@ describe("Newbro voice shell", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     voiceHarness.reset();
+    window.history.replaceState({}, "", "/");
     clientMock.createSession.mockResolvedValue({ session_id: "session-1" });
     clientMock.getSessionSnapshot.mockImplementation(async (sessionId: string) => ({
       session_id: sessionId,
@@ -193,6 +210,8 @@ describe("Newbro voice shell", () => {
       interaction_requests: [],
       attention_items: [],
       executor_capabilities: [],
+      executor_nodes: [],
+      communication_persona_prompt: "",
     }));
   });
 
@@ -319,6 +338,7 @@ describe("Newbro voice shell", () => {
           name: "Rook",
           avatar: "/avatars/avatar-01.png",
           base_prompt: "",
+          executor_node_id: "node-1",
           status: "busy",
           current_task_id: "task-1234",
         },
@@ -327,6 +347,7 @@ describe("Newbro voice shell", () => {
           name: "Vale",
           avatar: "/avatars/avatar-02.png",
           base_prompt: "",
+          executor_node_id: "node-2",
           status: "idle",
           current_task_id: null,
         },
@@ -334,14 +355,88 @@ describe("Newbro voice shell", () => {
       interaction_requests: [],
       attention_items: [],
       executor_capabilities: [],
+      executor_nodes: [
+        {
+          node_id: "node-1",
+          name: "Studio Mac",
+          enabled_executors: ["codex"],
+          connected_executors: ["codex"],
+          connection_status: "connected",
+          token_hint: "tok...1111",
+          last_connected_at: null,
+          last_seen_at: null,
+        },
+        {
+          node_id: "node-2",
+          name: "Travel Laptop",
+          enabled_executors: ["codex"],
+          connected_executors: ["codex"],
+          connection_status: "connected",
+          token_hint: "tok...2222",
+          last_connected_at: null,
+          last_seen_at: null,
+        },
+      ],
+      communication_persona_prompt: "",
     });
 
     render(<App />);
 
     expect(await screen.findByText("Rook")).toBeInTheDocument();
     expect(screen.getByText("Vale")).toBeInTheDocument();
-    expect(screen.getByText("2 online")).toBeInTheDocument();
+    expect(screen.getByText("2 live")).toBeInTheDocument();
     expect(screen.queryByText("Atlas")).not.toBeInTheDocument();
+  });
+
+  it("loads the Bros page directly from the URL", async () => {
+    window.history.replaceState({}, "", "/bros");
+    const router = getRouter();
+
+    render(<RouterProvider router={router} />);
+    await act(async () => {
+      await router.load();
+    });
+
+    expect(await screen.findByText("Worker Bros")).toBeInTheDocument();
+    expect(window.location.pathname).toBe("/bros");
+  });
+
+  it("loads the Nodes page directly from the URL", async () => {
+    window.history.replaceState({}, "", "/nodes");
+    const router = getRouter();
+
+    render(<RouterProvider router={router} />);
+    await act(async () => {
+      await router.load();
+    });
+
+    expect(await screen.findByText("Executor Nodes")).toBeInTheDocument();
+    expect(window.location.pathname).toBe("/nodes");
+  });
+
+  it("navigates between left-menu pages and preserves browser history", async () => {
+    const router = getRouter();
+    render(<RouterProvider router={router} />);
+    await act(async () => {
+      await router.load();
+    });
+
+    expect(await screen.findByText("Available Bros")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Bros" }));
+    await waitFor(() => expect(window.location.pathname).toBe("/bros"));
+    expect(await screen.findByText("Worker Bros")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Nodes" }));
+    await waitFor(() => expect(window.location.pathname).toBe("/nodes"));
+    expect(await screen.findByText("Executor Nodes")).toBeInTheDocument();
+
+    await act(async () => {
+      window.history.back();
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    });
+
+    await waitFor(() => expect(window.location.pathname).toBe("/bros"));
+    expect(await screen.findByText("Worker Bros")).toBeInTheDocument();
   });
 });
 
@@ -359,6 +454,7 @@ describe("buildBroCardModels", () => {
         persona_id: "persona-1",
         name: "Rook",
         avatar: "/avatars/avatar-01.png",
+        executor_node_id: "node-1",
         status: "busy",
         current_task_id: "task-1234",
       },
@@ -366,8 +462,15 @@ describe("buildBroCardModels", () => {
         persona_id: "persona-2",
         name: "Vale",
         avatar: "/avatars/avatar-02.png",
+        executor_node_id: null,
         status: "idle",
         current_task_id: null,
+      },
+    ], [
+      {
+        node_id: "node-1",
+        name: "Studio Mac",
+        connection_status: "connected",
       },
     ]);
 
@@ -376,6 +479,7 @@ describe("buildBroCardModels", () => {
       id: "persona-1",
       name: "Rook",
       status: "busy",
+      liveState: "live",
       taskTitle: "Handle active runtime work",
       source: "runtime",
     });
@@ -383,6 +487,7 @@ describe("buildBroCardModels", () => {
       id: "persona-2",
       name: "Vale",
       status: "idle",
+      liveState: "unbound",
       progressLabel: "Idle",
       source: "runtime",
     });

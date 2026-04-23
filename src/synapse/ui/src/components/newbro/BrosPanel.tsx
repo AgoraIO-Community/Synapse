@@ -17,13 +17,15 @@ export function BrosPanel({
   onBroPressStart: (broId: string) => void;
   onBroPressEnd: () => void;
 }) {
+  const liveCount = bros.filter((bro) => bro.liveState === "live").length;
+
   return (
     <div data-testid="bros-panel" className="w-full">
       <SectionHeader
         title="Available Bros"
         trailing={
           <div className="rounded-full border border-neutral-200 px-2.5 py-1 text-[11px] text-neutral-500">
-            {bros.length} online
+            {liveCount} live
           </div>
         }
       />

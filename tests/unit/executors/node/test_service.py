@@ -62,9 +62,9 @@ def build_service(monkeypatch: pytest.MonkeyPatch, *, reporter: ExecutorNodeLife
     )
     return ExecutorNodeService(
         settings=ExecutorNodeSettings(
-            enabled=True,
             synapse_base_url="http://127.0.0.1:8000",
             node_id="node-1",
+            token="token-1",
             enabled_executors=["codex"],
         ),
         executors_config={},
@@ -119,6 +119,7 @@ async def test_run_forever_reports_retry_then_ready(monkeypatch: pytest.MonkeyPa
     assert output.index("[connect] executor node attempt=2") < output.index("[ready] executor node")
     assert delays == [1.0]
     assert websocket.sent[0]["type"] == "register_node"
+    assert websocket.sent[0]["token"] == "token-1"
 
 
 @pytest.mark.anyio

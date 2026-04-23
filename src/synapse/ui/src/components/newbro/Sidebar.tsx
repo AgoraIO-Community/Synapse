@@ -1,6 +1,6 @@
 import { navItems } from "./data";
 
-export type PageId = "Home" | "Bros" | "Settings";
+export type PageId = "Home" | "Bros" | "Nodes" | "Settings";
 
 export function Sidebar({
   activePage,

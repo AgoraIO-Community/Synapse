@@ -8,6 +8,7 @@ from httpx import ASGITransport, AsyncClient
 from synapse.api.app import create_app
 from synapse.communication.models import ScriptedCommunicationModel
 from synapse.communication.models.scripted import ScriptedPlan
+from synapse.executors.node import registry as node_registry
 from synapse.protocol import (
     BindingStatus,
     ExecutionRun,
@@ -44,8 +45,16 @@ def _build_app():
     )
 
 
+async def _issue_node(app, *, name: str = "Node 1", executors: list[str] | None = None):
+    return await app.state.runtime_container.executor_node_manager.create_node(
+        name=name,
+        enabled_executors=executors or ["codex"],
+    )
+
+
 @pytest.mark.anyio
-async def test_detached_executor_waits_for_host_when_unavailable():
+async def test_detached_executor_waits_for_host_when_unavailable(monkeypatch, tmp_path):
+    monkeypatch.setattr(node_registry, "EXECUTOR_NODES_FILE", tmp_path / "executor_nodes.yaml")
     app = _build_app()
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
         session_id = (await client.post("/sessions")).json()["session_id"]
@@ -80,8 +89,10 @@ async def test_detached_executor_waits_for_host_when_unavailable():
 
 
 @pytest.mark.anyio
-async def test_executor_node_registration_requeues_waiting_task_and_completes():
+async def test_executor_node_registration_requeues_waiting_task_and_completes(monkeypatch, tmp_path):
+    monkeypatch.setattr(node_registry, "EXECUTOR_NODES_FILE", tmp_path / "executor_nodes.yaml")
     app = _build_app()
+    issue = await _issue_node(app, name="Node 1")
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
         session_id = (await client.post("/sessions")).json()["session_id"]
         session = app.state.runtime_container.get_session(session_id)
@@ -93,6 +104,7 @@ async def test_executor_node_registration_requeues_waiting_task_and_completes():
                 goal="Hosted task",
                 status=TaskStatus.QUEUED,
                 preferred_executor="codex",
+                metadata={"executor_node_id": issue.node.node_id},
             )
         )
         session.schedule_execution()
@@ -106,7 +118,8 @@ async def test_executor_node_registration_requeues_waiting_task_and_completes():
             await websocket.send_json(
                 {
                     "type": "register_node",
-                    "node_id": "node-1",
+                    "node_id": issue.node.node_id,
+                    "token": issue.token,
                     "executors": [
                         {
                             "executor_type": "codex",
@@ -159,7 +172,7 @@ async def test_executor_node_registration_requeues_waiting_task_and_completes():
         if capability["executor_type"] == "codex"
     )
     assert codex_capability["connected"] is True
-    assert codex_capability["node_id"] == "node-1"
+    assert codex_capability["node_id"] == issue.node.node_id
 
 
 @pytest.mark.anyio
@@ -190,16 +203,21 @@ async def test_executor_node_registration_requeues_waiting_task_and_completes():
     ],
 )
 async def test_executor_control_invalid_message_ack_does_not_close_connection(
+    monkeypatch,
+    tmp_path,
     invalid_payload: dict[str, object],
     message_type: str,
 ):
+    monkeypatch.setattr(node_registry, "EXECUTOR_NODES_FILE", tmp_path / "executor_nodes.yaml")
     app = _build_app()
+    issue = await _issue_node(app, name="Node 1")
 
     async with ASGIWebSocketSession(app, "/executors/control") as websocket:
         await websocket.send_json(
             {
                 "type": "register_node",
-                "node_id": "node-1",
+                "node_id": issue.node.node_id,
+                "token": issue.token,
                 "executors": [
                     {
                         "executor_type": "codex",
@@ -226,7 +244,7 @@ async def test_executor_control_invalid_message_ack_does_not_close_connection(
         await websocket.send_json(
             {
                 "type": "node_status",
-                "node_id": "node-1",
+                "node_id": issue.node.node_id,
                 "status": "ready",
             }
         )
@@ -241,8 +259,10 @@ async def test_executor_control_invalid_message_ack_does_not_close_connection(
 
 
 @pytest.mark.anyio
-async def test_resolve_interaction_request_routes_native_response_to_executor_node():
+async def test_resolve_interaction_request_routes_native_response_to_executor_node(monkeypatch, tmp_path):
+    monkeypatch.setattr(node_registry, "EXECUTOR_NODES_FILE", tmp_path / "executor_nodes.yaml")
     app = _build_app()
+    issue = await _issue_node(app, name="Node 1")
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
         session_id = (await client.post("/sessions")).json()["session_id"]
         session = app.state.runtime_container.get_session(session_id)
@@ -254,6 +274,7 @@ async def test_resolve_interaction_request_routes_native_response_to_executor_no
                 goal="Native task",
                 status=TaskStatus.WAITING_USER_INPUT,
                 preferred_executor="codex",
+                metadata={"executor_node_id": issue.node.node_id},
             )
         )
         await session.blackboard.put_session(
@@ -261,7 +282,7 @@ async def test_resolve_interaction_request_routes_native_response_to_executor_no
                 execution_session_id="exec-native",
                 task_id="task-native",
                 base_executor_id="codex",
-                executor_node_id="node-1",
+                executor_node_id=issue.node.node_id,
                 active_run_id="run-native",
                 latest_run_id="run-native",
                 run_ids=["run-native"],
@@ -271,7 +292,7 @@ async def test_resolve_interaction_request_routes_native_response_to_executor_no
             SessionBinding(
                 task_id="task-native",
                 execution_session_id="exec-native",
-                executor_node_id="node-1",
+                executor_node_id=issue.node.node_id,
                 session_id="session-native",
                 claimed_by="worker-native",
                 claim_expires_at="2026-04-16T00:10:00+00:00",
@@ -314,7 +335,8 @@ async def test_resolve_interaction_request_routes_native_response_to_executor_no
             await websocket.send_json(
                 {
                     "type": "register_node",
-                    "node_id": "node-1",
+                    "node_id": issue.node.node_id,
+                    "token": issue.token,
                     "executors": [
                         {
                             "executor_type": "codex",

@@ -23,7 +23,7 @@ def _build_app():
 
 
 @pytest.mark.anyio
-async def test_persona_changes_apply_only_to_next_session(monkeypatch, tmp_path):
+async def test_persona_changes_sync_into_active_sessions(monkeypatch, tmp_path):
     monkeypatch.setattr(persona_pool, "PERSONAS_FILE", tmp_path / "personas.yaml")
     app = _build_app()
 
@@ -45,7 +45,8 @@ async def test_persona_changes_apply_only_to_next_session(monkeypatch, tmp_path)
         assert len(list_response.json()) == 1
 
         first_snapshot = (await client.get(f"/sessions/{first_session_id}")).json()
-        assert first_snapshot["personas"] == []
+        assert len(first_snapshot["personas"]) == 1
+        assert first_snapshot["personas"][0]["name"] == "Alex"
 
         second_session_id = (await client.post("/sessions")).json()["session_id"]
         second_snapshot = (await client.get(f"/sessions/{second_session_id}")).json()

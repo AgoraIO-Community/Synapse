@@ -71,7 +71,7 @@ def test_setup_interactive_updates_env_file(monkeypatch, tmp_path: Path):
     assert "executors: {}" in configured_runtime
     assert "host_token" not in configured_runtime
     assert "heartbeat_seconds" not in configured_runtime
-    assert re.search(r"node_id: node-[0-9a-f]{8}", configured_runtime)
+    assert "enabled_executors: []" in configured_runtime
 
 
 def test_setup_interactive_enables_detached_executors(monkeypatch, tmp_path: Path):
@@ -114,9 +114,6 @@ def test_executor_setup_uses_detected_codex_command_default(monkeypatch, tmp_pat
                 "  enabled_connectors: []",
                 "connectors: {}",
                 "executor_node:",
-                "  enabled: false",
-                '  synapse_base_url: "http://127.0.0.1:8000"',
-                "  node_id: default-node",
                 "  enabled_executors: []",
                 "executors: {}",
             ]
@@ -145,7 +142,8 @@ def test_executor_setup_uses_detected_codex_command_default(monkeypatch, tmp_pat
     assert "command: /detected/codex" in configured_runtime
     assert "host_token" not in configured_runtime
     assert "heartbeat_seconds" not in configured_runtime
-    assert re.search(r"node_id: node-[0-9a-f]{8}", configured_runtime)
+    assert "enabled_executors:" in configured_runtime
+    assert "node_id:" not in configured_runtime
 
 
 def test_executor_setup_migrates_legacy_codex_command_over_detected_default(
@@ -183,9 +181,6 @@ def test_executor_setup_migrates_legacy_codex_command_over_detected_default(
                 "  enabled_connectors: []",
                 "connectors: {}",
                 "executor_node:",
-                "  enabled: false",
-                '  synapse_base_url: "http://127.0.0.1:8000"',
-                "  node_id: default-node",
                 "  enabled_executors: []",
                 "executors: {}",
             ]
@@ -464,9 +459,6 @@ def test_executor_setup_migrates_legacy_codex_command_to_config(monkeypatch, tmp
                 "  enabled_connectors: []",
                 "connectors: {}",
                 "executor_node:",
-                "  enabled: false",
-                '  synapse_base_url: "http://127.0.0.1:8000"',
-                "  node_id: default-node",
                 "  enabled_executors: []",
                 "executors: {}",
             ]
@@ -491,19 +483,27 @@ def test_executor_setup_migrates_legacy_codex_command_to_config(monkeypatch, tmp
     assert "command: /legacy/codex" in configured_runtime
     assert "host_token" not in configured_runtime
     assert "heartbeat_seconds" not in configured_runtime
-    assert re.search(r"node_id: node-[0-9a-f]{8}", configured_runtime)
+    assert "enabled_executors:" in configured_runtime
+    assert "node_id:" not in configured_runtime
 
 
-def test_executor_setup_requires_detached_executor_runtime_config(monkeypatch, tmp_path: Path, capsys):
+def test_executor_setup_works_without_runtime_config(monkeypatch, tmp_path: Path):
     root = tmp_path
     (root / "src" / "synapse" / "ui").mkdir(parents=True)
     (root / ".synapse").mkdir(parents=True, exist_ok=True)
 
     configure_repo_paths(monkeypatch, root)
     monkeypatch.setattr(cli_main, "setup_can_prompt", lambda: True)
+    monkeypatch.setattr(cli_main, "_detected_codex_command", lambda: "/detected/codex")
+    monkeypatch.setattr(cli_main, "_codex_command_available", lambda command: command == "/detected/codex")
+    responses = iter(["", ""])
+    monkeypatch.setattr("builtins.input", lambda _prompt: next(responses))
 
-    assert cli_main.main(["executor", "setup"]) == 1
-    assert "Detached executors are disabled. Run `./synapse setup` first." in capsys.readouterr().err
+    assert cli_main.main(["executor", "setup"]) == 0
+    configured_runtime = (root / ".synapse" / "config.yaml").read_text(encoding="utf-8")
+    assert "executor_node:" in configured_runtime
+    assert "enabled_executors:" in configured_runtime
+    assert "command: /detected/codex" in configured_runtime
 
 
 def test_setup_non_interactive_tolerates_malformed_existing_config(monkeypatch, tmp_path: Path, capsys):
@@ -576,7 +576,7 @@ def test_setup_bootstrap_defaults_creates_env_and_connector_config(monkeypatch, 
     assert "enabled_executors: []" in configured_connector
     assert "host_token" not in configured_connector
     assert "heartbeat_seconds" not in configured_connector
-    assert re.search(r"node_id: node-[0-9a-f]{8}", configured_connector)
+    assert "node_id:" not in configured_connector
     assert "executors: {}" in configured_connector
 
 
@@ -980,10 +980,87 @@ def test_executor_run_returns_130_when_child_interrupts(monkeypatch, tmp_path: P
     venv_python.write_text("", encoding="utf-8")
 
     configure_repo_paths(monkeypatch, tmp_path)
+    monkeypatch.setattr(cli_main, "_executor_runtime_config_complete", lambda *_args, **_kwargs: True)
     monkeypatch.setattr(
         cli_main.subprocess,
         "run",
         lambda *_args, **_kwargs: FakeCompletedProcess(returncode=130),
     )
 
-    assert cli_main.main(["executor", "run"]) == 130
+    assert (
+        cli_main.main(
+            [
+                "executor",
+                "run",
+                "--base-url",
+                "http://127.0.0.1:8000",
+                "--node-id",
+                "node-1",
+                "--token",
+                "token-1",
+            ]
+        )
+        == 130
+    )
+
+
+def test_executor_run_triggers_setup_when_local_runtime_config_missing(monkeypatch, tmp_path: Path):
+    venv_python = tmp_path / ".venv" / "bin" / "python"
+    venv_python.parent.mkdir(parents=True, exist_ok=True)
+    venv_python.write_text("", encoding="utf-8")
+
+    configure_repo_paths(monkeypatch, tmp_path)
+    completion_states = iter([False, True])
+    monkeypatch.setattr(cli_main, "_executor_runtime_config_complete", lambda *_args, **_kwargs: next(completion_states))
+    monkeypatch.setattr(cli_main, "setup_can_prompt", lambda: True)
+    setup_calls: list[str] = []
+    monkeypatch.setattr(cli_main, "_run_executor_setup_flow", lambda: setup_calls.append("called"))
+    monkeypatch.setattr(
+        cli_main.subprocess,
+        "run",
+        lambda *_args, **_kwargs: FakeCompletedProcess(returncode=130),
+    )
+
+    assert (
+        cli_main.main(
+            [
+                "executor",
+                "run",
+                "--base-url",
+                "http://127.0.0.1:8000",
+                "--node-id",
+                "node-1",
+                "--token",
+                "token-1",
+            ]
+        )
+        == 130
+    )
+    assert setup_calls == ["called"]
+
+
+def test_executor_run_requires_tty_when_local_runtime_config_missing(monkeypatch, tmp_path: Path, capsys):
+    venv_python = tmp_path / ".venv" / "bin" / "python"
+    venv_python.parent.mkdir(parents=True, exist_ok=True)
+    venv_python.write_text("", encoding="utf-8")
+
+    configure_repo_paths(monkeypatch, tmp_path)
+    monkeypatch.setattr(cli_main, "_executor_runtime_config_complete", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(cli_main, "setup_can_prompt", lambda: False)
+
+    assert (
+        cli_main.main(
+            [
+                "executor",
+                "run",
+                "--base-url",
+                "http://127.0.0.1:8000",
+                "--node-id",
+                "node-1",
+                "--token",
+                "token-1",
+            ]
+        )
+        == 1
+    )
+    assert "Local executor runtime config is incomplete." in capsys.readouterr().err

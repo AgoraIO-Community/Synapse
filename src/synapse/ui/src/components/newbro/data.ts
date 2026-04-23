@@ -1,10 +1,11 @@
-import { Home, Settings, Users } from "lucide-react";
+import { Home, Settings, Users, Server } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { BroCardModel, NavItem } from "./types";
 
 export const navItems: Array<NavItem & { icon: LucideIcon }> = [
   { label: "Home", icon: Home, active: false },
   { label: "Bros", icon: Users, active: false },
+  { label: "Nodes", icon: Server, active: false },
   { label: "Settings", icon: Settings, active: false },
 ];
 
@@ -14,6 +15,9 @@ export const sampleBros: BroCardModel[] = [
     name: "Atlas",
     role: "Travel researcher",
     status: "busy",
+    liveState: "live",
+    executorNodeId: "node-atlas",
+    nodeName: "Studio Mac",
     avatarType: "fox",
     taskTitle: "Compare routes and fares",
     progress: 72,
@@ -22,8 +26,9 @@ export const sampleBros: BroCardModel[] = [
       "Checked 12 route combinations across air and rail.",
       "Shortlisted 3 lower-fare options for review.",
       "Verifying refund rules and transfer risk.",
+      "Bound to Studio Mac and ready for local execution.",
     ],
-    idleNote: "Currently searching across airline and rail websites.",
+    idleNote: "Currently searching across airline and rail websites with Studio Mac online.",
     source: "sample",
   },
   {
@@ -31,6 +36,9 @@ export const sampleBros: BroCardModel[] = [
     name: "Scout",
     role: "Availability checker",
     status: "idle",
+    liveState: "offline",
+    executorNodeId: "node-scout",
+    nodeName: "Travel Laptop",
     avatarType: "cat",
     taskTitle: "Waiting for assignment",
     progress: 0,
@@ -38,8 +46,9 @@ export const sampleBros: BroCardModel[] = [
     progressDetails: [
       "Ready to verify schedules and remaining inventory.",
       "Can jump in when a route is selected.",
+      "Bound node is offline and needs to reconnect.",
     ],
-    idleNote: "Can verify timing, inventory, and constraints.",
+    idleNote: "Can verify timing once Travel Laptop reconnects.",
     source: "sample",
   },
   {
@@ -47,6 +56,9 @@ export const sampleBros: BroCardModel[] = [
     name: "Muse",
     role: "Planner",
     status: "idle",
+    liveState: "unbound",
+    executorNodeId: null,
+    nodeName: null,
     avatarType: "bunny",
     taskTitle: "Waiting for assignment",
     progress: 0,
@@ -54,8 +66,9 @@ export const sampleBros: BroCardModel[] = [
     progressDetails: [
       "Ready to synthesize options into a final recommendation.",
       "Can structure tradeoffs and next steps clearly.",
+      "Needs an executor node binding before becoming live.",
     ],
-    idleNote: "Can synthesize options into a clear next step.",
+    idleNote: "Can synthesize options after being bound to a node.",
     source: "sample",
   },
   {
@@ -63,6 +76,9 @@ export const sampleBros: BroCardModel[] = [
     name: "Forge",
     role: "Operator",
     status: "busy",
+    liveState: "live",
+    executorNodeId: "node-forge",
+    nodeName: "Workshop Mini",
     avatarType: "bro",
     taskTitle: "Prepare execution steps",
     progress: 43,
@@ -71,8 +87,9 @@ export const sampleBros: BroCardModel[] = [
       "Drafted booking sequence for the top 2 options.",
       "Checking hold windows and payment ordering.",
       "Preparing fallback flow if preferred option fails.",
+      "Workshop Mini is connected and ready to execute.",
     ],
-    idleNote: "Can turn decisions into concrete actions.",
+    idleNote: "Can turn decisions into concrete actions with Workshop Mini online.",
     source: "sample",
   },
 ];

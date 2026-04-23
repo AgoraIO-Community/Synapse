@@ -9,6 +9,7 @@ from synapse.protocol import (
     TaskExecutionMode,
     ExecutionRun,
     ExecutionSession,
+    ExecutorNodeRecord,
     InteractionRequest,
     NotificationCandidate,
     Persona,
@@ -37,6 +38,7 @@ class SessionSnapshot(BaseModel):
     interaction_requests: list[InteractionRequest] = Field(default_factory=list)
     attention_items: list[AttentionItem] = Field(default_factory=list)
     executor_capabilities: list[dict[str, object]] = Field(default_factory=list)
+    executor_nodes: list[ExecutorNodeRecord] = Field(default_factory=list)
     communication_persona_prompt: str = ""
  
 

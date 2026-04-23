@@ -1,6 +1,8 @@
 import type {
   ConversationSnapshot,
   DiagnosticTimelineResponse,
+  ExecutorNodeCredentialIssue,
+  ExecutorNodeRecord,
   SessionResponse,
   SessionSnapshot,
   SessionStreamEvent,
@@ -23,6 +25,39 @@ function getConfiguredApiBaseUrl(): URL | null {
     return null;
   }
   return new URL(raw, window.location.origin);
+}
+
+export function getEffectiveApiBaseUrl(): string {
+  if (configuredApiBaseUrl === null) {
+    const { protocol, hostname, port } = window.location;
+    if (
+      (hostname === "localhost" || hostname === "127.0.0.1") &&
+      port !== "" &&
+      port !== "8000"
+    ) {
+      return `${protocol}//${hostname}:8000`;
+    }
+    return window.location.origin;
+  }
+  return configuredApiBaseUrl.href.replace(/\/$/, "");
+}
+
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\"'\"'`)}'`;
+}
+
+export function buildExecutorRunCommand(nodeId: string, token: string): string {
+  return [
+    "./synapse",
+    "executor",
+    "run",
+    "--base-url",
+    shellQuote(getEffectiveApiBaseUrl()),
+    "--node-id",
+    shellQuote(nodeId),
+    "--token",
+    shellQuote(token),
+  ].join(" ");
 }
 
 function withTrailingSlash(value: string): string {
@@ -227,12 +262,14 @@ export interface PersonaCreatePayload {
   name: string;
   avatar?: string;
   base_prompt?: string;
+  executor_node_id?: string | null;
 }
 
 export interface PersonaUpdatePayload {
   name?: string;
   avatar?: string;
   base_prompt?: string;
+  executor_node_id?: string | null;
 }
 
 export async function listPersonas(sessionId: string) {
@@ -264,6 +301,82 @@ export async function updatePersona(
 
 export async function deletePersona(sessionId: string, personaId: string) {
   const response = await fetch(buildHttpUrl(`/sessions/${sessionId}/personas/${personaId}`), {
+    method: "DELETE",
+  });
+  return (await ensureOk(response)).json();
+}
+
+
+// --- Executor Nodes API ---
+
+export interface ExecutorNodeCreatePayload {
+  name: string;
+  enabled_executors: string[];
+}
+
+export interface ExecutorNodeUpdatePayload {
+  name?: string;
+  enabled_executors?: string[];
+}
+
+export async function listExecutorNodes(sessionId: string): Promise<ExecutorNodeRecord[]> {
+  const response = await fetch(buildHttpUrl(`/sessions/${sessionId}/executor-nodes`));
+  return (await ensureOk(response)).json();
+}
+
+export async function createExecutorNode(
+  sessionId: string,
+  payload: ExecutorNodeCreatePayload,
+): Promise<ExecutorNodeCredentialIssue> {
+  const response = await fetch(buildHttpUrl(`/sessions/${sessionId}/executor-nodes`), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return (await ensureOk(response)).json();
+}
+
+export async function updateExecutorNode(
+  sessionId: string,
+  nodeId: string,
+  payload: ExecutorNodeUpdatePayload,
+): Promise<ExecutorNodeRecord> {
+  const response = await fetch(buildHttpUrl(`/sessions/${sessionId}/executor-nodes/${nodeId}`), {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return (await ensureOk(response)).json();
+}
+
+export async function rotateExecutorNodeCredentials(
+  sessionId: string,
+  nodeId: string,
+): Promise<ExecutorNodeCredentialIssue> {
+  const response = await fetch(
+    buildHttpUrl(`/sessions/${sessionId}/executor-nodes/${nodeId}/credentials/rotate`),
+    {
+      method: "POST",
+    },
+  );
+  return (await ensureOk(response)).json();
+}
+
+export async function revealExecutorNodeConnectCommand(
+  sessionId: string,
+  nodeId: string,
+): Promise<ExecutorNodeCredentialIssue> {
+  const response = await fetch(
+    buildHttpUrl(`/sessions/${sessionId}/executor-nodes/${nodeId}/connect-command`),
+    {
+      method: "POST",
+    },
+  );
+  return (await ensureOk(response)).json();
+}
+
+export async function deleteExecutorNode(sessionId: string, nodeId: string) {
+  const response = await fetch(buildHttpUrl(`/sessions/${sessionId}/executor-nodes/${nodeId}`), {
     method: "DELETE",
   });
   return (await ensureOk(response)).json();

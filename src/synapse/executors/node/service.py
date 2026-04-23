@@ -117,6 +117,7 @@ class ExecutorNodeService:
                         websocket,
                         RegisterNodeMessage(
                             node_id=self._settings.node_id,
+                            token=self._settings.token,
                             executors=[self._descriptor(name, executor) for name, executor in self._executors.items()],
                         ).model_dump(mode="json"),
                     )

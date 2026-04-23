@@ -2,6 +2,7 @@
 import { HeadContent, Outlet, createRootRoute } from "@tanstack/react-router";
 import { DefaultCatchBoundary } from "../components/DefaultCatchBoundary";
 import { NotFound } from "../components/NotFound";
+import { NewbroShellProvider } from "../NewbroShell";
 
 export const Route = createRootRoute({
   head: () => ({
@@ -41,7 +42,9 @@ function RootDocument() {
   return (
     <>
       <HeadContent />
-      <Outlet />
+      <NewbroShellProvider>
+        <Outlet />
+      </NewbroShellProvider>
     </>
   );
 }
