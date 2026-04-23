@@ -3,7 +3,7 @@ export interface ConnectorConfig {
   service_base_url: string;
   defaults: {
     profile?: string;
-    channel_name?: string;
+    channel_name?: string | null;
     display_name?: string;
     agent_instructions?: string;
     agent_greeting?: string;
@@ -14,6 +14,7 @@ export interface ConnectorConfig {
 }
 
 export interface ConnectorSessionPrepareRequest {
+  synapse_session_id?: string;
   profile?: string;
   channel_name?: string;
   display_name?: string;

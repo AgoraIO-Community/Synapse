@@ -164,3 +164,5 @@ Short log of important design decisions and changes for Synapse.
 - Removed the local `executor_node.enabled` gate and made `synapse executor run` reuse the local executor setup flow automatically when executor-family or command-path config is missing.
 - Restored a persistent node-card `Copy connect command` path by storing revealable raw node tokens server-side for explicit on-demand copy while keeping hash-based auth verification.
 - Routed the left sidebar pages through TanStack Router so `Home`, `Bros`, `Nodes`, and `Settings` keep their URL and survive refresh/direct open while sharing one live shell state.
+- Changed browser voice mode to attach to the existing shell Synapse session instead of swapping to a connector-created voice session, and made the Agora connector default its channel name to that `session_id` with a generated unique fallback only when no session id is supplied.
+- Added browser URL session resume through `?sid=...`, so the frontend now reopens an existing shell session when possible, rewrites `sid` to the active session id, and falls back to a fresh session with a warning when resume fails.

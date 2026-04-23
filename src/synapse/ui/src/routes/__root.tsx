@@ -3,6 +3,7 @@ import { HeadContent, Outlet, createRootRoute } from "@tanstack/react-router";
 import type { DetailedHTMLProps, LinkHTMLAttributes } from "react";
 import { DefaultCatchBoundary } from "../components/DefaultCatchBoundary";
 import { NotFound } from "../components/NotFound";
+import { normalizeSessionIdParam } from "../lib/session-url";
 import { NewbroShellProvider } from "../NewbroShell";
 
 const externalFontLinks: Array<
@@ -28,6 +29,10 @@ const externalFontLinks: Array<
       ];
 
 export const Route = createRootRoute({
+  validateSearch: (search: Record<string, unknown>) => {
+    const sid = normalizeSessionIdParam(search.sid);
+    return sid ? { sid } : {};
+  },
   head: () => ({
     meta: [
       { charSet: "utf-8" },

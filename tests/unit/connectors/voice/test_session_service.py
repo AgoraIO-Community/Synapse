@@ -5,15 +5,22 @@ from dataclasses import dataclass
 import pytest
 
 from synapse.connectors.base import ConnectorBindingRegistry
-from synapse.connectors.voice.agora_convoai.models import ConnectorSessionDiagnostics, ConnectorSessionPrepareRequest
-from synapse.connectors.voice.agora_convoai.service import PreparedConvoAISession
+from synapse.connectors.voice.agora_convoai.models import (
+    ConnectorSessionActivateRequest,
+    ConnectorSessionDiagnostics,
+    ConnectorSessionPrepareRequest,
+)
+from synapse.connectors.voice.agora_convoai.service import ActivatedConvoAISession, PreparedConvoAISession
 from synapse.connectors.voice.agora_convoai.session_service import AgoraConnectorSessionService
 from synapse.connectors.voice.agora_convoai.settings import AgoraConvoAIConnectorSettings
 
 
 @dataclass
 class _FakeTransport:
+    created: int = 0
+
     async def create_session(self) -> str:
+        self.created += 1
         return "session-1"
 
     async def watch_notification_texts(self, session_id: str):
@@ -30,11 +37,13 @@ class _FakeSpeaker:
 class _CapturingConvoAIService:
     def __init__(self) -> None:
         self.last_prepare: dict[str, object] | None = None
+        self.prepared_by_id: dict[str, PreparedConvoAISession] = {}
+        self.next_prepared_id = 1
 
     async def prepare_session(self, **kwargs) -> PreparedConvoAISession:
         self.last_prepare = kwargs
-        return PreparedConvoAISession(
-            prepared_session_id="prepared-1",
+        prepared = PreparedConvoAISession(
+            prepared_session_id=f"prepared-{self.next_prepared_id}",
             app_id="agora-app",
             channel_name=str(kwargs["channel_name"]),
             token="token",
@@ -66,9 +75,29 @@ class _CapturingConvoAIService:
                 enable_error_message=True,
             ),
         )
+        self.prepared_by_id[prepared.prepared_session_id] = prepared
+        self.next_prepared_id += 1
+        return prepared
 
     async def activate_session(self, prepared_session_id: str, *, chat_completions_url: str):
-        raise NotImplementedError
+        prepared = self.prepared_by_id[prepared_session_id]
+        return ActivatedConvoAISession(
+            prepared_session_id=prepared.prepared_session_id,
+            runtime_session_id="runtime-1",
+            app_id=prepared.app_id,
+            channel_name=prepared.channel_name,
+            token=prepared.token,
+            uid=prepared.uid,
+            user_rtm_uid=prepared.user_rtm_uid,
+            agent_uid=prepared.agent_uid,
+            agent_rtm_uid=prepared.agent_rtm_uid,
+            enable_string_uid=prepared.enable_string_uid,
+            profile=prepared.profile,
+            display_name=prepared.display_name,
+            diagnostics=prepared.diagnostics.model_copy(
+                update={"runtime_session_id": "runtime-1"},
+            ),
+        )
 
     async def stop_session(self, runtime_session_id: str) -> None:
         return None
@@ -102,3 +131,75 @@ async def test_prepare_session_preserves_empty_string_instruction_overrides():
     assert service.last_prepare is not None
     assert service.last_prepare["agent_instructions"] == ""
     assert service.last_prepare["agent_greeting"] == ""
+
+
+@pytest.mark.anyio
+async def test_prepare_session_defaults_channel_name_to_synapse_session_id():
+    service = _CapturingConvoAIService()
+    session_service = AgoraConnectorSessionService(
+        ConnectorBindingRegistry(_FakeTransport(), _FakeSpeaker()),
+        AgoraConvoAIConnectorSettings(
+            app_id="agora-app",
+            app_certificate="cert",
+        ),
+        convoai_service=service,
+    )
+
+    response = await session_service.prepare_session(
+        ConnectorSessionPrepareRequest(
+            synapse_session_id="session-existing",
+        )
+    )
+
+    assert service.last_prepare is not None
+    assert service.last_prepare["channel_name"] == "session-existing"
+    assert response.channel_name == "session-existing"
+
+
+@pytest.mark.anyio
+async def test_prepare_session_generates_unique_channel_name_without_requested_binding():
+    service = _CapturingConvoAIService()
+    session_service = AgoraConnectorSessionService(
+        ConnectorBindingRegistry(_FakeTransport(), _FakeSpeaker()),
+        AgoraConvoAIConnectorSettings(
+            app_id="agora-app",
+            app_certificate="cert",
+        ),
+        convoai_service=service,
+    )
+
+    first = await session_service.prepare_session(ConnectorSessionPrepareRequest())
+    second = await session_service.prepare_session(ConnectorSessionPrepareRequest())
+
+    assert first.channel_name.startswith("synapse-voice-")
+    assert second.channel_name.startswith("synapse-voice-")
+    assert first.channel_name != second.channel_name
+
+
+@pytest.mark.anyio
+async def test_activate_session_reuses_prepared_synapse_session_id_without_creating_new_session():
+    service = _CapturingConvoAIService()
+    transport = _FakeTransport()
+    session_service = AgoraConnectorSessionService(
+        ConnectorBindingRegistry(transport, _FakeSpeaker()),
+        AgoraConvoAIConnectorSettings(
+            app_id="agora-app",
+            app_certificate="cert",
+        ),
+        convoai_service=service,
+    )
+
+    prepared = await session_service.prepare_session(
+        ConnectorSessionPrepareRequest(
+            synapse_session_id="session-existing",
+        )
+    )
+    activated = await session_service.activate_session(
+        ConnectorSessionActivateRequest(
+            prepared_session_id=prepared.prepared_session_id,
+        )
+    )
+
+    assert activated.synapse_session_id == "session-existing"
+    assert activated.channel_name == "session-existing"
+    assert transport.created == 0

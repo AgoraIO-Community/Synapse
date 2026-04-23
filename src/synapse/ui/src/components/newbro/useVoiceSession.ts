@@ -39,13 +39,7 @@ const INITIAL_VOICE_SESSION_STATE: VoiceSessionState = {
   agentState: "idle",
 };
 
-export function useVoiceSession({
-  onVoiceSessionActivated,
-  onVoiceSessionStopped,
-}: {
-  onVoiceSessionActivated: (sessionId: string) => Promise<void> | void;
-  onVoiceSessionStopped: () => Promise<void> | void;
-}) {
+export function useVoiceSession() {
   const [state, setState] = useState<VoiceSessionState>(INITIAL_VOICE_SESSION_STATE);
   const resourcesRef = useRef<ActiveVoiceResources | null>(null);
   const mountedRef = useRef(false);
@@ -63,8 +57,20 @@ export function useVoiceSession({
     setState(updater);
   });
 
-  const start = useEffectEvent(async () => {
+  const start = useEffectEvent(async (synapseSessionId: string | null) => {
     if (stateRef.current.phase === "loading" || stateRef.current.phase === "connected") {
+      return;
+    }
+    if (!synapseSessionId) {
+      const message = "Synapse session is still connecting. Try voice mode again in a moment.";
+      applyState((current) => ({
+        ...current,
+        phase: "error",
+        error: message,
+        activeSession: null,
+        isMicMuted: false,
+        lastToolkitMessage: message,
+      }));
       return;
     }
 
@@ -97,7 +103,9 @@ export function useVoiceSession({
         );
       }
 
-      const prepared = await prepareConnectorSession();
+      const prepared = await prepareConnectorSession({
+        synapse_session_id: synapseSessionId,
+      });
       const { AgoraRTC, AgoraRTM, AgoraVoiceAI, AgoraVoiceAIEvents, TranscriptHelperMode } =
         await loadAgoraBrowserStack();
 
@@ -230,8 +238,6 @@ export function useVoiceSession({
         isMicMuted: false,
         lastToolkitMessage: current.lastToolkitMessage ?? "Voice toolkit subscribed.",
       }));
-
-      await onVoiceSessionActivated(activated.synapse_session_id);
     } catch (error) {
       await teardownVoiceSession(
         {
@@ -274,7 +280,6 @@ export function useVoiceSession({
         isMicMuted: false,
         lastToolkitMessage: current.transcript.length > 0 ? null : "No live voice session is running.",
       }));
-      await onVoiceSessionStopped();
       return;
     }
 
@@ -296,8 +301,6 @@ export function useVoiceSession({
         isMicMuted: false,
         lastToolkitMessage: current.transcript.length > 0 ? null : "No live voice session is running.",
       }));
-
-      await onVoiceSessionStopped();
     } catch (error) {
       if (!mountedRef.current || generationRef.current !== generation) {
         return;

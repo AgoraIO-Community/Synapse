@@ -274,6 +274,89 @@ async def test_agora_connector_prepare_route_uses_real_loader_path_before_fake_s
 
 
 @pytest.mark.anyio
+async def test_agora_connector_prepare_defaults_channel_name_to_synapse_session_id(monkeypatch):
+    class FakeAsyncAgora:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+        async def select_best_domain(self):
+            return None
+
+        def get_current_url(self):
+            return "https://fake-convoai.local/api"
+
+    class FakeArea:
+        US = "US"
+
+    class FakeAgent:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+        def with_stt(self, _vendor):
+            return self
+
+        def with_llm(self, _vendor):
+            return self
+
+        def with_tts(self, _vendor):
+            return self
+
+    class FakeAdvancedFeatures:
+        def __init__(self, **kwargs):
+            self.enable_rtm = kwargs.get("enable_rtm")
+
+    class FakeSessionParams:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+            self.data_channel = kwargs.get("data_channel")
+            self.enable_metrics = kwargs.get("enable_metrics")
+            self.enable_error_message = kwargs.get("enable_error_message")
+
+    monkeypatch.setattr(
+        AgoraSDKConvoAIService,
+        "_load_sdk_types",
+        lambda self: (
+            FakeAsyncAgora,
+            FakeArea,
+            FakeAgent,
+            object,
+            lambda **kwargs: None,
+            lambda **kwargs: None,
+            lambda **kwargs: None,
+            lambda **kwargs: None,
+            lambda **kwargs: None,
+            FakeAdvancedFeatures,
+            FakeSessionParams,
+        ),
+    )
+
+    app = create_headless_app(
+        AgoraConvoAIConnectorSettings(
+            app_id="agora-app",
+            app_certificate="app-certificate",
+        )
+    )
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        response = await client.post(
+            "/api/connectors/agora-convoai/sessions/prepare",
+            json={
+                "profile": "VOICE",
+                "synapse_session_id": "session-1234",
+                "display_name": "Tester",
+                "user_uid": 101,
+            },
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["channel_name"] == "session-1234"
+
+
+@pytest.mark.anyio
 async def test_agora_connector_activate_ignores_proxy_env_for_synapse_upstream(monkeypatch):
     class FakeTransport:
         def __init__(
@@ -407,3 +490,144 @@ async def test_agora_connector_activate_ignores_proxy_env_for_synapse_upstream(m
     assert payload["binding_id"].startswith("binding-")
     assert payload["synapse_session_id"] == "session-1234"
     assert payload["runtime_session_id"] == "runtime-session-1"
+
+
+@pytest.mark.anyio
+async def test_agora_connector_activate_reuses_existing_synapse_session_binding(monkeypatch):
+    class FakeTransport:
+        instances: list["FakeTransport"] = []
+
+        def __init__(
+            self,
+            base_url: str,
+            *,
+            request_timeout_seconds: float = 10.0,
+        ) -> None:
+            self.base_url = base_url
+            self.request_timeout_seconds = request_timeout_seconds
+            self.created = 0
+            self.__class__.instances.append(self)
+
+        async def create_session(self) -> str:
+            self.created += 1
+            return "session-created-by-connector"
+
+        async def send_message(self, session_id: str, text: str):
+            raise AssertionError("send_message should not be called during activate")
+
+        async def stream_message(self, session_id: str, text: str, *, request_id: str):
+            if False:
+                yield None
+
+        async def watch_notification_texts(self, session_id: str):
+            if False:
+                yield ""
+
+        async def close(self) -> None:
+            return None
+
+    class FakeAsyncAgora:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+        async def select_best_domain(self):
+            return None
+
+        def get_current_url(self):
+            return "https://fake-convoai.local/api"
+
+    class FakeArea:
+        US = "US"
+
+    class FakeAgent:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+        def with_stt(self, _vendor):
+            return self
+
+        def with_llm(self, _vendor):
+            return self
+
+        def with_tts(self, _vendor):
+            return self
+
+    class FakeAsyncAgentSession:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+        async def start(self):
+            return "runtime-session-1"
+
+    class FakeAdvancedFeatures:
+        def __init__(self, **kwargs):
+            self.enable_rtm = kwargs.get("enable_rtm")
+
+    class FakeSessionParams:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+            self.data_channel = kwargs.get("data_channel")
+            self.enable_metrics = kwargs.get("enable_metrics")
+            self.enable_error_message = kwargs.get("enable_error_message")
+
+    monkeypatch.setattr(
+        "synapse.connectors.voice.agora_convoai.module.HttpSynapseConnectorTransport",
+        FakeTransport,
+    )
+    monkeypatch.setattr(
+        AgoraSDKConvoAIService,
+        "_load_sdk_types",
+        lambda self: (
+            FakeAsyncAgora,
+            FakeArea,
+            FakeAgent,
+            FakeAsyncAgentSession,
+            lambda **kwargs: None,
+            lambda **kwargs: None,
+            lambda **kwargs: None,
+            lambda **kwargs: None,
+            lambda **kwargs: None,
+            FakeAdvancedFeatures,
+            FakeSessionParams,
+        ),
+    )
+
+    app = create_headless_app(
+        AgoraConvoAIConnectorSettings(
+            synapse_base_url="http://127.0.0.1:8000",
+            app_id="agora-app",
+            app_certificate="app-certificate",
+            convoai_area="US",
+        )
+    )
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        prepared = await client.post(
+            "/api/connectors/agora-convoai/sessions/prepare",
+            json={
+                "profile": "VOICE",
+                "synapse_session_id": "session-existing",
+                "display_name": "Tester",
+                "user_uid": 101,
+            },
+        )
+        assert prepared.status_code == 200
+        assert prepared.json()["channel_name"] == "session-existing"
+        prepared_session_id = prepared.json()["prepared_session_id"]
+
+        activated = await client.post(
+            "/api/connectors/agora-convoai/sessions/activate",
+            json={"prepared_session_id": prepared_session_id},
+        )
+
+    assert activated.status_code == 200
+    payload = activated.json()
+    assert payload["binding_id"].startswith("binding-")
+    assert payload["synapse_session_id"] == "session-existing"
+    assert payload["channel_name"] == "session-existing"
+    assert payload["runtime_session_id"] == "runtime-session-1"
+    assert FakeTransport.instances
+    assert FakeTransport.instances[0].created == 0

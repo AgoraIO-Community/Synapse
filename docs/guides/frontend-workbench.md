@@ -43,7 +43,12 @@ Current reads and live transport:
 
 Current behavior:
 
-- on load, the app creates an idle shell session and fetches its snapshot
+- on load, the app resumes the shell session from `?sid=...` when present;
+  otherwise it creates an idle shell session and fetches its snapshot
+- once the shell has an active session, it writes that session id back to the
+  URL as `sid` so the session can be reopened later from the same link
+- if `sid` cannot be resumed, the app opens a fresh session, replaces the URL
+  `sid`, and shows a non-blocking resume-failed warning
 - the active session stream keeps `personas` and `executor_nodes` fresh while
   the shell stays open
 - if persona data is empty or unavailable, the home view falls back to seeded
@@ -54,13 +59,18 @@ Current behavior:
 - the `Nodes` page creates, edits, rotates, and deletes executor nodes and
   shows the token on create/rotate plus a persistent on-demand
   `Copy connect command` action on ordinary node cards
+- sidebar navigation preserves the current `sid` query parameter across
+  `Home`, `Bros`, `Nodes`, and `Settings`
 - `Interaction memory` remains a browser-local live transcript surface driven by
   the Agora toolkit
-- pressing `Start` creates a connector-backed voice session and rebinds the
-  whole shell to the returned `synapse_session_id`
-- pressing `Stop` tears down the live voice session, restores the idle shell
-  session, and retains the last transcript until the next live session replaces
-  it
+- pressing `Start` prepares a connector-backed voice session against the
+  current shell `session_id`, so the voice binding attaches to the existing
+  Synapse session instead of swapping the shell to a new one
+- when the browser does not pass an explicit `channel_name`, the connector uses
+  that current shell `session_id` as the Agora channel and falls back to a
+  unique generated channel only if no Synapse session id is available
+- pressing `Stop` tears down only the live voice session and retains the last
+  transcript until the next live session replaces it
 
 ## Component Direction
 

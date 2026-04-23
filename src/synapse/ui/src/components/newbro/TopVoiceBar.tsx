@@ -34,14 +34,14 @@ export function TopVoiceBar({
           : "Voice ready";
   const subtitle =
     voicePhase === "loading"
-      ? "Binding Agora and Synapse for live transcript streaming."
+      ? "Attaching live voice to the current Synapse session."
       : voicePhase === "connected"
         ? isMicMuted
           ? "Interaction memory is live. The microphone is currently muted."
           : "Interaction memory is live and updating from the active voice session."
         : voicePhase === "error"
           ? (error ?? "Voice startup failed. Retry when ready.")
-          : "Press Start to open a live session and stream transcript into Interaction memory.";
+          : "Press Start to attach a live voice session to the current Synapse session.";
 
   return (
     <div data-testid="top-voice-bar" className="border-b border-neutral-200 px-8 py-5 xl:px-10">

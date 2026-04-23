@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from uuid import uuid4
 
 from synapse.connectors.base import DuplicateBindingError, ConnectorBindingRegistry, MissingRegistrationConfigError
 
@@ -45,6 +46,7 @@ class AgoraConnectorSessionService:
         self._settings = settings
         self._convoai_service = convoai_service
         self._sessions: dict[str, ConnectorSessionHandle] = {}
+        self._prepared_synapse_session_ids: dict[str, str | None] = {}
 
     def get_config(self) -> ConnectorConfigResponse:
         missing: list[str] = []
@@ -86,7 +88,7 @@ class AgoraConnectorSessionService:
             service_base_url=self._settings.service_base_url.rstrip("/"),
             defaults=ConnectorSessionDefaults(
                 profile=self._settings.default_profile,
-                channel_name=self._settings.default_channel_name,
+                channel_name=None,
                 display_name=self._settings.default_display_name,
                 agent_instructions=self._settings.agent_instructions,
                 agent_greeting=self._settings.agent_greeting,
@@ -100,8 +102,12 @@ class AgoraConnectorSessionService:
         self,
         request_payload: ConnectorSessionPrepareRequest,
     ) -> ConnectorSessionPrepareResponse:
+        synapse_session_id = self._normalize_synapse_session_id(request_payload.synapse_session_id)
         profile = request_payload.profile or self._settings.default_profile
-        channel_name = request_payload.channel_name or self._settings.default_channel_name
+        channel_name = self._resolve_channel_name(
+            request_payload.channel_name,
+            synapse_session_id=synapse_session_id,
+        )
         display_name = request_payload.display_name or self._settings.default_display_name
         prepared = await self._convoai_service.prepare_session(
             profile=profile,
@@ -124,13 +130,19 @@ class AgoraConnectorSessionService:
             ),
             user_uid=request_payload.user_uid,
         )
+        self._prepared_synapse_session_ids[prepared.prepared_session_id] = synapse_session_id
         return self._build_prepare_response(prepared)
 
     async def activate_session(
         self,
         request_payload: ConnectorSessionActivateRequest,
     ) -> ConnectorSessionActivateResponse:
-        reserved = await self._binding_registry.reserve()
+        requested_synapse_session_id = self._prepared_synapse_session_ids.get(
+            request_payload.prepared_session_id,
+        )
+        reserved = await self._binding_registry.reserve(
+            synapse_session_id=requested_synapse_session_id,
+        )
         chat_completions_url = self._build_chat_completions_url(reserved.binding_id)
         activated: ActivatedConvoAISession | None = None
         try:
@@ -144,6 +156,7 @@ class AgoraConnectorSessionService:
                 metadata={"channel_name": activated.channel_name},
             )
         except (DuplicateBindingError, MissingRegistrationConfigError, KeyError):
+            self._prepared_synapse_session_ids.pop(request_payload.prepared_session_id, None)
             if activated is not None:
                 try:
                     await self._convoai_service.stop_session(activated.runtime_session_id)
@@ -152,13 +165,16 @@ class AgoraConnectorSessionService:
             await self._binding_registry.unregister(reserved.binding_id)
             raise
         except ConvoAIRuntimeError:
+            self._prepared_synapse_session_ids.pop(request_payload.prepared_session_id, None)
             await self._binding_registry.unregister(reserved.binding_id)
             raise
         except Exception:
+            self._prepared_synapse_session_ids.pop(request_payload.prepared_session_id, None)
             await self._binding_registry.unregister(reserved.binding_id)
             raise
 
         if binding.runtime_session_id != activated.runtime_session_id:
+            self._prepared_synapse_session_ids.pop(request_payload.prepared_session_id, None)
             try:
                 await self._convoai_service.stop_session(activated.runtime_session_id)
             except Exception:
@@ -166,6 +182,7 @@ class AgoraConnectorSessionService:
             await self._binding_registry.unregister(binding.binding_id)
             raise RuntimeError("Connector binding did not finalize correctly.")
 
+        self._prepared_synapse_session_ids.pop(request_payload.prepared_session_id, None)
         self._sessions[binding.binding_id] = ConnectorSessionHandle(
             binding_id=binding.binding_id,
             synapse_session_id=binding.synapse_session_id,
@@ -249,3 +266,21 @@ class AgoraConnectorSessionService:
             f"{self._settings.service_base_url.rstrip('/')}"
             f"/api/connectors/agora-convoai/chat/completions?binding_id={binding_id}"
         )
+
+    def _resolve_channel_name(
+        self,
+        requested_channel_name: str | None,
+        *,
+        synapse_session_id: str | None,
+    ) -> str:
+        if requested_channel_name is not None and requested_channel_name.strip():
+            return requested_channel_name
+        if synapse_session_id is not None:
+            return synapse_session_id
+        return f"synapse-voice-{uuid4().hex[:8]}"
+
+    def _normalize_synapse_session_id(self, session_id: str | None) -> str | None:
+        if session_id is None:
+            return None
+        normalized = session_id.strip()
+        return normalized or None

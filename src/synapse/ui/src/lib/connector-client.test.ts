@@ -119,6 +119,55 @@ describe("connector-client transport base URL handling", () => {
     );
   });
 
+  it("passes synapse_session_id through connector prepare requests", async () => {
+    const fetchMock = vi.fn(async () =>
+      okJsonResponse({
+        prepared_session_id: "prepared-1",
+        app_id: "agora-app",
+        channel_name: "session-1",
+        token: "voice-token",
+        uid: 101,
+        user_rtm_uid: "101-session-1",
+        agent: { uid: "9001" },
+        agent_rtm_uid: "9001-session-1",
+        enable_string_uid: false,
+        profile: "VOICE",
+        display_name: "Synapse Tester",
+        diagnostics: {
+          convoai_area: "US",
+          selected_url: "https://agora.example.com",
+          runtime_session_id: null,
+          asr_vendor: "deepgram",
+          asr_credential_mode: "managed",
+          asr_model: "nova-3",
+          tts_vendor: "minimax",
+          tts_credential_mode: "managed",
+          tts_model: "speech_2_6_turbo",
+          agent_uid: "9001",
+          agent_rtm_uid: "9001-session-1",
+          rtc_uid: 101,
+          rtm_user_id: "101-session-1",
+          enable_string_uid: false,
+          enable_rtm: true,
+          data_channel: "rtm",
+          enable_metrics: true,
+          enable_error_message: true,
+        },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = await import("./connector-client");
+
+    await client.prepareConnectorSession({ synapse_session_id: "session-1" });
+
+    expect(fetchMock).toHaveBeenCalledWith("/api/connectors/agora-convoai/sessions/prepare", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ synapse_session_id: "session-1" }),
+    });
+  });
+
   it("uses sendBeacon for best-effort stop signaling on page teardown", async () => {
     vi.stubEnv("VITE_CONNECTOR_BASE_URL", "https://connectors.example.com/runtime/");
     const sendBeaconMock = vi.fn(() => true);

@@ -24,15 +24,21 @@ The shell is now voice-aware, but still narrower than the previous workbench.
 
 Current behavior:
 
-- the app creates an idle shell session on load
+- the app resumes the shell session from `?sid=...` on load when available,
+  otherwise it creates a fresh shell session
+- it writes the active session id back to the URL as `sid`
+- if that `sid` cannot be resumed, it opens a fresh session, replaces the URL,
+  and shows a non-blocking warning
 - it fetches that session snapshot for personas
 - if `personas` exist, it maps them into `Bro` cards
 - if not, it renders the seeded sample cards
 - pressing `Start` prepares and activates a gateway-backed voice session
-- the shell rebinds to the returned voice `synapse_session_id`
+- the connector attaches that voice session to the existing shell
+  `synapse_session_id`
 - browser-local Agora transcript turns stream into `Interaction memory`
-- pressing `Stop` tears the voice session down and restores the idle shell
+- pressing `Stop` tears the voice session down without changing the shell
 - the stopped transcript remains visible until the next live session replaces it
+- left-sidebar route navigation preserves the active `sid`
 
 The current root page does **not** expose:
 

@@ -11,7 +11,6 @@ AGORA_BRIDGE_MODEL = "synapse-agora-bridge"
 DEFAULT_AGENT_INSTRUCTIONS = "You are a helpful voice assistant."
 DEFAULT_AGENT_GREETING = "Hello. How can I help you today?"
 DEFAULT_PROFILE = "VOICE"
-DEFAULT_CHANNEL_NAME = "synapse-voice-demo"
 DEFAULT_DISPLAY_NAME = "Synapse Tester"
 
 
@@ -51,7 +50,6 @@ class AgoraConvoAIConnectorSettings:
     client_token_ttl_seconds: int = 3600
     sdk_debug: bool = False
     default_profile: str = DEFAULT_PROFILE
-    default_channel_name: str = DEFAULT_CHANNEL_NAME
     default_display_name: str = DEFAULT_DISPLAY_NAME
     speak_priority: str = "APPEND"
     speak_interruptable: bool = True
@@ -82,7 +80,6 @@ def load_agora_connector_settings(*, env_file: Path | None = None) -> AgoraConvo
             client_token_ttl_seconds=3600,
             sdk_debug=False,
             default_profile=DEFAULT_PROFILE,
-            default_channel_name=DEFAULT_CHANNEL_NAME,
             default_display_name=DEFAULT_DISPLAY_NAME,
             speak_priority="APPEND",
             speak_interruptable=True,
@@ -123,7 +120,6 @@ def _load_agora_connector_settings_from_yaml(loaded_connector_config) -> AgoraCo
         client_token_ttl_seconds=int(raw_connector.get("client_token_ttl_seconds", 3600)),
         sdk_debug=False,
         default_profile=DEFAULT_PROFILE,
-        default_channel_name=DEFAULT_CHANNEL_NAME,
         default_display_name=DEFAULT_DISPLAY_NAME,
         speak_priority=str(raw_connector.get("speak_priority", "APPEND")).upper(),
         speak_interruptable=_parse_bool_scalar(

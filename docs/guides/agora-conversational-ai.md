@@ -94,12 +94,14 @@ The main workbench under `src/synapse/ui/` now supports an explicit `Text` /
 
 - calls the connector host through `/api/connectors/agora-convoai/*` when entering voice
   mode
-- recreates a fresh frontend-owned session on every mode switch
-- starts voice mode in an idle shell state first, then rebinds the whole shell
-  to the voice session's returned `synapse_session_id` only after the user
-  presses `Start`
-- returns to a fresh normal `POST /api/sessions` session when switching back to
-  text mode
+- keeps the shell on its existing `POST /api/sessions` session before, during,
+  and after voice mode
+- sends that current `synapse_session_id` into connector session prepare so the
+  voice binding attaches to the existing Synapse session
+- defaults the Agora `channel_name` to that `synapse_session_id` when the
+  browser does not provide an explicit channel override
+- tears down only the live voice transport and connector binding on `Stop`
+  without swapping the shell to a different Synapse session
 - uses browser-local transcript/state from the Agora toolkit for the left-pane
   voice transcript feed while the workbench follows the bound Synapse session
 

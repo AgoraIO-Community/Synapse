@@ -58,7 +58,12 @@ const voiceHarness = vi.hoisted(() => {
 const clientMock = vi.hoisted(() => ({
   createSession: vi.fn(),
   getSessionSnapshot: vi.fn(),
+  getConversationSnapshot: vi.fn(async (sessionId: string) => ({
+    session_id: sessionId,
+    conversation_history: [],
+  })),
   openSessionStream: vi.fn(() => ({ close: vi.fn() })),
+  sendSocketMessage: vi.fn(),
   createPersona: vi.fn(),
   updatePersona: vi.fn(),
   deletePersona: vi.fn(),
@@ -119,7 +124,7 @@ const connectorMock = vi.hoisted(() => ({
   activateConnectorSession: vi.fn(async () => ({
     prepared_session_id: "prepared-1",
     binding_id: "binding-1",
-    synapse_session_id: "voice-session-1",
+    synapse_session_id: "session-1",
     runtime_session_id: "runtime-1",
     chat_completions_url: "https://gateway.example.com/chat",
     app_id: "agora-app",
@@ -213,6 +218,10 @@ describe("Newbro voice shell", () => {
       executor_nodes: [],
       communication_persona_prompt: "",
     }));
+    clientMock.getConversationSnapshot.mockImplementation(async (sessionId: string) => ({
+      session_id: sessionId,
+      conversation_history: [],
+    }));
   });
 
   it("boots into an explicit empty interaction-memory state", async () => {
@@ -231,16 +240,70 @@ describe("Newbro voice shell", () => {
 
     await waitFor(() => expect(clientMock.createSession).toHaveBeenCalled());
     await waitFor(() => expect(clientMock.getSessionSnapshot).toHaveBeenCalledWith("session-1"));
+    expect(window.location.search).toBe("?sid=session-1");
+  });
+
+  it("resumes the shell session from the sid query parameter", async () => {
+    window.history.replaceState({}, "", "/?sid=session-existing");
+
+    render(<App />);
+
+    await waitFor(() => expect(clientMock.getSessionSnapshot).toHaveBeenCalledWith("session-existing"));
+    expect(clientMock.createSession).not.toHaveBeenCalled();
+    expect(await screen.findByText("Session session-existing")).toBeInTheDocument();
+    expect(window.location.search).toBe("?sid=session-existing");
+  });
+
+  it("falls back to a new session and warns when sid resume fails", async () => {
+    clientMock.createSession.mockResolvedValueOnce({ session_id: "session-2" });
+    clientMock.getSessionSnapshot.mockImplementation(async (sessionId: string) => {
+      if (sessionId === "session-missing") {
+        throw new Error("Request failed with status 404");
+      }
+      return {
+        session_id: sessionId,
+        tasks: [],
+        execution_sessions: [],
+        execution_runs: [],
+        execution_modes: [],
+        bindings: [],
+        summaries: [],
+        notification_candidates: [],
+        personas: [],
+        interaction_requests: [],
+        attention_items: [],
+        executor_capabilities: [],
+        executor_nodes: [],
+        communication_persona_prompt: "",
+      };
+    });
+    window.history.replaceState({}, "", "/?sid=session-missing");
+
+    render(<App />);
+
+    expect(await screen.findByTestId("shell-warning")).toBeInTheDocument();
+    expect(screen.getByText(/Could not resume the requested session/)).toBeInTheDocument();
+    expect(screen.getByText(/session-missing/)).toBeInTheDocument();
+    expect(screen.getByText("Session session-2")).toBeInTheDocument();
+    expect(clientMock.createSession).toHaveBeenCalledTimes(1);
+    expect(clientMock.getSessionSnapshot).toHaveBeenNthCalledWith(1, "session-missing");
+    expect(clientMock.getSessionSnapshot).toHaveBeenNthCalledWith(2, "session-2");
+    expect(window.location.search).toBe("?sid=session-2");
   });
 
   it("starts voice mode and renders live transcript turns inside interaction memory", async () => {
     render(<App />);
 
+    await screen.findByText("Session session-1");
     fireEvent.click(await screen.findByTestId("voice-session-start"));
 
-    await waitFor(() => expect(connectorMock.prepareConnectorSession).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(connectorMock.prepareConnectorSession).toHaveBeenCalledWith({
+        synapse_session_id: "session-1",
+      }),
+    );
     await waitFor(() => expect(connectorMock.activateConnectorSession).toHaveBeenCalledTimes(1));
-    await waitFor(() => expect(clientMock.getSessionSnapshot).toHaveBeenCalledWith("voice-session-1"));
+    expect(clientMock.getSessionSnapshot).not.toHaveBeenCalledWith("voice-session-1");
     expect(await screen.findByText("Voice session live")).toBeInTheDocument();
 
     await act(async () => {
@@ -255,13 +318,15 @@ describe("Newbro voice shell", () => {
     expect(screen.getByText("NewBro")).toBeInTheDocument();
     expect(screen.getByText("Me")).toBeInTheDocument();
     expect(screen.getByText("2 transcript turns")).toBeInTheDocument();
+    expect(screen.getByText("Session session-1")).toBeInTheDocument();
   });
 
-  it("keeps the last transcript visible after stop and rebinds the shell to the idle session", async () => {
+  it("keeps the last transcript visible after stop without rebinding the shell session", async () => {
     render(<App />);
 
+    await screen.findByText("Session session-1");
     fireEvent.click(await screen.findByTestId("voice-session-start"));
-    await waitFor(() => expect(clientMock.getSessionSnapshot).toHaveBeenCalledWith("voice-session-1"));
+    await waitFor(() => expect(connectorMock.activateConnectorSession).toHaveBeenCalledTimes(1));
 
     await act(async () => {
       voiceHarness.voiceEvents.TRANSCRIPT_UPDATED?.([
@@ -274,9 +339,10 @@ describe("Newbro voice shell", () => {
     await waitFor(() => {
       expect(screen.getByTestId("voice-session-start")).toBeInTheDocument();
     });
-    await waitFor(() => expect(clientMock.getSessionSnapshot).toHaveBeenLastCalledWith("session-1"));
 
     expect(screen.getByText("Hello. How can I help you today?")).toBeInTheDocument();
+    expect(clientMock.createSession).toHaveBeenCalledTimes(1);
+    expect(clientMock.getSessionSnapshot).toHaveBeenCalledTimes(1);
     expect(screen.queryByText("Last voice session")).not.toBeInTheDocument();
     expect(screen.queryByText("Voice session stopped. Transcript memory retained.")).not.toBeInTheDocument();
   });
@@ -284,6 +350,7 @@ describe("Newbro voice shell", () => {
   it("mutes and unmutes the microphone while the voice session is live", async () => {
     render(<App />);
 
+    await screen.findByText("Session session-1");
     fireEvent.click(await screen.findByTestId("voice-session-start"));
     await waitFor(() => expect(screen.getByTestId("voice-session-mic-toggle")).toBeInTheDocument());
 
@@ -304,6 +371,7 @@ describe("Newbro voice shell", () => {
     } as any);
 
     render(<App />);
+    await screen.findByText("Session session-1");
     fireEvent.click(await screen.findByTestId("voice-session-start"));
 
     expect((await screen.findAllByText(/connectors\.agora-convoai\.app_id/)).length).toBeGreaterThan(0);
@@ -313,6 +381,7 @@ describe("Newbro voice shell", () => {
   it("signals pagehide stop cleanup while a voice session is active", async () => {
     const { unmount } = render(<App />);
 
+    await screen.findByText("Session session-1");
     fireEvent.click(await screen.findByTestId("voice-session-start"));
     await waitFor(() => expect(connectorMock.activateConnectorSession).toHaveBeenCalledTimes(1));
 
@@ -389,7 +458,7 @@ describe("Newbro voice shell", () => {
   });
 
   it("loads the Bros page directly from the URL", async () => {
-    window.history.replaceState({}, "", "/bros");
+    window.history.replaceState({}, "", "/bros?sid=session-1");
     const router = getRouter();
 
     render(<RouterProvider router={router} />);
@@ -399,6 +468,9 @@ describe("Newbro voice shell", () => {
 
     expect(await screen.findByText("Worker Bros")).toBeInTheDocument();
     expect(window.location.pathname).toBe("/bros");
+    expect(window.location.search).toBe("?sid=session-1");
+    expect(clientMock.createSession).not.toHaveBeenCalled();
+    expect(clientMock.getSessionSnapshot).toHaveBeenCalledWith("session-1");
   });
 
   it("loads the Nodes page directly from the URL", async () => {
@@ -543,6 +615,7 @@ describe("Newbro voice shell", () => {
   });
 
   it("navigates between left-menu pages and preserves browser history", async () => {
+    window.history.replaceState({}, "", "/?sid=session-1");
     const router = getRouter();
     render(<RouterProvider router={router} />);
     await act(async () => {
@@ -552,10 +625,12 @@ describe("Newbro voice shell", () => {
     expect(await screen.findByText("Available Bros")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Bros" }));
     await waitFor(() => expect(window.location.pathname).toBe("/bros"));
+    expect(window.location.search).toBe("?sid=session-1");
     expect(await screen.findByText("Worker Bros")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Nodes" }));
     await waitFor(() => expect(window.location.pathname).toBe("/nodes"));
+    expect(window.location.search).toBe("?sid=session-1");
     expect(await screen.findByText("Executor Nodes")).toBeInTheDocument();
 
     await act(async () => {
@@ -564,6 +639,7 @@ describe("Newbro voice shell", () => {
     });
 
     await waitFor(() => expect(window.location.pathname).toBe("/bros"));
+    expect(window.location.search).toBe("?sid=session-1");
     expect(await screen.findByText("Worker Bros")).toBeInTheDocument();
   });
 });

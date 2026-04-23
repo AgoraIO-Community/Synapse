@@ -10,6 +10,7 @@ import {
   type ReactNode,
 } from "react";
 import { createSession, getConversationSnapshot, getSessionSnapshot, openSessionStream, sendSocketMessage } from "./lib/session-client";
+import { readSessionIdFromUrl, replaceSessionIdInUrl } from "./lib/session-url";
 import { BrosPage } from "./components/newbro/BrosPage";
 import { BrosPanel } from "./components/newbro/BrosPanel";
 import { ConversationMemory } from "./components/newbro/ConversationMemory";
@@ -25,6 +26,7 @@ export type PageNavigator = (page: PageId) => void;
 const SHELL_API_ERROR_TITLE = "Unable to reach the Synapse API";
 const SHELL_API_ERROR_HINT =
   "This deployment must proxy /api/* requests to the backend before the shell can load live data.";
+const RESUME_FALLBACK_WARNING_PREFIX = "Could not resume the requested session.";
 
 function describeApiFailure(error: unknown, fallback: string): string {
   if (!(error instanceof Error)) {
@@ -71,6 +73,21 @@ function ShellLoadingPanel() {
   );
 }
 
+function ShellWarningBanner({ detail }: { detail: string }) {
+  return (
+    <div
+      data-testid="shell-warning"
+      className="mx-8 mt-8 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-[13px] text-amber-800 xl:mx-10"
+    >
+      {detail}
+    </div>
+  );
+}
+
+function buildResumeFallbackWarning(sessionId: string) {
+  return `${RESUME_FALLBACK_WARNING_PREFIX} Opened a new session instead of ${sessionId}.`;
+}
+
 function useNewbroShellState() {
   const [runtimePersonas, setRuntimePersonas] = useState<Persona[]>([]);
   const [executorNodes, setExecutorNodes] = useState<ExecutorNodeRecord[]>([]);
@@ -78,11 +95,11 @@ function useNewbroShellState() {
   const [activeShellSessionId, setActiveShellSessionId] = useState<string | null>(null);
   const [hasLoadedShellSnapshot, setHasLoadedShellSnapshot] = useState(false);
   const [shellError, setShellError] = useState<string | null>(null);
+  const [shellWarning, setShellWarning] = useState<string | null>(null);
   const [activeBroId, setActiveBroId] = useState<string | null>(null);
   const [isTalking, setIsTalking] = useState(false);
   const [chatMessages, setChatMessages] = useState<Array<{ role: "user" | "assistant"; text: string; id: string }>>([]);
   const mountedRef = useRef(false);
-  const idleSessionIdRef = useRef<string | null>(null);
   const shellLoadSequenceRef = useRef(0);
   const socketRef = useRef<WebSocket | null>(null);
 
@@ -94,78 +111,92 @@ function useNewbroShellState() {
     setShellError(null);
   }
 
-  const syncShellSession = useEffectEvent(
-    async (sessionId: string, options: { rememberIdle?: boolean } = {}) => {
-      const loadSequence = ++shellLoadSequenceRef.current;
-      setActiveShellSessionId(sessionId);
-      setShellError(null);
-      // Reset chat messages for the new session
-      setChatMessages([]);
-
-      if (options.rememberIdle) {
-        idleSessionIdRef.current = sessionId;
-      }
-
-      try {
-        const [snapshot, conversation] = await Promise.all([
-          getSessionSnapshot(sessionId),
-          getConversationSnapshot(sessionId),
-        ]);
-        if (!mountedRef.current || shellLoadSequenceRef.current !== loadSequence) return;
-        startTransition(() => {
-          applySnapshot(snapshot);
-          // Hydrate chat messages from server conversation history
-          const hydrated = (conversation.conversation_history ?? []).map((entry) => ({
-            role: entry.role as "user" | "assistant",
-            text: entry.text,
-            id: entry.message_id,
-          }));
-          setChatMessages(hydrated);
-        });
-      } catch (error: unknown) {
-        if (!mountedRef.current || shellLoadSequenceRef.current !== loadSequence) return;
-        startTransition(() => {
-          setShellError(
-            describeApiFailure(error, "Session snapshot request failed before the shell could load."),
-          );
-        });
-      }
-    },
-  );
-
-  const ensureIdleShellSession = useEffectEvent(async () => {
-    if (idleSessionIdRef.current) {
-      await syncShellSession(idleSessionIdRef.current);
-      return idleSessionIdRef.current;
+  const loadShellSession = useEffectEvent(async (sessionId: string) => {
+    const loadSequence = ++shellLoadSequenceRef.current;
+    setShellError(null);
+    const [snapshot, conversation] = await Promise.all([
+      getSessionSnapshot(sessionId),
+      getConversationSnapshot(sessionId),
+    ]);
+    if (!mountedRef.current || shellLoadSequenceRef.current !== loadSequence) {
+      return;
     }
-    const session = await createSession();
-    idleSessionIdRef.current = session.session_id;
-    await syncShellSession(session.session_id, { rememberIdle: true });
-    return session.session_id;
+    startTransition(() => {
+      setActiveShellSessionId(sessionId);
+      applySnapshot(snapshot);
+      const hydrated = (conversation.conversation_history ?? []).map((entry) => ({
+        role: entry.role as "user" | "assistant",
+        text: entry.text,
+        id: entry.message_id,
+      }));
+      setChatMessages(hydrated);
+    });
   });
 
-  const { state: voiceSession, start, stop, toggleMute } = useVoiceSession({
-    onVoiceSessionActivated: async (sessionId) => {
-      await syncShellSession(sessionId);
-    },
-    onVoiceSessionStopped: async () => {
-      await ensureIdleShellSession();
-    },
-  });
+  const { state: voiceSession, start, stop, toggleMute } = useVoiceSession();
 
   useEffect(() => {
     mountedRef.current = true;
+
     async function bootstrapShell() {
+      const requestedSessionId = readSessionIdFromUrl();
+      if (requestedSessionId) {
+        try {
+          await loadShellSession(requestedSessionId);
+          if (!mountedRef.current) {
+            return;
+          }
+          startTransition(() => setShellWarning(null));
+          return;
+        } catch {
+          try {
+            const session = await createSession();
+            if (!mountedRef.current) {
+              return;
+            }
+            await loadShellSession(session.session_id);
+            if (!mountedRef.current) {
+              return;
+            }
+            startTransition(() => {
+              setShellWarning(buildResumeFallbackWarning(requestedSessionId));
+            });
+            return;
+          } catch (error: unknown) {
+            if (!mountedRef.current) {
+              return;
+            }
+            startTransition(() => {
+              setActiveShellSessionId(null);
+              setHasLoadedShellSnapshot(false);
+              setShellWarning(null);
+              setShellError(
+                describeApiFailure(error, "Session bootstrap failed before the shell could start."),
+              );
+            });
+            return;
+          }
+        }
+      }
+
       try {
         const session = await createSession();
-        if (!mountedRef.current) return;
-        idleSessionIdRef.current = session.session_id;
-        await syncShellSession(session.session_id, { rememberIdle: true });
+        if (!mountedRef.current) {
+          return;
+        }
+        await loadShellSession(session.session_id);
+        if (!mountedRef.current) {
+          return;
+        }
+        startTransition(() => setShellWarning(null));
       } catch (error: unknown) {
-        if (!mountedRef.current) return;
+        if (!mountedRef.current) {
+          return;
+        }
         startTransition(() => {
           setActiveShellSessionId(null);
           setHasLoadedShellSnapshot(false);
+          setShellWarning(null);
           setShellError(
             describeApiFailure(error, "Session bootstrap failed before the shell could start."),
           );
@@ -225,6 +256,13 @@ function useNewbroShellState() {
     };
   }, [activeShellSessionId]);
 
+  useEffect(() => {
+    if (!activeShellSessionId) {
+      return;
+    }
+    replaceSessionIdInUrl(activeShellSessionId);
+  }, [activeShellSessionId]);
+
   const bros = useMemo(
     () => buildBroCardModels(runtimePersonas, executorNodes),
     [executorNodes, runtimePersonas],
@@ -257,6 +295,7 @@ function useNewbroShellState() {
     runtimePersonas,
     executorNodes,
     shellError,
+    shellWarning,
     activeBroId,
     setActiveBroId,
     isTalking,
@@ -352,7 +391,7 @@ export function HomeShellPage({ onNavigate }: { onNavigate: PageNavigator }) {
         transcriptCount={shell.voiceSession.transcript.filter((item) => Boolean(item.text?.trim())).length}
         sessionId={shell.activeShellSessionId}
         onStart={() => {
-          void shell.start();
+          void shell.start(shell.activeShellSessionId);
         }}
         onStop={() => {
           void shell.stop();
@@ -361,6 +400,8 @@ export function HomeShellPage({ onNavigate }: { onNavigate: PageNavigator }) {
           void shell.toggleMute();
         }}
       />
+
+      {shell.shellWarning ? <ShellWarningBanner detail={shell.shellWarning} /> : null}
 
       {shell.shellError && shell.hasLoadedShellSnapshot ? (
         <div className="mx-8 mt-8 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-[13px] text-amber-800 xl:mx-10">
@@ -462,6 +503,7 @@ export function BrosShellPage({ onNavigate }: { onNavigate: PageNavigator }) {
 
   return (
     <ShellFrame activePage="Bros" onNavigate={onNavigate}>
+      {shell.shellWarning ? <ShellWarningBanner detail={shell.shellWarning} /> : null}
       {shell.activeShellSessionId && shell.hasLoadedShellSnapshot ? (
         <div className="min-h-0 flex-1 overflow-auto">
           <BrosPage
@@ -485,6 +527,7 @@ export function NodesShellPage({ onNavigate }: { onNavigate: PageNavigator }) {
 
   return (
     <ShellFrame activePage="Nodes" onNavigate={onNavigate}>
+      {shell.shellWarning ? <ShellWarningBanner detail={shell.shellWarning} /> : null}
       {shell.activeShellSessionId && shell.hasLoadedShellSnapshot ? (
         <div className="min-h-0 flex-1 overflow-auto">
           <NodesPage
@@ -503,8 +546,11 @@ export function NodesShellPage({ onNavigate }: { onNavigate: PageNavigator }) {
 }
 
 export function SettingsShellPage({ onNavigate }: { onNavigate: PageNavigator }) {
+  const shell = useNewbroShell();
+
   return (
     <ShellFrame activePage="Settings" onNavigate={onNavigate}>
+      {shell.shellWarning ? <ShellWarningBanner detail={shell.shellWarning} /> : null}
       <div className="flex flex-1 items-center justify-center">
         <div className="text-[14px] text-neutral-400">Settings coming soon.</div>
       </div>

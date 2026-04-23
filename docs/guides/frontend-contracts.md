@@ -29,14 +29,20 @@ Preferred direction:
   separate connector host; if unset, keep using same-origin `/api/connectors/...`
   requests from the main Synapse service
 - the whole frontend shell should follow exactly one active session at a time
-- in voice mode, that active session is the connector-returned
-  `synapse_session_id`
+- the shell URL may carry that active session as `?sid=<session_id>`, and the
+  frontend should attempt to resume it on load before creating a fresh session
+- when a fresh session is created or resume falls back, the frontend should
+  replace the current URL `sid` with the active session id
+- voice mode attaches its connector binding to that already-active shell
+  session instead of switching the shell to a connector-created session
 - Bro liveness is derived in the frontend from `persona.executor_node_id`
   plus the matching `executor_nodes[*].connection_status`
 - voice mode may also exist without an active session binding before the user
   presses `Start`
-- switching modes abandons the previous frontend-owned session and creates a
-  fresh session for the selected mode
+- left-sidebar route navigation should preserve the current `sid`
+- when the frontend does not supply an explicit connector `channel_name`, the
+  connector should derive it from the active `synapse_session_id` and fall back
+  to a unique generated channel only when no Synapse session id is available
 
 User-visible conversation history should contain only:
 

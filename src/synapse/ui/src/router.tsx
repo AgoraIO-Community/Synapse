@@ -20,7 +20,9 @@ function pageToPath(page: PageId): "/" | "/bros" | "/nodes" | "/settings" {
 function usePageNavigate() {
   const navigate = useNavigate();
   return (page: PageId) => {
-    void navigate({ to: pageToPath(page) });
+    void navigate({
+      href: `${pageToPath(page)}${window.location.search}`,
+    });
   };
 }
 
