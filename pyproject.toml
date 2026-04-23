@@ -36,8 +36,8 @@ release = [
 newbro = "synapse.cli.main:main"
 
 [project.urls]
-Repository = "https://github.com/AgoraIO/Synopse"
-Documentation = "https://github.com/AgoraIO/Synopse#readme"
+Repository = "https://github.com/AgoraIO/Synapse"
+Documentation = "https://github.com/AgoraIO/Synapse#readme"
 
 [build-system]
 requires = ["setuptools>=68"]

@@ -10,6 +10,8 @@ import textwrap
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 INSTALL_SCRIPT = REPO_ROOT / "install.sh"
+BOOTSTRAP_COMMAND = "venv-newbro setup --bootstrap-defaults"
+LEGACY_BOOTSTRAP_COMMAND = "venv-python -m synapse setup --bootstrap-defaults"
 
 
 def write_executable(path: Path, content: str) -> None:
@@ -44,6 +46,11 @@ def read_bootstrap_outputs(home: Path) -> tuple[str, str]:
     assert "executors: {}" in config_text
 
     return env_text, config_text
+
+
+def assert_bootstrap_command(log_text: str) -> None:
+    assert BOOTSTRAP_COMMAND in log_text
+    assert LEGACY_BOOTSTRAP_COMMAND not in log_text
 
 
 def fake_bun_script() -> str:
@@ -96,7 +103,12 @@ if [[ "${{1-}}" == "-m" && "${{2-}}" == "venv" ]]; then
 #!/usr/bin/env bash
 set -euo pipefail
 echo "venv-python $*" >> "$FAKE_LOG"
-if [[ "${{1-}}" == "-m" && "${{2-}}" == "synapse" && "${{3-}}" == "setup" && "${{4-}}" == "--bootstrap-defaults" ]]; then
+if [[ "${{1-}}" == "-m" && "${{2-}}" == "pip" && "${{3-}}" == "install" && "${{4-}}" == "-e" ]]; then
+  cat > "${{0%/*}}/newbro" <<'NEWBRO'
+#!/usr/bin/env bash
+set -euo pipefail
+echo "venv-newbro $*" >> "$FAKE_LOG"
+if [[ "${{1-}}" == "setup" && "${{2-}}" == "--bootstrap-defaults" ]]; then
   mkdir -p "$HOME/.newbro"
   cat > "$HOME/.newbro/.env" <<'BOOTSTRAP_ENV'
 OPENAI_API_KEY=
@@ -132,6 +144,9 @@ executor_node:
 
 executors: {{}}
 BOOTSTRAP_CONFIG
+fi
+NEWBRO
+  chmod +x "${{0%/*}}/newbro"
 fi
 exit 0
 INNER
@@ -195,7 +210,7 @@ def test_install_sh_macos_skips_existing_system_dependencies(tmp_path: Path):
     assert "venv-python -m pip install --upgrade pip" in log_text
     assert "venv-python -m pip install -e .[dev]" in log_text
     assert "bun install" in log_text
-    assert "venv-python -m synapse setup --bootstrap-defaults" in log_text
+    assert_bootstrap_command(log_text)
     env_text, _ = read_bootstrap_outputs(home)
     assert "sk-shell-secret" not in env_text
     assert "agora-shell-app" not in env_text
@@ -242,7 +257,7 @@ def test_install_sh_macos_installs_only_missing_bun(tmp_path: Path):
     assert "brew install python@3.12" not in log_text
     assert "curl -fsSL https://bun.sh/install" in log_text
     assert "bun install" in log_text
-    assert "venv-python -m synapse setup --bootstrap-defaults" in log_text
+    assert_bootstrap_command(log_text)
     read_bootstrap_outputs(home)
     assert "[install] Skipping Python install;" in completed.stdout
     assert "[install] Installing Bun" in completed.stdout
@@ -307,7 +322,7 @@ def test_install_sh_macos_reinstalls_python_when_capabilities_missing(
     assert "brew install python@3.12" in log_text
     assert f"python3.12 -m venv {repo_root / '.venv'}" in log_text
     assert "venv-python -m pip install --upgrade pip" in log_text
-    assert "venv-python -m synapse setup --bootstrap-defaults" in log_text
+    assert_bootstrap_command(log_text)
     read_bootstrap_outputs(home)
     assert "[install] Installing Python 3.12+ with Homebrew" in completed.stdout
     assert "[install] Skipping Python install;" not in completed.stdout
@@ -353,7 +368,7 @@ def test_install_sh_ubuntu_skips_existing_system_dependencies(tmp_path: Path):
     assert "curl -fsSL https://bun.sh/install" not in log_text
     assert f"python3.12 -m venv {repo_root / '.venv'}" in log_text
     assert "bun install" in log_text
-    assert "venv-python -m synapse setup --bootstrap-defaults" in log_text
+    assert_bootstrap_command(log_text)
     read_bootstrap_outputs(home)
     assert "[install] Skipping Python install;" in completed.stdout
     assert "[install] Skipping Bun install;" in completed.stdout
@@ -428,7 +443,7 @@ fi
     assert f"python3.12 -m venv {repo_root / '.venv'}" in log_text
     assert "venv-python -m pip install --upgrade pip" in log_text
     assert "bun install" in log_text
-    assert "venv-python -m synapse setup --bootstrap-defaults" in log_text
+    assert_bootstrap_command(log_text)
     assert "curl -fsSL https://bun.sh/install" not in log_text
     read_bootstrap_outputs(home)
     assert "[install] Installing missing apt prerequisites" in completed.stdout
@@ -513,7 +528,7 @@ fi
     assert "curl -fsSL https://bun.sh/install" in log_text
     assert f"python3.12 -m venv {repo_root / '.venv'}" in log_text
     assert "bun install" in log_text
-    assert "venv-python -m synapse setup --bootstrap-defaults" in log_text
+    assert_bootstrap_command(log_text)
     read_bootstrap_outputs(home)
     assert "[install] Skipping Python install;" in completed.stdout
     assert "[install] Installing missing apt prerequisites" in completed.stdout
