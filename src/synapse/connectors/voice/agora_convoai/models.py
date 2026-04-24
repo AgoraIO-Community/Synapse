@@ -114,3 +114,51 @@ class ConnectorSessionStopRequest(BaseModel):
 
 class ConnectorSessionStopResponse(BaseModel):
     status: str = "stopped"
+
+
+class SttSessionStartRequest(BaseModel):
+    synapse_session_id: str
+    assigned_bro_id: str
+    channel_name: str | None = None
+    user_uid: int | None = None
+    languages: list[str] | None = None
+
+
+class SttSessionPrepareRequest(BaseModel):
+    synapse_session_id: str
+    channel_name: str | None = None
+    user_uid: int | None = None
+
+
+class SttSessionPrepareResponse(BaseModel):
+    app_id: str
+    channel_name: str
+    token: str
+    uid: int
+
+
+class SttSessionStartResponse(BaseModel):
+    stt_session_id: str
+    app_id: str
+    channel_name: str
+    token: str
+    uid: int
+    pub_bot_uid: int
+    sub_bot_uid: int
+    agent_id: str
+    status: str
+
+
+class SttSessionQueryResponse(BaseModel):
+    stt_session_id: str
+    agent_id: str
+    status: str
+    raw: dict[str, Any] = Field(default_factory=dict)
+
+
+class SttSessionStopRequest(BaseModel):
+    stt_session_id: str
+
+
+class SttSessionStopResponse(BaseModel):
+    status: str = "stopped"

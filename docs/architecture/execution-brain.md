@@ -3,6 +3,7 @@
 The Execution Brain owns:
 
 - runnable-task discovery
+- execution of immutable `newbro v0` tasks after Send
 - task claim and lease management
 - agent session lifecycle
 - executor dispatch
@@ -29,6 +30,7 @@ runtime continuity.
 
 It should not depend on Communication Brain internals.
 It should not generate final user-facing dialogue.
+It should not rewrite `newbro v0` draft-created task intent after Send.
 
 Default execution model:
 

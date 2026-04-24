@@ -448,3 +448,20 @@ export async function setVoiceTarget(sessionId: string, targetPersonaId: string)
     }),
   );
 }
+
+export async function submitDraftAsrTurn(
+  sessionId: string,
+  payload: {
+    raw_text: string;
+    normalized_text?: string;
+    confidence?: number;
+    assigned_bro_id?: string;
+  },
+) {
+  const response = await fetch(buildHttpUrl(`${API_PREFIX}/sessions/${sessionId}/draft/asr-turns`), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return (await ensureOk(response)).json();
+}

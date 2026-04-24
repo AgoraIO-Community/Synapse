@@ -9,8 +9,9 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { createSession, getConversationSnapshot, getSessionSnapshot, openSessionStream, sendSocketMessage, setVoiceTarget } from "./lib/session-client";
+import { createSession, getConversationSnapshot, getSessionSnapshot, openSessionStream, sendSocketMessage } from "./lib/session-client";
 import { readSessionIdFromUrl, replaceSessionIdInUrl } from "./lib/session-url";
+import { BroDetailPage } from "./components/newbro/BroDetailPage";
 import { BrosPage } from "./components/newbro/BrosPage";
 import { BrosPanel } from "./components/newbro/BrosPanel";
 import { ConversationMemory } from "./components/newbro/ConversationMemory";
@@ -21,6 +22,7 @@ import { useVoiceSession } from "./components/newbro/useVoiceSession";
 import type { ExecutionRun, ExecutorNodeRecord, Persona, SessionSnapshot, TaskSummary } from "./types";
 
 export type PageNavigator = (page: PageId) => void;
+export type BroNavigator = (broId: string) => void;
 
 const SHELL_API_ERROR_TITLE = "Unable to reach the Synapse API";
 const SHELL_API_ERROR_HINT =
@@ -97,8 +99,6 @@ function useNewbroShellState() {
   const [hasLoadedShellSnapshot, setHasLoadedShellSnapshot] = useState(false);
   const [shellError, setShellError] = useState<string | null>(null);
   const [shellWarning, setShellWarning] = useState<string | null>(null);
-  const [pressedBroId, setPressedBroId] = useState<string | null>(null);
-  const [isTalking, setIsTalking] = useState(false);
   const [chatMessages, setChatMessages] = useState<Array<{ role: "user" | "assistant"; text: string; id: string }>>([]);
   const mountedRef = useRef(false);
   const shellLoadSequenceRef = useRef(0);
@@ -284,45 +284,12 @@ function useNewbroShellState() {
     [executorNodes, executionRuns, runtimePersonas, taskSummaries],
   );
 
-  useEffect(() => {
-    if (!pressedBroId) {
-      return;
-    }
-    if (!bros.some((bro) => bro.id === pressedBroId)) {
-      setPressedBroId(null);
-      setIsTalking(false);
-    }
-  }, [bros, pressedBroId]);
-
   const sendMessage = (text: string): boolean => {
     const socket = socketRef.current;
     if (!socket || socket.readyState !== WebSocket.OPEN) return false;
     const requestId = `msg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     sendSocketMessage(socket, requestId, text);
     return true;
-  };
-
-  const startTalkToBro = (broId: string) => {
-    setPressedBroId(broId);
-    if (voiceSession.phase !== "connected") {
-      setIsTalking(false);
-      return;
-    }
-    const sessionId = activeShellSessionId;
-    if (!sessionId) {
-      setIsTalking(false);
-      return;
-    }
-    setIsTalking(true);
-    void setVoiceTarget(sessionId, broId);
-  };
-
-  const endTalkToBro = () => {
-    setPressedBroId(null);
-    if (!isTalking) return;
-    setIsTalking(false);
-    // Don't clear voice target here — it will be cleared after the next
-    // user message is processed by the backend.
   };
 
   return {
@@ -332,19 +299,12 @@ function useNewbroShellState() {
     hasLoadedShellSnapshot,
     runtimePersonas,
     executorNodes,
+    taskSummaries,
     shellError,
     shellWarning,
-    pressedBroId,
-    isTalking,
-    startTalkToBro,
-    endTalkToBro,
     communicationPersonaPrompt,
-    start,
-    stop,
-    toggleMute,
     sendMessage,
     chatMessages,
-    voiceConnected: voiceSession.phase === "connected",
   };
 }
 
@@ -392,7 +352,13 @@ function ShellFrame({
   );
 }
 
-export function HomeShellPage({ onNavigate }: { onNavigate: PageNavigator }) {
+export function HomeShellPage({
+  onNavigate,
+  onBroNavigate,
+}: {
+  onNavigate: PageNavigator;
+  onBroNavigate?: BroNavigator;
+}) {
   const shell = useNewbroShell();
 
   return (
@@ -423,31 +389,65 @@ export function HomeShellPage({ onNavigate }: { onNavigate: PageNavigator }) {
               </div>
               <BrosPanel
                 bros={shell.bros}
-                pressedBroId={shell.pressedBroId}
-                isTalking={shell.isTalking}
-                voiceConnected={shell.voiceConnected}
-                voicePhase={shell.voiceSession.phase}
-                voiceError={shell.voiceSession.error}
-                isMicMuted={shell.voiceSession.isMicMuted}
-                messageCount={shell.chatMessages.length}
                 sessionId={shell.activeShellSessionId}
-                onStart={() => {
-                  void shell.start(shell.activeShellSessionId);
+                onBroClick={(broId) => {
+                  onBroNavigate?.(broId);
                 }}
-                onStop={() => {
-                  void shell.stop();
-                }}
-                onToggleMute={() => {
-                  void shell.toggleMute();
-                }}
-                onBroPressStart={(broId) => {
-                  shell.startTalkToBro(broId);
-                }}
-                onBroPressEnd={() => shell.endTalkToBro()}
               />
             </div>
           </section>
         </div>
+      ) : shell.shellError ? (
+        <ShellApiErrorPanel detail={shell.shellError} />
+      ) : (
+        <ShellLoadingPanel />
+      )}
+    </ShellFrame>
+  );
+}
+
+
+export function BroDetailShellPage({
+  broId,
+  onNavigate,
+}: {
+  broId: string;
+  onNavigate: PageNavigator;
+}) {
+  const shell = useNewbroShell();
+  const bro = shell.bros.find((candidate) => candidate.id === broId) ?? null;
+  const activeSummary = bro?.source === "runtime"
+    ? shell.taskSummaries.find((summary) => summary.task_id === shell.runtimePersonas.find((persona) => persona.persona_id === bro.id)?.current_task_id) ?? null
+    : null;
+
+  return (
+    <ShellFrame activePage="Home" onNavigate={onNavigate}>
+      {shell.shellWarning ? <ShellWarningBanner detail={shell.shellWarning} /> : null}
+      {shell.hasLoadedShellSnapshot ? (
+        bro ? (
+          <BroDetailPage
+            bro={bro}
+            sessionId={shell.activeShellSessionId}
+            summary={activeSummary}
+            onBack={() => onNavigate("Home")}
+          />
+        ) : (
+          <div className="flex flex-1 items-center justify-center p-6">
+            <div className="glass-panel max-w-[520px] rounded-[30px] border border-white/75 px-6 py-6 text-center">
+              <div className="serif-flow text-[32px] tracking-[-0.05em]">Bro not found</div>
+              <p className="mt-3 text-[14px] leading-7 text-muted-foreground">
+                This Bro is not available in the current session.
+              </p>
+              <button
+                type="button"
+                className="mt-5 rounded-full border border-border/70 bg-white/70 px-4 py-2 text-[14px]"
+                onClick={() => onNavigate("Home")}
+              >
+                Back home
+              </button>
+            </div>
+          </div>
+        )
       ) : shell.shellError ? (
         <ShellApiErrorPanel detail={shell.shellError} />
       ) : (

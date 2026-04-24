@@ -3,6 +3,7 @@ import type { PageId } from "./components/newbro";
 import { DefaultCatchBoundary } from "./components/DefaultCatchBoundary";
 import { NotFound } from "./components/NotFound";
 import {
+  BroDetailShellPage,
   BrosShellPage,
   HomeShellPage,
   NodesShellPage,
@@ -28,8 +29,26 @@ function usePageNavigate() {
   };
 }
 
+
+function useBroNavigate() {
+  const navigate = useNavigate();
+  const currentSearch = useSearch({ strict: false });
+  return (broId: string) => {
+    void navigate({
+      to: "/bros/$broId",
+      params: { broId },
+      search: currentSearch,
+    });
+  };
+}
+
 function HomeRouteComponent() {
-  return <HomeShellPage onNavigate={usePageNavigate()} />;
+  return <HomeShellPage onNavigate={usePageNavigate()} onBroNavigate={useBroNavigate()} />;
+}
+
+function BroDetailRouteComponent() {
+  const params = broDetailRoute.useParams();
+  return <BroDetailShellPage broId={params.broId} onNavigate={usePageNavigate()} />;
 }
 
 function BrosRouteComponent() {
@@ -56,6 +75,12 @@ const brosRoute = createRoute({
   component: BrosRouteComponent,
 });
 
+const broDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/bros/$broId",
+  component: BroDetailRouteComponent,
+});
+
 const nodesRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/nodes",
@@ -71,6 +96,7 @@ const settingsRoute = createRoute({
 const routeTree = rootRoute.addChildren([
   homeRoute,
   brosRoute,
+  broDetailRoute,
   nodesRoute,
   settingsRoute,
 ]);

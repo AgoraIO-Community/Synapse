@@ -5,9 +5,12 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from pydantic import ValidationError
 
 from synapse.api.models import (
+    ClearDraftSocketAction,
     ResolveInteractionRequestSocketAction,
+    SendDraftSocketAction,
     SendCommandSocketAction,
     SendMessageSocketAction,
+    SubmitAsrTurnSocketAction,
 )
 from synapse.communication.resolver import TaskResolver, describe_candidates
 from synapse.observability.context import bind_diagnostic_context
@@ -82,6 +85,15 @@ async def _handle_client_action(session, queue: asyncio.Queue, payload: object) 
         return
     if action_type_value == "resolve_interaction_request":
         await _handle_resolve_interaction_request(session, queue, payload)
+        return
+    if action_type_value == "submit_asr_turn":
+        await _handle_submit_asr_turn(session, queue, payload)
+        return
+    if action_type_value == "send_draft":
+        await _handle_send_draft(session, queue, payload)
+        return
+    if action_type_value == "clear_draft":
+        await _handle_clear_draft(session, queue, payload)
         return
 
     await session.publish_private_event(
@@ -355,6 +367,116 @@ async def _handle_resolve_interaction_request(
         action_type=action.type,
     )
     session.schedule_execution()
+    await session.publish_snapshot()
+
+
+async def _handle_submit_asr_turn(session, queue: asyncio.Queue, payload: dict[str, object]) -> None:
+    try:
+        action = SubmitAsrTurnSocketAction.model_validate(payload)
+    except ValidationError as exc:
+        await session.publish_private_event(
+            queue,
+            session.action_rejected_event(
+                _request_id_from_payload(payload),
+                action_type="submit_asr_turn",
+                error_code="invalid_payload",
+                message=str(exc),
+            ),
+        )
+        return
+    try:
+        await session.append_asr_turn_to_draft(
+            raw_text=action.raw_text,
+            normalized_text=action.normalized_text,
+            confidence=action.confidence,
+            started_at=action.started_at,
+            ended_at=action.ended_at,
+            assigned_bro_id=action.assigned_bro_id,
+        )
+    except ValueError as exc:
+        await session.publish_private_event(
+            queue,
+            session.action_rejected_event(
+                action.request_id,
+                action_type=action.type,
+                error_code="invalid_asr_turn",
+                message=str(exc),
+            ),
+        )
+        return
+    await session.publish_private_event(
+        queue,
+        session.action_accepted_event(action.request_id, action_type=action.type),
+    )
+    await session.publish_snapshot()
+
+
+async def _handle_send_draft(session, queue: asyncio.Queue, payload: dict[str, object]) -> None:
+    try:
+        action = SendDraftSocketAction.model_validate(payload)
+    except ValidationError as exc:
+        await session.publish_private_event(
+            queue,
+            session.action_rejected_event(
+                _request_id_from_payload(payload),
+                action_type="send_draft",
+                error_code="invalid_payload",
+                message=str(exc),
+            ),
+        )
+        return
+    try:
+        await session.send_draft(draft_session_id=action.draft_session_id)
+    except ValueError as exc:
+        await session.publish_private_event(
+            queue,
+            session.action_rejected_event(
+                action.request_id,
+                action_type=action.type,
+                error_code="draft_not_ready",
+                message=str(exc),
+            ),
+        )
+        return
+    await session.publish_private_event(
+        queue,
+        session.action_accepted_event(action.request_id, action_type=action.type),
+    )
+    session.schedule_execution()
+    await session.publish_snapshot()
+
+
+async def _handle_clear_draft(session, queue: asyncio.Queue, payload: dict[str, object]) -> None:
+    try:
+        action = ClearDraftSocketAction.model_validate(payload)
+    except ValidationError as exc:
+        await session.publish_private_event(
+            queue,
+            session.action_rejected_event(
+                _request_id_from_payload(payload),
+                action_type="clear_draft",
+                error_code="invalid_payload",
+                message=str(exc),
+            ),
+        )
+        return
+    active = session.draft_manager.active_session
+    if action.draft_session_id is not None and active is not None and active.id != action.draft_session_id:
+        await session.publish_private_event(
+            queue,
+            session.action_rejected_event(
+                action.request_id,
+                action_type=action.type,
+                error_code="draft_session_mismatch",
+                message="Draft session does not match the active draft.",
+            ),
+        )
+        return
+    session.clear_draft()
+    await session.publish_private_event(
+        queue,
+        session.action_accepted_event(action.request_id, action_type=action.type),
+    )
     await session.publish_snapshot()
 
 

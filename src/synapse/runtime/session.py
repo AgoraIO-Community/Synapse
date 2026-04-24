@@ -5,6 +5,7 @@ import logging
 from dataclasses import replace
 from dataclasses import dataclass, field
 from typing import Literal
+from uuid import uuid4
 
 from synapse.blackboard import InMemoryBlackboard
 from synapse.communication import CommunicationBrain
@@ -34,19 +35,24 @@ from synapse.protocol import (
     AgentResumeHandle,
     AttentionItemKind,
     BindingStatus,
+    ExecutionMode,
     ExecutionRun,
     ExecutionSession,
     InteractionRequest,
+    MutationType,
     NotificationDeliveryStatus,
     RunStatus,
     TaskCommand,
     TaskCommandType,
+    TaskExecutionMode,
+    TaskMutation,
     TaskStatus,
     TaskSummary,
     Task,
 )
 
 from .config import Settings
+from .drafts import DEFAULT_BRO_ID, DraftSessionManager
 from .executor_node_manager import ExecutorNodeManager
 from .models import (
     ActionAcceptedStreamEvent,
@@ -90,6 +96,7 @@ class SessionRuntime:
     interaction_manager: InteractionManager
     observability: SessionObservability
     executor_node_manager: ExecutorNodeManager
+    draft_manager: DraftSessionManager = field(default_factory=DraftSessionManager)
     subscribers: list[asyncio.Queue[SessionStreamEventBase]] = field(default_factory=list)
     _message_queue: asyncio.Queue[PendingMessageRequest] = field(default_factory=asyncio.Queue)
     _execution_task: asyncio.Task[None] | None = field(default=None, init=False, repr=False)
@@ -146,6 +153,7 @@ class SessionRuntime:
             communication_persona_prompt=(
                 await self.blackboard.get_session_config("communication_persona_prompt") or ""
             ),
+            draft_session=self.draft_manager.active_session,
         )
     @property
     def voice_target_persona_id(self) -> str | None:
@@ -291,6 +299,86 @@ class SessionRuntime:
         # on their own; the reconcile loop's claim mechanism prevents
         # double-execution of the same task.
         self._execution_task = asyncio.create_task(self._run_execution_loop())
+
+    async def append_asr_turn_to_draft(
+        self,
+        *,
+        raw_text: str,
+        normalized_text: str | None = None,
+        confidence: float | None = None,
+        started_at: str | None = None,
+        ended_at: str | None = None,
+        assigned_bro_id: str | None = None,
+    ):
+        return await self.draft_manager.append_asr_turn(
+            raw_text=raw_text,
+            normalized_text=normalized_text,
+            confidence=confidence,
+            started_at=started_at,
+            ended_at=ended_at,
+            assigned_bro_id=assigned_bro_id,
+        )
+
+    def clear_draft(self):
+        return self.draft_manager.clear()
+
+    async def send_draft(self, *, draft_session_id: str | None = None) -> Task:
+        draft_session = self.draft_manager.mark_sent(draft_session_id)
+        draft = draft_session.current_draft
+        snapshot = draft_session.snapshots[-1]
+        if draft is None:
+            raise ValueError("No draft is ready to send.")
+        task_id = f"task-{uuid4().hex[:8]}"
+        preferred_executor = draft_session.assigned_bro_id or DEFAULT_BRO_ID
+        available_executor_types = set(self.registry.list_executor_types())
+        if preferred_executor not in available_executor_types:
+            preferred_executor = "mock" if "mock" in available_executor_types else None
+        metadata = {
+            "immutable": True,
+            "source_kind": "draft_session",
+            "draft_session_id": draft_session.id,
+            "draft_snapshot_id": snapshot.id,
+            "asr_turn_ids": [turn.id for turn in draft_session.asr_turns],
+            "assigned_bro_id": draft_session.assigned_bro_id,
+            "constraints": list(draft.constraints),
+            "acceptance_criteria": list(draft.acceptance_criteria),
+            "assumptions": list(draft.assumptions),
+            "missing_info": list(draft.missing_info),
+            "canonical_instruction": draft.canonical_instruction,
+            "mock_safe": preferred_executor == "mock",
+        }
+        task = Task(
+            task_id=task_id,
+            root_task_id=task_id,
+            title=draft.title,
+            goal=draft.goal,
+            status=TaskStatus.QUEUED,
+            preferred_executor=preferred_executor,
+            latest_instruction=draft.canonical_instruction,
+            metadata=metadata,
+        )
+        await self.blackboard.put_task(task)
+        await self.blackboard.put_execution_mode(
+            TaskExecutionMode(task_id=task_id, mode=ExecutionMode.UNDECIDED)
+        )
+        await self.blackboard.append_mutation(
+            TaskMutation(
+                mutation_id=f"mut-{uuid4().hex[:8]}",
+                task_id=task_id,
+                mutation_type=MutationType.CREATE,
+                patch={
+                    "title": task.title,
+                    "goal": task.goal,
+                    "preferred_executor": preferred_executor,
+                    "source_kind": "draft_session",
+                    "draft_session_id": draft_session.id,
+                    "draft_snapshot_id": snapshot.id,
+                },
+                created_by="draft_brain",
+            )
+        )
+        saved = await self.blackboard.get_task(task_id)
+        return saved or task
 
     async def validate_task_command(self, task: Task, command_type: TaskCommandType) -> str | None:
         if command_type not in {TaskCommandType.PAUSE_TASK, TaskCommandType.PREEMPT_TASK}:

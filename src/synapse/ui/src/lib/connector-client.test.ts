@@ -187,4 +187,84 @@ describe("connector-client transport base URL handling", () => {
       "https://connectors.example.com/runtime/api/connectors/agora-convoai/sessions/stop",
     );
   });
+  it("prepares STT browser join credentials through the connector route", async () => {
+    const fetchMock = vi.fn(async () =>
+      okJsonResponse({
+        app_id: "agora-app",
+        channel_name: "session-1",
+        token: "rtc-token",
+        uid: 101,
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = await import("./connector-client");
+
+    const response = await client.prepareSttSession({
+      synapse_session_id: "session-1",
+    });
+
+    expect(response.uid).toBe(101);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/connectors/agora-convoai/stt/sessions/prepare",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ synapse_session_id: "session-1" }),
+      },
+    );
+  });
+
+  it("starts STT sessions through the connector route", async () => {
+    const fetchMock = vi.fn(async () =>
+      okJsonResponse({
+        stt_session_id: "stt-1",
+        app_id: "agora-app",
+        channel_name: "session-1",
+        token: "rtc-token",
+        uid: 101,
+        pub_bot_uid: 100101,
+        sub_bot_uid: 200101,
+        agent_id: "agent-1",
+        status: "started",
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = await import("./connector-client");
+
+    const response = await client.startSttSession({
+      synapse_session_id: "session-1",
+      assigned_bro_id: "bro-1",
+    });
+
+    expect(response.stt_session_id).toBe("stt-1");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/connectors/agora-convoai/stt/sessions/start",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ synapse_session_id: "session-1", assigned_bro_id: "bro-1" }),
+      },
+    );
+  });
+
+  it("stops STT sessions through the connector route", async () => {
+    const fetchMock = vi.fn(async () => okJsonResponse({ status: "stopped" }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = await import("./connector-client");
+
+    await client.stopSttSession("stt-1");
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/connectors/agora-convoai/stt/sessions/stop",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ stt_session_id: "stt-1" }),
+      },
+    );
+  });
+
 });

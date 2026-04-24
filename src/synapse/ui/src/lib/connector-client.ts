@@ -176,3 +176,86 @@ export function stopConnectorSessionBeacon(bindingId: string): boolean {
     new Blob([payload], { type: "application/json" }),
   );
 }
+
+export interface SttSessionStartRequest {
+  synapse_session_id: string;
+  assigned_bro_id: string;
+  channel_name?: string;
+  user_uid?: number;
+  languages?: string[];
+}
+
+export interface SttSessionPrepareRequest {
+  synapse_session_id: string;
+  channel_name?: string;
+  user_uid?: number;
+}
+
+export interface SttSessionPrepareResponse {
+  app_id: string;
+  channel_name: string;
+  token: string;
+  uid: number;
+}
+
+export interface SttSessionStartResponse {
+  stt_session_id: string;
+  app_id: string;
+  channel_name: string;
+  token: string;
+  uid: number;
+  pub_bot_uid: number;
+  sub_bot_uid: number;
+  agent_id: string;
+  status: string;
+}
+
+export interface SttSessionQueryResponse {
+  stt_session_id: string;
+  agent_id: string;
+  status: string;
+  raw: Record<string, unknown>;
+}
+
+export async function prepareSttSession(payload: SttSessionPrepareRequest): Promise<SttSessionPrepareResponse> {
+  const response = await fetch(
+    buildConnectorHttpUrl(`${API_PREFIX}/connectors/agora-convoai/stt/sessions/prepare`),
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    },
+  );
+  return (await ensureOk(response)).json();
+}
+
+export async function startSttSession(payload: SttSessionStartRequest): Promise<SttSessionStartResponse> {
+  const response = await fetch(
+    buildConnectorHttpUrl(`${API_PREFIX}/connectors/agora-convoai/stt/sessions/start`),
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    },
+  );
+  return (await ensureOk(response)).json();
+}
+
+export async function querySttSession(sttSessionId: string): Promise<SttSessionQueryResponse> {
+  const response = await fetch(
+    buildConnectorHttpUrl(`${API_PREFIX}/connectors/agora-convoai/stt/sessions/${sttSessionId}`),
+  );
+  return (await ensureOk(response)).json();
+}
+
+export async function stopSttSession(sttSessionId: string): Promise<void> {
+  const response = await fetch(
+    buildConnectorHttpUrl(`${API_PREFIX}/connectors/agora-convoai/stt/sessions/stop`),
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ stt_session_id: sttSessionId }),
+    },
+  );
+  await ensureOk(response);
+}

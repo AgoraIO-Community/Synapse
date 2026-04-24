@@ -28,6 +28,9 @@ class SynapseConnectorTransport(Protocol):
     async def send_message(self, session_id: str, text: str) -> SynapseMessageResult:
         ...
 
+    async def submit_asr_turn(self, session_id: str, text: str) -> None:
+        ...
+
     def stream_message(
         self,
         session_id: str,
@@ -78,6 +81,13 @@ class HttpSynapseConnectorTransport:
         if not isinstance(reply_text, str):
             raise SynapseConnectorError("Synapse message response returned no reply_text.")
         return SynapseMessageResult(reply_text=reply_text)
+
+    async def submit_asr_turn(self, session_id: str, text: str) -> None:
+        await self._request(
+            "POST",
+            f"{API_PREFIX}/sessions/{session_id}/draft/asr-turns",
+            json={"raw_text": text, "assigned_bro_id": "codex"},
+        )
 
     async def stream_message(
         self,

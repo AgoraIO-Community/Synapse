@@ -7,3 +7,4 @@ export type { PageId } from "./Sidebar";
 export { BrosPanel } from "./BrosPanel";
 export { TopVoiceBar } from "./TopVoiceBar";
 export { useVoiceSession } from "./useVoiceSession";
+export { BroDetailPage } from "./BroDetailPage";

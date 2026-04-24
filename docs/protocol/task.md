@@ -25,6 +25,12 @@ Ownership:
 - Communication Brain manipulates task intent through tools
 - Execution Brain reads task state and updates execution-related projections
 
+`newbro v0` draft-created tasks are immutable execution contracts after Send.
+They store their draft source and frozen contract fields in `metadata`, including
+`immutable`, `source_kind`, `draft_session_id`, `draft_snapshot_id`,
+`asr_turn_ids`, `constraints`, `acceptance_criteria`, `assumptions`,
+`missing_info`, and `canonical_instruction`.
+
 Relationship note:
 
 - `Task` is not the same thing as `ExecutionSession`

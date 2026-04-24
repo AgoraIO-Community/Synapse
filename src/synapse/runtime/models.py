@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 
 from synapse.protocol import (
     AttentionItem,
+    DraftSession,
     TaskExecutionMode,
     ExecutionRun,
     ExecutionSession,
@@ -40,6 +41,7 @@ class SessionSnapshot(BaseModel):
     executor_capabilities: list[dict[str, object]] = Field(default_factory=list)
     executor_nodes: list[ExecutorNodeRecord] = Field(default_factory=list)
     communication_persona_prompt: str = ""
+    draft_session: DraftSession | None = None
  
 
 class ConversationSnapshot(BaseModel):

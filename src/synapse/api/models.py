@@ -86,6 +86,29 @@ class ResolveInteractionRequestSocketAction(BaseModel):
     reason: str | None = None
 
 
+class SubmitAsrTurnSocketAction(BaseModel):
+    type: Literal["submit_asr_turn"] = "submit_asr_turn"
+    request_id: str
+    raw_text: str
+    normalized_text: str | None = None
+    confidence: float | None = None
+    started_at: str | None = None
+    ended_at: str | None = None
+    assigned_bro_id: str | None = None
+
+
+class SendDraftSocketAction(BaseModel):
+    type: Literal["send_draft"] = "send_draft"
+    request_id: str
+    draft_session_id: str | None = None
+
+
+class ClearDraftSocketAction(BaseModel):
+    type: Literal["clear_draft"] = "clear_draft"
+    request_id: str
+    draft_session_id: str | None = None
+
+
 class DiagnosticTimelineResponse(BaseModel):
     events: list[DiagnosticEvent] = Field(default_factory=list)
 
@@ -117,6 +140,7 @@ class ExecutorNodeUpdateRequest(BaseModel):
 __all__ = [
     "CommandRequest",
     "CommandResponse",
+    "ClearDraftSocketAction",
     "DiagnosticTimelineResponse",
     "ExecutorNodeCreateRequest",
     "ExecutorNodeCredentialIssue",
@@ -127,8 +151,10 @@ __all__ = [
     "ResolveInteractionRequest",
     "ResolveInteractionRequestResponse",
     "ResolveInteractionRequestSocketAction",
+    "SendDraftSocketAction",
     "SendCommandSocketAction",
     "SendMessageSocketAction",
+    "SubmitAsrTurnSocketAction",
     "SessionResponse",
     "SessionSnapshot",
     "ToolInvocationSummary",

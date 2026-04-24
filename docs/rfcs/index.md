@@ -15,3 +15,4 @@ These files are useful for design history and rationale, but they are not the de
 - [0009 Interaction Requests and Attention Items](./0009-interaction-requests-and-attention-items.md)
 - [0010 Interaction Harness and Mode Profiles](./00010-interaction-harness-and-mode-profiles.md)
 - [0011 Detached Executor Host and Executor-Only CLI](./00011-detached-executor-host-and-executor-only-cli.md)
+- [0012 newbro v0 Draft-to-Execute Workflow](./0012-newbro-v0-draft-to-execute.md)

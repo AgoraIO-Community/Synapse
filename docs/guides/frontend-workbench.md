@@ -102,6 +102,6 @@ The visual language should stay close to the reference shell:
 - Keep the transport/runtime separation intact: the left-pane interaction
   memory comes from Synapse conversation state, while the voice connector owns
   RTC/RTM/session lifecycle and browser-local microphone/media behavior.
-- Keep `example-ui/` separate from the main frontend.
+- Treat `src/synapse/ui/` as the only active frontend.
 - Do not reintroduce the old chat/workbench root experience unless a later task
   explicitly broadens scope.

@@ -172,3 +172,5 @@ Short log of important design decisions and changes for Synapse.
 - Changed `synapse service install` to restart `synapse.service` after installing and enabling the unit, so service-hosted deployments pick up the latest checkout immediately.
 - Renamed the public package and CLI surface to `newbro-cli` / `newbro`, moved user config and workspace storage to `~/.newbro` with one-time migration from `~/.synapse`, and updated executor connect commands plus the systemd unit name to `newbro.service`.
 - Removed the stale repo-root `synapse.py` launcher, kept `./newbro` as the only root bootstrap launcher, and made `newbro service install` fail fast when the installed `newbro` console script is missing or not executable.
+
+- Adopted `newbro v0` as a draft-to-execute workflow: ASR turns update a mutable Draft, Send creates an immutable Task contract, and changing direction requires stopping and starting a new Draft.

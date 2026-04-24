@@ -119,6 +119,31 @@ class _AccessToken:
 
 
 @dataclass(slots=True)
+class RtcTokenResult:
+    token: str
+    rtc_uid: int
+
+
+def build_rtc_token(
+    *,
+    channel_name: str,
+    rtc_uid: int,
+    app_id: str,
+    app_certificate: str,
+    token_expire: int,
+    privilege_expire: int | None = None,
+) -> RtcTokenResult:
+    token = _AccessToken(app_id, app_certificate, expire=token_expire)
+    privilege_expire = privilege_expire if privilege_expire is not None else token_expire
+    rtc_service = _ServiceRtc(channel_name, rtc_uid)
+    rtc_service.add_privilege(_ServiceRtc.PRIVILEGE_JOIN_CHANNEL, privilege_expire)
+    rtc_service.add_privilege(_ServiceRtc.PRIVILEGE_PUBLISH_AUDIO_STREAM, privilege_expire)
+    rtc_service.add_privilege(_ServiceRtc.PRIVILEGE_PUBLISH_DATA_STREAM, privilege_expire)
+    token.add_service(rtc_service)
+    return RtcTokenResult(token=token.build(), rtc_uid=rtc_uid)
+
+
+@dataclass(slots=True)
 class CombinedTokenResult:
     token: str
     rtc_uid: int

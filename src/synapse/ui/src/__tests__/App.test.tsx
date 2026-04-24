@@ -257,7 +257,9 @@ describe("Newbro voice shell", () => {
     render(<App />);
 
     expect(await screen.findByText("Transcript will appear here.")).toBeInTheDocument();
-    expect(screen.getByTestId("voice-session-start")).toBeInTheDocument();
+    expect(screen.queryByTestId("voice-session-start")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("voice-session-stop")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("voice-session-mic-toggle")).not.toBeInTheDocument();
     expect(screen.queryByText("No transcript yet")).not.toBeInTheDocument();
     expect(
       screen.queryByText("Start a live session to fill this memory with real transcript turns."),
@@ -270,6 +272,32 @@ describe("Newbro voice shell", () => {
     await waitFor(() => expect(clientMock.createSession).toHaveBeenCalled());
     await waitFor(() => expect(clientMock.getSessionSnapshot).toHaveBeenCalledWith("session-1"));
     expect(window.location.search).toBe("?sid=session-1");
+  });
+
+
+  it("opens a Bro detail page when a Home card is clicked", async () => {
+    render(<RouterProvider router={getRouter()} />);
+
+    const atlasCard = await screen.findByTestId("bro-card-atlas");
+    fireEvent.click(atlasCard);
+
+    expect(await screen.findByText("Bro detail")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Atlas" })).toBeInTheDocument();
+    expect(screen.getByText("Draft for Atlas")).toBeInTheDocument();
+    expect(window.location.pathname).toBe("/bros/atlas");
+    expect(window.location.search).toBe("?sid=session-1");
+  });
+
+  it("renders a Bro detail route directly with the active shell session", async () => {
+    window.history.replaceState({}, "", "/bros/forge?sid=session-existing");
+
+    render(<RouterProvider router={getRouter()} />);
+
+    await waitFor(() => expect(clientMock.getSessionSnapshot).toHaveBeenCalledWith("session-existing"));
+    expect(await screen.findByText("Bro detail")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Forge" })).toBeInTheDocument();
+    expect(screen.getByText("Draft for Forge")).toBeInTheDocument();
+    expect(screen.getByText("Session session-existing")).toBeInTheDocument();
   });
 
   it("hydrates interaction memory from durable history when the page opens", async () => {
@@ -286,30 +314,7 @@ describe("Newbro voice shell", () => {
     expect(await screen.findByText("Hello from Synapse.")).toBeInTheDocument();
     expect(screen.getByText("Please summarize the plan.")).toBeInTheDocument();
     expect(screen.queryByText("Transcript will appear here.")).not.toBeInTheDocument();
-    expect(screen.getAllByText("2 turns")).toHaveLength(2);
-  });
-
-  it("keeps hydrated interaction memory visible while voice startup is loading", async () => {
-    clientMock.getConversationSnapshot.mockResolvedValueOnce({
-      session_id: "session-1",
-      conversation_history: [
-        { role: "assistant", text: "Hello from Synapse.", message_id: "msg-1" },
-        { role: "user", text: "Please summarize the plan.", message_id: "msg-2" },
-      ],
-    } as any);
-    connectorMock.activateConnectorSession.mockImplementationOnce(() => new Promise(() => {}));
-
-    render(<App />);
-
-    expect(await screen.findByText("Hello from Synapse.")).toBeInTheDocument();
-    fireEvent.click(screen.getByTestId("voice-session-start"));
-
-    await waitFor(() => expect(connectorMock.activateConnectorSession).toHaveBeenCalledTimes(1));
-    expect(screen.getByText("Hello from Synapse.")).toBeInTheDocument();
-    expect(screen.getByText("Please summarize the plan.")).toBeInTheDocument();
-    expect(
-      screen.queryByText("Preparing voice session and waiting for Synapse conversation updates."),
-    ).not.toBeInTheDocument();
+    expect(screen.getByText("2 turns")).toBeInTheDocument();
   });
 
   it("resumes the shell session from the sid query parameter", async () => {
@@ -364,25 +369,7 @@ describe("Newbro voice shell", () => {
     render(<App />);
 
     await screen.findByText("Session session-1");
-    fireEvent.click(await screen.findByTestId("voice-session-start"));
-
-    await waitFor(() =>
-      expect(connectorMock.prepareConnectorSession).toHaveBeenCalledWith({
-        synapse_session_id: "session-1",
-      }),
-    );
-    await waitFor(() => expect(connectorMock.activateConnectorSession).toHaveBeenCalledTimes(1));
-    expect(clientMock.getSessionSnapshot).not.toHaveBeenCalledWith("voice-session-1");
-    await waitFor(() => expect(screen.getByTestId("voice-session-stop")).toBeInTheDocument());
-    expect(screen.getByText("Transcript will appear here.")).toBeInTheDocument();
-
-    await act(async () => {
-      voiceHarness.voiceEvents.TRANSCRIPT_UPDATED?.([
-        { turn_id: "turn-1", uid: "9001", text: "Hello. How can I help you today?", status: "final" },
-        { turn_id: "turn-2", uid: "101", text: "Please create a follow-up task.", status: "final" },
-      ]);
-    });
-    expect(screen.queryByText("Hello. How can I help you today?")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("voice-session-start")).not.toBeInTheDocument();
     expect(screen.getByText("Transcript will appear here.")).toBeInTheDocument();
 
     await act(async () => {
@@ -413,130 +400,8 @@ describe("Newbro voice shell", () => {
     expect(await screen.findByText("Hello. How can I help you today?")).toBeInTheDocument();
     expect(screen.getByText("NewBro")).toBeInTheDocument();
     expect(screen.queryByText("Transcript will appear here.")).not.toBeInTheDocument();
-    expect(screen.getAllByText("2 turns")).toHaveLength(2);
+    expect(screen.getByText("2 turns")).toBeInTheDocument();
     expect(screen.getByText("Session session-1")).toBeInTheDocument();
-  });
-
-  it("keeps the empty interaction-memory state visible while voice startup is loading", async () => {
-    connectorMock.activateConnectorSession.mockImplementationOnce(() => new Promise(() => {}));
-
-    render(<App />);
-
-    expect(await screen.findByText("Transcript will appear here.")).toBeInTheDocument();
-    fireEvent.click(screen.getByTestId("voice-session-start"));
-
-    await waitFor(() => expect(connectorMock.activateConnectorSession).toHaveBeenCalledTimes(1));
-    expect(screen.getByText("Transcript will appear here.")).toBeInTheDocument();
-    expect(
-      screen.queryByText("Preparing voice session and waiting for Synapse conversation updates."),
-    ).not.toBeInTheDocument();
-  });
-
-  it("does not populate interaction memory from browser transcript events alone", async () => {
-    render(<App />);
-
-    await screen.findByText("Session session-1");
-    fireEvent.click(await screen.findByTestId("voice-session-start"));
-    await waitFor(() => expect(connectorMock.activateConnectorSession).toHaveBeenCalledTimes(1));
-
-    await act(async () => {
-      voiceHarness.voiceEvents.TRANSCRIPT_UPDATED?.([
-        { turn_id: "turn-1", uid: "101", text: "I said this locally.", status: "final" },
-        { turn_id: "turn-2", uid: "9001", text: "Toolkit assistant echo.", status: "final" },
-      ]);
-    });
-
-    expect(screen.queryByText("I said this locally.")).not.toBeInTheDocument();
-    expect(screen.queryByText("Toolkit assistant echo.")).not.toBeInTheDocument();
-    expect(screen.getByText("Transcript will appear here.")).toBeInTheDocument();
-  });
-
-  it("keeps the last conversation visible after stop without rebinding the shell session", async () => {
-    render(<App />);
-
-    await screen.findByText("Session session-1");
-    fireEvent.click(await screen.findByTestId("voice-session-start"));
-    await waitFor(() => expect(connectorMock.activateConnectorSession).toHaveBeenCalledTimes(1));
-
-    await act(async () => {
-      socketHarness.emitMessage({
-        type: "user_message_appended",
-        message_id: "msg-user-1",
-        role: "user",
-        text: "Please create a follow-up task.",
-        source: "user",
-      });
-    });
-
-    await act(async () => {
-      socketHarness.emitMessage({
-        type: "assistant_response_completed",
-        request_id: "req-1",
-        message_id: "msg-assistant-1",
-        reply_text: "Hello. How can I help you today?",
-        conversational_act: "model_reply",
-        affected_task_ids: [],
-      });
-    });
-
-    fireEvent.click(screen.getByTestId("voice-session-stop"));
-
-    await waitFor(() => {
-      expect(screen.getByTestId("voice-session-start")).toBeInTheDocument();
-    });
-
-    expect(screen.getByText("Hello. How can I help you today?")).toBeInTheDocument();
-    expect(screen.getByText("Please create a follow-up task.")).toBeInTheDocument();
-    expect(clientMock.createSession).toHaveBeenCalledTimes(1);
-    expect(clientMock.getSessionSnapshot).toHaveBeenCalledTimes(1);
-    expect(screen.queryByText("Last voice session")).not.toBeInTheDocument();
-    expect(screen.queryByText("Voice session stopped. Transcript memory retained.")).not.toBeInTheDocument();
-  });
-
-  it("mutes and unmutes the microphone while the voice session is live", async () => {
-    render(<App />);
-
-    await screen.findByText("Session session-1");
-    fireEvent.click(await screen.findByTestId("voice-session-start"));
-    await waitFor(() => expect(screen.getByTestId("voice-session-mic-toggle")).toBeInTheDocument());
-
-    fireEvent.click(screen.getByTestId("voice-session-mic-toggle"));
-    await waitFor(() => expect(voiceHarness.micTrack.setEnabled).toHaveBeenCalledWith(false));
-    expect(screen.getByTestId("voice-session-mic-toggle")).toHaveTextContent("Unmute");
-
-    await act(async () => {});
-    fireEvent.click(screen.getByTestId("voice-session-mic-toggle"));
-    await waitFor(() => expect(voiceHarness.micTrack.setEnabled).toHaveBeenCalledWith(true));
-    await waitFor(() => expect(screen.getByTestId("voice-session-mic-toggle")).toHaveTextContent("Mute"));
-  });
-
-  it("surfaces startup errors without breaking the shell", async () => {
-    connectorMock.getConnectorConfig.mockResolvedValueOnce({
-      ready: false,
-      service_base_url: "https://connectors.example.com",
-      defaults: {},
-      missing_requirements: ["connectors.agora-convoai.app_id"],
-    } as any);
-
-    render(<App />);
-    await screen.findByText("Session session-1");
-    fireEvent.click(await screen.findByTestId("voice-session-start"));
-
-    expect((await screen.findAllByText(/connectors\.agora-convoai\.app_id/)).length).toBeGreaterThan(0);
-    expect(screen.getByTestId("voice-session-start")).toBeInTheDocument();
-  });
-
-  it("signals pagehide stop cleanup while a voice session is active", async () => {
-    const { unmount } = render(<App />);
-
-    await screen.findByText("Session session-1");
-    fireEvent.click(await screen.findByTestId("voice-session-start"));
-    await waitFor(() => expect(connectorMock.activateConnectorSession).toHaveBeenCalledTimes(1));
-
-    unmount();
-
-    expect(connectorMock.stopConnectorSessionBeacon).toHaveBeenCalledWith("binding-1");
-    expect(runtimeMock.teardownVoiceSession).toHaveBeenCalled();
   });
 
   it("switches to runtime persona cards when persona data exists", async () => {
@@ -605,108 +470,21 @@ describe("Newbro voice shell", () => {
     expect(screen.queryByText("Atlas")).not.toBeInTheDocument();
   });
 
-  it("keeps busy bro card content stable while pressed", async () => {
-    render(<App />);
 
-    const forgeCard = await screen.findByTestId("bro-card-forge");
-    const initialForgeCard = within(forgeCard);
-
-    expect(initialForgeCard.getByText("Current task")).toBeInTheDocument();
-    expect(initialForgeCard.getByText("Prepare execution steps")).toBeInTheDocument();
-    expect(initialForgeCard.getByText("43% prepared")).toBeInTheDocument();
-    expect(initialForgeCard.getByText("Preparing fallback flow if preferred option fails.")).toBeInTheDocument();
-
-    fireEvent.pointerDown(forgeCard);
-
-    await waitFor(() => expect(screen.getByTestId("bro-card-forge")).toHaveAttribute("aria-pressed", "true"));
-    const pressedForgeCard = within(screen.getByTestId("bro-card-forge"));
-
-    expect(pressedForgeCard.getByText("preview")).toBeInTheDocument();
-    expect(pressedForgeCard.getByTestId("talking-bars")).toBeInTheDocument();
-    expect(pressedForgeCard.getByText("Current task")).toBeInTheDocument();
-    expect(pressedForgeCard.getByText("Prepare execution steps")).toBeInTheDocument();
-    expect(pressedForgeCard.getByText("43% prepared")).toBeInTheDocument();
-    expect(pressedForgeCard.getByText("Preparing fallback flow if preferred option fails.")).toBeInTheDocument();
-    expect(pressedForgeCard.queryByText("Previewing Forge")).not.toBeInTheDocument();
-    expect(pressedForgeCard.queryByText("Talking to Forge")).not.toBeInTheDocument();
-    expect(pressedForgeCard.queryByText("mic on")).not.toBeInTheDocument();
-
-    fireEvent.pointerUp(screen.getByTestId("bro-card-forge"));
-    await waitFor(() => expect(screen.getByTestId("bro-card-forge")).toHaveAttribute("aria-pressed", "false"));
-
-    const releasedForgeCard = within(screen.getByTestId("bro-card-forge"));
-    expect(releasedForgeCard.queryByText("preview")).not.toBeInTheDocument();
-    expect(releasedForgeCard.queryByTestId("talking-bars")).not.toBeInTheDocument();
-    expect(releasedForgeCard.getByText("busy")).toBeInTheDocument();
-    expect(releasedForgeCard.getByText("Current task")).toBeInTheDocument();
-    expect(releasedForgeCard.getByText("Prepare execution steps")).toBeInTheDocument();
-    expect(releasedForgeCard.getByText("43% prepared")).toBeInTheDocument();
-  });
-
-  it("keeps idle bro card content stable while pressed", async () => {
-    render(<App />);
-
-    const scoutCard = await screen.findByTestId("bro-card-scout");
-    const initialScoutCard = within(scoutCard);
-
-    expect(initialScoutCard.getByText("Current state")).toBeInTheDocument();
-    expect(initialScoutCard.getByText("Waiting for assignment")).toBeInTheDocument();
-    expect(initialScoutCard.getByText("Can verify timing once Travel Laptop reconnects.")).toBeInTheDocument();
-    expect(initialScoutCard.getByText("Bound node is offline and needs to reconnect.")).toBeInTheDocument();
-
-    fireEvent.pointerDown(scoutCard);
-
-    await waitFor(() => expect(screen.getByTestId("bro-card-scout")).toHaveAttribute("aria-pressed", "true"));
-    const pressedScoutCard = within(screen.getByTestId("bro-card-scout"));
-
-    expect(pressedScoutCard.getByText("preview")).toBeInTheDocument();
-    expect(pressedScoutCard.getByTestId("talking-bars")).toBeInTheDocument();
-    expect(pressedScoutCard.getByText("Current state")).toBeInTheDocument();
-    expect(pressedScoutCard.getByText("Waiting for assignment")).toBeInTheDocument();
-    expect(pressedScoutCard.getByText("Can verify timing once Travel Laptop reconnects.")).toBeInTheDocument();
-    expect(pressedScoutCard.getByText("Bound node is offline and needs to reconnect.")).toBeInTheDocument();
-    expect(pressedScoutCard.queryByText("Previewing Scout")).not.toBeInTheDocument();
-    expect(pressedScoutCard.queryByText("Talking to Scout")).not.toBeInTheDocument();
-
-    fireEvent.pointerUp(screen.getByTestId("bro-card-scout"));
-    await waitFor(() => expect(screen.getByTestId("bro-card-scout")).toHaveAttribute("aria-pressed", "false"));
-
-    const releasedScoutCard = within(screen.getByTestId("bro-card-scout"));
-    expect(releasedScoutCard.queryByText("preview")).not.toBeInTheDocument();
-    expect(releasedScoutCard.queryByTestId("talking-bars")).not.toBeInTheDocument();
-    expect(releasedScoutCard.getByText("idle")).toBeInTheDocument();
-    expect(releasedScoutCard.getByText("Current state")).toBeInTheDocument();
-    expect(releasedScoutCard.getByText("Waiting for assignment")).toBeInTheDocument();
-    expect(releasedScoutCard.getByText("Can verify timing once Travel Laptop reconnects.")).toBeInTheDocument();
-  });
-
-  it("shows mic on in the pressed card when the voice session is connected", async () => {
-    render(<App />);
-
-    await screen.findByText("Session session-1");
-    fireEvent.click(await screen.findByTestId("voice-session-start"));
-    await waitFor(() => expect(connectorMock.activateConnectorSession).toHaveBeenCalledTimes(1));
-    await waitFor(() => expect(screen.getByTestId("voice-session-stop")).toBeInTheDocument());
+  it("does not apply legacy press effects to Home Bro cards", async () => {
+    render(<RouterProvider router={getRouter()} />);
 
     const forgeCard = await screen.findByTestId("bro-card-forge");
     fireEvent.pointerDown(forgeCard);
+    fireEvent.pointerUp(forgeCard);
 
-    const pressedForgeCard = within(screen.getByTestId("bro-card-forge"));
-    expect(screen.getByTestId("bro-card-forge")).toHaveAttribute("aria-pressed", "true");
-    expect(pressedForgeCard.getByText("mic on")).toBeInTheDocument();
-    expect(pressedForgeCard.queryByText("preview")).not.toBeInTheDocument();
-    expect(pressedForgeCard.getByTestId("talking-bars")).toBeInTheDocument();
-    expect(pressedForgeCard.getByText("Current task")).toBeInTheDocument();
-    expect(pressedForgeCard.getByText("Prepare execution steps")).toBeInTheDocument();
-    expect(pressedForgeCard.getByText("Preparing fallback flow if preferred option fails.")).toBeInTheDocument();
-    expect(pressedForgeCard.queryByText("Talking to Forge")).not.toBeInTheDocument();
-
-    fireEvent.pointerUp(screen.getByTestId("bro-card-forge"));
-    await waitFor(() => expect(screen.getByTestId("bro-card-forge")).toHaveAttribute("aria-pressed", "false"));
-
-    const releasedForgeCard = within(screen.getByTestId("bro-card-forge"));
-    expect(releasedForgeCard.queryByText("mic on")).not.toBeInTheDocument();
-    expect(releasedForgeCard.getByText("busy")).toBeInTheDocument();
+    const card = within(screen.getByTestId("bro-card-forge"));
+    expect(screen.getByTestId("bro-card-forge")).not.toHaveAttribute("aria-pressed");
+    expect(card.queryByText("preview")).not.toBeInTheDocument();
+    expect(card.queryByText("mic on")).not.toBeInTheDocument();
+    expect(card.queryByTestId("talking-bars")).not.toBeInTheDocument();
+    expect(card.getByText("busy")).toBeInTheDocument();
+    expect(window.location.pathname).toBe("/");
   });
 
   it("loads the Bros page directly from the URL", async () => {

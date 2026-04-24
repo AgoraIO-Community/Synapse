@@ -26,6 +26,13 @@ from .models import (
     ConnectorSessionPrepareResponse,
     ConnectorSessionStopRequest,
     ConnectorSessionStopResponse,
+    SttSessionQueryResponse,
+    SttSessionPrepareRequest,
+    SttSessionPrepareResponse,
+    SttSessionStartRequest,
+    SttSessionStartResponse,
+    SttSessionStopRequest,
+    SttSessionStopResponse,
 )
 from .service import (
     AGORA_CONVOAI_IMPLEMENTATION_VERSION,
@@ -35,6 +42,7 @@ from .service import (
     ConvoAIRuntimeError,
 )
 from .session_service import AgoraConnectorSessionService
+from .stt_service import AgoraSttService
 from .settings import AGORA_BRIDGE_MODEL, AgoraConvoAIConnectorSettings, load_agora_connector_settings
 
 
@@ -51,6 +59,7 @@ class AgoraConvoAIConnectorModule(BaseConnectorModule):
             request_timeout_seconds=settings.request_timeout_seconds,
         )
         service = AgoraSDKConvoAIService(settings)
+        stt_service = AgoraSttService(settings)
         binding_registry = ConnectorBindingRegistry(transport, speaker=service)
         session_service = AgoraConnectorSessionService(
             binding_registry,
@@ -64,6 +73,7 @@ class AgoraConvoAIConnectorModule(BaseConnectorModule):
                 yield
             finally:
                 await binding_registry.close()
+                await stt_service.close()
                 await transport.close()
 
         router = APIRouter(
@@ -125,6 +135,47 @@ class AgoraConvoAIConnectorModule(BaseConnectorModule):
             except ConvoAIRuntimeError as exc:
                 raise HTTPException(status_code=502, detail=str(exc)) from exc
 
+
+        @router.post("/stt/sessions/prepare", response_model=SttSessionPrepareResponse)
+        async def prepare_stt_session(
+            payload: SttSessionPrepareRequest,
+        ) -> SttSessionPrepareResponse:
+            try:
+                return stt_service.prepare_session(payload)
+            except ConvoAIConfigurationError as exc:
+                raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+        @router.post("/stt/sessions/start", response_model=SttSessionStartResponse)
+        async def start_stt_session(
+            payload: SttSessionStartRequest,
+        ) -> SttSessionStartResponse:
+            try:
+                return await stt_service.start_session(payload)
+            except ConvoAIConfigurationError as exc:
+                raise HTTPException(status_code=503, detail=str(exc)) from exc
+            except ConvoAIRuntimeError as exc:
+                raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+        @router.get("/stt/sessions/{stt_session_id}", response_model=SttSessionQueryResponse)
+        async def query_stt_session(stt_session_id: str) -> SttSessionQueryResponse:
+            try:
+                return await stt_service.query_session(stt_session_id)
+            except KeyError as exc:
+                raise HTTPException(status_code=404, detail=str(exc)) from exc
+            except ConvoAIRuntimeError as exc:
+                raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+        @router.post("/stt/sessions/stop", response_model=SttSessionStopResponse)
+        async def stop_stt_session(
+            payload: SttSessionStopRequest,
+        ) -> SttSessionStopResponse:
+            try:
+                return await stt_service.stop_session(payload.stt_session_id)
+            except KeyError as exc:
+                raise HTTPException(status_code=404, detail=str(exc)) from exc
+            except ConvoAIRuntimeError as exc:
+                raise HTTPException(status_code=502, detail=str(exc)) from exc
+
         @router.post("/chat/completions")
         async def chat_completions(
             payload: ChatCompletionRequest,
@@ -163,13 +214,13 @@ class AgoraConvoAIConnectorModule(BaseConnectorModule):
                 )
 
             try:
-                result = await transport.send_message(binding.synapse_session_id, user_text)
+                await transport.submit_asr_turn(binding.synapse_session_id, user_text)
                 return JSONResponse(
                     _build_completion_response(
                         completion_id=f"chatcmpl-{uuid4().hex[:8]}",
                         created=int(time.time()),
                         model_name=payload.model or AGORA_BRIDGE_MODEL,
-                        reply_text=result.reply_text,
+                        reply_text="Draft updated.",
                     )
                 )
             except SynapseConnectorError as exc:
@@ -197,102 +248,30 @@ async def _stream_completion(
     model_name: str,
     target_persona_id: str | None = None,
 ) -> AsyncIterator[str]:
-    request_id = f"agora-chat-{uuid4().hex[:8]}"
     completion_id = f"chatcmpl-{uuid4().hex[:8]}"
     created = int(time.time())
-    role_sent = False
     try:
-        async for event in transport.stream_message(
-            synapse_session_id,
-            user_text,
-            request_id=request_id,
-            target_persona_id=target_persona_id,
-        ):
-            event_type = event.get("type")
-            if event_type == "assistant_response_started":
-                if not role_sent:
-                    role_sent = True
-                    yield _sse_payload(
-                        _build_stream_chunk(
-                            completion_id=completion_id,
-                            created=created,
-                            model_name=model_name,
-                            delta={"role": "assistant"},
-                        )
-                    )
-                continue
-            if event_type == "assistant_response_delta":
-                if not role_sent:
-                    role_sent = True
-                    yield _sse_payload(
-                        _build_stream_chunk(
-                            completion_id=completion_id,
-                            created=created,
-                            model_name=model_name,
-                            delta={"role": "assistant"},
-                        )
-                    )
-                yield _sse_payload(
-                    _build_stream_chunk(
-                        completion_id=completion_id,
-                        created=created,
-                        model_name=model_name,
-                        delta={"content": str(event.get("delta") or "")},
-                    )
-                )
-                continue
-            if event_type == "assistant_response_completed":
-                if not role_sent:
-                    role_sent = True
-                    yield _sse_payload(
-                        _build_stream_chunk(
-                            completion_id=completion_id,
-                            created=created,
-                            model_name=model_name,
-                            delta={
-                                "role": "assistant",
-                                "content": str(event.get("reply_text") or ""),
-                            },
-                        )
-                    )
-                yield _sse_payload(
-                    _build_stream_chunk(
-                        completion_id=completion_id,
-                        created=created,
-                        model_name=model_name,
-                        delta={},
-                        finish_reason="stop",
-                    )
-                )
-                break
-            if event_type == "assistant_response_failed":
-                if not role_sent:
-                    role_sent = True
-                    yield _sse_payload(
-                        _build_stream_chunk(
-                            completion_id=completion_id,
-                            created=created,
-                            model_name=model_name,
-                            delta={
-                                "role": "assistant",
-                                "content": str(event.get("message") or ""),
-                            },
-                        )
-                    )
-                yield _sse_payload(
-                    _build_stream_chunk(
-                        completion_id=completion_id,
-                        created=created,
-                        model_name=model_name,
-                        delta={},
-                        finish_reason="stop",
-                    )
-                )
-                break
+        await transport.submit_asr_turn(synapse_session_id, user_text)
+        yield _sse_payload(
+            _build_stream_chunk(
+                completion_id=completion_id,
+                created=created,
+                model_name=model_name,
+                delta={"role": "assistant", "content": "Draft updated."},
+            )
+        )
+        yield _sse_payload(
+            _build_stream_chunk(
+                completion_id=completion_id,
+                created=created,
+                model_name=model_name,
+                delta={},
+                finish_reason="stop",
+            )
+        )
         yield "data: [DONE]\n\n"
     except SynapseConnectorError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
-
 
 def _resolve_binding_id(request: Request) -> str:
     binding_id = request.query_params.get("binding_id")
