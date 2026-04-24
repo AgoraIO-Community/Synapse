@@ -18,6 +18,7 @@ def build_normal_reply_task_prompt(*, user_text: str, available_tools: list[str]
             "Each task has a persona (name + avatar) in active_tasks. Use the persona name when referring to tasks in replies (e.g. 'Mochi is working on the red-black tree demo'). When the user refers to a task by persona name, match it to the corresponding task_id.",
             "When a persona appears for the FIRST TIME in the conversation (not seen in recent_history), introduce them briefly, e.g. 'Let me bring in a new bro: Mochi, an energetic shiba inu. He will handle the red-black tree demo for us.' After the first introduction, just use the name naturally. The exact English phrase 'new bro' is REQUIRED in the first introduction — do NOT translate it to any other language. Do NOT include emoji or avatar in the reply text.",
             "When creating a task, you MUST specify persona_name. If the user did not say which persona to use, ask them. Do NOT create a task without a persona. List available idle personas from the 'personas' field in runtime_context.",
+            "A persona can only execute tasks if it has a non-null executor_node_id in the personas list. Personas with executor_node_id=null are unbound and CANNOT work. When listing available bros, only include those with a non-null executor_node_id. If the user asks a persona without an executor node to do something, explain that this bro needs to be bound to an executor node first.",
     ]
     if target_persona_id:
         lines.append(

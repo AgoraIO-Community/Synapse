@@ -191,6 +191,7 @@ class CommunicationContextBuilder:
                 "persona_id": p.persona_id,
                 "name": p.name,
                 "avatar": p.avatar,
+                "executor_node_id": p.executor_node_id,
                 "status": p.status,
                 "current_task_id": p.current_task_id,
             }
