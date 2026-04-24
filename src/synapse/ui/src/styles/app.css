@@ -1,5 +1,132 @@
 @import "tailwindcss";
 
+@theme inline {
+  --font-sans: "Geist Variable", "Geist", "Noto Sans", "Noto Sans SC", sans-serif;
+  --font-serif: "Newsreader", "Iowan Old Style", "Palatino Linotype", "Times New Roman", serif;
+
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+  --color-popover: hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
+}
+
+@layer base {
+  :root {
+    --background: 38 22% 96%;
+    --foreground: 222 14% 18%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 14% 18%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 14% 18%;
+    --primary: 218 82% 57%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 210 36% 97%;
+    --secondary-foreground: 222 12% 26%;
+    --muted: 42 20% 92%;
+    --muted-foreground: 220 10% 46%;
+    --accent: 218 90% 96%;
+    --accent-foreground: 218 67% 42%;
+    --border: 220 16% 86%;
+    --input: 220 16% 84%;
+    --ring: 218 82% 57%;
+    --paper: 42 34% 98%;
+  }
+
+  * {
+    border-color: hsl(var(--border));
+  }
+
+  html {
+    scroll-behavior: smooth;
+    background-color: hsl(var(--background));
+  }
+
+  body {
+    min-height: 100vh;
+    background:
+      radial-gradient(circle at top left, rgba(47, 108, 243, 0.08), transparent 34%),
+      radial-gradient(circle at top right, rgba(255, 255, 255, 0.72), transparent 30%),
+      linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(245, 244, 240, 0.96));
+    color: hsl(var(--foreground));
+    font-family: var(--font-sans);
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  ::selection {
+    background: rgba(47, 108, 243, 0.18);
+    color: hsl(var(--foreground));
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    text-wrap: pretty;
+  }
+}
+
+.page-wash {
+  background:
+    radial-gradient(circle at top left, rgba(47, 108, 243, 0.08), transparent 34%),
+    radial-gradient(circle at top right, rgba(255, 255, 255, 0.72), transparent 30%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(245, 244, 240, 0.96));
+}
+
+.glass-panel {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.82), rgba(255, 255, 255, 0.66));
+  box-shadow:
+    0 30px 80px -48px rgba(15, 23, 42, 0.26),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(18px);
+}
+
+.paper-panel {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(251, 250, 247, 0.98));
+  box-shadow:
+    0 22px 56px -44px rgba(15, 23, 42, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.85);
+}
+
+.serif-flow {
+  font-family: var(--font-serif);
+  font-optical-sizing: auto;
+}
+
+.subtle-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.4) transparent;
+}
+
+.subtle-scrollbar::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.subtle-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.subtle-scrollbar::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.36);
+  background-clip: padding-box;
+}
+
 @keyframes pixel-bounce {
   0%, 100% { transform: translateY(0); }
   25% { transform: translateY(-3px); }
@@ -20,4 +147,18 @@
 
 .animate-pixel-celebrate {
   animation: pixel-celebrate 0.8s ease-in-out 3;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

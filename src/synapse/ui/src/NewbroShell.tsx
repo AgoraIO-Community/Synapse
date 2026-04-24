@@ -16,7 +16,6 @@ import { BrosPanel } from "./components/newbro/BrosPanel";
 import { ConversationMemory } from "./components/newbro/ConversationMemory";
 import { NodesPage } from "./components/newbro/NodesPage";
 import { Sidebar, type PageId } from "./components/newbro/Sidebar";
-import { TopVoiceBar } from "./components/newbro/TopVoiceBar";
 import { buildBroCardModels } from "./components/newbro/adapters";
 import { useVoiceSession } from "./components/newbro/useVoiceSession";
 import type { ExecutionRun, ExecutorNodeRecord, Persona, SessionSnapshot, TaskSummary } from "./types";
@@ -50,14 +49,14 @@ function ShellApiErrorPanel({ detail }: { detail: string }) {
   return (
     <div
       data-testid="shell-api-error"
-      className="mx-8 my-8 rounded-[28px] border border-red-200 bg-red-50 px-6 py-6 xl:mx-10 xl:my-10"
+      className="paper-panel mx-4 my-4 rounded-[30px] border border-white/80 px-6 py-6 shadow-[0_24px_54px_-40px_rgba(15,23,42,0.22)] md:mx-6 md:my-6 xl:mx-8 xl:my-8"
     >
-      <div className="text-[12px] uppercase tracking-[0.22em] text-red-500">Connection problem</div>
-      <div className="mt-2 text-[28px] font-medium tracking-[-0.04em] text-red-950">
+      <div className="text-[11px] uppercase tracking-[0.24em] text-[#8d5a62]">Connection problem</div>
+      <div className="serif-flow mt-3 text-[32px] tracking-[-0.05em] text-foreground">
         {SHELL_API_ERROR_TITLE}
       </div>
-      <div className="mt-3 max-w-[720px] text-[14px] leading-7 text-red-800">{detail}</div>
-      <div className="mt-3 max-w-[720px] text-[13px] leading-6 text-red-700/90">{SHELL_API_ERROR_HINT}</div>
+      <div className="mt-3 max-w-[720px] text-[14px] leading-7 text-foreground/82">{detail}</div>
+      <div className="mt-3 max-w-[720px] text-[13px] leading-6 text-muted-foreground">{SHELL_API_ERROR_HINT}</div>
     </div>
   );
 }
@@ -66,7 +65,7 @@ function ShellLoadingPanel() {
   return (
     <div
       data-testid="shell-connecting"
-      className="mx-8 my-8 rounded-[28px] border border-neutral-200 bg-white px-6 py-6 text-[14px] text-neutral-500 xl:mx-10 xl:my-10"
+      className="glass-panel mx-4 my-4 rounded-[30px] border border-white/80 px-6 py-6 text-[14px] text-muted-foreground md:mx-6 md:my-6 xl:mx-8 xl:my-8"
     >
       Connecting to session…
     </div>
@@ -77,7 +76,7 @@ function ShellWarningBanner({ detail }: { detail: string }) {
   return (
     <div
       data-testid="shell-warning"
-      className="mx-8 mt-8 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-[13px] text-amber-800 xl:mx-10"
+      className="glass-panel mx-4 mt-4 rounded-[24px] border border-white/80 px-4 py-3 text-[13px] leading-6 text-muted-foreground md:mx-6 md:mt-5 xl:mx-8"
     >
       {detail}
     </div>
@@ -98,7 +97,7 @@ function useNewbroShellState() {
   const [hasLoadedShellSnapshot, setHasLoadedShellSnapshot] = useState(false);
   const [shellError, setShellError] = useState<string | null>(null);
   const [shellWarning, setShellWarning] = useState<string | null>(null);
-  const [activeBroId, setActiveBroId] = useState<string | null>(null);
+  const [pressedBroId, setPressedBroId] = useState<string | null>(null);
   const [isTalking, setIsTalking] = useState(false);
   const [chatMessages, setChatMessages] = useState<Array<{ role: "user" | "assistant"; text: string; id: string }>>([]);
   const mountedRef = useRef(false);
@@ -286,14 +285,14 @@ function useNewbroShellState() {
   );
 
   useEffect(() => {
-    if (bros.length === 0) {
-      setActiveBroId(null);
+    if (!pressedBroId) {
       return;
     }
-    if (!bros.some((bro) => bro.id === activeBroId)) {
-      setActiveBroId(bros[0]?.id ?? null);
+    if (!bros.some((bro) => bro.id === pressedBroId)) {
+      setPressedBroId(null);
+      setIsTalking(false);
     }
-  }, [activeBroId, bros]);
+  }, [bros, pressedBroId]);
 
   const sendMessage = (text: string): boolean => {
     const socket = socketRef.current;
@@ -304,15 +303,22 @@ function useNewbroShellState() {
   };
 
   const startTalkToBro = (broId: string) => {
-    if (voiceSession.phase !== "connected") return;
+    setPressedBroId(broId);
+    if (voiceSession.phase !== "connected") {
+      setIsTalking(false);
+      return;
+    }
     const sessionId = activeShellSessionId;
-    if (!sessionId) return;
-    setActiveBroId(broId);
+    if (!sessionId) {
+      setIsTalking(false);
+      return;
+    }
     setIsTalking(true);
     void setVoiceTarget(sessionId, broId);
   };
 
   const endTalkToBro = () => {
+    setPressedBroId(null);
     if (!isTalking) return;
     setIsTalking(false);
     // Don't clear voice target here — it will be cleared after the next
@@ -328,8 +334,7 @@ function useNewbroShellState() {
     executorNodes,
     shellError,
     shellWarning,
-    activeBroId,
-    setActiveBroId,
+    pressedBroId,
     isTalking,
     startTalkToBro,
     endTalkToBro,
@@ -374,9 +379,9 @@ function ShellFrame({
   children: ReactNode;
 }) {
   return (
-    <div className="min-h-screen bg-[#f3f0ea] text-neutral-950 antialiased">
-      <div className="h-screen w-full p-4 md:p-5">
-        <div className="flex h-full overflow-hidden rounded-[32px] border border-neutral-200 bg-[#fcfaf5]">
+    <div className="page-wash min-h-screen bg-background text-foreground antialiased">
+      <div className="min-h-screen w-full p-3 md:p-5">
+        <div className="glass-panel flex h-[calc(100vh-1.5rem)] flex-col overflow-hidden rounded-[36px] border border-white/75 md:h-[calc(100vh-2.5rem)] lg:flex-row">
           <Sidebar activePage={activePage} onNavigate={onNavigate} />
           <main data-testid="newbro-shell" className="flex min-w-0 flex-1 flex-col">
             {children}
@@ -389,110 +394,58 @@ function ShellFrame({
 
 export function HomeShellPage({ onNavigate }: { onNavigate: PageNavigator }) {
   const shell = useNewbroShell();
-  const [composer, setComposer] = useState("");
-  const [sendError, setSendError] = useState<string | null>(null);
-  const scrollRef = useRef<HTMLDivElement | null>(null);
-
-  // Auto-scroll when chat messages change
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (el) {
-      el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
-    }
-  }, [shell.chatMessages.length]);
-
-  function handleSend(e: React.FormEvent) {
-    e.preventDefault();
-    const text = composer.trim();
-    if (!text) return;
-    setSendError(null);
-    const sent = shell.sendMessage(text);
-    if (sent) {
-      setComposer("");
-    } else {
-      setSendError("Not connected. Message was not sent.");
-    }
-  }
 
   return (
     <ShellFrame activePage="Home" onNavigate={onNavigate}>
-      <TopVoiceBar
-        bros={shell.bros}
-        voicePhase={shell.voiceSession.phase}
-        error={shell.voiceSession.error}
-        isMicMuted={shell.voiceSession.isMicMuted}
-        messageCount={shell.chatMessages.length}
-        sessionId={shell.activeShellSessionId}
-        onStart={() => {
-          void shell.start(shell.activeShellSessionId);
-        }}
-        onStop={() => {
-          void shell.stop();
-        }}
-        onToggleMute={() => {
-          void shell.toggleMute();
-        }}
-      />
-
       {shell.shellWarning ? <ShellWarningBanner detail={shell.shellWarning} /> : null}
 
       {shell.shellError && shell.hasLoadedShellSnapshot ? (
-        <div className="mx-8 mt-8 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-[13px] text-amber-800 xl:mx-10">
+        <div className="glass-panel mx-4 mt-4 rounded-[24px] border border-white/80 px-4 py-3 text-[13px] leading-6 text-muted-foreground md:mx-6 md:mt-5 xl:mx-8">
           {shell.shellError}
         </div>
       ) : null}
 
       {shell.hasLoadedShellSnapshot ? (
-        <div className="grid min-h-0 flex-1 grid-cols-1 gap-8 px-8 py-8 lg:grid-cols-[minmax(220px,0.56fr)_minmax(840px,1.74fr)] xl:px-10 xl:py-10">
-          <section className="flex min-h-0 flex-col pt-4">
-            <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
-              <ConversationMemory
-                phase={shell.voiceSession.phase}
-                messages={shell.chatMessages.map((msg) => ({
-                  role: msg.role,
-                  text: msg.text,
-                  message_id: msg.id,
-                }))}
-                error={shell.voiceSession.error}
-                lastToolkitMessage={shell.voiceSession.lastToolkitMessage}
+        <div className="flex min-h-0 flex-1 flex-col gap-5 px-4 pb-4 pt-4 md:px-6 md:pb-6 md:pt-5 xl:px-8 xl:pb-8 xl:pt-6">
+          <section className="min-h-0 flex-1 overflow-y-auto">
+            <div className="glass-panel h-full rounded-[32px] border border-white/75 px-4 py-5 md:px-5 md:py-6">
+              <div className="sr-only">
+                <ConversationMemory
+                  phase={shell.voiceSession.phase}
+                  messages={shell.chatMessages.map((msg) => ({
+                    role: msg.role,
+                    text: msg.text,
+                    message_id: msg.id,
+                  }))}
+                  error={shell.voiceSession.error}
+                  lastToolkitMessage={shell.voiceSession.lastToolkitMessage}
+                />
+              </div>
+              <BrosPanel
+                bros={shell.bros}
+                pressedBroId={shell.pressedBroId}
+                isTalking={shell.isTalking}
+                voiceConnected={shell.voiceConnected}
+                voicePhase={shell.voiceSession.phase}
+                voiceError={shell.voiceSession.error}
+                isMicMuted={shell.voiceSession.isMicMuted}
+                messageCount={shell.chatMessages.length}
+                sessionId={shell.activeShellSessionId}
+                onStart={() => {
+                  void shell.start(shell.activeShellSessionId);
+                }}
+                onStop={() => {
+                  void shell.stop();
+                }}
+                onToggleMute={() => {
+                  void shell.toggleMute();
+                }}
+                onBroPressStart={(broId) => {
+                  shell.startTalkToBro(broId);
+                }}
+                onBroPressEnd={() => shell.endTalkToBro()}
               />
             </div>
-
-            {/* Pinned input */}
-            {sendError && (
-              <div className="mt-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-[12px] text-red-600">
-                {sendError}
-              </div>
-            )}
-            <form onSubmit={handleSend} className="mt-3 flex shrink-0 gap-2">
-              <input
-                type="text"
-                value={composer}
-                onChange={(e) => setComposer(e.target.value)}
-                placeholder="Type a message…"
-                className="min-w-0 flex-1 rounded-2xl border border-neutral-200 bg-white px-4 py-2.5 text-[14px] text-neutral-900 placeholder-neutral-400 outline-none transition focus:border-neutral-400 focus:ring-1 focus:ring-neutral-300"
-              />
-              <button
-                type="submit"
-                disabled={!composer.trim()}
-                className="shrink-0 rounded-2xl border border-neutral-900 bg-neutral-950 px-4 py-2.5 text-[13px] font-medium text-white transition hover:bg-neutral-800 disabled:opacity-30"
-              >
-                Send
-              </button>
-            </form>
-          </section>
-
-          <section className="flex min-h-0 items-start justify-stretch overflow-y-auto lg:pt-4">
-            <BrosPanel
-              bros={shell.bros}
-              activeBroId={shell.activeBroId}
-              isTalking={shell.isTalking}
-              voiceConnected={shell.voiceConnected}
-              onBroPressStart={(broId) => {
-                shell.startTalkToBro(broId);
-              }}
-              onBroPressEnd={() => shell.endTalkToBro()}
-            />
           </section>
         </div>
       ) : shell.shellError ? (

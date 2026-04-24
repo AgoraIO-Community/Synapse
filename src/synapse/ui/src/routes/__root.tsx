@@ -24,7 +24,7 @@ const externalFontLinks: Array<
         {
           rel: "stylesheet",
           href:
-            "https://fonts.googleapis.com/css2?family=Noto+Sans:wght@400;600;700&family=Noto+Sans+SC:wght@400;700&display=swap",
+            "https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&family=Noto+Sans:wght@400;600;700&family=Noto+Sans+SC:wght@400;700&display=swap",
         },
       ];
 
@@ -37,11 +37,11 @@ export const Route = createRootRoute({
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Newbro Voice Command Center" },
+      { title: "Newbro Voice Writing Desk" },
       {
         name: "description",
         content:
-          "Sample-style Newbro voice command center shell for the Synapse frontend.",
+          "A calm voice-first writing desk for the Synapse frontend shell.",
       },
     ],
     links: externalFontLinks,

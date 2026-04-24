@@ -2,14 +2,19 @@ import type { BroCardModel } from "./types";
 
 export function BroPortrait({
   bro,
+  active = false,
   talking,
 }: {
   bro: BroCardModel;
+  active?: boolean;
   talking: boolean;
 }) {
-  const stroke = talking ? "white" : "#171717";
-  const muted = talking ? "rgba(255,255,255,0.7)" : "#737373";
-  const panelBg = talking ? "bg-white/5 border-white/10" : "bg-[#f7f5f0] border-neutral-200";
+  const accent = active || talking;
+  const stroke = accent ? "#2f6cf3" : "#23262d";
+  const muted = accent ? "rgba(47,108,243,0.55)" : "#8d96a5";
+  const panelBg = accent
+    ? "bg-[rgba(237,244,255,0.95)] border-[rgba(47,108,243,0.14)]"
+    : "bg-white/72 border-white/80";
 
   return (
     <div
@@ -114,14 +119,14 @@ export function BroPortrait({
           width="24"
           height="3"
           rx="1.5"
-          fill={talking ? "rgba(255,255,255,0.35)" : "#d4d4d4"}
+          fill={accent ? "rgba(47,108,243,0.38)" : "#d4d4d4"}
         />
       </svg>
 
       <div
         className={`absolute right-2 top-2 h-2.5 w-2.5 rounded-full ring-2 ${
-          talking ? "ring-neutral-900 bg-white" : "ring-white"
-        } ${bro.status === "busy" ? "bg-emerald-500" : "bg-neutral-300"}`}
+          accent ? "ring-[rgba(255,255,255,0.92)]" : "ring-white"
+        } ${bro.status === "busy" ? "bg-primary" : "bg-neutral-300"}`}
       />
     </div>
   );

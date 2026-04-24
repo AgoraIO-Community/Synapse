@@ -305,7 +305,6 @@ describe("Newbro voice shell", () => {
     fireEvent.click(screen.getByTestId("voice-session-start"));
 
     await waitFor(() => expect(connectorMock.activateConnectorSession).toHaveBeenCalledTimes(1));
-    expect(await screen.findByText("Starting voice session")).toBeInTheDocument();
     expect(screen.getByText("Hello from Synapse.")).toBeInTheDocument();
     expect(screen.getByText("Please summarize the plan.")).toBeInTheDocument();
     expect(
@@ -374,7 +373,7 @@ describe("Newbro voice shell", () => {
     );
     await waitFor(() => expect(connectorMock.activateConnectorSession).toHaveBeenCalledTimes(1));
     expect(clientMock.getSessionSnapshot).not.toHaveBeenCalledWith("voice-session-1");
-    expect(await screen.findByText("Voice session live")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByTestId("voice-session-stop")).toBeInTheDocument());
     expect(screen.getByText("Transcript will appear here.")).toBeInTheDocument();
 
     await act(async () => {
@@ -385,14 +384,6 @@ describe("Newbro voice shell", () => {
     });
     expect(screen.queryByText("Hello. How can I help you today?")).not.toBeInTheDocument();
     expect(screen.getByText("Transcript will appear here.")).toBeInTheDocument();
-
-    fireEvent.change(screen.getByPlaceholderText("Type a message…"), {
-      target: { value: "Please create a follow-up task." },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Send" }));
-
-    expect(clientMock.sendSocketMessage).toHaveBeenCalledTimes(1);
-    expect(screen.queryByText("Please create a follow-up task.")).not.toBeInTheDocument();
 
     await act(async () => {
       socketHarness.emitMessage({
@@ -435,7 +426,6 @@ describe("Newbro voice shell", () => {
     fireEvent.click(screen.getByTestId("voice-session-start"));
 
     await waitFor(() => expect(connectorMock.activateConnectorSession).toHaveBeenCalledTimes(1));
-    expect(await screen.findByText("Starting voice session")).toBeInTheDocument();
     expect(screen.getByText("Transcript will appear here.")).toBeInTheDocument();
     expect(
       screen.queryByText("Preparing voice session and waiting for Synapse conversation updates."),
@@ -467,11 +457,6 @@ describe("Newbro voice shell", () => {
     await screen.findByText("Session session-1");
     fireEvent.click(await screen.findByTestId("voice-session-start"));
     await waitFor(() => expect(connectorMock.activateConnectorSession).toHaveBeenCalledTimes(1));
-
-    fireEvent.change(screen.getByPlaceholderText("Type a message…"), {
-      target: { value: "Please create a follow-up task." },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Send" }));
 
     await act(async () => {
       socketHarness.emitMessage({
@@ -517,10 +502,12 @@ describe("Newbro voice shell", () => {
 
     fireEvent.click(screen.getByTestId("voice-session-mic-toggle"));
     await waitFor(() => expect(voiceHarness.micTrack.setEnabled).toHaveBeenCalledWith(false));
-    expect(await screen.findByText("Interaction memory is live. The microphone is currently muted.")).toBeInTheDocument();
+    expect(screen.getByTestId("voice-session-mic-toggle")).toHaveTextContent("Unmute");
 
+    await act(async () => {});
     fireEvent.click(screen.getByTestId("voice-session-mic-toggle"));
     await waitFor(() => expect(voiceHarness.micTrack.setEnabled).toHaveBeenCalledWith(true));
+    await waitFor(() => expect(screen.getByTestId("voice-session-mic-toggle")).toHaveTextContent("Mute"));
   });
 
   it("surfaces startup errors without breaking the shell", async () => {
@@ -634,7 +621,6 @@ describe("Newbro voice shell", () => {
     await waitFor(() => expect(screen.getByTestId("bro-card-forge")).toHaveAttribute("aria-pressed", "true"));
     const pressedForgeCard = within(screen.getByTestId("bro-card-forge"));
 
-    expect(screen.getByTestId("bro-card-forge").className).toContain("bg-neutral-950");
     expect(pressedForgeCard.getByText("preview")).toBeInTheDocument();
     expect(pressedForgeCard.getByTestId("talking-bars")).toBeInTheDocument();
     expect(pressedForgeCard.getByText("Current task")).toBeInTheDocument();
@@ -646,9 +632,9 @@ describe("Newbro voice shell", () => {
     expect(pressedForgeCard.queryByText("mic on")).not.toBeInTheDocument();
 
     fireEvent.pointerUp(screen.getByTestId("bro-card-forge"));
+    await waitFor(() => expect(screen.getByTestId("bro-card-forge")).toHaveAttribute("aria-pressed", "false"));
 
     const releasedForgeCard = within(screen.getByTestId("bro-card-forge"));
-    expect(screen.getByTestId("bro-card-forge").className).not.toContain("bg-neutral-950");
     expect(releasedForgeCard.queryByText("preview")).not.toBeInTheDocument();
     expect(releasedForgeCard.queryByTestId("talking-bars")).not.toBeInTheDocument();
     expect(releasedForgeCard.getByText("busy")).toBeInTheDocument();
@@ -673,7 +659,6 @@ describe("Newbro voice shell", () => {
     await waitFor(() => expect(screen.getByTestId("bro-card-scout")).toHaveAttribute("aria-pressed", "true"));
     const pressedScoutCard = within(screen.getByTestId("bro-card-scout"));
 
-    expect(screen.getByTestId("bro-card-scout").className).toContain("bg-neutral-950");
     expect(pressedScoutCard.getByText("preview")).toBeInTheDocument();
     expect(pressedScoutCard.getByTestId("talking-bars")).toBeInTheDocument();
     expect(pressedScoutCard.getByText("Current state")).toBeInTheDocument();
@@ -684,9 +669,9 @@ describe("Newbro voice shell", () => {
     expect(pressedScoutCard.queryByText("Talking to Scout")).not.toBeInTheDocument();
 
     fireEvent.pointerUp(screen.getByTestId("bro-card-scout"));
+    await waitFor(() => expect(screen.getByTestId("bro-card-scout")).toHaveAttribute("aria-pressed", "false"));
 
     const releasedScoutCard = within(screen.getByTestId("bro-card-scout"));
-    expect(screen.getByTestId("bro-card-scout").className).not.toContain("bg-neutral-950");
     expect(releasedScoutCard.queryByText("preview")).not.toBeInTheDocument();
     expect(releasedScoutCard.queryByTestId("talking-bars")).not.toBeInTheDocument();
     expect(releasedScoutCard.getByText("idle")).toBeInTheDocument();
@@ -701,13 +686,13 @@ describe("Newbro voice shell", () => {
     await screen.findByText("Session session-1");
     fireEvent.click(await screen.findByTestId("voice-session-start"));
     await waitFor(() => expect(connectorMock.activateConnectorSession).toHaveBeenCalledTimes(1));
-    expect(await screen.findByText("Voice session live")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByTestId("voice-session-stop")).toBeInTheDocument());
 
     const forgeCard = await screen.findByTestId("bro-card-forge");
     fireEvent.pointerDown(forgeCard);
 
     const pressedForgeCard = within(screen.getByTestId("bro-card-forge"));
-    expect(screen.getByTestId("bro-card-forge").className).toContain("bg-neutral-950");
+    expect(screen.getByTestId("bro-card-forge")).toHaveAttribute("aria-pressed", "true");
     expect(pressedForgeCard.getByText("mic on")).toBeInTheDocument();
     expect(pressedForgeCard.queryByText("preview")).not.toBeInTheDocument();
     expect(pressedForgeCard.getByTestId("talking-bars")).toBeInTheDocument();
@@ -717,6 +702,7 @@ describe("Newbro voice shell", () => {
     expect(pressedForgeCard.queryByText("Talking to Forge")).not.toBeInTheDocument();
 
     fireEvent.pointerUp(screen.getByTestId("bro-card-forge"));
+    await waitFor(() => expect(screen.getByTestId("bro-card-forge")).toHaveAttribute("aria-pressed", "false"));
 
     const releasedForgeCard = within(screen.getByTestId("bro-card-forge"));
     expect(releasedForgeCard.queryByText("mic on")).not.toBeInTheDocument();

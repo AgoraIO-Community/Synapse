@@ -16,15 +16,12 @@ function liveStateLabel(bro: BroCardModel) {
 
 function liveStateClasses(bro: BroCardModel, talking: boolean) {
   if (talking) {
-    return "border border-white/15 bg-white/10 text-white";
+    return "border border-primary/15 bg-primary/10 text-primary";
   }
   if (bro.liveState === "live") {
-    return "border border-emerald-200 bg-emerald-50 text-emerald-700";
+    return "border border-primary/12 bg-primary/10 text-primary";
   }
-  if (bro.liveState === "offline") {
-    return "border border-amber-200 bg-amber-50 text-amber-700";
-  }
-  return "border border-neutral-200 bg-[#f6f5f2] text-neutral-600";
+  return "border border-border/70 bg-[hsl(var(--paper))] text-muted-foreground";
 }
 
 export function BroCard({
@@ -43,57 +40,58 @@ export function BroCard({
   onPressEnd: () => void;
 }) {
   const isBusy = bro.status === "busy";
+  const showActivity = active || talking;
 
   return (
     <motion.button
       data-testid={`bro-card-${bro.id}`}
       type="button"
       aria-pressed={active}
-      whileTap={{ scale: 0.992 }}
+      whileTap={{ scale: 0.997 }}
       onPointerDown={() => onPressStart(bro.id)}
       onPointerUp={onPressEnd}
       onPointerLeave={onPressEnd}
       onPointerCancel={onPressEnd}
-      className={`min-h-[256px] w-full rounded-[24px] border px-5 py-4.5 text-left transition ${
+      className={`min-h-[250px] w-full rounded-[28px] border px-5 py-5 text-left transition duration-300 backdrop-blur-xl ${
         talking
-          ? "border-neutral-900 bg-neutral-950 text-white"
+          ? "border-primary/15 bg-[linear-gradient(180deg,rgba(237,244,255,0.97),rgba(255,255,255,0.92))] text-foreground shadow-[0_28px_64px_-46px_rgba(47,108,243,0.34)]"
           : active
-            ? "border-neutral-300 bg-white text-neutral-950 shadow-[0_12px_24px_rgba(23,23,23,0.05)]"
-          : "border-neutral-200 bg-white text-neutral-900 hover:border-neutral-300 hover:bg-[#fffdfa]"
+            ? "border-primary/15 bg-white/88 text-foreground shadow-[0_24px_58px_-44px_rgba(47,108,243,0.28)] ring-1 ring-primary/8"
+            : "border-white/80 bg-white/62 text-foreground shadow-[0_18px_46px_-42px_rgba(15,23,42,0.18)] hover:border-white hover:bg-white/82"
       }`}
     >
       <div className="flex items-start gap-4">
-        <BroPortrait bro={bro} talking={talking} />
+        <BroPortrait bro={bro} active={showActivity} talking={talking} />
 
         <div className="min-w-0 flex-1">
           <div className="flex items-center justify-between gap-3">
             <div>
               <div className="flex items-center gap-2">
-                <div className="text-[15px] font-medium tracking-[-0.02em]">{bro.name}</div>
+                <div className="serif-flow text-[22px] leading-none tracking-[-0.04em]">{bro.name}</div>
                 <div
-                  className={`rounded-full px-2 py-0.5 text-[10px] uppercase tracking-[0.16em] ${
-                    talking
-                      ? "border border-white/15 bg-white/10 text-white"
+                  className={`rounded-full px-2.5 py-1 text-[10px] uppercase tracking-[0.18em] ${
+                    showActivity
+                      ? "border border-primary/15 bg-primary/10 text-primary"
                       : isBusy
-                        ? "border border-emerald-200 bg-emerald-50 text-emerald-700"
-                        : "border border-neutral-200 bg-[#f6f5f2] text-neutral-600"
+                        ? "border border-primary/12 bg-primary/10 text-primary"
+                        : "border border-border/70 bg-[hsl(var(--paper))] text-muted-foreground"
                   }`}
                 >
-                  {talking ? (voiceConnected ? "mic on" : "preview") : bro.status}
+                  {showActivity ? (voiceConnected && talking ? "mic on" : "preview") : bro.status}
                 </div>
                 <div
-                  className={`rounded-full px-2 py-0.5 text-[10px] uppercase tracking-[0.16em] ${liveStateClasses(bro, talking)}`}
+                  className={`rounded-full px-2.5 py-1 text-[10px] uppercase tracking-[0.18em] ${liveStateClasses(bro, talking)}`}
                 >
                   {liveStateLabel(bro)}
                 </div>
               </div>
-              <div className={`mt-1 text-[12px] ${talking ? "text-neutral-300" : "text-neutral-500"}`}>
+              <div className="mt-2 text-[12px] text-muted-foreground">
                 {bro.nodeName ? `${bro.role} · ${bro.nodeName}` : `${bro.role} · needs binding`}
               </div>
             </div>
 
-            {talking ? (
-              <div className="flex items-center gap-2 text-white">
+            {showActivity ? (
+              <div className="flex items-center gap-2 text-primary">
                 <TalkingBars active />
               </div>
             ) : null}
