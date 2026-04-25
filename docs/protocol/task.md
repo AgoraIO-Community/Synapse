@@ -28,8 +28,18 @@ Ownership:
 `newbro v0` draft-created tasks are immutable execution contracts after Send.
 They store their draft source and frozen contract fields in `metadata`, including
 `immutable`, `source_kind`, `draft_session_id`, `draft_snapshot_id`,
-`asr_turn_ids`, `constraints`, `acceptance_criteria`, `assumptions`,
-`missing_info`, and `canonical_instruction`.
+`asr_turn_ids`, and `draft_text`.
+
+When a draft is sent to a configured runtime Bro, the task also records
+`persona_id`, `persona_name`, `bro_detail_session_id`, and, when present,
+`executor_node_id`. The assigned Bro is marked busy through
+`Persona.current_task_id`; execution still routes through the task's executor
+type.
+
+`bro_detail_session_id` identifies the Bro detail generation that created the
+task. Tasks from the same generation use the same `session_affinity` and may
+reuse one executor session. Rebinding the Bro to a different executor node
+rotates this id for future tasks without deleting existing task history.
 
 Relationship note:
 

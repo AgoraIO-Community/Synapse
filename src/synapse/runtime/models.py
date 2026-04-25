@@ -106,6 +106,30 @@ class AssistantResponseFailedStreamEvent(SessionStreamEventBase):
     message: str
 
 
+class DraftOutputStartedStreamEvent(SessionStreamEventBase):
+    type: Literal["draft_output_started"] = "draft_output_started"
+    request_id: str
+
+
+class DraftOutputDeltaStreamEvent(SessionStreamEventBase):
+    type: Literal["draft_output_delta"] = "draft_output_delta"
+    request_id: str
+    delta: str
+
+
+class DraftOutputCompletedStreamEvent(SessionStreamEventBase):
+    type: Literal["draft_output_completed"] = "draft_output_completed"
+    request_id: str
+    draft_session_id: str
+    draft_text: str
+
+
+class DraftOutputFailedStreamEvent(SessionStreamEventBase):
+    type: Literal["draft_output_failed"] = "draft_output_failed"
+    request_id: str
+    message: str
+
+
 class ConversationAppendedStreamEvent(SessionStreamEventBase):
     type: Literal["conversation_appended"] = "conversation_appended"
     message_id: str

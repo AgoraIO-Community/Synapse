@@ -535,8 +535,30 @@ def frontend_build_command() -> list[str]:
 def frontend_dev_command(host: str, port: int) -> list[str]:
     frontend_tool = preferred_frontend_tool()
     if frontend_tool == "bun":
-        return ["bun", "run", "dev", "--", "--host", host, "--port", str(port)]
-    return ["npm", "run", "dev", "--", "--host", host, "--port", str(port)]
+        return [
+            "bun",
+            "run",
+            "dev",
+            "--",
+            "--host",
+            host,
+            "--port",
+            str(port),
+            "--config",
+            "vite.config.ts",
+        ]
+    return [
+        "npm",
+        "run",
+        "dev",
+        "--",
+        "--host",
+        host,
+        "--port",
+        str(port),
+        "--config",
+        "vite.config.ts",
+    ]
 
 
 def preferred_frontend_tool() -> str:

@@ -12,7 +12,7 @@ DEFAULT_AGENT_INSTRUCTIONS = "You are a helpful voice assistant."
 DEFAULT_AGENT_GREETING = "Hello. How can I help you today?"
 DEFAULT_PROFILE = "VOICE"
 DEFAULT_DISPLAY_NAME = "Synapse Tester"
-DEFAULT_STT_LANGUAGES = ("zh-CN", "en-US")
+DEFAULT_STT_LANGUAGES = ("zh-CN",)
 
 
 @dataclass(slots=True)

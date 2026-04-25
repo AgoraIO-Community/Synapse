@@ -85,6 +85,8 @@ async def update_persona(
         if body.executor_node_id is not None and not await container.executor_node_manager.node_exists(body.executor_node_id):
             raise HTTPException(status_code=400, detail=f"Executor node '{body.executor_node_id}' not found.")
         updates["executor_node_id"] = body.executor_node_id
+        if body.executor_node_id != persona.executor_node_id:
+            updates["bro_detail_session_id"] = _generated_bro_detail_session_id()
     updated = persona.model_copy(update=updates) if updates else persona
     if updates:
         updated_personas = [
@@ -122,3 +124,7 @@ async def delete_persona(
 def _generated_persona_id(name: str) -> str:
     slug = "-".join(name.strip().lower().split())
     return f"persona-{slug or 'bro'}-{uuid4().hex[:8]}"
+
+
+def _generated_bro_detail_session_id() -> str:
+    return f"bro-detail-{uuid4().hex[:8]}"

@@ -10,6 +10,7 @@ from uuid import uuid4
 from synapse.blackboard import InMemoryBlackboard
 from synapse.communication import CommunicationBrain
 from synapse.communication.persona_pool import (
+    create_workspace,
     load_communication_persona_prompt_from_file,
     load_personas_from_file,
 )
@@ -52,7 +53,7 @@ from synapse.protocol import (
 )
 
 from .config import Settings
-from .drafts import DEFAULT_BRO_ID, DraftSessionManager
+from .drafts import DEFAULT_BRO_ID, DraftRewriter, DraftSessionManager
 from .executor_node_manager import ExecutorNodeManager
 from .models import (
     ActionAcceptedStreamEvent,
@@ -76,6 +77,13 @@ LOGGER = logging.getLogger(__name__)
 MAX_TASK_INSTRUCTION_CHARS = 4000
 
 
+def _title_from_draft_text(text: str) -> str:
+    title = " ".join(text.strip().split()).rstrip(".。")
+    if len(title) > 72:
+        title = title[:69].rstrip() + "..."
+    return title or "Draft task"
+
+
 @dataclass(slots=True)
 class PendingMessageRequest:
     request_id: str
@@ -96,6 +104,7 @@ class SessionRuntime:
     interaction_manager: InteractionManager
     observability: SessionObservability
     executor_node_manager: ExecutorNodeManager
+    default_executor_type: str = "mock"
     draft_manager: DraftSessionManager = field(default_factory=DraftSessionManager)
     subscribers: list[asyncio.Queue[SessionStreamEventBase]] = field(default_factory=list)
     _message_queue: asyncio.Queue[PendingMessageRequest] = field(default_factory=asyncio.Queue)
@@ -309,6 +318,7 @@ class SessionRuntime:
         started_at: str | None = None,
         ended_at: str | None = None,
         assigned_bro_id: str | None = None,
+        on_text_delta=None,
     ):
         return await self.draft_manager.append_asr_turn(
             raw_text=raw_text,
@@ -317,46 +327,72 @@ class SessionRuntime:
             started_at=started_at,
             ended_at=ended_at,
             assigned_bro_id=assigned_bro_id,
+            on_text_delta=on_text_delta,
         )
 
     def clear_draft(self):
         return self.draft_manager.clear()
 
     async def send_draft(self, *, draft_session_id: str | None = None) -> Task:
-        draft_session = self.draft_manager.mark_sent(draft_session_id)
+        draft_session = self.draft_manager.active_session
+        if draft_session is None or draft_session.current_draft is None or not draft_session.snapshots:
+            raise ValueError("No draft is ready to send.")
+        if draft_session_id is not None and draft_session.id != draft_session_id:
+            raise ValueError("Draft session does not match the active draft.")
+
         draft = draft_session.current_draft
         snapshot = draft_session.snapshots[-1]
-        if draft is None:
-            raise ValueError("No draft is ready to send.")
         task_id = f"task-{uuid4().hex[:8]}"
-        preferred_executor = draft_session.assigned_bro_id or DEFAULT_BRO_ID
+        assigned_bro_id = draft_session.assigned_bro_id
+        personas = await self.blackboard.list_personas()
+        persona = await self.blackboard.get_persona(assigned_bro_id) if assigned_bro_id else None
+        if persona is None and personas and assigned_bro_id and assigned_bro_id != DEFAULT_BRO_ID:
+            raise ValueError(f"Bro '{assigned_bro_id}' is not available.")
+        if persona is not None and (persona.status == "busy" or persona.current_task_id is not None):
+            raise ValueError(f"{persona.name} is busy with another task right now.")
+
         available_executor_types = set(self.registry.list_executor_types())
+        preferred_executor = self.default_executor_type
         if preferred_executor not in available_executor_types:
             preferred_executor = "mock" if "mock" in available_executor_types else None
+        session_affinity = (
+            f"ws-{persona.bro_detail_session_id}"
+            if persona is not None
+            else create_workspace(task_id)
+        )
         metadata = {
             "immutable": True,
             "source_kind": "draft_session",
             "draft_session_id": draft_session.id,
             "draft_snapshot_id": snapshot.id,
             "asr_turn_ids": [turn.id for turn in draft_session.asr_turns],
-            "assigned_bro_id": draft_session.assigned_bro_id,
-            "constraints": list(draft.constraints),
-            "acceptance_criteria": list(draft.acceptance_criteria),
-            "assumptions": list(draft.assumptions),
-            "missing_info": list(draft.missing_info),
-            "canonical_instruction": draft.canonical_instruction,
+            "assigned_bro_id": assigned_bro_id,
+            "draft_text": draft.text,
             "mock_safe": preferred_executor == "mock",
         }
+        if persona is not None:
+            metadata["persona_id"] = persona.persona_id
+            metadata["persona_name"] = persona.name
+            metadata["persona_avatar"] = persona.avatar
+            metadata["bro_detail_session_id"] = persona.bro_detail_session_id
+            if persona.executor_node_id:
+                metadata["executor_node_id"] = persona.executor_node_id
         task = Task(
             task_id=task_id,
             root_task_id=task_id,
-            title=draft.title,
-            goal=draft.goal,
+            title=_title_from_draft_text(draft.text),
+            goal=draft.text,
             status=TaskStatus.QUEUED,
             preferred_executor=preferred_executor,
-            latest_instruction=draft.canonical_instruction,
+            session_affinity=session_affinity,
+            latest_instruction=draft.text,
             metadata=metadata,
         )
+        if persona is not None:
+            await self.blackboard.put_persona(
+                persona.model_copy(update={"status": "busy", "current_task_id": task_id})
+            )
+        self.draft_manager.mark_sent(draft_session_id)
         await self.blackboard.put_task(task)
         await self.blackboard.put_execution_mode(
             TaskExecutionMode(task_id=task_id, mode=ExecutionMode.UNDECIDED)
@@ -370,6 +406,8 @@ class SessionRuntime:
                     "title": task.title,
                     "goal": task.goal,
                     "preferred_executor": preferred_executor,
+                    "persona_id": persona.persona_id if persona else None,
+                    "persona_name": persona.name if persona else None,
                     "source_kind": "draft_session",
                     "draft_session_id": draft_session.id,
                     "draft_snapshot_id": snapshot.id,
@@ -1180,6 +1218,7 @@ def create_session_runtime(
     model: CommunicationModel,
     settings: Settings,
     executor_node_manager: ExecutorNodeManager | None = None,
+    draft_rewriter: DraftRewriter | None = None,
 ) -> SessionRuntime:
     executor_node_manager = executor_node_manager or ExecutorNodeManager(
         detached_executor_types=settings.detached_executor_types,
@@ -1277,6 +1316,12 @@ def create_session_runtime(
         interaction_manager=interaction_manager,
         observability=observability,
         executor_node_manager=executor_node_manager,
+        default_executor_type=default_executor_type,
+        draft_manager=(
+            DraftSessionManager(rewriter=draft_rewriter)
+            if draft_rewriter is not None
+            else DraftSessionManager()
+        ),
     )
     control_task_handler = tool_registry.get("control_task").handler
     if hasattr(control_task_handler, "set_apply_callback"):

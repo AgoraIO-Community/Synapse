@@ -46,6 +46,9 @@ Detached-executor additions:
 
 - `ExecutionSession.executor_node_id`
   - identifies which detached executor node currently owns the live real-executor lineage
+- `ExecutionSession.continuity_key`
+  - optionally groups multiple tasks into one reusable executor-side lineage when
+    they belong to the same Bro detail generation
 - `SessionBinding.executor_node_id`
   - records which node the current binding is associated with
 - `TaskStatus = waiting_executor`
@@ -59,3 +62,12 @@ Workspace rule:
 - `session_affinity` is an opaque workspace id, not a control-plane filesystem
   path
 - the detached executor node maps that id to a node-local working directory
+
+Bro detail continuity:
+
+- draft-created tasks assigned to the same Bro detail generation reuse the same
+  executor session when executor family and `executor_node_id` also match
+- rebinding a Bro to a different executor node rotates the Bro detail generation,
+  so future tasks create a new execution session
+- old tasks remain durable history; clients filter recent Bro detail tasks by
+  the current generation id

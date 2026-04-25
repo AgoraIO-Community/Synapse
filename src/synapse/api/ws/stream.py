@@ -15,6 +15,17 @@ from synapse.api.models import (
 from synapse.communication.resolver import TaskResolver, describe_candidates
 from synapse.observability.context import bind_diagnostic_context
 from synapse.protocol import TaskCommand
+from synapse.runtime.models import (
+    DraftOutputCompletedStreamEvent,
+    DraftOutputDeltaStreamEvent,
+    DraftOutputFailedStreamEvent,
+    DraftOutputStartedStreamEvent,
+)
+from synapse.runtime.drafts import (
+    DraftRewriteInvalidOutput,
+    DraftRewriteUnavailable,
+    DraftRewriteUpstreamError,
+)
 
 router = APIRouter()
 
@@ -385,15 +396,35 @@ async def _handle_submit_asr_turn(session, queue: asyncio.Queue, payload: dict[s
         )
         return
     try:
-        await session.append_asr_turn_to_draft(
+        await session.publish_private_event(
+            queue,
+            DraftOutputStartedStreamEvent(
+                sequence=session._next_event_sequence(),
+                request_id=action.request_id,
+            ),
+        )
+
+        async def on_text_delta(delta: str) -> None:
+            await session.publish_private_event(
+                queue,
+                DraftOutputDeltaStreamEvent(
+                    sequence=session._next_event_sequence(),
+                    request_id=action.request_id,
+                    delta=delta,
+                ),
+            )
+
+        draft_session = await session.append_asr_turn_to_draft(
             raw_text=action.raw_text,
             normalized_text=action.normalized_text,
             confidence=action.confidence,
             started_at=action.started_at,
             ended_at=action.ended_at,
             assigned_bro_id=action.assigned_bro_id,
+            on_text_delta=on_text_delta,
         )
     except ValueError as exc:
+        await _publish_draft_output_failed(session, queue, action.request_id, str(exc))
         await session.publish_private_event(
             queue,
             session.action_rejected_event(
@@ -404,11 +435,73 @@ async def _handle_submit_asr_turn(session, queue: asyncio.Queue, payload: dict[s
             ),
         )
         return
+    except DraftRewriteUnavailable as exc:
+        await _publish_draft_output_failed(session, queue, action.request_id, str(exc))
+        await session.publish_private_event(
+            queue,
+            session.action_rejected_event(
+                action.request_id,
+                action_type=action.type,
+                error_code="draft_rewriter_unavailable",
+                message=str(exc),
+            ),
+        )
+        return
+    except DraftRewriteUpstreamError as exc:
+        await _publish_draft_output_failed(session, queue, action.request_id, str(exc))
+        await session.publish_private_event(
+            queue,
+            session.action_rejected_event(
+                action.request_id,
+                action_type=action.type,
+                error_code="draft_rewriter_upstream_error",
+                message=str(exc),
+            ),
+        )
+        return
+    except DraftRewriteInvalidOutput as exc:
+        await _publish_draft_output_failed(session, queue, action.request_id, str(exc))
+        await session.publish_private_event(
+            queue,
+            session.action_rejected_event(
+                action.request_id,
+                action_type=action.type,
+                error_code="draft_rewriter_invalid_output",
+                message=str(exc),
+            ),
+        )
+        return
+    draft_text = draft_session.current_draft.text if draft_session.current_draft else ""
+    await session.publish_private_event(
+        queue,
+        DraftOutputCompletedStreamEvent(
+            sequence=session._next_event_sequence(),
+            request_id=action.request_id,
+            draft_session_id=draft_session.id,
+            draft_text=draft_text,
+        ),
+    )
     await session.publish_private_event(
         queue,
         session.action_accepted_event(action.request_id, action_type=action.type),
     )
     await session.publish_snapshot()
+
+
+async def _publish_draft_output_failed(
+    session,
+    queue: asyncio.Queue,
+    request_id: str,
+    message: str,
+) -> None:
+    await session.publish_private_event(
+        queue,
+        DraftOutputFailedStreamEvent(
+            sequence=session._next_event_sequence(),
+            request_id=request_id,
+            message=message,
+        ),
+    )
 
 
 async def _handle_send_draft(session, queue: asyncio.Queue, payload: dict[str, object]) -> None:
@@ -442,8 +535,8 @@ async def _handle_send_draft(session, queue: asyncio.Queue, payload: dict[str, o
         queue,
         session.action_accepted_event(action.request_id, action_type=action.type),
     )
-    session.schedule_execution()
     await session.publish_snapshot()
+    session.schedule_execution()
 
 
 async def _handle_clear_draft(session, queue: asyncio.Queue, payload: dict[str, object]) -> None:

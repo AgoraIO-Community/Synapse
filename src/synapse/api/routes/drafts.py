@@ -4,6 +4,11 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from synapse.protocol import DraftSession
+from synapse.runtime.drafts import (
+    DraftRewriteInvalidOutput,
+    DraftRewriteUnavailable,
+    DraftRewriteUpstreamError,
+)
 
 router = APIRouter()
 
@@ -59,6 +64,12 @@ async def submit_asr_turn(
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except DraftRewriteUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except DraftRewriteUpstreamError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except DraftRewriteInvalidOutput as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
     await session.publish_snapshot()
     return draft_session
 
@@ -74,8 +85,8 @@ async def send_draft(
         task = await session.send_draft(draft_session_id=request.draft_session_id)
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    session.schedule_execution()
     await session.publish_snapshot()
+    session.schedule_execution()
     return SendDraftResponse(
         task_id=task.task_id,
         draft_session_id=str(task.metadata["draft_session_id"]),

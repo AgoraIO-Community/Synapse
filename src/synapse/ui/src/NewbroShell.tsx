@@ -9,7 +9,14 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { createSession, getConversationSnapshot, getSessionSnapshot, openSessionStream, sendSocketMessage } from "./lib/session-client";
+import {
+  createSession,
+  getConversationSnapshot,
+  getSessionSnapshot,
+  openSessionStream,
+  sendSocketDraftAsrTurn,
+  sendSocketMessage,
+} from "./lib/session-client";
 import { readSessionIdFromUrl, replaceSessionIdInUrl } from "./lib/session-url";
 import { BroDetailPage } from "./components/newbro/BroDetailPage";
 import { BrosPage } from "./components/newbro/BrosPage";
@@ -17,12 +24,30 @@ import { BrosPanel } from "./components/newbro/BrosPanel";
 import { ConversationMemory } from "./components/newbro/ConversationMemory";
 import { NodesPage } from "./components/newbro/NodesPage";
 import { Sidebar, type PageId } from "./components/newbro/Sidebar";
-import { buildBroCardModels } from "./components/newbro/adapters";
+import { buildBroCardModels, buildBroTaskRecords } from "./components/newbro/adapters";
 import { useVoiceSession } from "./components/newbro/useVoiceSession";
-import type { ExecutionRun, ExecutorNodeRecord, Persona, SessionSnapshot, TaskSummary } from "./types";
+import type {
+  DraftOutputCompletedStreamEvent,
+  DraftOutputDeltaStreamEvent,
+  DraftOutputFailedStreamEvent,
+  DraftOutputStartedStreamEvent,
+  DraftSession,
+  ExecutionRun,
+  ExecutorNodeRecord,
+  Persona,
+  SessionSnapshot,
+  Task,
+  TaskSummary,
+} from "./types";
 
 export type PageNavigator = (page: PageId) => void;
 export type BroNavigator = (broId: string) => void;
+
+type DraftOutputEvent =
+  | DraftOutputStartedStreamEvent
+  | DraftOutputDeltaStreamEvent
+  | DraftOutputCompletedStreamEvent
+  | DraftOutputFailedStreamEvent;
 
 const SHELL_API_ERROR_TITLE = "Unable to reach the Synapse API";
 const SHELL_API_ERROR_HINT =
@@ -126,6 +151,7 @@ function globalMessageFor(shell: Pick<NewbroShellState, "shellError" | "shellWar
 function useNewbroShellState() {
   const [runtimePersonas, setRuntimePersonas] = useState<Persona[]>([]);
   const [executorNodes, setExecutorNodes] = useState<ExecutorNodeRecord[]>([]);
+  const [tasks, setTasks] = useState<Task[]>([]);
   const [executionRuns, setExecutionRuns] = useState<ExecutionRun[]>([]);
   const [taskSummaries, setTaskSummaries] = useState<TaskSummary[]>([]);
   const [communicationPersonaPrompt, setCommunicationPersonaPrompt] = useState("");
@@ -134,6 +160,8 @@ function useNewbroShellState() {
   const [shellError, setShellError] = useState<string | null>(null);
   const [shellWarning, setShellWarning] = useState<string | null>(null);
   const [chatMessages, setChatMessages] = useState<Array<{ role: "user" | "assistant"; text: string; id: string }>>([]);
+  const [draftSession, setDraftSession] = useState<DraftSession | null>(null);
+  const [latestDraftOutputEvent, setLatestDraftOutputEvent] = useState<DraftOutputEvent | null>(null);
   const mountedRef = useRef(false);
   const shellLoadSequenceRef = useRef(0);
   const socketRef = useRef<WebSocket | null>(null);
@@ -141,9 +169,11 @@ function useNewbroShellState() {
   function applySnapshot(snapshot: SessionSnapshot) {
     setRuntimePersonas(snapshot.personas);
     setExecutorNodes(snapshot.executor_nodes ?? []);
+    setTasks(snapshot.tasks ?? []);
     setExecutionRuns(snapshot.execution_runs ?? []);
     setTaskSummaries(snapshot.summaries ?? []);
     setCommunicationPersonaPrompt(snapshot.communication_persona_prompt ?? "");
+    setDraftSession(snapshot.draft_session ?? null);
     setHasLoadedShellSnapshot(true);
     setShellError(null);
   }
@@ -261,6 +291,15 @@ function useNewbroShellState() {
           startTransition(() => applySnapshot(event.snapshot));
           return;
         }
+        if (
+          event.type === "draft_output_started"
+          || event.type === "draft_output_delta"
+          || event.type === "draft_output_completed"
+          || event.type === "draft_output_failed"
+        ) {
+          startTransition(() => setLatestDraftOutputEvent(event));
+          return;
+        }
         if (event.type === "user_message_appended") {
           startTransition(() => {
             setChatMessages((prev) => {
@@ -314,8 +353,8 @@ function useNewbroShellState() {
   }, [activeShellSessionId]);
 
   const bros = useMemo(
-    () => buildBroCardModels(runtimePersonas, executorNodes, executionRuns, taskSummaries),
-    [executorNodes, executionRuns, runtimePersonas, taskSummaries],
+    () => buildBroCardModels(runtimePersonas, executorNodes, executionRuns, taskSummaries, tasks),
+    [executorNodes, executionRuns, runtimePersonas, taskSummaries, tasks],
   );
 
   const clearGlobalMessage = useEffectEvent(() => {
@@ -331,6 +370,19 @@ function useNewbroShellState() {
     return true;
   };
 
+  const submitDraftAsrTurn = (payload: {
+    raw_text: string;
+    normalized_text?: string;
+    confidence?: number;
+    assigned_bro_id?: string;
+  }): string | null => {
+    const socket = socketRef.current;
+    if (!socket || socket.readyState !== WebSocket.OPEN) return null;
+    const requestId = `draft-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    sendSocketDraftAsrTurn(socket, requestId, payload);
+    return requestId;
+  };
+
   return {
     bros,
     voiceSession,
@@ -338,6 +390,8 @@ function useNewbroShellState() {
     hasLoadedShellSnapshot,
     runtimePersonas,
     executorNodes,
+    tasks,
+    executionRuns,
     taskSummaries,
     shellError,
     shellWarning,
@@ -345,6 +399,9 @@ function useNewbroShellState() {
     clearGlobalMessage,
     communicationPersonaPrompt,
     sendMessage,
+    submitDraftAsrTurn,
+    draftSession,
+    latestDraftOutputEvent,
     chatMessages,
   };
 }
@@ -465,6 +522,18 @@ export function BroDetailShellPage({
   const activeSummary = bro?.source === "runtime"
     ? shell.taskSummaries.find((summary) => summary.task_id === shell.runtimePersonas.find((persona) => persona.persona_id === bro.id)?.current_task_id) ?? null
     : null;
+  const activePersona = bro?.source === "runtime"
+    ? shell.runtimePersonas.find((persona) => persona.persona_id === bro.id) ?? null
+    : null;
+  const taskRecords = bro?.source === "runtime"
+    ? buildBroTaskRecords(bro.id, {
+        activeTaskId: activePersona?.current_task_id ?? null,
+        broDetailSessionId: activePersona?.bro_detail_session_id ?? null,
+        tasks: shell.tasks,
+        executionRuns: shell.executionRuns,
+        summaries: shell.taskSummaries,
+      })
+    : [];
 
   return (
     <ShellFrame
@@ -479,6 +548,10 @@ export function BroDetailShellPage({
             bro={bro}
             sessionId={shell.activeShellSessionId}
             summary={activeSummary}
+            taskRecords={taskRecords}
+            snapshotDraftSession={shell.draftSession}
+            latestDraftOutputEvent={shell.latestDraftOutputEvent}
+            onSubmitDraftAsrTurn={shell.submitDraftAsrTurn}
             onBack={() => onNavigate("Home")}
             onGlobalError={shell.setShellError}
           />

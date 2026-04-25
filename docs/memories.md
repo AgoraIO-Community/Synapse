@@ -184,3 +184,9 @@ Short log of important design decisions and changes for Synapse.
 - Changed Bro Detail live ASR accumulation to merge Agora rolling-window candidates by suffix/prefix overlap, so shorter same-window regressions do not erase prior text and overlapping later windows only append new suffix text.
 - Changed Bro Detail live ASR accumulation to a strict time-structured model: `payload.time` identifies the sentence segment, `text_ts` orders text parts inside that segment, and untimed payloads are ignored.
 - Changed Bro Detail strict ASR accumulation so each `payload.time` sentence segment keeps only its latest `text_ts` candidate before sentence segments are joined by start time.
+- Aligned Bro Detail STT parsing with Shengwang's current protobuf transcript contract, using `original_transcript` for translated payloads, treating `isFinal` as stable text rather than voice-turn completion, accepting provisional untimed candidates with `textTs`, and defaulting STT recognition to `["zh-CN"]`.
+- Changed draft Send so runtime Bro assignment is tracked through persona metadata and `Persona.current_task_id`, while executor routing continues to use the runtime executor type.
+- Added per-Bro-detail generation ids so draft tasks from the same Bro and executor binding reuse one execution session, while rebinding the Bro rotates the generation and hides old-generation tasks from Bro Detail recent tasks.
+- Changed Draft Brain rewriting to use the LLM-backed Draft Cleaner prompt and fail when no LLM draft rewriter is configured, removing deterministic draft generation from the active runtime path.
+- Changed Draft Cleaner output to plain sendable task text, with websocket `submit_asr_turn` streaming transient `draft_output_*` events while durable snapshots keep the existing `DraftSession` shape.
+- Simplified the Draft protocol model to `text` and update summary; Send maps `Draft.text` into the immutable Task contract.

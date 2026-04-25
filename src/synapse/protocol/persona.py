@@ -6,7 +6,9 @@ Personas are created by the user before task execution and persist across sessio
 
 from __future__ import annotations
 
-from pydantic import BaseModel
+from uuid import uuid4
+
+from pydantic import BaseModel, Field
 
 
 class Persona(BaseModel):
@@ -15,5 +17,6 @@ class Persona(BaseModel):
     avatar: str = ""
     base_prompt: str = ""
     executor_node_id: str | None = None
+    bro_detail_session_id: str = Field(default_factory=lambda: f"bro-detail-{uuid4().hex[:8]}")
     status: str = "idle"  # "idle" | "busy"
     current_task_id: str | None = None

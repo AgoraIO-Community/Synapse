@@ -132,8 +132,8 @@ async def test_stt_start_uses_prepared_channel_and_agora_token_auth(monkeypatch)
     assert headers["Authorization"].startswith("agora token=007")
     assert "Basic" not in headers["Authorization"]
     assert payload["name"].startswith("nbstt-task-")
-    assert payload["languages"] == ["zh-CN", "en-US"]
-    assert response.languages == ["zh-CN", "en-US"]
+    assert payload["languages"] == ["zh-CN"]
+    assert response.languages == ["zh-CN"]
     assert response.subscribe_audio_uids == [str(prepared.uid)]
     assert len(payload["name"]) <= 64
     assert re.fullmatch(r"[A-Za-z0-9_-]+", payload["name"])

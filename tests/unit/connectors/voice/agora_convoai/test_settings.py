@@ -21,16 +21,16 @@ def _loaded_config(raw_connector: dict[str, object]) -> SimpleNamespace:
     )
 
 
-def test_default_stt_languages_are_chinese_and_english() -> None:
+def test_default_stt_languages_are_chinese() -> None:
     assert AgoraConvoAISttSettings().languages == DEFAULT_STT_LANGUAGES
-    assert DEFAULT_STT_LANGUAGES == ("zh-CN", "en-US")
+    assert DEFAULT_STT_LANGUAGES == ("zh-CN",)
 
 
 @pytest.mark.parametrize(
     ("raw_stt", "expected"),
     [
-        ({}, ("zh-CN", "en-US")),
-        ({"languages": []}, ("zh-CN", "en-US")),
+        ({}, ("zh-CN",)),
+        ({"languages": []}, ("zh-CN",)),
         ({"languages": "zh-CN, en-US"}, ("zh-CN", "en-US")),
         ({"languages": ["ja-JP", "en-US"]}, ("ja-JP", "en-US")),
     ],

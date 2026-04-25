@@ -246,6 +246,28 @@ export function sendSocketInteractionResolution(
   );
 }
 
+export function sendSocketDraftAsrTurn(
+  socket: WebSocket,
+  requestId: string,
+  payload: {
+    raw_text: string;
+    normalized_text?: string;
+    confidence?: number;
+    assigned_bro_id?: string;
+  },
+) {
+  socket.send(
+    JSON.stringify({
+      type: "submit_asr_turn",
+      request_id: requestId,
+      raw_text: payload.raw_text,
+      normalized_text: payload.normalized_text,
+      confidence: payload.confidence,
+      assigned_bro_id: payload.assigned_bro_id,
+    }),
+  );
+}
+
 export async function resolveInteractionRequest(
   sessionId: string,
   interactionRequestId: string,
@@ -452,6 +474,34 @@ export async function submitDraftAsrTurn(
   },
 ) {
   const response = await fetch(buildHttpUrl(`${API_PREFIX}/sessions/${sessionId}/draft/asr-turns`), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return (await ensureOk(response)).json();
+}
+
+export async function sendDraft(
+  sessionId: string,
+  payload: {
+    draft_session_id?: string;
+  } = {},
+) {
+  const response = await fetch(buildHttpUrl(`${API_PREFIX}/sessions/${sessionId}/draft/send`), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return (await ensureOk(response)).json();
+}
+
+export async function clearDraft(
+  sessionId: string,
+  payload: {
+    draft_session_id?: string;
+  } = {},
+) {
+  const response = await fetch(buildHttpUrl(`${API_PREFIX}/sessions/${sessionId}/draft/clear`), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),

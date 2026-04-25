@@ -8,7 +8,10 @@ export type ConnectionStatus =
 export type SessionActionType =
   | "send_message"
   | "send_command"
-  | "resolve_interaction_request";
+  | "resolve_interaction_request"
+  | "submit_asr_turn"
+  | "send_draft"
+  | "clear_draft";
 
 export type TaskStatus =
   | "created"
@@ -117,6 +120,7 @@ export interface ExecutionSession {
   task_id: string;
   base_executor_id: string;
   executor_node_id: string | null;
+  continuity_key: string | null;
   run_ids: string[];
   active_run_id: string | null;
   latest_run_id: string | null;
@@ -217,6 +221,22 @@ export interface AttentionItem {
   created_at: string;
 }
 
+export interface Draft {
+  text: string;
+  last_update_summary: string;
+}
+
+export interface DraftSession {
+  id: string;
+  assigned_bro_id: string;
+  status: "empty" | "drafting" | "ready" | "sent" | "cleared";
+  current_draft: Draft | null;
+  asr_turns: Array<Record<string, unknown>>;
+  snapshots: Array<Record<string, unknown>>;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface ExecutorCapability {
   executor_type: string;
   supports_pause: boolean;
@@ -265,6 +285,7 @@ export interface SessionSnapshot {
   executor_capabilities: ExecutorCapability[];
   executor_nodes: ExecutorNodeRecord[];
   communication_persona_prompt: string;
+  draft_session: DraftSession | null;
 }
 
 export interface Persona {
@@ -273,6 +294,7 @@ export interface Persona {
   avatar: string;
   base_prompt: string;
   executor_node_id: string | null;
+  bro_detail_session_id: string;
   status: "idle" | "busy";
   current_task_id: string | null;
 }
@@ -386,6 +408,30 @@ export interface AssistantResponseFailedStreamEvent extends StreamEventBase {
   message: string;
 }
 
+export interface DraftOutputStartedStreamEvent extends StreamEventBase {
+  type: "draft_output_started";
+  request_id: string;
+}
+
+export interface DraftOutputDeltaStreamEvent extends StreamEventBase {
+  type: "draft_output_delta";
+  request_id: string;
+  delta: string;
+}
+
+export interface DraftOutputCompletedStreamEvent extends StreamEventBase {
+  type: "draft_output_completed";
+  request_id: string;
+  draft_session_id: string;
+  draft_text: string;
+}
+
+export interface DraftOutputFailedStreamEvent extends StreamEventBase {
+  type: "draft_output_failed";
+  request_id: string;
+  message: string;
+}
+
 export interface ConversationAppendedStreamEvent extends StreamEventBase {
   type: "conversation_appended";
   message_id: string;
@@ -403,4 +449,8 @@ export type SessionStreamEvent =
   | AssistantResponseDeltaStreamEvent
   | AssistantResponseCompletedStreamEvent
   | AssistantResponseFailedStreamEvent
+  | DraftOutputStartedStreamEvent
+  | DraftOutputDeltaStreamEvent
+  | DraftOutputCompletedStreamEvent
+  | DraftOutputFailedStreamEvent
   | ConversationAppendedStreamEvent;

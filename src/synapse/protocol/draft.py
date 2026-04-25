@@ -4,12 +4,6 @@ from enum import StrEnum
 from pydantic import BaseModel, Field
 
 
-class DraftRiskLevel(StrEnum):
-    LOW = "low"
-    MEDIUM = "medium"
-    HIGH = "high"
-
-
 class DraftSessionStatus(StrEnum):
     EMPTY = "empty"
     LISTENING = "listening"
@@ -29,16 +23,8 @@ class AsrTurn(BaseModel):
 
 
 class Draft(BaseModel):
-    title: str
-    goal: str
-    constraints: list[str] = Field(default_factory=list)
-    acceptance_criteria: list[str] = Field(default_factory=list)
-    canonical_instruction: str
-    assumptions: list[str] = Field(default_factory=list)
-    missing_info: list[str] = Field(default_factory=list)
+    text: str
     last_update_summary: str = ""
-    confidence: float = 0.5
-    risk_level: DraftRiskLevel = DraftRiskLevel.MEDIUM
 
 
 class DraftSnapshot(BaseModel):

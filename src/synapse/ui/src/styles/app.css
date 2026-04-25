@@ -2,7 +2,7 @@
 
 @theme inline {
   --font-sans: "Geist Variable", "Geist", "Noto Sans", "Noto Sans SC", sans-serif;
-  --font-serif: "Newsreader", "Iowan Old Style", "Palatino Linotype", "Times New Roman", serif;
+  --font-serif: var(--font-sans);
 
   --color-background: hsl(var(--background));
   --color-foreground: hsl(var(--foreground));
@@ -102,8 +102,7 @@
 }
 
 .serif-flow {
-  font-family: var(--font-serif);
-  font-optical-sizing: auto;
+  font-family: var(--font-sans);
 }
 
 .subtle-scrollbar {

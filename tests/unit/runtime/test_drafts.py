@@ -1,69 +1,151 @@
+from types import SimpleNamespace
+
 import pytest
 
-from synapse.runtime.drafts import DraftSessionManager
+from synapse.protocol import Draft
+from synapse.runtime.drafts import (
+    DRAFT_CLEANER_SYSTEM_PROMPT,
+    DraftRewriteInput,
+    DraftRewriteInvalidOutput,
+    DraftRewriteUpstreamError,
+    DraftRewriter,
+    DraftSessionManager,
+    OpenAIDraftRewriter,
+)
+
+
+def _text_completion(text: str) -> SimpleNamespace:
+    return SimpleNamespace(
+        choices=[
+            SimpleNamespace(
+                message=SimpleNamespace(content=text),
+                finish_reason="stop",
+            )
+        ]
+    )
+
+
+class FakeCompletionProvider:
+    def __init__(self, responses: list[SimpleNamespace | Exception]) -> None:
+        self.responses = list(responses)
+        self.calls: list[dict[str, object]] = []
+
+    async def create_completion(self, **kwargs):
+        self.calls.append(kwargs)
+        response = self.responses.pop(0)
+        if isinstance(response, Exception):
+            raise response
+        return response
+
+
+def _stream_chunk(text: str) -> SimpleNamespace:
+    return SimpleNamespace(choices=[SimpleNamespace(delta=SimpleNamespace(content=text))])
+
+
+class FakeStream:
+    def __init__(self, chunks: list[str]) -> None:
+        self._chunks = list(chunks)
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        if not self._chunks:
+            raise StopAsyncIteration
+        return _stream_chunk(self._chunks.pop(0))
+
+
+class EchoDraftRewriter(DraftRewriter):
+    async def rewrite(self, payload: DraftRewriteInput) -> Draft:
+        text = (payload.new_turn.normalized_text or payload.new_turn.raw_text).strip()
+        return Draft(
+            text=text,
+        )
 
 
 @pytest.mark.anyio
-async def test_draft_rewrite_prefers_later_style_and_keeps_constraints():
-    manager = DraftSessionManager()
-    await manager.append_asr_turn(raw_text="Make it like ElevenLabs, dark and futuristic.")
-    session = await manager.append_asr_turn(raw_text="No, make it like YouMind. Do not touch backend. Do not add dependencies.")
+async def test_openai_draft_rewriter_uses_cleaner_prompt_and_asr_context():
+    provider = FakeCompletionProvider(
+        [
+            _text_completion("Make it like ElevenLabs."),
+            _text_completion("Make it like YouMind. Do not add dependencies."),
+        ]
+    )
+    manager = DraftSessionManager(rewriter=OpenAIDraftRewriter(provider, model="gpt-test"))
+    await manager.append_asr_turn(raw_text="Make it like ElevenLabs.")
+    session = await manager.append_asr_turn(
+        raw_text="No, make it like YouMind. Do not add dependencies.",
+        assigned_bro_id="persona-forge",
+    )
 
     draft = session.current_draft
     assert draft is not None
-    assert "YouMind" in draft.goal
-    assert "ElevenLabs" not in draft.goal
-    assert "Do not modify backend code." in draft.constraints
-    assert "Do not add dependencies." in draft.constraints
-    assert len(session.asr_turns) == 2
-    assert len(session.snapshots) == 2
+    assert draft.text == "Make it like YouMind. Do not add dependencies."
+
+    second_call = provider.calls[1]
+    assert second_call["model"] == "gpt-test"
+    assert "response_format" not in second_call
+    messages = second_call["messages"]
+    assert messages[0] == {"role": "system", "content": DRAFT_CLEANER_SYSTEM_PROMPT}
+    user_content = messages[1]["content"]
+    assert user_content.startswith("Return only the clean sendable task text.")
+    assert "Do not return JSON" in user_content
+    assert "code fences" in user_content
+    assert "Assigned bro id:\npersona-forge" in user_content
+    assert "Previous draft:\nMake it like ElevenLabs." in user_content
+    assert "1. [" in user_content
+    assert "Make it like ElevenLabs." in user_content
+    assert "2. [" in user_content
+    assert "No, make it like YouMind. Do not add dependencies." in user_content
 
 
 @pytest.mark.anyio
-async def test_draft_missing_reference_does_not_guess():
-    manager = DraftSessionManager()
-    session = await manager.append_asr_turn(raw_text="Make it like that style.")
+async def test_openai_draft_rewriter_streams_plain_text_chunks_in_order():
+    provider = FakeCompletionProvider([FakeStream(["Improve ", "the homepage."])])
+    manager = DraftSessionManager(rewriter=OpenAIDraftRewriter(provider, model="gpt-test"))
+    deltas: list[str] = []
 
-    draft = session.current_draft
-    assert draft is not None
-    assert draft.missing_info == ['Which reference does "that style" refer to?']
-    assert draft.confidence < 0.5
+    session = await manager.append_asr_turn(
+        raw_text="Improve the homepage.",
+        on_text_delta=deltas.append,
+    )
 
-
-@pytest.mark.anyio
-async def test_chinese_draft_rewrite_uses_chinese_display_text():
-    manager = DraftSessionManager()
-    session = await manager.append_asr_turn(raw_text="好像在一场大型音乐演唱会上面南美人在美国超级碗上面唱了一首西班牙语的歌")
-
-    draft = session.current_draft
-    assert draft is not None
-    assert draft.goal == "好像在一场大型音乐演唱会上面南美人在美国超级碗上面唱了一首西班牙语的歌。"
-    assert draft.title == "好像在一场大型音乐演唱会上面南美人在美国超级碗上面唱了一首西班牙语的歌"
-    assert draft.acceptance_criteria == ["任务按照草稿目标完成。"]
-    assert draft.canonical_instruction.startswith("目标:\n")
-    assert "验收标准:\n- 任务按照草稿目标完成。" in draft.canonical_instruction
-    assert draft.last_update_summary == "已根据最新语音创建第一个可执行草稿。"
+    assert provider.calls[0]["stream"] is True
+    assert "response_format" not in provider.calls[0]
+    assert deltas == ["Improve ", "the homepage."]
+    assert session.current_draft is not None
+    assert session.current_draft.text == "Improve the homepage."
 
 
 @pytest.mark.anyio
-async def test_chinese_draft_constraints_use_chinese_text():
-    manager = DraftSessionManager()
-    session = await manager.append_asr_turn(raw_text="改一下首页，但是不要动后端，不要新增依赖，保留现有流程")
+async def test_openai_draft_rewriter_rejects_empty_model_text():
+    provider = FakeCompletionProvider([_text_completion("  \n ")])
+    manager = DraftSessionManager(rewriter=OpenAIDraftRewriter(provider, model="gpt-test"))
 
-    draft = session.current_draft
-    assert draft is not None
-    assert "不要修改后端代码。" in draft.constraints
-    assert "不要新增依赖。" in draft.constraints
-    assert "保留现有行为和流程。" in draft.constraints
-    assert "后端代码没有被修改。" in draft.acceptance_criteria
-    assert "没有新增依赖。" in draft.acceptance_criteria
-    assert "现有行为和流程保持可用。" in draft.acceptance_criteria
-    assert "约束:\n- 不要修改后端代码。" in draft.canonical_instruction
+    with pytest.raises(DraftRewriteInvalidOutput):
+        await manager.append_asr_turn(raw_text="Improve the homepage.")
+
+
+@pytest.mark.anyio
+async def test_openai_draft_rewriter_wraps_provider_request_failure():
+    provider = FakeCompletionProvider([RuntimeError("provider rejected request")])
+    manager = DraftSessionManager(rewriter=OpenAIDraftRewriter(provider, model="gpt-test"))
+
+    with pytest.raises(DraftRewriteUpstreamError, match="Draft cleaner request failed"):
+        await manager.append_asr_turn(raw_text="Improve the homepage.")
+
+
+@pytest.mark.anyio
+async def test_default_draft_rewriter_requires_configured_llm():
+    manager = DraftSessionManager()
+
+    with pytest.raises(RuntimeError, match="configured LLM provider"):
+        await manager.append_asr_turn(raw_text="Improve the homepage.")
 
 
 @pytest.mark.anyio
 async def test_send_freezes_and_next_turn_creates_new_session():
-    manager = DraftSessionManager()
+    manager = DraftSessionManager(rewriter=EchoDraftRewriter())
     first = await manager.append_asr_turn(raw_text="Improve the homepage.")
     sent = manager.mark_sent()
     second = await manager.append_asr_turn(raw_text="Actually use YouMind style.")

@@ -34,12 +34,14 @@ export type SttTranscriptDebugPayload = {
 
 const sttRoot = protobuf.Root.fromJSON({
   nested: {
-    agora: {
+    Agora: {
       nested: {
-        audio2text: {
+        SpeechToText: {
           nested: {
             Text: {
               fields: {
+                // Reserved by the current official SttMessage.proto, retained
+                // so older deployed bots can still decode during rollout.
                 vendor: { type: "int32", id: 1 },
                 version: { type: "int32", id: 2 },
                 seqnum: { type: "int32", id: 3 },
@@ -57,6 +59,7 @@ const sttRoot = protobuf.Root.fromJSON({
                 culture: { type: "string", id: 15 },
                 text_ts: { type: "int64", id: 16 },
                 sentence_end_index: { type: "int32", id: 17 },
+                original_transcript: { type: "OriginalTranscript", id: 18 },
               },
             },
             Word: {
@@ -75,6 +78,12 @@ const sttRoot = protobuf.Root.fromJSON({
                 texts: { rule: "repeated", type: "string", id: 3 },
               },
             },
+            OriginalTranscript: {
+              fields: {
+                culture: { type: "string", id: 1 },
+                words: { rule: "repeated", type: "Word", id: 2 },
+              },
+            },
           },
         },
       },
@@ -82,7 +91,7 @@ const sttRoot = protobuf.Root.fromJSON({
   },
 });
 
-export const agoraSttTextMessage = sttRoot.lookupType("agora.audio2text.Text");
+export const agoraSttTextMessage = sttRoot.lookupType("Agora.SpeechToText.Text");
 
 const textDecoder = new TextDecoder();
 
@@ -199,18 +208,22 @@ function decodeProtobufTranscript(bytes: Uint8Array): ExtractedSttTranscript | n
       defaults: false,
       longs: Number,
     }) as Record<string, any>;
-    const words = Array.isArray(decoded.words) ? decoded.words : [];
+    const originalTranscript = readRecordField(decoded, "original_transcript", "originalTranscript");
+    const originalWords = Array.isArray(originalTranscript?.words) ? originalTranscript.words : null;
+    const words = originalWords ?? (Array.isArray(decoded.words) ? decoded.words : []);
     const wordText = words
       .map((word) => (typeof word?.text === "string" ? word.text.trim() : ""))
       .filter(Boolean)
       .join("")
       .trim();
     if (!wordText) return null;
+    const originalCulture = readStringField(originalTranscript ?? {}, "culture");
     return {
       text: wordText,
       final: readBoolField(decoded, "end_of_segment", "endOfSegment") === true,
-      source: "protobuf-words",
+      source: originalWords ? "protobuf-original-transcript" : "protobuf-words",
       ...extractTranscriptMetadata(decoded),
+      ...(originalCulture ? { language: originalCulture, culture: originalCulture } : {}),
       words: extractWordMetadata(words),
     };
   } catch {
@@ -246,7 +259,14 @@ function extractWrappedTranscript(transcript: unknown, source = "transcript-wrap
   const record = transcript as Record<string, any>;
   if (typeof record.text !== "string" || !record.text.trim()) return null;
   const language = typeof record.language === "string" ? record.language : typeof record.lang === "string" ? record.lang : undefined;
-  return { text: record.text.trim(), final: isFinalRecord(record), language, source, ...extractTranscriptMetadata(record) };
+  return {
+    text: record.text.trim(),
+    final: readBoolField(record, "end_of_segment", "endOfSegment") === true,
+    language,
+    source,
+    ...extractTranscriptMetadata(record),
+    ...(language ? { culture: language } : {}),
+  };
 }
 
 function extractWordsText(words: unknown): string | null {
@@ -293,15 +313,17 @@ function isFinalRecord(record: Record<string, any>): boolean {
 }
 
 function extractTranscriptMetadata(record: Record<string, any>): Partial<ExtractedSttTranscript> {
+  const language = readStringField(record, "language", "lang", "culture");
   return compactTranscriptMetadata({
     uid: readUidField(record),
     seqnum: readNumberField(record, "seqnum"),
-    time: readNumberField(record, "time"),
+    time: readNumberField(record, "time", "offset"),
     starttime: readNumberField(record, "starttime", "startTime"),
     offtime: readNumberField(record, "offtime", "offTime"),
-    durationMs: readNumberField(record, "duration_ms", "durationMs"),
+    durationMs: readNumberField(record, "duration_ms", "durationMs", "duration"),
     dataType: readStringField(record, "data_type", "dataType"),
-    culture: readStringField(record, "culture"),
+    culture: language,
+    language,
     textTs: readNumberField(record, "text_ts", "textTs"),
     sentenceEndIndex: readNumberField(record, "sentence_end_index", "sentenceEndIndex"),
   });
@@ -342,6 +364,14 @@ function readBoolField(record: Record<string, any>, ...keys: string[]): boolean 
   for (const key of keys) {
     const value = record[key];
     if (typeof value === "boolean") return value;
+  }
+  return undefined;
+}
+
+function readRecordField(record: Record<string, any>, ...keys: string[]): Record<string, any> | undefined {
+  for (const key of keys) {
+    const value = record[key];
+    if (value && typeof value === "object" && !Array.isArray(value)) return value as Record<string, any>;
   }
   return undefined;
 }

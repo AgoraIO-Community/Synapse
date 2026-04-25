@@ -56,12 +56,14 @@ describe("extractTranscriptText", () => {
       text: "你好",
       final: false,
       language: "zh-CN",
+      culture: "zh-CN",
       source: "transcript-wrapper",
     });
     expect(extractTranscriptText({ transcript: { language: "zh-CN", text: "你好世界", isFinal: true } })).toEqual({
       text: "你好世界",
-      final: true,
+      final: false,
       language: "zh-CN",
+      culture: "zh-CN",
       source: "transcript-wrapper",
     });
   });
@@ -72,7 +74,30 @@ describe("extractTranscriptText", () => {
         original_transcript: { language: "zh-CN", text: "原始中文", isFinal: true },
         translated_transcript: { language: "en-US", text: "original Chinese", isFinal: true },
       },
-    })).toEqual({ text: "原始中文", final: true, language: "zh-CN", source: "translation-original" });
+    })).toEqual({ text: "原始中文", final: false, language: "zh-CN", culture: "zh-CN", source: "translation-original" });
+  });
+
+  it("normalizes official JSON transcript timing aliases", () => {
+    expect(extractTranscriptText({
+      transcript: {
+        uid: 222,
+        language: "zh-CN",
+        text: "北选手",
+        isFinal: false,
+        offset: 1_751_438_272_384,
+        duration: 760,
+        textTs: 1_751_438_273_939,
+      },
+    })).toMatchObject({
+      text: "北选手",
+      final: false,
+      language: "zh-CN",
+      culture: "zh-CN",
+      uid: 222,
+      time: 1_751_438_272_384,
+      durationMs: 760,
+      textTs: 1_751_438_273_939,
+    });
   });
 
   it("ignores translated transcript wrappers without original text", () => {
@@ -135,6 +160,30 @@ describe("extractTranscriptText", () => {
       end_of_segment: false,
     });
     expect(extractTranscriptText(bytes)).toMatchObject({ text: "stablecandidate", final: false, source: "protobuf-words" });
+  });
+
+  it("extracts official protobuf original transcript from translation payloads", () => {
+    const bytes = encodeAgoraSttMessage({
+      data_type: "translate",
+      time: 1_000,
+      duration_ms: 770,
+      text_ts: 1_100,
+      trans: [{ isFinal: true, lang: "en-US", texts: ["translated English"] }],
+      original_transcript: {
+        culture: "zh-CN",
+        words: [{ text: "原始中文", isFinal: true }],
+      },
+    });
+    expect(extractTranscriptText(bytes)).toMatchObject({
+      text: "原始中文",
+      final: false,
+      language: "zh-CN",
+      culture: "zh-CN",
+      source: "protobuf-original-transcript",
+      time: 1_000,
+      durationMs: 770,
+      textTs: 1_100,
+    });
   });
 
   it("extracts final Agora protobuf transcripts", () => {

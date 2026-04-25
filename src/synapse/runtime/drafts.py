@@ -1,19 +1,33 @@
 from __future__ import annotations
 
+import inspect
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from typing import Any
 from uuid import uuid4
 
 from synapse.protocol import (
     AsrTurn,
     Draft,
-    DraftRiskLevel,
     DraftSession,
     DraftSessionStatus,
     DraftSnapshot,
 )
 
 DEFAULT_BRO_ID = "codex"
+DRAFT_CLEANER_SYSTEM_PROMPT = """You are the Draft Cleaner for newbro.
+
+The user is speaking across multiple ASR turns to prepare a task for a coding bro.
+Your job is to produce a clean, faithful draft of what the user wants to send.
+
+Do not turn the user's words into a full product spec.
+Do not invent details the user did not express.
+Only preserve what the user actually expressed.
+You may lightly clean ASR errors, remove filler words, and merge corrections.
+If the latest turn contradicts earlier turns, prefer the latest turn.
+If the user explicitly rejects a previous idea, remove that idea from the draft.
+Keep the draft concise and sendable."""
 
 
 def utc_now_iso() -> str:
@@ -28,90 +42,103 @@ class DraftRewriteInput:
     assigned_bro_id: str
 
 
+TextDeltaCallback = Callable[[str], Awaitable[None] | None]
+
+
 class DraftRewriter:
-    async def rewrite(self, payload: DraftRewriteInput) -> Draft:
+    async def rewrite(
+        self,
+        payload: DraftRewriteInput,
+        *,
+        on_text_delta: TextDeltaCallback | None = None,
+    ) -> Draft:
         raise NotImplementedError
 
 
+class DraftRewriteError(RuntimeError):
+    pass
+
+
+class DraftRewriteUnavailable(DraftRewriteError):
+    pass
+
+
+class DraftRewriteInvalidOutput(DraftRewriteError):
+    pass
+
+
+class DraftRewriteUpstreamError(DraftRewriteError):
+    pass
+
+
+class UnavailableDraftRewriter(DraftRewriter):
+    async def rewrite(
+        self,
+        payload: DraftRewriteInput,
+        *,
+        on_text_delta: TextDeltaCallback | None = None,
+    ) -> Draft:
+        raise DraftRewriteUnavailable("Draft generation requires a configured LLM provider.")
+
+
+class OpenAIDraftRewriter(DraftRewriter):
+    def __init__(self, provider: Any, *, model: str) -> None:
+        self._provider = provider
+        self._model = model
+
+    async def rewrite(
+        self,
+        payload: DraftRewriteInput,
+        *,
+        on_text_delta: TextDeltaCallback | None = None,
+    ) -> Draft:
+        try:
+            request = {
+                "model": self._model,
+                "messages": [
+                    {"role": "system", "content": DRAFT_CLEANER_SYSTEM_PROMPT},
+                    {"role": "user", "content": _draft_rewrite_user_message(payload)},
+                ],
+            }
+            if on_text_delta is None:
+                response = await self._provider.create_completion(**request)
+                content = _completion_text(response)
+            else:
+                stream = await self._provider.create_completion(**request, stream=True)
+                content = await _completion_stream_text(stream, on_text_delta)
+        except DraftRewriteError:
+            raise
+        except Exception as exc:
+            raise DraftRewriteUpstreamError("Draft cleaner request failed.") from exc
+        return _draft_from_plain_text(
+            content,
+            previous=payload.previous_draft,
+            locale=_draft_locale(_turn_text(payload.new_turn)),
+        )
+
+
 class DeterministicDraftRewriter(DraftRewriter):
-    async def rewrite(self, payload: DraftRewriteInput) -> Draft:
+    async def rewrite(
+        self,
+        payload: DraftRewriteInput,
+        *,
+        on_text_delta: TextDeltaCallback | None = None,
+    ) -> Draft:
         text = _turn_text(payload.new_turn)
         previous = payload.previous_draft
         locale = _draft_locale(text)
-        if previous is None or _is_reset(text):
-            goal = _clean_goal(text, locale)
-            constraints: list[str] = []
-            acceptance: list[str] = []
-            assumptions: list[str] = []
-            missing: list[str] = []
-        else:
-            goal = previous.goal
-            constraints = list(previous.constraints)
-            acceptance = list(previous.acceptance_criteria)
-            assumptions = list(previous.assumptions)
-            missing = list(previous.missing_info)
-
-        lowered = text.lower()
-        if _is_ambiguous_reference(lowered):
-            missing = _append_unique(missing, _missing_reference_question(locale))
-        if _negates_previous(lowered):
-            goal = _clean_goal(text, locale)
-            constraints = []
-            acceptance = []
-            assumptions = []
-            missing = []
-        if _mentions_youmind(lowered):
-            goal = "Redesign the target in a YouMind-like clean minimal style."
-            missing = [item for item in missing if "that style" not in item]
-        elif _mentions_elevenlabs(lowered):
-            goal = "Redesign the target in an ElevenLabs-like dark futuristic style."
-            missing = [item for item in missing if "that style" not in item]
-        elif previous is None or _is_reset(text):
-            goal = _clean_goal(text, locale)
-
-        if _contains_any(lowered, ["don't touch backend", "do not touch backend", "不要动后端", "不动后端"]):
-            constraints = _append_unique(constraints, _constraint_text("no_backend", locale))
-        if _contains_any(lowered, ["don't modify backend", "do not modify backend"]):
-            constraints = _append_unique(constraints, _constraint_text("no_backend", locale))
-        if _contains_any(lowered, ["don't add dependencies", "do not add dependencies", "不要新增依赖", "不新增依赖"]):
-            constraints = _append_unique(constraints, _constraint_text("no_dependencies", locale))
-        if _contains_any(lowered, ["keep existing", "preserve existing", "保留现有"]):
-            constraints = _append_unique(constraints, _constraint_text("preserve_existing", locale))
-        if "backend" in lowered and _constraint_text("no_backend", locale) not in constraints and _contains_any(lowered, ["不要", "不", "don't", "do not"]):
-            constraints = _append_unique(constraints, _constraint_text("no_backend", locale))
-        if "依赖" in text and _constraint_text("no_dependencies", locale) not in constraints and _contains_any(lowered, ["不要", "不"]):
-            constraints = _append_unique(constraints, _constraint_text("no_dependencies", locale))
-
-        if not acceptance:
-            acceptance = _default_acceptance(goal, constraints, locale)
-        else:
-            acceptance = _merge_acceptance(acceptance, constraints, locale)
-
-        if not goal.strip():
-            goal = "执行前先澄清要完成的任务。" if locale == "zh" else "Clarify the requested task before execution."
-            missing = _append_unique(missing, "Bro 需要做什么？" if locale == "zh" else "What should Bro do?")
-
-        confidence = 0.45 if missing else 0.72
-        risk = DraftRiskLevel.MEDIUM if missing else DraftRiskLevel.LOW
-        title = _title_from_goal(goal)
-        canonical = _canonical_instruction(goal, constraints, acceptance, assumptions, missing, locale)
+        draft_text = _clean_goal(text, locale)
+        if not draft_text.strip():
+            draft_text = "执行前先澄清要完成的任务。" if locale == "zh" else "Clarify the requested task before execution."
         return Draft(
-            title=title,
-            goal=goal,
-            constraints=constraints,
-            acceptance_criteria=acceptance,
-            canonical_instruction=canonical,
-            assumptions=assumptions,
-            missing_info=missing,
-            last_update_summary=_last_update_summary(previous, goal, constraints, missing, locale),
-            confidence=confidence,
-            risk_level=risk,
+            text=draft_text,
+            last_update_summary=_last_update_summary(previous, draft_text, locale),
         )
 
 
 @dataclass(slots=True)
 class DraftSessionManager:
-    rewriter: DraftRewriter = field(default_factory=DeterministicDraftRewriter)
+    rewriter: DraftRewriter = field(default_factory=UnavailableDraftRewriter)
     _active_session: DraftSession | None = None
 
     @property
@@ -127,6 +154,7 @@ class DraftSessionManager:
         started_at: str | None = None,
         ended_at: str | None = None,
         assigned_bro_id: str | None = None,
+        on_text_delta: TextDeltaCallback | None = None,
     ) -> DraftSession:
         text = raw_text.strip()
         if not text:
@@ -152,16 +180,19 @@ class DraftSessionManager:
             started_at=started_at or now,
             ended_at=ended_at or now,
         )
+        next_turns = [*session.asr_turns, turn]
+        rewrite_input = DraftRewriteInput(
+            previous_draft=session.current_draft,
+            asr_turns=next_turns,
+            new_turn=turn,
+            assigned_bro_id=session.assigned_bro_id,
+        )
+        if on_text_delta is None:
+            draft = await self.rewriter.rewrite(rewrite_input)
+        else:
+            draft = await self.rewriter.rewrite(rewrite_input, on_text_delta=on_text_delta)
         session.status = DraftSessionStatus.DRAFTING
         session.asr_turns.append(turn)
-        draft = await self.rewriter.rewrite(
-            DraftRewriteInput(
-                previous_draft=session.current_draft,
-                asr_turns=list(session.asr_turns),
-                new_turn=turn,
-                assigned_bro_id=session.assigned_bro_id,
-            )
-        )
         snapshot = DraftSnapshot(
             id=f"draft-snap-{uuid4().hex[:8]}",
             draft=draft,
@@ -200,36 +231,116 @@ def _turn_text(turn: AsrTurn) -> str:
     return (turn.normalized_text or turn.raw_text).strip()
 
 
-def _contains_any(text: str, needles: list[str]) -> bool:
-    return any(needle in text for needle in needles)
+def _draft_rewrite_user_message(payload: DraftRewriteInput) -> str:
+    previous = payload.previous_draft.text if payload.previous_draft else "(none)"
+    turns = "\n".join(
+        f"{index}. [{turn.id}] {_turn_text(turn)}"
+        for index, turn in enumerate(payload.asr_turns, start=1)
+    )
+    return (
+        "Return only the clean sendable task text.\n"
+        "Do not return JSON, code fences, labels, commentary, or revision history.\n"
+        "Write the exact text the user should send to the assigned coding bro.\n\n"
+        f"Assigned bro id:\n{payload.assigned_bro_id}\n\n"
+        f"Previous draft:\n{previous}\n\n"
+        f"Ordered ASR turns:\n{turns}\n\n"
+        f"Latest turn:\n{_turn_text(payload.new_turn)}"
+    )
+
+
+def _completion_text(completion: Any) -> str:
+    choices = _get_value(completion, "choices") or []
+    if not choices:
+        raise DraftRewriteInvalidOutput("Draft cleaner returned no choices.")
+    message = _get_value(choices[0], "message")
+    content = _get_value(message, "content")
+    if isinstance(content, str):
+        text = content.strip()
+        if text:
+            return text
+    raise DraftRewriteInvalidOutput("Draft cleaner returned empty content.")
+
+
+async def _completion_stream_text(stream: Any, on_text_delta: TextDeltaCallback) -> str:
+    chunks: list[str] = []
+    uses_context_manager = hasattr(stream, "__aenter__") and hasattr(stream, "__aexit__")
+    try:
+        if uses_context_manager:
+            async with stream as entered:
+                async for chunk in entered:
+                    await _append_stream_chunk(chunk, chunks, on_text_delta)
+        else:
+            async for chunk in stream:
+                await _append_stream_chunk(chunk, chunks, on_text_delta)
+    finally:
+        close = getattr(stream, "aclose", None)
+        if not uses_context_manager and callable(close):
+            maybe_awaitable = close()
+            if inspect.isawaitable(maybe_awaitable):
+                await maybe_awaitable
+
+    text = "".join(chunks).strip()
+    if text:
+        return text
+    raise DraftRewriteInvalidOutput("Draft cleaner returned empty content.")
+
+
+async def _append_stream_chunk(
+    chunk: Any,
+    chunks: list[str],
+    on_text_delta: TextDeltaCallback,
+) -> None:
+    delta = _completion_chunk_text(chunk)
+    if not delta:
+        return
+    chunks.append(delta)
+    maybe_awaitable = on_text_delta(delta)
+    if inspect.isawaitable(maybe_awaitable):
+        await maybe_awaitable
+
+
+def _completion_chunk_text(chunk: Any) -> str:
+    choices = _get_value(chunk, "choices") or []
+    if not choices:
+        return ""
+    delta = _get_value(choices[0], "delta")
+    content = _get_value(delta, "content")
+    if content is None:
+        return ""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        text_parts: list[str] = []
+        for part in content:
+            text = _get_value(part, "text")
+            if isinstance(text, str):
+                text_parts.append(text)
+                continue
+            text_value = _get_value(text, "value")
+            if isinstance(text_value, str):
+                text_parts.append(text_value)
+        return "".join(text_parts)
+    return str(content)
+
+
+def _get_value(value: Any, key: str, default: Any = None) -> Any:
+    if isinstance(value, dict):
+        return value.get(key, default)
+    return getattr(value, key, default)
+
+
+def _draft_from_plain_text(text: str, *, previous: Draft | None, locale: str) -> Draft:
+    draft_text = text.strip()
+    if not draft_text:
+        raise DraftRewriteInvalidOutput("Draft cleaner returned empty content.")
+    return Draft(
+        text=draft_text,
+        last_update_summary=_last_update_summary(previous, draft_text, locale),
+    )
 
 
 def _draft_locale(text: str) -> str:
     return "zh" if any("\u4e00" <= character <= "\u9fff" for character in text) else "en"
-
-
-def _mentions_youmind(text: str) -> bool:
-    return "youmind" in text or "you mind" in text
-
-
-def _mentions_elevenlabs(text: str) -> bool:
-    return "elevenlabs" in text or "eleven labs" in text
-
-
-def _is_reset(text: str) -> bool:
-    lowered = text.lower()
-    return _contains_any(lowered, ["start over", "new draft", "重新", "重来", "重新起草"])
-
-
-def _negates_previous(text: str) -> bool:
-    return _contains_any(
-        text,
-        ["no,", "actually", "not that", "don't use that", "do not use that", "不要刚才", "刚才那个不要", "不对"],
-    )
-
-
-def _is_ambiguous_reference(text: str) -> bool:
-    return _contains_any(text, ["that style", "那个风格", "那种风格", "像那个"])
 
 
 def _clean_goal(text: str, locale: str = "en") -> str:
@@ -243,54 +354,6 @@ def _clean_goal(text: str, locale: str = "en") -> str:
     return cleaned[0].upper() + cleaned[1:]
 
 
-def _append_unique(items: list[str], item: str) -> list[str]:
-    if item not in items:
-        items.append(item)
-    return items
-
-
-def _constraint_text(kind: str, locale: str) -> str:
-    if locale == "zh":
-        return {
-            "no_backend": "不要修改后端代码。",
-            "no_dependencies": "不要新增依赖。",
-            "preserve_existing": "保留现有行为和流程。",
-        }[kind]
-    return {
-        "no_backend": "Do not modify backend code.",
-        "no_dependencies": "Do not add dependencies.",
-        "preserve_existing": "Preserve existing behavior and flows.",
-    }[kind]
-
-
-def _missing_reference_question(locale: str) -> str:
-    return "“那个风格”具体指哪个参考？" if locale == "zh" else 'Which reference does "that style" refer to?'
-
-
-def _default_acceptance(goal: str, constraints: list[str], locale: str = "en") -> list[str]:
-    acceptance = ["任务按照草稿目标完成。"] if locale == "zh" else ["The requested task is completed according to the draft goal."]
-    if locale == "en" and ("style" in goal.lower() or "redesign" in goal.lower()):
-        acceptance = ["The target looks cleaner and matches the requested style direction."]
-    if _constraint_text("no_backend", locale) in constraints:
-        acceptance.append("后端代码没有被修改。" if locale == "zh" else "Backend code is not modified.")
-    if _constraint_text("no_dependencies", locale) in constraints:
-        acceptance.append("没有新增依赖。" if locale == "zh" else "No new dependency is added.")
-    if _constraint_text("preserve_existing", locale) in constraints:
-        acceptance.append("现有行为和流程保持可用。" if locale == "zh" else "Existing behavior and flows still work.")
-    return acceptance
-
-
-def _merge_acceptance(acceptance: list[str], constraints: list[str], locale: str = "en") -> list[str]:
-    merged = list(acceptance)
-    if _constraint_text("no_backend", locale) in constraints:
-        merged = _append_unique(merged, "后端代码没有被修改。" if locale == "zh" else "Backend code is not modified.")
-    if _constraint_text("no_dependencies", locale) in constraints:
-        merged = _append_unique(merged, "没有新增依赖。" if locale == "zh" else "No new dependency is added.")
-    if _constraint_text("preserve_existing", locale) in constraints:
-        merged = _append_unique(merged, "现有行为和流程保持可用。" if locale == "zh" else "Existing behavior and flows still work.")
-    return merged
-
-
 def _title_from_goal(goal: str) -> str:
     title = goal.strip().rstrip(".。")
     if len(title) > 72:
@@ -298,56 +361,19 @@ def _title_from_goal(goal: str) -> str:
     return title or "Draft task"
 
 
-def _canonical_instruction(
-    goal: str,
-    constraints: list[str],
-    acceptance: list[str],
-    assumptions: list[str],
-    missing: list[str],
-    locale: str = "en",
-) -> str:
-    labels = {
-        "goal": "目标" if locale == "zh" else "Goal",
-        "constraints": "约束" if locale == "zh" else "Constraints",
-        "acceptance": "验收标准" if locale == "zh" else "Acceptance Criteria",
-        "assumptions": "假设" if locale == "zh" else "Assumptions",
-        "missing": "待确认信息" if locale == "zh" else "Missing Info",
-    }
-    sections = [f"{labels['goal']}:\n{goal}"]
-    if constraints:
-        sections.append(f"{labels['constraints']}:\n" + "\n".join(f"- {item}" for item in constraints))
-    if acceptance:
-        sections.append(f"{labels['acceptance']}:\n" + "\n".join(f"- {item}" for item in acceptance))
-    if assumptions:
-        sections.append(f"{labels['assumptions']}:\n" + "\n".join(f"- {item}" for item in assumptions))
-    if missing:
-        sections.append(f"{labels['missing']}:\n" + "\n".join(f"- {item}" for item in missing))
-    return "\n\n".join(sections)
-
-
 def _last_update_summary(
     previous: Draft | None,
-    goal: str,
-    constraints: list[str],
-    missing: list[str],
+    text: str,
     locale: str = "en",
 ) -> str:
     if previous is None:
         if locale == "zh":
             return "已根据最新语音创建第一个可执行草稿。"
         return "Created the first executable draft from the latest voice turn."
-    if previous.goal != goal:
+    if previous.text != text:
         if locale == "zh":
-            return "已根据最新语音重写草稿目标。"
-        return "Rewrote the draft goal based on the latest voice turn."
-    if missing:
-        if locale == "zh":
-            return "已更新草稿并标出待确认信息。"
-        return "Updated the draft and surfaced missing information."
-    if constraints != previous.constraints:
-        if locale == "zh":
-            return "已根据最新语音更新草稿约束。"
-        return "Updated the draft constraints based on the latest voice turn."
+            return "已根据最新语音重写草稿。"
+        return "Rewrote the draft based on the latest voice turn."
     if locale == "zh":
         return "已根据最新语音刷新草稿。"
     return "Refreshed the draft from the latest voice turn."

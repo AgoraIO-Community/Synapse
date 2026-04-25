@@ -8,25 +8,22 @@ import {
   type SttSessionPrepareResponse,
   type SttSessionStartResponse,
 } from "../../lib/connector-client";
-import { submitDraftAsrTurn } from "../../lib/session-client";
+import { clearDraft, sendDraft, submitDraftAsrTurn } from "../../lib/session-client";
 import { loadAgoraBrowserStack } from "../../lib/voice-runtime";
 import { Button } from "../ui/button";
+import { MarkdownText } from "../ui/markdown-text";
 import { BroPortrait } from "./BroPortrait";
 import { BroProgress } from "./BroProgress";
 import { describeProtobufTranscriptPayload, describeTranscriptPayload, extractTranscriptText, type ExtractedSttTranscript } from "./stt-transcript";
-import type { BroCardModel } from "./types";
-import type { TaskSummary } from "../../types";
+import type { BroCardModel, BroTaskRecord } from "./types";
+import type { DraftOutputCompletedStreamEvent, DraftOutputDeltaStreamEvent, DraftOutputFailedStreamEvent, DraftOutputStartedStreamEvent, TaskSummary } from "../../types";
 
 const HEARTBEAT_INTERVAL_MS = 15_000;
 const STT_SILENCE_COMMIT_MS = 1_200;
+const STT_RELEASE_AUDIO_TAIL_MS = 500;
+type MicCaptureState = "muted" | "held" | "tail";
 type Draft = {
-  title: string;
-  goal: string;
-  constraints?: string[];
-  acceptance_criteria?: string[];
-  canonical_instruction: string;
-  assumptions?: string[];
-  missing_info?: string[];
+  text: string;
   last_update_summary?: string;
 };
 
@@ -35,6 +32,12 @@ type DraftSession = {
   current_draft: Draft | null;
   status: string;
 };
+
+type DraftOutputEvent =
+  | DraftOutputStartedStreamEvent
+  | DraftOutputDeltaStreamEvent
+  | DraftOutputCompletedStreamEvent
+  | DraftOutputFailedStreamEvent;
 
 function liveStateText(bro: BroCardModel) {
   if (bro.liveState === "live") return "Live and ready";
@@ -104,8 +107,12 @@ function transcriptUid(candidate: ExtractedSttTranscript) {
 }
 
 function sentenceKey(candidate: ExtractedSttTranscript) {
-  if (candidate.time == null) return null;
+  if (candidate.time == null || candidate.time <= 0) return null;
   return `${transcriptUid(candidate)}:${candidate.time}`;
+}
+
+function provisionalSentenceKey(candidate: ExtractedSttTranscript) {
+  return `${transcriptUid(candidate)}:provisional`;
 }
 
 function transcriptEndTime(candidate: ExtractedSttTranscript) {
@@ -152,21 +159,26 @@ function updateSentenceSegments(
   candidate: ExtractedSttTranscript,
   arrivalIndex: number,
 ): SentenceUpdateResult {
-  const key = sentenceKey(candidate);
-  if (!key || candidate.time == null || candidate.textTs == null) {
-    return { text: rebuildSentenceTranscript(segments), action: "drop-missing-time-metadata", segments, sentencesCount: segments.size, reason: "missing time or textTs" };
+  const timedKey = sentenceKey(candidate);
+  const key = timedKey ?? provisionalSentenceKey(candidate);
+  if (candidate.textTs == null) {
+    return { text: rebuildSentenceTranscript(segments), action: "drop-missing-time-metadata", segments, sentencesCount: segments.size, reason: "missing textTs" };
   }
 
   const revision = transcriptRevision(candidate, arrivalIndex);
   const nextSegments = new Map(segments);
+  if (timedKey) {
+    nextSegments.delete(provisionalSentenceKey(candidate));
+  }
   const segment = nextSegments.get(key);
+  const startTime = timedKey ? candidate.time as number : Number.MAX_SAFE_INTEGER;
   if (candidate.final) {
     const pendingFinal = { text: candidate.text, textTs: candidate.textTs, revision, arrivalIndex };
     nextSegments.set(key, segment
       ? { ...segment, pendingFinal }
       : {
           uid: transcriptUid(candidate),
-          startTime: candidate.time,
+          startTime,
           text: "",
           textTs: candidate.textTs,
           revision,
@@ -178,7 +190,7 @@ function updateSentenceSegments(
       action: "hold-final-fragment",
       segments: nextSegments,
       sentenceKey: key,
-      sentenceStartTime: candidate.time,
+      sentenceStartTime: startTime,
       existingTextTs: segment?.textTs,
       textTs: candidate.textTs,
       pendingFinalTextTs: candidate.textTs,
@@ -209,7 +221,7 @@ function updateSentenceSegments(
 
   nextSegments.set(key, {
     uid: transcriptUid(candidate),
-    startTime: candidate.time,
+    startTime,
     text: appliedText,
     textTs: candidate.textTs,
     revision,
@@ -220,7 +232,7 @@ function updateSentenceSegments(
     action: segment?.pendingFinal ? "replace-sentence-with-held-final" : segment ? "replace-sentence" : "create-sentence",
     segments: nextSegments,
     sentenceKey: key,
-    sentenceStartTime: candidate.time,
+    sentenceStartTime: startTime,
     existingTextTs: segment?.textTs,
     textTs: candidate.textTs,
     pendingFinalTextTs: segment?.pendingFinal?.textTs,
@@ -246,28 +258,22 @@ type SttResources = {
   sttSession: SttSessionStartResponse | null;
 };
 
-function ListBlock({ title, items }: { title: string; items?: string[] }) {
-  if (!items || items.length === 0) return null;
-  return (
-    <div>
-      <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">{title}</div>
-      <div className="mt-2 grid gap-2">
-        {items.map((item) => (
-          <div key={item} className="rounded-2xl bg-white/65 px-3 py-2 text-[13px] leading-6 text-foreground/78">
-            {item}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function DraftPanel({ draftSession }: { draftSession: DraftSession | null }) {
+function DraftPanel({
+  draftSession,
+  streamingDraftText,
+}: {
+  draftSession: DraftSession | null;
+  streamingDraftText: string;
+}) {
   const draft = draftSession?.current_draft ?? null;
-  if (!draft) {
+  const draftText = streamingDraftText || draft?.text || "";
+  if (!draftText) {
     return (
-      <div className="flex min-h-[240px] flex-1 items-center justify-center rounded-[24px] border border-dashed border-border/70 bg-white/45 p-5 text-center text-[14px] leading-7 text-muted-foreground">
-        No draft yet. Hold the mic to start shaping one.
+      <div className="flex min-h-0 flex-1 flex-col">
+        <div className="text-[11px] uppercase tracking-[0.18em] text-primary">Current draft</div>
+        <div className="mt-3 flex min-h-[240px] flex-1 items-center justify-center rounded-[24px] border border-dashed border-border/70 bg-white/45 p-5 text-center text-[14px] leading-7 text-muted-foreground">
+          No draft yet. Hold the mic to start shaping one.
+        </div>
       </div>
     );
   }
@@ -275,21 +281,10 @@ function DraftPanel({ draftSession }: { draftSession: DraftSession | null }) {
   return (
     <div className="min-h-0 flex-1 overflow-auto rounded-[24px] border border-white/75 bg-white/58 p-4">
       <div className="text-[11px] uppercase tracking-[0.18em] text-primary">Current draft</div>
-      <h3 className="serif-flow mt-2 text-[28px] tracking-[-0.05em] text-foreground">{draft.title}</h3>
-      {draft.last_update_summary ? <p className="mt-2 text-[12px] text-muted-foreground">{draft.last_update_summary}</p> : null}
+      {draft?.last_update_summary ? <p className="mt-2 text-[12px] text-muted-foreground">{draft.last_update_summary}</p> : null}
       <div className="mt-4 rounded-[22px] bg-white/70 p-4">
-        <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">Goal</div>
-        <p className="mt-2 text-[14px] leading-7 text-foreground/82">{draft.goal}</p>
-      </div>
-      <div className="mt-3 rounded-[22px] bg-white/70 p-4">
-        <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">Canonical instruction</div>
-        <p className="mt-2 whitespace-pre-wrap text-[14px] leading-7 text-foreground/82">{draft.canonical_instruction}</p>
-      </div>
-      <div className="mt-4 grid gap-4 lg:grid-cols-2">
-        <ListBlock title="Constraints" items={draft.constraints} />
-        <ListBlock title="Acceptance" items={draft.acceptance_criteria} />
-        <ListBlock title="Missing info" items={draft.missing_info} />
-        <ListBlock title="Assumptions" items={draft.assumptions} />
+        <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">Draft text</div>
+        <p className="mt-2 whitespace-pre-wrap text-[14px] leading-7 text-foreground/82">{draftText}</p>
       </div>
     </div>
   );
@@ -299,28 +294,51 @@ export function BroDetailPage({
   bro,
   sessionId,
   summary,
+  taskRecords,
+  snapshotDraftSession,
+  latestDraftOutputEvent,
+  onSubmitDraftAsrTurn,
   onBack,
   onGlobalError,
 }: {
   bro: BroCardModel;
   sessionId: string | null;
   summary: TaskSummary | null;
+  taskRecords?: BroTaskRecord[];
+  snapshotDraftSession: DraftSession | null;
+  latestDraftOutputEvent: DraftOutputEvent | null;
+  onSubmitDraftAsrTurn?: (
+    payload: {
+      raw_text: string;
+      normalized_text?: string;
+      confidence?: number;
+      assigned_bro_id?: string;
+    },
+  ) => string | null;
   onBack: () => void;
   onGlobalError?: (message: string | null) => void;
 }) {
   const [sttPhase, setSttPhase] = useState<SttPhase>("idle");
   const [acceptedTranscript, setAcceptedTranscript] = useState("");
   const [draftSession, setDraftSession] = useState<DraftSession | null>(null);
+  const [streamingDraftText, setStreamingDraftText] = useState("");
   const [micActive, setMicActive] = useState(false);
+  const [sendingDraft, setSendingDraft] = useState(false);
+  const [clearingDraft, setClearingDraft] = useState(false);
+  const [draftActionError, setDraftActionError] = useState<string | null>(null);
   const resourcesRef = useRef<SttResources | null>(null);
   const submittedRef = useRef<Set<string>>(new Set());
   const acceptedTranscriptRef = useRef("");
   const sentenceSegmentsRef = useRef<Map<string, SentenceSegment>>(new Map());
   const transcriptArrivalIndexRef = useRef(0);
   const silenceCommitTimerRef = useRef<number | null>(null);
+  const postReleaseMuteTimerRef = useRef<number | null>(null);
+  const micCaptureStateRef = useRef<MicCaptureState>("muted");
+  const releasedForDraftUpdateRef = useRef(false);
   const activePointerIdRef = useRef<number | null>(null);
   const mountedRef = useRef(false);
   const generationRef = useRef(0);
+  const pendingDraftRequestIdRef = useRef<string | null>(null);
 
   const clearSilenceCommitTimer = useCallback(() => {
     if (silenceCommitTimerRef.current === null) return;
@@ -328,8 +346,68 @@ export function BroDetailPage({
     silenceCommitTimerRef.current = null;
   }, []);
 
-  const commitCurrentTranscript = useCallback(async (reason: "release" | "silence" | "final") => {
+  const clearPostReleaseMuteTimer = useCallback(() => {
+    if (postReleaseMuteTimerRef.current === null) return;
+    window.clearTimeout(postReleaseMuteTimerRef.current);
+    postReleaseMuteTimerRef.current = null;
+  }, []);
+
+  const resetDraftWorkspace = useCallback(() => {
     clearSilenceCommitTimer();
+    sentenceSegmentsRef.current = new Map();
+    submittedRef.current = new Set();
+    acceptedTranscriptRef.current = "";
+    transcriptArrivalIndexRef.current = 0;
+    releasedForDraftUpdateRef.current = false;
+    pendingDraftRequestIdRef.current = null;
+    setAcceptedTranscript("");
+    setDraftSession(null);
+    setStreamingDraftText("");
+  }, [clearSilenceCommitTimer]);
+
+  useEffect(() => {
+    if (snapshotDraftSession === null) {
+      setDraftSession(null);
+      return;
+    }
+    setDraftSession(snapshotDraftSession);
+  }, [snapshotDraftSession]);
+
+  useEffect(() => {
+    if (latestDraftOutputEvent === null) return;
+    if (latestDraftOutputEvent.request_id !== pendingDraftRequestIdRef.current) return;
+
+    if (latestDraftOutputEvent.type === "draft_output_started") {
+      setStreamingDraftText("");
+      setSttPhase("draft_updating");
+      return;
+    }
+    if (latestDraftOutputEvent.type === "draft_output_delta") {
+      setStreamingDraftText((current) => current + latestDraftOutputEvent.delta);
+      return;
+    }
+    if (latestDraftOutputEvent.type === "draft_output_completed") {
+      const draftText = latestDraftOutputEvent.draft_text;
+      setStreamingDraftText(draftText);
+      setDraftSession({
+        id: latestDraftOutputEvent.draft_session_id,
+        current_draft: {
+          text: draftText,
+        },
+        status: "ready",
+      });
+      pendingDraftRequestIdRef.current = null;
+      setSttPhase("ready_mic_off");
+      return;
+    }
+    onGlobalError?.(latestDraftOutputEvent.message || "Failed to update draft from transcript.");
+    pendingDraftRequestIdRef.current = null;
+    setSttPhase("error");
+  }, [latestDraftOutputEvent, onGlobalError]);
+
+  const commitCurrentTranscript = useCallback(async (reason: "silence") => {
+    clearSilenceCommitTimer();
+    if (!releasedForDraftUpdateRef.current) return;
     const draftRawText = acceptedTranscriptRef.current;
     if (!draftRawText) return;
     setSttPhase("draft_updating");
@@ -343,12 +421,22 @@ export function BroDetailPage({
     submittedRef.current.add(draftRawText);
 
     if (sessionId) {
+      const requestId = onSubmitDraftAsrTurn?.({
+        raw_text: draftRawText,
+        assigned_bro_id: bro.id,
+      }) ?? null;
+      if (requestId !== null) {
+        pendingDraftRequestIdRef.current = requestId;
+        setStreamingDraftText("");
+        return;
+      }
       try {
         const nextDraftSession = await submitDraftAsrTurn(sessionId, {
           raw_text: draftRawText,
           assigned_bro_id: bro.id,
         });
         setDraftSession(nextDraftSession as DraftSession);
+        setStreamingDraftText("");
         setSttPhase("ready_mic_off");
       } catch (error) {
         onGlobalError?.(error instanceof Error ? error.message : "Failed to update draft from transcript.");
@@ -357,17 +445,51 @@ export function BroDetailPage({
     } else {
       setSttPhase("ready_mic_off");
     }
-  }, [bro.id, clearSilenceCommitTimer, onGlobalError, sessionId]);
+  }, [bro.id, clearSilenceCommitTimer, onGlobalError, onSubmitDraftAsrTurn, sessionId]);
 
   const scheduleSilenceCommit = useCallback(() => {
+    if (!releasedForDraftUpdateRef.current) return;
     clearSilenceCommitTimer();
     silenceCommitTimerRef.current = window.setTimeout(() => {
       void commitCurrentTranscript("silence");
     }, STT_SILENCE_COMMIT_MS);
   }, [clearSilenceCommitTimer, commitCurrentTranscript]);
 
+  const markHeldForDraftUpdate = useCallback(() => {
+    releasedForDraftUpdateRef.current = false;
+    clearSilenceCommitTimer();
+  }, [clearSilenceCommitTimer]);
+
+  const markReleasedForDraftUpdate = useCallback(() => {
+    releasedForDraftUpdateRef.current = true;
+    scheduleSilenceCommit();
+  }, [scheduleSilenceCommit]);
+
+  const schedulePostReleaseMute = useCallback(() => {
+    clearPostReleaseMuteTimer();
+    postReleaseMuteTimerRef.current = window.setTimeout(() => {
+      postReleaseMuteTimerRef.current = null;
+      if (micCaptureStateRef.current !== "tail") return;
+      const micTrack = resourcesRef.current?.micTrack;
+      if (!micTrack || sttPhase === "error") return;
+      void Promise.resolve(micTrack.setMuted?.(true))
+        .then(() => {
+          if (micCaptureStateRef.current === "tail") {
+            micCaptureStateRef.current = "muted";
+          }
+        })
+        .catch((error: unknown) => {
+          if (!mountedRef.current) return;
+          onGlobalError?.(error instanceof Error ? error.message : "Failed to toggle microphone.");
+          setSttPhase("error");
+        });
+    }, STT_RELEASE_AUDIO_TAIL_MS);
+  }, [clearPostReleaseMuteTimer, onGlobalError, sttPhase]);
+
   const leaveResources = useCallback(async (resources: SttResources | null) => {
     if (!resources) return;
+    clearPostReleaseMuteTimer();
+    micCaptureStateRef.current = "muted";
     try {
       await resources.micTrack?.setMuted?.(true);
     } catch {}
@@ -389,7 +511,7 @@ export function BroDetailPage({
         onGlobalError?.(error instanceof Error ? error.message : "Failed to leave STT session.");
       }
     }
-  }, [onGlobalError]);
+  }, [clearPostReleaseMuteTimer, onGlobalError]);
 
   const handleTranscript = useCallback(async (payload: unknown) => {
     const parsed = extractTranscriptText(payload);
@@ -419,12 +541,8 @@ export function BroDetailPage({
     } else {
       return;
     }
-    if (parsed.final) {
-      void commitCurrentTranscript("final");
-      return;
-    }
     scheduleSilenceCommit();
-  }, [commitCurrentTranscript, scheduleSilenceCommit]);
+  }, [scheduleSilenceCommit]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -453,6 +571,7 @@ export function BroDetailPage({
         micTrack = await AgoraRTC.createMicrophoneAudioTrack();
         await rtcClient.publish([micTrack]);
         await micTrack.setMuted?.(true);
+        micCaptureStateRef.current = "muted";
         resourcesRef.current = { rtcClient, micTrack, preparedSession, sttSession: null };
         if (!mountedRef.current || generationRef.current !== generation) return;
         setSttPhase("asr_bot_starting");
@@ -482,11 +601,12 @@ export function BroDetailPage({
       mountedRef.current = false;
       generationRef.current += 1;
       clearSilenceCommitTimer();
+      clearPostReleaseMuteTimer();
       const resources = resourcesRef.current;
       resourcesRef.current = null;
       void leaveResources(resources);
     };
-  }, [bro.id, clearSilenceCommitTimer, handleTranscript, leaveResources, onGlobalError, sessionId]);
+  }, [bro.id, clearPostReleaseMuteTimer, clearSilenceCommitTimer, handleTranscript, leaveResources, onGlobalError, sessionId]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -506,11 +626,26 @@ export function BroDetailPage({
     const micTrack = resourcesRef.current?.micTrack;
     if (!micTrack || sttPhase === "error") return;
     try {
-      await micTrack.setMuted?.(!enabled);
-      setMicActive(enabled);
-      if (!enabled) {
-        void commitCurrentTranscript("release");
+      if (enabled) {
+        if (micCaptureStateRef.current === "held") {
+          setMicActive(true);
+          return;
+        }
+        clearPostReleaseMuteTimer();
+        markHeldForDraftUpdate();
+        micCaptureStateRef.current = "held";
+        setMicActive(true);
+        await micTrack.setMuted?.(false);
+        return;
       }
+      if (micCaptureStateRef.current !== "held") {
+        setMicActive(false);
+        return;
+      }
+      setMicActive(false);
+      micCaptureStateRef.current = "tail";
+      markReleasedForDraftUpdate();
+      schedulePostReleaseMute();
     } catch (error) {
       onGlobalError?.(error instanceof Error ? error.message : "Failed to toggle microphone.");
       setSttPhase("error");
@@ -543,9 +678,50 @@ export function BroDetailPage({
     void setMicEnabled(false);
   }
 
+  async function handleSendDraft() {
+    if (!sessionId || !draftSession?.current_draft || sendingDraft || clearingDraft) return;
+    setSendingDraft(true);
+    setDraftActionError(null);
+    onGlobalError?.(null);
+    try {
+      await sendDraft(sessionId, { draft_session_id: draftSession.id });
+      resetDraftWorkspace();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to send draft to Bro.";
+      setDraftActionError(message);
+      onGlobalError?.(message);
+    } finally {
+      if (mountedRef.current) {
+        setSendingDraft(false);
+      }
+    }
+  }
+
+  async function handleClearDraft() {
+    if (!sessionId || !draftSession?.current_draft || sendingDraft || clearingDraft) return;
+    setClearingDraft(true);
+    setDraftActionError(null);
+    onGlobalError?.(null);
+    try {
+      await clearDraft(sessionId, { draft_session_id: draftSession.id });
+      resetDraftWorkspace();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to clear draft.";
+      setDraftActionError(message);
+      onGlobalError?.(message);
+    } finally {
+      if (mountedRef.current) {
+        setClearingDraft(false);
+      }
+    }
+  }
+
   const readyForMic = sttPhase === "ready_mic_off" || sttPhase === "draft_updating";
   const capturing = micActive;
   const transcriptText = acceptedTranscript;
+  const draftReady = Boolean(draftSession?.current_draft);
+  const draftActionPending = sendingDraft || clearingDraft;
+  const canSendDraft = bro.source === "runtime";
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3 px-4 pb-4 pt-3 md:px-6 md:pb-6 xl:px-8 xl:pb-8">
@@ -573,65 +749,105 @@ export function BroDetailPage({
 
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 xl:grid-cols-[1.35fr_0.65fr]">
         <section className="glass-panel flex min-h-[520px] flex-col rounded-[28px] border border-white/75 p-4">
-          <div className="flex flex-col gap-3 rounded-[22px] border border-white/75 bg-white/55 p-3 md:flex-row md:items-center md:justify-between">
-            <div>
+          <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-[0.85fr_1.15fr]">
+            <div className="flex min-h-[260px] flex-col rounded-[24px] border border-white/75 bg-white/58 p-4">
               <div className="text-[11px] uppercase tracking-[0.22em] text-primary">Draft Brain</div>
               <div className="mt-1 text-[13px] text-muted-foreground">Hold the mic to shape a draft for {bro.name}.</div>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <Button
-                type="button"
-                className="h-10 rounded-full px-4"
-                disabled={!sessionId || !readyForMic || sttPhase === "draft_updating"}
-                onPointerDown={handleMicPointerDown}
-                onPointerUp={handleMicPointerUp}
-                onPointerCancel={(event) => handleMicPointerUp(event)}
-                onKeyDown={handleMicKeyDown}
-                onKeyUp={handleMicKeyUp}
-                onBlur={() => {
-                  if (activePointerIdRef.current === null) void setMicEnabled(false);
-                }}
-              >
-                <Mic className="mr-2 size-4" />
-                {capturing ? "Release to finish" : "Hold to Talk"}
-              </Button>
-            </div>
-          </div>
-
-          <div className="mt-3 grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-[0.85fr_1.15fr]">
-            <div className="flex min-h-[260px] flex-col rounded-[24px] border border-white/75 bg-white/58 p-4">
-              <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">Live transcript</div>
+              <div className="mt-5 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">Live transcript</div>
               <div className="mt-3 min-h-0 flex-1 overflow-auto rounded-2xl bg-white/60 px-3 py-2 text-[14px] leading-7 text-foreground/78">
                 <p>{transcriptText || "Latest transcript will appear here."}</p>
               </div>
             </div>
 
             <div className="flex min-h-[260px] flex-col">
-              <DraftPanel draftSession={draftSession} />
+              <DraftPanel draftSession={draftSession} streamingDraftText={streamingDraftText} />
             </div>
           </div>
 
           <div className="mt-3 flex flex-wrap gap-2">
-            <Button type="button" className="h-9 rounded-full" disabled>
-              <SendHorizontal className="mr-2 size-4" />
-              Send to Bro
+            <Button
+              type="button"
+              className="h-9 rounded-full px-4"
+              disabled={!sessionId || !readyForMic || sttPhase === "draft_updating" || draftActionPending}
+              onPointerDown={handleMicPointerDown}
+              onPointerUp={handleMicPointerUp}
+              onPointerCancel={(event) => handleMicPointerUp(event)}
+              onKeyDown={handleMicKeyDown}
+              onKeyUp={handleMicKeyUp}
+              onBlur={() => {
+                if (activePointerIdRef.current === null) void setMicEnabled(false);
+              }}
+            >
+              <Mic className="mr-2 size-4" />
+              {capturing ? "Release to finish" : "Hold to Talk"}
             </Button>
-            <Button type="button" variant="outline" className="h-9 rounded-full" disabled>Clear Draft</Button>
+            <Button
+              type="button"
+              className="h-9 rounded-full"
+              disabled={!sessionId || !draftReady || draftActionPending || !canSendDraft}
+              onClick={() => {
+                void handleSendDraft();
+              }}
+            >
+              <SendHorizontal className="mr-2 size-4" />
+              {sendingDraft ? "Sending" : "Send to Bro"}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              className="h-9 rounded-full"
+              disabled={!sessionId || !draftReady || draftActionPending}
+              onClick={() => {
+                void handleClearDraft();
+              }}
+            >
+              {clearingDraft ? "Clearing" : "Clear Draft"}
+            </Button>
           </div>
+          {draftActionError ? (
+            <div className="mt-2 text-[13px] leading-6 text-red-600" role="status">
+              {draftActionError}
+            </div>
+          ) : null}
         </section>
 
-        <aside className="glass-panel min-h-[420px] rounded-[28px] border border-white/75 p-4">
+        <aside className="glass-panel min-h-[420px] overflow-y-auto rounded-[28px] border border-white/75 p-4">
           <div className="text-[11px] uppercase tracking-[0.22em] text-primary">Runner Brain</div>
           <h2 className="serif-flow mt-1 text-[26px] tracking-[-0.05em]">Current task</h2>
           <div className="mt-4 rounded-[22px] border border-white/75 bg-white/58 p-4">
-            <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.16em] text-muted-foreground"><CircleDot className="size-4 text-primary" />{bro.status}</div>
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.16em] text-muted-foreground"><CircleDot className="size-4 text-primary" />{bro.status}</div>
+              <div className="text-[11px] text-muted-foreground">{bro.progressLabel}</div>
+            </div>
             <div className="mt-3 text-[16px] font-medium text-foreground">{bro.taskTitle}</div>
-            <BroProgress bro={bro} talking={false} />
+            <BroProgress bro={bro} talking={false} compact />
           </div>
-          <div className="mt-3 rounded-[22px] border border-white/75 bg-white/58 p-4">
-            <div className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">Latest summary</div>
-            <p className="mt-3 text-[13px] leading-6 text-foreground/80">{summary?.conversational_summary ?? summary?.operational_summary ?? bro.idleNote}</p>
-          </div>
+          {summary ? (
+            <div className="mt-3 rounded-[22px] border border-white/75 bg-white/58 p-4">
+              <div className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">Latest summary</div>
+              <MarkdownText className="mt-3 text-[13px] leading-6 text-foreground/80">
+                {summary.conversational_summary ?? summary.operational_summary ?? ""}
+              </MarkdownText>
+            </div>
+          ) : null}
+          {taskRecords && taskRecords.length > 0 ? (
+            <div className="mt-3 rounded-[22px] border border-white/75 bg-white/58 p-4">
+              <div className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">Recent tasks</div>
+              <div className="mt-3 space-y-3">
+                {taskRecords.map((record) => (
+                  <div key={record.taskId} className="rounded-2xl border border-white/70 bg-white/45 px-3 py-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0 text-[13px] font-medium text-foreground">{record.title}</div>
+                      <div className="shrink-0 text-[10px] uppercase tracking-[0.14em] text-muted-foreground">{record.statusLabel}</div>
+                    </div>
+                    <MarkdownText className="mt-2 text-[12px] leading-5 text-foreground/72">
+                      {record.summary}
+                    </MarkdownText>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
           <Button type="button" variant="outline" className="mt-4 w-full rounded-full" disabled={bro.status !== "busy"}><Square className="mr-2 size-4" />Stop Task</Button>
         </aside>
       </div>

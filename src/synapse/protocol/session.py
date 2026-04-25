@@ -25,6 +25,7 @@ class ExecutionSession(BaseModel):
     task_id: str
     base_executor_id: str
     executor_node_id: str | None = None
+    continuity_key: str | None = None
     run_ids: list[str] = Field(default_factory=list)
     active_run_id: str | None = None
     latest_run_id: str | None = None

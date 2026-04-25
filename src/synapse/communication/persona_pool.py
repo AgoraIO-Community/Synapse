@@ -160,19 +160,28 @@ def _write_persona_store(store: PersonaStore, path: Path) -> None:
             "    executor_node_id: "
             + (_yaml_quote(persona.executor_node_id) if persona.executor_node_id else "null")
         )
+        lines.append(f"    bro_detail_session_id: {_yaml_quote(persona.bro_detail_session_id)}")
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def _build_persona(fields: dict[str, str]) -> Persona:
     name = fields.get("name", "")
     persona_id = fields.get("persona_id") or f"persona-{name.lower().replace(' ', '-')}"
-    return Persona(
-        persona_id=persona_id,
-        name=name,
-        avatar=fields.get("avatar", ""),
-        base_prompt=fields.get("base_prompt", ""),
-        executor_node_id=_optional_value(fields.get("executor_node_id", "")),
-    )
+    values = {
+        "persona_id": persona_id,
+        "name": name,
+        "avatar": fields.get("avatar", ""),
+        "base_prompt": fields.get("base_prompt", ""),
+        "executor_node_id": _optional_value(fields.get("executor_node_id", "")),
+    }
+    bro_detail_session_id = fields.get("bro_detail_session_id")
+    values["bro_detail_session_id"] = bro_detail_session_id or _legacy_bro_detail_session_id(persona_id)
+    return Persona(**values)
+
+
+def _legacy_bro_detail_session_id(persona_id: str) -> str:
+    slug = re.sub(r"[^a-zA-Z0-9_-]+", "-", persona_id).strip("-") or "bro"
+    return f"bro-detail-{slug}"
 
 
 def _unquote(value: str) -> str:

@@ -7,6 +7,7 @@ from synapse.communication.model import CommunicationModel
 from synapse.protocol import Persona
 
 from .config import Settings
+from .drafts import DraftRewriter
 from .executor_node_manager import ExecutorNodeManager
 from .session import SessionRuntime, create_session_runtime
 
@@ -15,6 +16,7 @@ from .session import SessionRuntime, create_session_runtime
 class RuntimeContainer:
     communication_model: CommunicationModel
     settings: Settings
+    draft_rewriter: DraftRewriter | None = None
     executor_node_manager: ExecutorNodeManager = field(init=False)
     _sessions: dict[str, SessionRuntime] = field(default_factory=dict, init=False)
 
@@ -30,6 +32,7 @@ class RuntimeContainer:
             model=self.communication_model,
             settings=self.settings,
             executor_node_manager=self.executor_node_manager,
+            draft_rewriter=self.draft_rewriter,
         )
         self._sessions[session_id] = session
         return session
