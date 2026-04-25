@@ -18,10 +18,10 @@ export function BroPortrait({
 
   return (
     <div
-      className={`relative h-[88px] w-[68px] shrink-0 overflow-hidden rounded-[18px] border ${panelBg}`}
+      className={`relative h-[68px] w-[68px] shrink-0 overflow-hidden rounded-[18px] border ${panelBg}`}
     >
       <svg
-        viewBox="0 0 68 88"
+        viewBox="0 0 68 68"
         className="h-full w-full"
         fill="none"
         xmlns="http://www.w3.org/2000/svg"
@@ -112,15 +112,6 @@ export function BroPortrait({
             />
           </>
         )}
-
-        <rect
-          x="22"
-          y="71"
-          width="24"
-          height="3"
-          rx="1.5"
-          fill={accent ? "rgba(47,108,243,0.38)" : "#d4d4d4"}
-        />
       </svg>
 
       <div

@@ -28,6 +28,7 @@ const SHELL_API_ERROR_TITLE = "Unable to reach the Synapse API";
 const SHELL_API_ERROR_HINT =
   "This deployment must proxy /api/* requests to the backend before the shell can load live data.";
 const RESUME_FALLBACK_WARNING_PREFIX = "Could not resume the requested session.";
+const GLOBAL_MESSAGE_AUTO_DISMISS_MS = 6_000;
 
 function describeApiFailure(error: unknown, fallback: string): string {
   if (!(error instanceof Error)) {
@@ -74,19 +75,52 @@ function ShellLoadingPanel() {
   );
 }
 
-function ShellWarningBanner({ detail }: { detail: string }) {
+type GlobalMessage = {
+  detail: string;
+  tone: "error" | "warning";
+};
+
+function GlobalMessageBanner({ message, onDismiss }: { message: GlobalMessage; onDismiss: () => void }) {
+  const toneClass = message.tone === "error"
+    ? "border-red-200 bg-red-50 text-red-600"
+    : "border-amber-200 bg-amber-50 text-amber-700";
+
+  useEffect(() => {
+    const timer = window.setTimeout(onDismiss, GLOBAL_MESSAGE_AUTO_DISMISS_MS);
+    return () => window.clearTimeout(timer);
+  }, [message.detail, message.tone, onDismiss]);
+
   return (
     <div
-      data-testid="shell-warning"
-      className="glass-panel mx-4 mt-4 rounded-[24px] border border-white/80 px-4 py-3 text-[13px] leading-6 text-muted-foreground md:mx-6 md:mt-5 xl:mx-8"
+      data-testid="global-message"
+      className={`fixed right-5 top-5 z-50 max-w-[420px] rounded-2xl border px-4 py-3 pr-10 text-[13px] leading-6 shadow-[0_20px_60px_-32px_rgba(15,23,42,0.45)] backdrop-blur md:right-7 md:top-7 ${toneClass}`}
+      role="status"
     >
-      {detail}
+      <div>{message.detail}</div>
+      <button
+        type="button"
+        aria-label="Dismiss message"
+        className="absolute right-3 top-2 text-[18px] leading-none opacity-55 transition hover:opacity-90"
+        onClick={onDismiss}
+      >
+        ×
+      </button>
     </div>
   );
 }
 
 function buildResumeFallbackWarning(sessionId: string) {
   return `${RESUME_FALLBACK_WARNING_PREFIX} Opened a new session instead of ${sessionId}.`;
+}
+
+function globalMessageFor(shell: Pick<NewbroShellState, "shellError" | "shellWarning" | "hasLoadedShellSnapshot">): GlobalMessage | null {
+  if (shell.shellError && shell.hasLoadedShellSnapshot) {
+    return { detail: shell.shellError, tone: "error" };
+  }
+  if (shell.shellWarning) {
+    return { detail: shell.shellWarning, tone: "warning" };
+  }
+  return null;
 }
 
 function useNewbroShellState() {
@@ -284,6 +318,11 @@ function useNewbroShellState() {
     [executorNodes, executionRuns, runtimePersonas, taskSummaries],
   );
 
+  const clearGlobalMessage = useEffectEvent(() => {
+    setShellError(null);
+    setShellWarning(null);
+  });
+
   const sendMessage = (text: string): boolean => {
     const socket = socketRef.current;
     if (!socket || socket.readyState !== WebSocket.OPEN) return false;
@@ -302,6 +341,8 @@ function useNewbroShellState() {
     taskSummaries,
     shellError,
     shellWarning,
+    setShellError,
+    clearGlobalMessage,
     communicationPersonaPrompt,
     sendMessage,
     chatMessages,
@@ -332,10 +373,14 @@ function useNewbroShell() {
 function ShellFrame({
   activePage,
   onNavigate,
+  globalMessage,
+  onGlobalMessageDismiss,
   children,
 }: {
   activePage: PageId;
   onNavigate: PageNavigator;
+  globalMessage?: GlobalMessage | null;
+  onGlobalMessageDismiss?: () => void;
   children: ReactNode;
 }) {
   return (
@@ -343,9 +388,12 @@ function ShellFrame({
       <div className="min-h-screen w-full p-3 md:p-5">
         <div className="glass-panel flex h-[calc(100vh-1.5rem)] flex-col overflow-hidden rounded-[36px] border border-white/75 md:h-[calc(100vh-2.5rem)] lg:flex-row">
           <Sidebar activePage={activePage} onNavigate={onNavigate} />
-          <main data-testid="newbro-shell" className="flex min-w-0 flex-1 flex-col">
+          <main data-testid="newbro-shell" className="relative flex min-w-0 flex-1 flex-col">
             {children}
           </main>
+          {globalMessage && onGlobalMessageDismiss ? (
+            <GlobalMessageBanner message={globalMessage} onDismiss={onGlobalMessageDismiss} />
+          ) : null}
         </div>
       </div>
     </div>
@@ -362,14 +410,12 @@ export function HomeShellPage({
   const shell = useNewbroShell();
 
   return (
-    <ShellFrame activePage="Home" onNavigate={onNavigate}>
-      {shell.shellWarning ? <ShellWarningBanner detail={shell.shellWarning} /> : null}
-
-      {shell.shellError && shell.hasLoadedShellSnapshot ? (
-        <div className="glass-panel mx-4 mt-4 rounded-[24px] border border-white/80 px-4 py-3 text-[13px] leading-6 text-muted-foreground md:mx-6 md:mt-5 xl:mx-8">
-          {shell.shellError}
-        </div>
-      ) : null}
+    <ShellFrame
+      activePage="Home"
+      onNavigate={onNavigate}
+      globalMessage={globalMessageFor(shell)}
+      onGlobalMessageDismiss={shell.clearGlobalMessage}
+    >
 
       {shell.hasLoadedShellSnapshot ? (
         <div className="flex min-h-0 flex-1 flex-col gap-5 px-4 pb-4 pt-4 md:px-6 md:pb-6 md:pt-5 xl:px-8 xl:pb-8 xl:pt-6">
@@ -421,8 +467,12 @@ export function BroDetailShellPage({
     : null;
 
   return (
-    <ShellFrame activePage="Home" onNavigate={onNavigate}>
-      {shell.shellWarning ? <ShellWarningBanner detail={shell.shellWarning} /> : null}
+    <ShellFrame
+      activePage="Home"
+      onNavigate={onNavigate}
+      globalMessage={globalMessageFor(shell)}
+      onGlobalMessageDismiss={shell.clearGlobalMessage}
+    >
       {shell.hasLoadedShellSnapshot ? (
         bro ? (
           <BroDetailPage
@@ -430,6 +480,7 @@ export function BroDetailShellPage({
             sessionId={shell.activeShellSessionId}
             summary={activeSummary}
             onBack={() => onNavigate("Home")}
+            onGlobalError={shell.setShellError}
           />
         ) : (
           <div className="flex flex-1 items-center justify-center p-6">
@@ -461,8 +512,12 @@ export function BrosShellPage({ onNavigate }: { onNavigate: PageNavigator }) {
   const shell = useNewbroShell();
 
   return (
-    <ShellFrame activePage="Bros" onNavigate={onNavigate}>
-      {shell.shellWarning ? <ShellWarningBanner detail={shell.shellWarning} /> : null}
+    <ShellFrame
+      activePage="Bros"
+      onNavigate={onNavigate}
+      globalMessage={globalMessageFor(shell)}
+      onGlobalMessageDismiss={shell.clearGlobalMessage}
+    >
       {shell.activeShellSessionId && shell.hasLoadedShellSnapshot ? (
         <div className="min-h-0 flex-1 overflow-auto">
           <BrosPage
@@ -485,8 +540,12 @@ export function NodesShellPage({ onNavigate }: { onNavigate: PageNavigator }) {
   const shell = useNewbroShell();
 
   return (
-    <ShellFrame activePage="Nodes" onNavigate={onNavigate}>
-      {shell.shellWarning ? <ShellWarningBanner detail={shell.shellWarning} /> : null}
+    <ShellFrame
+      activePage="Nodes"
+      onNavigate={onNavigate}
+      globalMessage={globalMessageFor(shell)}
+      onGlobalMessageDismiss={shell.clearGlobalMessage}
+    >
       {shell.activeShellSessionId && shell.hasLoadedShellSnapshot ? (
         <div className="min-h-0 flex-1 overflow-auto">
           <NodesPage
@@ -508,8 +567,12 @@ export function SettingsShellPage({ onNavigate }: { onNavigate: PageNavigator })
   const shell = useNewbroShell();
 
   return (
-    <ShellFrame activePage="Settings" onNavigate={onNavigate}>
-      {shell.shellWarning ? <ShellWarningBanner detail={shell.shellWarning} /> : null}
+    <ShellFrame
+      activePage="Settings"
+      onNavigate={onNavigate}
+      globalMessage={globalMessageFor(shell)}
+      onGlobalMessageDismiss={shell.clearGlobalMessage}
+    >
       <div className="flex flex-1 items-center justify-center">
         <div className="text-[14px] text-neutral-400">Settings coming soon.</div>
       </div>

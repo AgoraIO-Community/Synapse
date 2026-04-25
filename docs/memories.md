@@ -176,4 +176,11 @@ Short log of important design decisions and changes for Synapse.
 - Adopted `newbro v0` as a draft-to-execute workflow: ASR turns update a mutable Draft, Send creates an immutable Task contract, and changing direction requires stopping and starting a new Draft.
 - Changed Bro Detail ASR to use connector-managed STT sessions with fast RTC prepare, unique Agora-safe channels per page start, press-to-talk microphone control, explicit leave stop, and heartbeat timeout cleanup after more than 60 seconds without heartbeat.
 - Changed Bro Detail STT defaults to recognize Chinese via `languages: ["zh-CN"]`, explicitly subscribe the STT bot to the browser RTC UID, and parse official JSON transcript wrappers.
+- Changed Bro Detail STT defaults to recognize Chinese and English via `languages: ["zh-CN", "en-US"]`.
 - Corrected Bro Detail STT join payload to use distinct publisher/subscriber bot UIDs, matching the Agora REST STT contract.
+- Changed Bro Detail Draft Brain updates to submit the cumulative original-language ASR transcript, and made the deterministic draft display language follow Chinese ASR input with Chinese labels/defaults.
+- Changed Bro Detail ASR handling so Agora protobuf `words[].isFinal` only stabilizes the current candidate; Draft Brain submission now commits the latest candidate once on mic release or short ASR silence.
+- Changed Bro Detail ASR accumulation to follow Agora RTT-style subtitle segments: update the latest non-final segment by UID, keep final segments, and use STT timing metadata to reject stale revisions and sort late arrivals.
+- Changed Bro Detail live ASR accumulation to merge Agora rolling-window candidates by suffix/prefix overlap, so shorter same-window regressions do not erase prior text and overlapping later windows only append new suffix text.
+- Changed Bro Detail live ASR accumulation to a strict time-structured model: `payload.time` identifies the sentence segment, `text_ts` orders text parts inside that segment, and untimed payloads are ignored.
+- Changed Bro Detail strict ASR accumulation so each `payload.time` sentence segment keeps only its latest `text_ts` candidate before sentence segments are joined by start time.

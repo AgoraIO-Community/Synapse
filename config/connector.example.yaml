@@ -33,6 +33,7 @@ connectors:
       enabled: true
       languages:
         - zh-CN
+        - en-US
     tts:
       vendor: minimax
       credential_mode: managed

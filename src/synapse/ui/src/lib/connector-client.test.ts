@@ -231,7 +231,7 @@ describe("connector-client transport base URL handling", () => {
         sub_bot_uid: 100102,
         agent_id: "agent-1",
         status: "started",
-        languages: ["zh-CN"],
+        languages: ["zh-CN", "en-US"],
         subscribe_audio_uids: ["101"],
       }),
     );
@@ -244,7 +244,7 @@ describe("connector-client transport base URL handling", () => {
     });
 
     expect(response.stt_session_id).toBe("stt-1");
-    expect(response.languages).toEqual(["zh-CN"]);
+    expect(response.languages).toEqual(["zh-CN", "en-US"]);
     expect(response.subscribe_audio_uids).toEqual(["101"]);
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/connectors/agora-convoai/stt/sessions/start",
@@ -311,4 +311,27 @@ describe("connector-client transport base URL handling", () => {
     );
   });
 
+});
+
+describe("connector-client HTTP error formatting", () => {
+  afterEach(() => {
+    vi.resetModules();
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
+
+  it("formats nested JSON detail strings from failed connector responses", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(
+        JSON.stringify({ detail: JSON.stringify({ detail: "core: db failed, task not found", reason: "TaskNotFound" }) }),
+        { status: 404 },
+      )),
+    );
+    const client = await import("./connector-client");
+
+    await expect(client.prepareSttSession({ synapse_session_id: "session-1", assigned_bro_id: "bro-1" })).rejects.toThrow(
+      "core: db failed, task not found",
+    );
+  });
 });

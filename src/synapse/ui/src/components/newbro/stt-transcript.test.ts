@@ -75,13 +75,66 @@ describe("extractTranscriptText", () => {
     })).toEqual({ text: "原始中文", final: true, language: "zh-CN", source: "translation-original" });
   });
 
+  it("ignores translated transcript wrappers without original text", () => {
+    expect(extractTranscriptText({
+      translation: {
+        translated_transcript: { language: "en-US", text: "translated English", isFinal: true },
+      },
+    })).toBeNull();
+  });
+
   it("extracts interim Agora protobuf transcripts", () => {
     const bytes = encodeAgoraSttMessage({
       data_type: "transcribe",
       words: [{ text: "interim text", isFinal: false }],
       end_of_segment: false,
     });
-    expect(extractTranscriptText(bytes)).toEqual({ text: "interim text", final: false, source: "protobuf-words" });
+    expect(extractTranscriptText(bytes)).toMatchObject({ text: "interim text", final: false, source: "protobuf-words" });
+  });
+
+  it("extracts Agora protobuf transcript timing metadata", () => {
+    const bytes = encodeAgoraSttMessage({
+      data_type: "transcribe",
+      culture: "zh-CN",
+      uid: 101,
+      seqnum: 7,
+      time: 1_000,
+      starttime: 900,
+      offtime: 1_200,
+      duration_ms: 200,
+      text_ts: 1_250,
+      sentence_end_index: 3,
+      words: [{ text: "metadata", startMs: 10, durationMs: 90, isFinal: true, confidence: 0.875 }],
+      end_of_segment: false,
+    });
+    expect(extractTranscriptText(bytes)).toMatchObject({
+      text: "metadata",
+      final: false,
+      source: "protobuf-words",
+      uid: 101,
+      seqnum: 7,
+      time: 1_000,
+      starttime: 900,
+      offtime: 1_200,
+      durationMs: 200,
+      dataType: "transcribe",
+      culture: "zh-CN",
+      textTs: 1_250,
+      sentenceEndIndex: 3,
+      words: [{ text: "metadata", startMs: 10, durationMs: 90, isFinal: true, confidence: 0.875 }],
+    });
+  });
+
+  it("does not treat stable protobuf words as a final segment", () => {
+    const bytes = encodeAgoraSttMessage({
+      data_type: "transcribe",
+      words: [
+        { text: "stable", isFinal: true },
+        { text: "candidate", isFinal: true },
+      ],
+      end_of_segment: false,
+    });
+    expect(extractTranscriptText(bytes)).toMatchObject({ text: "stablecandidate", final: false, source: "protobuf-words" });
   });
 
   it("extracts final Agora protobuf transcripts", () => {
@@ -93,7 +146,26 @@ describe("extractTranscriptText", () => {
       ],
       end_of_segment: true,
     });
-    expect(extractTranscriptText(bytes)).toEqual({ text: "finaltext", final: true, source: "protobuf-words" });
+    expect(extractTranscriptText(bytes)).toMatchObject({ text: "finaltext", final: true, source: "protobuf-words" });
+  });
+
+  it("extracts only original words from Agora protobuf with translations", () => {
+    const bytes = encodeAgoraSttMessage({
+      data_type: "transcribe",
+      words: [{ text: "原始中文", isFinal: true }],
+      trans: [{ isFinal: true, lang: "en-US", texts: ["translated English"] }],
+      end_of_segment: true,
+    });
+    expect(extractTranscriptText(bytes)).toMatchObject({ text: "原始中文", final: true, source: "protobuf-words" });
+  });
+
+  it("ignores Agora protobuf translation-only transcripts", () => {
+    const bytes = encodeAgoraSttMessage({
+      data_type: "transcribe",
+      trans: [{ isFinal: true, lang: "en-US", texts: ["translated English"] }],
+      end_of_segment: true,
+    });
+    expect(extractTranscriptText(bytes)).toBeNull();
   });
 
   it("extracts gzipped Agora protobuf transcripts", () => {
@@ -102,7 +174,12 @@ describe("extractTranscriptText", () => {
       words: [{ text: "gzipped", isFinal: true }],
       end_of_segment: true,
     }));
-    expect(extractTranscriptText(bytes)).toEqual({ text: "gzipped", final: true, source: "protobuf-words" });
+    expect(extractTranscriptText(bytes)).toMatchObject({ text: "gzipped", final: true, source: "protobuf-words" });
+  });
+
+  it("ignores byte payloads that are not JSON or supported protobuf transcripts", () => {
+    expect(extractTranscriptText(new Uint8Array([0, 1, 2, 80, 81, 82, 3]))).toBeNull();
+    expect(extractTranscriptText(new TextEncoder().encode("clean utf8 transcript"))).toBeNull();
   });
 
   it("returns null for empty or unrecognized payloads", () => {

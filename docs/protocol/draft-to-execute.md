@@ -45,10 +45,10 @@ Microphone interaction is press-to-talk:
 ```text
 ASR bot ready + mic off
   -> press mic
-ASR bot ready + mic capturing
+mic enabled locally
   -> release mic
-ASR bot ready + transcribing
-  -> Draft updating
+mic disabled locally
+  -> final ASR segment may trigger Draft updating
   -> ASR bot ready + mic off
 ```
 
@@ -57,8 +57,9 @@ Synapse session id. The channel is ASCII-safe, bounded to the Agora channel name
 limits, and returned by the connector so the browser RTC join and STT bot join
 use the same channel.
 
-STT recognition defaults to Chinese via Agora `languages: ["zh-CN"]`, while
-explicit connector config can override the language list. The STT bot also
+STT recognition defaults to Chinese and English via Agora
+`languages: ["zh-CN", "en-US"]`, while explicit connector config can override
+the language list. The STT bot also
 subscribes explicitly to the browser RTC UID so it transcribes the user's audio
 source rather than relying on implicit channel subscription behavior. The STT
 publisher and subscriber bot UIDs are distinct, matching the Agora REST STT join
@@ -67,6 +68,18 @@ contract.
 The browser heartbeats active STT sessions every 15 seconds. Explicit Bro Detail
 leave stops the STT bot immediately. If the browser disappears without leave,
 the connector stops the STT bot after more than 60 seconds without heartbeat.
+
+Bro Detail accumulates ASR as strict time-structured original-language text.
+Agora protobuf `payload.time` is treated as the sentence segment start time, and
+`text_ts` / `textTs` is treated as the recency timestamp for that sentence's
+candidate text. Candidates missing either timestamp are ignored by the Bro Detail
+live transcript. Within one sentence segment, only the candidate with the latest
+`textTs` is retained; sentence segments are sorted by `time` and then joined.
+For Agora protobuf STT payloads, `words[].isFinal` means the current candidate is stable; only
+`end_of_segment === true` marks a final segment. Draft updates receive the
+cumulative original-language transcript on mic release, final segment, or about
+1.2 seconds of ASR silence. The browser does not merge translated transcript
+text into this original transcript stream.
 
 ## Draft Session
 
@@ -102,7 +115,9 @@ Fields:
 - `risk_level`
 
 Draft Brain rewrites the full Draft after each ASR turn. It should keep only the
-current final execution intent, not the whole revision history.
+current final execution intent, not the whole revision history. For v0's
+deterministic Draft Brain, draft display language follows the recognized ASR
+input when possible; Chinese input produces Chinese draft labels and defaults.
 
 ## Send Boundary
 

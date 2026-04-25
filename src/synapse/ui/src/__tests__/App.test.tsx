@@ -224,7 +224,7 @@ const connectorMock = vi.hoisted(() => ({
     sub_bot_uid: 100102,
     agent_id: "agent-1",
     status: "started",
-    languages: ["zh-CN"],
+    languages: ["zh-CN", "en-US"],
     subscribe_audio_uids: ["101"],
   })),
   heartbeatSttSession: vi.fn(async () => ({ status: "active" })),
@@ -343,7 +343,8 @@ describe("Newbro voice shell", () => {
     expect(await screen.findByText("Bro detail")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Forge" })).toBeInTheDocument();
     expect(screen.getByText("No draft yet. Hold the mic to start shaping one.")).toBeInTheDocument();
-    expect((await screen.findAllByText("Ready · mic off")).length).toBeGreaterThan(0);
+    expect(await screen.findByRole("button", { name: "Hold to Talk" })).toBeInTheDocument();
+    expect(screen.queryByText("Ready · mic off")).not.toBeInTheDocument();
   });
 
   it("publishes the Bro detail mic before muting it", async () => {
@@ -351,7 +352,8 @@ describe("Newbro voice shell", () => {
 
     render(<RouterProvider router={getRouter()} />);
 
-    expect((await screen.findAllByText("Ready · mic off")).length).toBeGreaterThan(0);
+    expect(await screen.findByRole("button", { name: "Hold to Talk" })).toBeInTheDocument();
+    expect(screen.queryByText("Ready · mic off")).not.toBeInTheDocument();
     expect(voiceHarness.rtcClient.publish).toHaveBeenCalledWith([voiceHarness.micTrack]);
     expect(voiceHarness.micTrack.setEnabled).not.toHaveBeenCalledWith(false);
     expect(voiceHarness.micTrack.setMuted).toHaveBeenCalledWith(true);
@@ -362,37 +364,33 @@ describe("Newbro voice shell", () => {
     const micButton = screen.getByRole("button", { name: "Hold to Talk" });
     fireEvent.pointerDown(micButton, { pointerId: 1 });
     await waitFor(() => expect(voiceHarness.micTrack.setMuted).toHaveBeenCalledWith(false));
+    expect(screen.queryByText("Ready · mic off")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Release to finish" })).toBeInTheDocument();
     expect(screen.queryByTestId("talking-bars")).not.toBeInTheDocument();
     fireEvent.blur(micButton);
     expect(voiceHarness.micTrack.setMuted).toHaveBeenLastCalledWith(false);
     fireEvent.pointerUp(micButton, { pointerId: 1 });
     await waitFor(() => expect(voiceHarness.micTrack.setMuted).toHaveBeenLastCalledWith(true));
+    expect(screen.queryByText("Ready · mic off")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Hold to Talk" })).toBeInTheDocument();
   });
 
-  it("renders Bro detail RTC debug events and unparsed stream messages", async () => {
+  it("keeps Bro detail RTC debug and unparsed stream messages out of the UI", async () => {
     window.history.replaceState({}, "", "/bros/forge?sid=session-existing");
 
     render(<RouterProvider router={getRouter()} />);
 
-    await screen.findAllByText("Ready · mic off");
-    const userJoinedHandler = voiceHarness.rtcClient.on.mock.calls.find(
-      ([eventName]) => eventName === "user-joined",
-    )?.[1];
-    const userPublishedHandler = voiceHarness.rtcClient.on.mock.calls.find(
-      ([eventName]) => eventName === "user-published",
-    )?.[1];
+    await screen.findByRole("button", { name: "Hold to Talk" });
     const transcriptHandler = voiceHarness.rtcClient.on.mock.calls.find(
       ([eventName]) => eventName === "stream-message",
     )?.[1];
 
     await act(async () => {
-      userJoinedHandler({ uid: 200101 });
-      userPublishedHandler({ uid: 200101 }, "audio");
       transcriptHandler(200101, { nope: true });
     });
 
-    expect(await screen.findByText(/Voice debug:/)).toHaveTextContent("unparsed stream-message");
-    expect(screen.getByText(/Voice debug:/)).toHaveTextContent("object nope");
+    expect(screen.queryByText(/Voice debug:/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/unparsed stream-message/)).not.toBeInTheDocument();
   });
 
   it("does not poll STT status from Bro detail", async () => {
@@ -400,10 +398,10 @@ describe("Newbro voice shell", () => {
 
     render(<RouterProvider router={getRouter()} />);
 
-    await screen.findAllByText("Ready · mic off");
+    await screen.findByRole("button", { name: "Hold to Talk" });
 
     expect(connectorMock.querySttSession).not.toHaveBeenCalled();
-    expect(screen.getByText(/Voice debug:/)).not.toHaveTextContent("stt status");
+    expect(screen.queryByText(/Voice debug:/)).not.toBeInTheDocument();
   });
 
   it("renders final Bro detail transcript and returned draft content", async () => {
@@ -411,7 +409,7 @@ describe("Newbro voice shell", () => {
 
     render(<RouterProvider router={getRouter()} />);
 
-    await screen.findAllByText("Ready · mic off");
+    await screen.findByRole("button", { name: "Hold to Talk" });
     const transcriptHandler = voiceHarness.rtcClient.on.mock.calls.find(
       ([eventName]) => eventName === "stream-message",
     )?.[1];
@@ -419,27 +417,126 @@ describe("Newbro voice shell", () => {
 
     await act(async () => {
       transcriptHandler(200101, {
-        text: "Build a calm landing page",
+        text: "Build a calm\nlanding page",
+        isFinal: false,
+        time: 100,
+        textTs: 110,
+      });
+      transcriptHandler(200101, {
+        text: "with soft motion",
+        isFinal: false,
+        time: 200,
+        textTs: 210,
+      });
+      transcriptHandler(200101, {
+        text: "with",
         isFinal: true,
+        time: 200,
+        textTs: 220,
       });
     });
 
-    expect((await screen.findAllByText("Build a calm landing page")).length).toBeGreaterThan(0);
+    expect(await screen.findByText("Build a calm landing page with soft motion")).toBeInTheDocument();
+    expect(screen.queryByText("Listening live")).not.toBeInTheDocument();
+    expect(screen.queryByText("Completed turns appear here when ASR marks a segment final.")).not.toBeInTheDocument();
     expect(await screen.findByText("Draft landing page")).toBeInTheDocument();
     expect(screen.getByText("Create a refined landing page concept.")).toBeInTheDocument();
     expect(screen.getByText("Design a polished landing page with a calm hero section.")).toBeInTheDocument();
     expect(clientMock.submitDraftAsrTurn).toHaveBeenCalledWith("session-existing", {
-      raw_text: "Build a calm landing page",
+      raw_text: "Build a calm landing page with soft motion",
       assigned_bro_id: "forge",
     });
   });
 
-  it("renders non-final Bro detail transcript without updating draft", async () => {
+  it("prints Bro detail transcript debug as segments displayText and words", async () => {
+    const debugSpy = vi.spyOn(console, "debug").mockImplementation(() => {});
     window.history.replaceState({}, "", "/bros/forge?sid=session-existing");
 
     render(<RouterProvider router={getRouter()} />);
 
-    await screen.findAllByText("Ready · mic off");
+    await screen.findByRole("button", { name: "Hold to Talk" });
+    const transcriptHandler = voiceHarness.rtcClient.on.mock.calls.find(
+      ([eventName]) => eventName === "stream-message",
+    )?.[1];
+    expect(transcriptHandler).toBeTypeOf("function");
+
+    await act(async () => {
+      transcriptHandler(200101, {
+        text: "hello world",
+        isFinal: false,
+        uid: 101,
+        time: 100,
+        textTs: 120,
+        words: [
+          { text: "hello", startMs: 100, durationMs: 50, isFinal: true, confidence: 0.95 },
+          { text: "world", startMs: 150, durationMs: 60, isFinal: false, confidence: 0.9 },
+        ],
+      });
+    });
+
+    const candidateLog = debugSpy.mock.calls.find(
+      ([label]) => label === "[BroDetail][STT] received candidate",
+    );
+    expect(candidateLog?.[1]).toMatchObject({
+      displayText: "hello world",
+      segments: [
+        {
+          key: "101:100",
+          uid: "101",
+          startTime: 100,
+          text: "hello world",
+          textTs: 120,
+          arrivalIndex: 1,
+        },
+      ],
+      words: [
+        { text: "hello", startMs: 100, durationMs: 50, isFinal: true, confidence: 0.95 },
+        { text: "world", startMs: 150, durationMs: 60, isFinal: false, confidence: 0.9 },
+      ],
+      protobuf: null,
+    });
+    expect(candidateLog?.[1]).not.toHaveProperty("candidate");
+    expect(candidateLog?.[1]).not.toHaveProperty("raw");
+    debugSpy.mockRestore();
+  });
+
+  it("keeps only the latest textTs for each timed Chinese Bro detail sentence", async () => {
+    window.history.replaceState({}, "", "/bros/forge?sid=session-existing");
+
+    render(<RouterProvider router={getRouter()} />);
+
+    await screen.findByRole("button", { name: "Hold to Talk" });
+    const transcriptHandler = voiceHarness.rtcClient.on.mock.calls.find(
+      ([eventName]) => eventName === "stream-message",
+    )?.[1];
+    expect(transcriptHandler).toBeTypeOf("function");
+
+    await act(async () => {
+      transcriptHandler(200101, { text: "好像在一场大", isFinal: false, time: 100, textTs: 110 });
+      transcriptHandler(200101, { text: "型音乐演唱会上面", isFinal: false, time: 100, textTs: 120 });
+      transcriptHandler(200101, { text: "南", isFinal: false, time: 200, textTs: 210 });
+      transcriptHandler(200101, { text: "美人在美国超级", isFinal: false, time: 200, textTs: 220 });
+      transcriptHandler(200101, { text: "碗上面", isFinal: false, time: 200, textTs: 230 });
+      transcriptHandler(200101, { text: "大 型", isFinal: false, time: 300, textTs: 310 });
+      transcriptHandler(200101, { text: "音乐", isFinal: false, time: 300, textTs: 320 });
+      transcriptHandler(200101, { text: "音", isFinal: true, time: 300, textTs: 330 });
+    });
+
+    expect(await screen.findByText("型音乐演唱会上面碗上面音乐")).toBeInTheDocument();
+    expect(screen.queryByText(/好像在一场大/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/美人在美国超级/)).not.toBeInTheDocument();
+    expect(clientMock.submitDraftAsrTurn).toHaveBeenLastCalledWith("session-existing", {
+      raw_text: "型音乐演唱会上面碗上面音乐",
+      assigned_bro_id: "forge",
+    });
+  });
+
+  it("ignores untimed Bro detail transcript payloads", async () => {
+    window.history.replaceState({}, "", "/bros/forge?sid=session-existing");
+
+    render(<RouterProvider router={getRouter()} />);
+
+    await screen.findByRole("button", { name: "Hold to Talk" });
     const transcriptHandler = voiceHarness.rtcClient.on.mock.calls.find(
       ([eventName]) => eventName === "stream-message",
     )?.[1];
@@ -454,9 +551,170 @@ describe("Newbro voice shell", () => {
       });
     });
 
-    expect(await screen.findByText("Still listening to this sentence")).toBeInTheDocument();
-    expect(screen.getByText("Completed turns appear here when ASR marks a segment final.")).toBeInTheDocument();
+    expect(screen.queryByText("Still listening to this sentence")).not.toBeInTheDocument();
+    expect(screen.queryByText("Listening live")).not.toBeInTheDocument();
+    expect(screen.queryByText("Completed turns appear here when ASR marks a segment final.")).not.toBeInTheDocument();
     expect(clientMock.submitDraftAsrTurn).not.toHaveBeenCalled();
+  });
+
+  it("keeps only the latest textTs inside one Bro detail sentence and submits once on mic release", async () => {
+    window.history.replaceState({}, "", "/bros/forge?sid=session-existing");
+
+    render(<RouterProvider router={getRouter()} />);
+
+    const micButton = await screen.findByRole("button", { name: "Hold to Talk" });
+    const transcriptHandler = voiceHarness.rtcClient.on.mock.calls.find(
+      ([eventName]) => eventName === "stream-message",
+    )?.[1];
+    expect(transcriptHandler).toBeTypeOf("function");
+
+    await act(async () => {
+      transcriptHandler(200101, { text: "第二个片段", isFinal: false, time: 100, textTs: 120 });
+      transcriptHandler(200101, { text: "第一个片段", isFinal: false, time: 100, textTs: 110 });
+    });
+
+    expect(screen.getByText("第二个片段")).toBeInTheDocument();
+    expect(screen.queryByText("第一个片段第二个片段")).not.toBeInTheDocument();
+    expect(clientMock.submitDraftAsrTurn).not.toHaveBeenCalled();
+
+    await act(async () => {
+      fireEvent.pointerDown(micButton, { pointerId: 1 });
+      await Promise.resolve();
+      fireEvent.pointerUp(micButton, { pointerId: 1 });
+      await Promise.resolve();
+    });
+
+    await waitFor(() => expect(clientMock.submitDraftAsrTurn).toHaveBeenCalledTimes(1));
+    expect(clientMock.submitDraftAsrTurn).toHaveBeenCalledWith("session-existing", {
+      raw_text: "第二个片段",
+      assigned_bro_id: "forge",
+    });
+  });
+
+  it("drops stale Bro detail ASR candidates for the same sentence", async () => {
+    window.history.replaceState({}, "", "/bros/forge?sid=session-existing");
+
+    render(<RouterProvider router={getRouter()} />);
+
+    await screen.findByRole("button", { name: "Hold to Talk" });
+    const transcriptHandler = voiceHarness.rtcClient.on.mock.calls.find(
+      ([eventName]) => eventName === "stream-message",
+    )?.[1];
+    expect(transcriptHandler).toBeTypeOf("function");
+
+    await act(async () => {
+      transcriptHandler(200101, { uid: 101, text: "OK，第一个问题", isFinal: false, time: 100, textTs: 300, seqnum: 2 });
+      transcriptHandler(200101, { uid: 101, text: "OK", isFinal: false, time: 100, textTs: 200, seqnum: 3 });
+      transcriptHandler(200101, { uid: 101, text: "OK，旧修订", isFinal: false, time: 100, textTs: 300, seqnum: 1 });
+    });
+
+    expect(screen.getByText("OK，第一个问题")).toBeInTheDocument();
+    expect(screen.queryByText("OK")).not.toBeInTheDocument();
+    expect(clientMock.submitDraftAsrTurn).not.toHaveBeenCalled();
+  });
+
+  it("holds final fragments until the next non-final for the same sentence", async () => {
+    window.history.replaceState({}, "", "/bros/forge?sid=session-existing");
+
+    render(<RouterProvider router={getRouter()} />);
+
+    await screen.findByRole("button", { name: "Hold to Talk" });
+    const transcriptHandler = voiceHarness.rtcClient.on.mock.calls.find(
+      ([eventName]) => eventName === "stream-message",
+    )?.[1];
+    expect(transcriptHandler).toBeTypeOf("function");
+
+    await act(async () => {
+      transcriptHandler(200101, { uid: 101, text: "ABCDEFG", isFinal: false, time: 100, textTs: 300 });
+    });
+    expect(screen.getByText("ABCDEFG")).toBeInTheDocument();
+
+    await act(async () => {
+      transcriptHandler(200101, { uid: 101, text: "ABC", isFinal: true, time: 100, textTs: 310 });
+      await Promise.resolve();
+    });
+    expect(screen.getByText("ABCDEFG")).toBeInTheDocument();
+    expect(clientMock.submitDraftAsrTurn).toHaveBeenLastCalledWith("session-existing", {
+      raw_text: "ABCDEFG",
+      assigned_bro_id: "forge",
+    });
+
+    await act(async () => {
+      transcriptHandler(200101, { uid: 101, text: "DEFG", isFinal: false, time: 100, textTs: 320 });
+    });
+
+    expect(screen.getByText("ABCDEFG")).toBeInTheDocument();
+    expect(screen.queryByText("ABCDEFGDEFG")).not.toBeInTheDocument();
+  });
+
+  it("rebuilds Bro detail ASR by sentence start time using latest textTs per sentence", async () => {
+    window.history.replaceState({}, "", "/bros/forge?sid=session-existing");
+
+    render(<RouterProvider router={getRouter()} />);
+
+    const micButton = await screen.findByRole("button", { name: "Hold to Talk" });
+    const transcriptHandler = voiceHarness.rtcClient.on.mock.calls.find(
+      ([eventName]) => eventName === "stream-message",
+    )?.[1];
+    expect(transcriptHandler).toBeTypeOf("function");
+
+    await act(async () => {
+      transcriptHandler(200101, { uid: 101, text: "第二句", isFinal: false, time: 200, textTs: 210 });
+      transcriptHandler(200101, { uid: 101, text: "第一句后半", isFinal: false, time: 100, textTs: 120 });
+      transcriptHandler(200101, { uid: 101, text: "第一句前半", isFinal: false, time: 100, textTs: 110 });
+    });
+
+    const expectedTranscript = "第一句后半第二句";
+    expect(await screen.findByText(expectedTranscript)).toBeInTheDocument();
+
+    await act(async () => {
+      fireEvent.pointerDown(micButton, { pointerId: 3 });
+      await Promise.resolve();
+      fireEvent.pointerUp(micButton, { pointerId: 3 });
+      await Promise.resolve();
+    });
+
+    await waitFor(() => expect(clientMock.submitDraftAsrTurn).toHaveBeenLastCalledWith("session-existing", {
+      raw_text: expectedTranscript,
+      assigned_bro_id: "forge",
+    }));
+  });
+
+  it("submits Bro detail ASR once after silence without duplicating mic release", async () => {
+    window.history.replaceState({}, "", "/bros/forge?sid=session-existing");
+
+    render(<RouterProvider router={getRouter()} />);
+
+    const micButton = await screen.findByRole("button", { name: "Hold to Talk" });
+    const transcriptHandler = voiceHarness.rtcClient.on.mock.calls.find(
+      ([eventName]) => eventName === "stream-message",
+    )?.[1];
+    expect(transcriptHandler).toBeTypeOf("function");
+
+    vi.useFakeTimers();
+    try {
+      await act(async () => {
+        transcriptHandler(200101, { text: "好像在一场大 型音乐", isFinal: false, time: 100, textTs: 110 });
+        vi.advanceTimersByTime(1_200);
+        await Promise.resolve();
+      });
+
+      expect(clientMock.submitDraftAsrTurn).toHaveBeenCalledTimes(1);
+      expect(clientMock.submitDraftAsrTurn).toHaveBeenCalledWith("session-existing", {
+        raw_text: "好像在一场大 型音乐",
+        assigned_bro_id: "forge",
+      });
+
+      await act(async () => {
+        fireEvent.pointerDown(micButton, { pointerId: 2 });
+        await Promise.resolve();
+        fireEvent.pointerUp(micButton, { pointerId: 2 });
+        await Promise.resolve();
+      });
+      expect(clientMock.submitDraftAsrTurn).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("hydrates interaction memory from durable history when the page opens", async () => {
@@ -487,7 +745,8 @@ describe("Newbro voice shell", () => {
     expect(window.location.search).toBe("?sid=session-existing");
   });
 
-  it("falls back to a new session and warns when sid resume fails", async () => {
+  it("shows resume fallback in a floating global message that auto-dismisses", async () => {
+    vi.useFakeTimers();
     clientMock.createSession.mockResolvedValueOnce({ session_id: "session-2" });
     clientMock.getSessionSnapshot.mockImplementation(async (sessionId: string) => {
       if (sessionId === "session-missing") {
@@ -514,14 +773,32 @@ describe("Newbro voice shell", () => {
 
     render(<App />);
 
-    expect(await screen.findByTestId("shell-warning")).toBeInTheDocument();
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(screen.getByTestId("global-message")).toBeInTheDocument();
+    expect(screen.getByTestId("global-message")).toHaveClass("fixed");
     expect(screen.getByText(/Could not resume the requested session/)).toBeInTheDocument();
     expect(screen.getByText(/session-missing/)).toBeInTheDocument();
     expect(screen.getByText("Session session-2")).toBeInTheDocument();
+
+    await act(async () => {
+      vi.advanceTimersByTime(5_999);
+    });
+    expect(screen.getByTestId("global-message")).toBeInTheDocument();
+
+    await act(async () => {
+      vi.advanceTimersByTime(1);
+    });
+    expect(screen.queryByTestId("global-message")).not.toBeInTheDocument();
     expect(clientMock.createSession).toHaveBeenCalledTimes(1);
     expect(clientMock.getSessionSnapshot).toHaveBeenNthCalledWith(1, "session-missing");
     expect(clientMock.getSessionSnapshot).toHaveBeenNthCalledWith(2, "session-2");
     expect(window.location.search).toBe("?sid=session-2");
+    vi.useRealTimers();
   });
 
   it("renders Synapse user and assistant stream events in interaction memory", async () => {

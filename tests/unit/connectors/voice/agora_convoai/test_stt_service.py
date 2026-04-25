@@ -28,7 +28,7 @@ class _Clock:
 def test_redact_stt_join_payload_keeps_diagnostics_without_tokens():
     payload = {
         "name": "nbstt-task-1",
-        "languages": ["zh-CN"],
+        "languages": ["zh-CN", "en-US"],
         "maxIdleTime": 60,
         "rtcConfig": {
             "channelName": "nbstt-channel",
@@ -45,7 +45,7 @@ def test_redact_stt_join_payload_keeps_diagnostics_without_tokens():
 
     assert "pub-secret-token" not in serialized
     assert "sub-secret-token" not in serialized
-    assert redacted["languages"] == ["zh-CN"]
+    assert redacted["languages"] == ["zh-CN", "en-US"]
     assert redacted["rtcConfig"]["channelName"] == "nbstt-channel"
     assert redacted["rtcConfig"]["pubBotUid"] == "100101"
     assert redacted["rtcConfig"]["pubBotToken"] == "<redacted>"
@@ -132,8 +132,8 @@ async def test_stt_start_uses_prepared_channel_and_agora_token_auth(monkeypatch)
     assert headers["Authorization"].startswith("agora token=007")
     assert "Basic" not in headers["Authorization"]
     assert payload["name"].startswith("nbstt-task-")
-    assert payload["languages"] == ["zh-CN"]
-    assert response.languages == ["zh-CN"]
+    assert payload["languages"] == ["zh-CN", "en-US"]
+    assert response.languages == ["zh-CN", "en-US"]
     assert response.subscribe_audio_uids == [str(prepared.uid)]
     assert len(payload["name"]) <= 64
     assert re.fullmatch(r"[A-Za-z0-9_-]+", payload["name"])

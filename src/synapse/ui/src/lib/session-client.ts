@@ -1,3 +1,4 @@
+import { ensureOk } from "./http-errors";
 import type {
   ConversationSnapshot,
   DiagnosticTimelineResponse,
@@ -11,14 +12,6 @@ import type {
 
 const API_PREFIX = "/api";
 const configuredApiBaseUrl = getConfiguredApiBaseUrl();
-
-async function ensureOk(response: Response) {
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(text || `Request failed with status ${response.status}`);
-  }
-  return response;
-}
 
 function getConfiguredApiBaseUrl(): URL | null {
   const raw = import.meta.env.VITE_API_BASE_URL?.trim();

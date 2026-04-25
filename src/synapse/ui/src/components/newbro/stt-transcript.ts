@@ -1,11 +1,35 @@
 import protobuf from "protobufjs/light";
 import { ungzip } from "pako";
 
+export type ExtractedSttWord = {
+  text: string;
+  startMs?: number;
+  durationMs?: number;
+  isFinal?: boolean;
+  confidence?: number;
+};
+
 export type ExtractedSttTranscript = {
   text: string;
   final: boolean;
   language?: string;
   source?: string;
+  uid?: string | number;
+  seqnum?: number;
+  time?: number;
+  starttime?: number;
+  offtime?: number;
+  durationMs?: number;
+  dataType?: string;
+  culture?: string;
+  textTs?: number;
+  sentenceEndIndex?: number;
+  words?: ExtractedSttWord[];
+};
+
+export type SttTranscriptDebugPayload = {
+  kind: "string" | "bytes" | "object" | "unknown";
+  payload: unknown;
 };
 
 const sttRoot = protobuf.Root.fromJSON({
@@ -19,7 +43,7 @@ const sttRoot = protobuf.Root.fromJSON({
                 vendor: { type: "int32", id: 1 },
                 version: { type: "int32", id: 2 },
                 seqnum: { type: "int32", id: 3 },
-                uid: { type: "uint32", id: 4 },
+                uid: { type: "int64", id: 4 },
                 flag: { type: "int32", id: 5 },
                 time: { type: "int64", id: 6 },
                 lang: { type: "int32", id: 7 },
@@ -30,6 +54,9 @@ const sttRoot = protobuf.Root.fromJSON({
                 duration_ms: { type: "int32", id: 12 },
                 data_type: { type: "string", id: 13 },
                 trans: { rule: "repeated", type: "Translation", id: 14 },
+                culture: { type: "string", id: 15 },
+                text_ts: { type: "int64", id: 16 },
+                sentence_end_index: { type: "int32", id: 17 },
               },
             },
             Word: {
@@ -71,6 +98,62 @@ export function extractTranscriptText(payload: unknown): ExtractedSttTranscript 
   return extractRecordTranscript(payload as Record<string, any>);
 }
 
+export function describeTranscriptPayload(payload: unknown): SttTranscriptDebugPayload {
+  if (typeof payload === "string") {
+    return { kind: "string", payload };
+  }
+  const bytes = payloadToBytes(payload);
+  if (bytes) {
+    return { kind: "bytes", payload: describeBytesTranscript(bytes) ?? bytes };
+  }
+  if (payload && typeof payload === "object") {
+    return { kind: "object", payload };
+  }
+  return { kind: "unknown", payload };
+}
+
+export function describeProtobufTranscriptPayload(payload: unknown): unknown | null {
+  const bytes = payloadToBytes(payload);
+  if (!bytes) return null;
+  return describeProtobufBytesTranscript(bytes);
+}
+
+function describeBytesTranscript(bytes: Uint8Array): unknown | null {
+  const inflated = inflateGzipPayload(bytes);
+  if (inflated) {
+    return { compression: "gzip", payload: describeBytesTranscript(inflated) ?? inflated };
+  }
+  try {
+    const decoded = textDecoder.decode(bytes).trim();
+    if (decoded && (decoded.startsWith("{") || decoded.startsWith("["))) {
+      return JSON.parse(decoded);
+    }
+  } catch {}
+  try {
+    return agoraSttTextMessage.toObject(agoraSttTextMessage.decode(bytes), {
+      defaults: false,
+      longs: Number,
+    });
+  } catch {
+    return null;
+  }
+}
+
+function describeProtobufBytesTranscript(bytes: Uint8Array): unknown | null {
+  const inflated = inflateGzipPayload(bytes);
+  if (inflated) {
+    return { compression: "gzip", payload: describeProtobufBytesTranscript(inflated) };
+  }
+  try {
+    return agoraSttTextMessage.toObject(agoraSttTextMessage.decode(bytes), {
+      defaults: false,
+      longs: Number,
+    });
+  } catch {
+    return null;
+  }
+}
+
 function extractStringTranscript(payload: string): ExtractedSttTranscript | null {
   const trimmed = payload.trim();
   if (!trimmed) return null;
@@ -86,9 +169,7 @@ function extractBytesTranscript(bytes: Uint8Array): ExtractedSttTranscript | nul
   if (inflated) {
     return extractBytesTranscript(inflated);
   }
-  const decodedText = decodeUtf8Transcript(bytes);
-  if (decodedText) return decodedText;
-  return decodeProtobufTranscript(bytes);
+  return decodeJsonBytesTranscript(bytes) ?? decodeProtobufTranscript(bytes);
 }
 
 function inflateGzipPayload(bytes: Uint8Array): Uint8Array | null {
@@ -100,16 +181,13 @@ function inflateGzipPayload(bytes: Uint8Array): Uint8Array | null {
   }
 }
 
-function decodeUtf8Transcript(bytes: Uint8Array): ExtractedSttTranscript | null {
+function decodeJsonBytesTranscript(bytes: Uint8Array): ExtractedSttTranscript | null {
   try {
     const decoded = textDecoder.decode(bytes).trim();
     if (!decoded) return null;
     if (decoded.startsWith("{") || decoded.startsWith("[")) {
       const parsed = extractTranscriptText(JSON.parse(decoded));
       if (parsed) return parsed;
-    }
-    if (isMostlyPrintable(decoded)) {
-      return { text: decoded, final: true, source: "utf8-text" };
     }
   } catch {}
   return null;
@@ -127,20 +205,13 @@ function decodeProtobufTranscript(bytes: Uint8Array): ExtractedSttTranscript | n
       .filter(Boolean)
       .join("")
       .trim();
-    const translations = Array.isArray(decoded.trans) ? decoded.trans : [];
-    const translationText = translations
-      .flatMap((translation) => (Array.isArray(translation?.texts) ? translation.texts : []))
-      .filter((text) => typeof text === "string" && text.trim())
-      .join(" ")
-      .trim();
-    const text = wordText || translationText;
-    if (!text) return null;
-    const wordFinal = words.length > 0 && words.every((word) => word?.isFinal === true);
-    const translationFinal = translations.length > 0 && translations.every((translation) => translation?.isFinal === true);
+    if (!wordText) return null;
     return {
-      text,
-      final: decoded.end_of_segment === true || wordFinal || translationFinal,
-      source: wordText ? "protobuf-words" : "protobuf-translation",
+      text: wordText,
+      final: readBoolField(decoded, "end_of_segment", "endOfSegment") === true,
+      source: "protobuf-words",
+      ...extractTranscriptMetadata(decoded),
+      words: extractWordMetadata(words),
     };
   } catch {
     return null;
@@ -166,7 +237,8 @@ function extractRecordTranscript(record: Record<string, any>): ExtractedSttTrans
   const text = candidates.find((item) => typeof item === "string" && item.trim());
   if (!text) return null;
   const final = isFinalRecord(record);
-  return { text: text.trim(), final, source: Array.isArray(record.words) ? "object-words" : "object" };
+  const words = Array.isArray(record.words) ? extractWordMetadata(record.words) : undefined;
+  return { text: text.trim(), final, source: Array.isArray(record.words) ? "object-words" : "object", ...extractTranscriptMetadata(record), ...(words ? { words } : {}) };
 }
 
 function extractWrappedTranscript(transcript: unknown, source = "transcript-wrapper"): ExtractedSttTranscript | null {
@@ -174,7 +246,7 @@ function extractWrappedTranscript(transcript: unknown, source = "transcript-wrap
   const record = transcript as Record<string, any>;
   if (typeof record.text !== "string" || !record.text.trim()) return null;
   const language = typeof record.language === "string" ? record.language : typeof record.lang === "string" ? record.lang : undefined;
-  return { text: record.text.trim(), final: isFinalRecord(record), language, source };
+  return { text: record.text.trim(), final: isFinalRecord(record), language, source, ...extractTranscriptMetadata(record) };
 }
 
 function extractWordsText(words: unknown): string | null {
@@ -192,14 +264,86 @@ function extractWordsText(words: unknown): string | null {
   return text || null;
 }
 
+function extractWordMetadata(words: unknown[]): ExtractedSttWord[] {
+  return words
+    .map((word): ExtractedSttWord | null => {
+      if (!word || typeof word !== "object") return null;
+      const record = word as Record<string, any>;
+      const text = typeof record.text === "string" ? record.text.trim() : typeof record.word === "string" ? record.word.trim() : "";
+      if (!text) return null;
+      return {
+        text,
+        startMs: readNumberField(record, "start_ms", "startMs"),
+        durationMs: readNumberField(record, "duration_ms", "durationMs"),
+        isFinal: readBoolField(record, "is_final", "isFinal", "final"),
+        confidence: readNumberField(record, "confidence"),
+      };
+    })
+    .filter((word): word is ExtractedSttWord => word != null);
+}
+
 function isFinalRecord(record: Record<string, any>): boolean {
   const status = String(record.status ?? record.type ?? record.state ?? "").toLowerCase();
-  if (record.final === true || record.isFinal === true || record.end_of_segment === true || record.endOfSegment === true) return true;
+  if (record.final === true || record.isFinal === true || readBoolField(record, "end_of_segment", "endOfSegment") === true) return true;
   if (["final", "end", "complete", "completed"].includes(status)) return true;
   if (Array.isArray(record.words) && record.words.length > 0) {
     return record.words.every((word: any) => word?.isFinal === true || word?.final === true);
   }
   return false;
+}
+
+function extractTranscriptMetadata(record: Record<string, any>): Partial<ExtractedSttTranscript> {
+  return compactTranscriptMetadata({
+    uid: readUidField(record),
+    seqnum: readNumberField(record, "seqnum"),
+    time: readNumberField(record, "time"),
+    starttime: readNumberField(record, "starttime", "startTime"),
+    offtime: readNumberField(record, "offtime", "offTime"),
+    durationMs: readNumberField(record, "duration_ms", "durationMs"),
+    dataType: readStringField(record, "data_type", "dataType"),
+    culture: readStringField(record, "culture"),
+    textTs: readNumberField(record, "text_ts", "textTs"),
+    sentenceEndIndex: readNumberField(record, "sentence_end_index", "sentenceEndIndex"),
+  });
+}
+
+function compactTranscriptMetadata(metadata: Partial<ExtractedSttTranscript>): Partial<ExtractedSttTranscript> {
+  return Object.fromEntries(Object.entries(metadata).filter(([, value]) => value !== undefined)) as Partial<ExtractedSttTranscript>;
+}
+
+function readUidField(record: Record<string, any>): string | number | undefined {
+  const uid = record.uid;
+  if (typeof uid === "string" && uid.trim()) return uid;
+  if (typeof uid === "number" && Number.isFinite(uid)) return uid;
+  return undefined;
+}
+
+function readNumberField(record: Record<string, any>, ...keys: string[]): number | undefined {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+    if (typeof value === "string" && value.trim()) {
+      const parsed = Number(value);
+      if (Number.isFinite(parsed)) return parsed;
+    }
+  }
+  return undefined;
+}
+
+function readStringField(record: Record<string, any>, ...keys: string[]): string | undefined {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === "string" && value.trim()) return value;
+  }
+  return undefined;
+}
+
+function readBoolField(record: Record<string, any>, ...keys: string[]): boolean | undefined {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === "boolean") return value;
+  }
+  return undefined;
 }
 
 function payloadToBytes(payload: unknown): Uint8Array | null {
@@ -209,14 +353,4 @@ function payloadToBytes(payload: unknown): Uint8Array | null {
     return new Uint8Array(payload.buffer, payload.byteOffset, payload.byteLength);
   }
   return null;
-}
-
-function isMostlyPrintable(value: string): boolean {
-  if (!value) return false;
-  let printable = 0;
-  for (const character of value) {
-    const code = character.charCodeAt(0);
-    if (code === 9 || code === 10 || code === 13 || code >= 32) printable += 1;
-  }
-  return printable / value.length > 0.9;
 }

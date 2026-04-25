@@ -13,13 +13,12 @@ import { loadAgoraBrowserStack } from "../../lib/voice-runtime";
 import { Button } from "../ui/button";
 import { BroPortrait } from "./BroPortrait";
 import { BroProgress } from "./BroProgress";
-import { extractTranscriptText } from "./stt-transcript";
+import { describeProtobufTranscriptPayload, describeTranscriptPayload, extractTranscriptText, type ExtractedSttTranscript } from "./stt-transcript";
 import type { BroCardModel } from "./types";
 import type { TaskSummary } from "../../types";
 
 const HEARTBEAT_INTERVAL_MS = 15_000;
-const MAX_VOICE_DEBUG_EVENTS = 5;
-
+const STT_SILENCE_COMMIT_MS = 1_200;
 type Draft = {
   title: string;
   goal: string;
@@ -43,14 +42,200 @@ function liveStateText(bro: BroCardModel) {
   return "Needs node binding";
 }
 
+function normalizeTranscriptSegmentForDisplay(text: string) {
+  return text.replace(/\s*\n+\s*/g, " ").trim();
+}
+
+function hasCjkBoundary(current: string, next: string) {
+  return /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]$/u.test(current)
+    && /^[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u.test(next);
+}
+
+function appendTranscriptSegment(current: string, next: string) {
+  const segment = normalizeTranscriptSegmentForDisplay(next);
+  if (!segment) return current;
+  if (!current) return segment;
+  if (
+    /[,.;:!?，。！？、；：）】》」』]$/.test(current)
+    || /^[,.;:!?，。！？、；：）】》」』]/.test(segment)
+    || hasCjkBoundary(current, segment)
+  ) {
+    return `${current}${segment}`;
+  }
+  return `${current} ${segment}`;
+}
+
+function composeTranscriptText(segments: string[]) {
+  return segments.reduce((current, segment) => appendTranscriptSegment(current, segment), "");
+}
+
+type SentenceSegment = {
+  uid: string;
+  startTime: number;
+  text: string;
+  textTs: number;
+  revision: number;
+  arrivalIndex: number;
+  pendingFinal?: {
+    text: string;
+    textTs: number;
+    revision: number;
+    arrivalIndex: number;
+  };
+};
+
+type SentenceUpdateResult = {
+  text: string;
+  action: "create-sentence" | "replace-sentence" | "hold-final-fragment" | "replace-sentence-with-held-final" | "drop-missing-time-metadata" | "drop-stale-sentence";
+  segments: Map<string, SentenceSegment>;
+  sentenceKey?: string;
+  sentenceStartTime?: number;
+  existingTextTs?: number;
+  textTs?: number;
+  pendingFinalTextTs?: number;
+  pendingFinalLength?: number;
+  heldFinalApplied?: boolean;
+  sentencesCount: number;
+  reason?: string;
+};
+
+function transcriptUid(candidate: ExtractedSttTranscript) {
+  return candidate.uid == null ? "default" : String(candidate.uid);
+}
+
+function sentenceKey(candidate: ExtractedSttTranscript) {
+  if (candidate.time == null) return null;
+  return `${transcriptUid(candidate)}:${candidate.time}`;
+}
+
+function transcriptEndTime(candidate: ExtractedSttTranscript) {
+  if (candidate.textTs != null) return candidate.textTs;
+  if (candidate.time != null && candidate.durationMs != null) return candidate.time + candidate.durationMs;
+  return candidate.time;
+}
+
+function transcriptRevision(candidate: ExtractedSttTranscript, arrivalIndex: number) {
+  return candidate.seqnum
+    ?? candidate.offtime
+    ?? candidate.durationMs
+    ?? transcriptEndTime(candidate)
+    ?? arrivalIndex;
+}
+
+function rebuildSentenceTranscript(segments: Map<string, SentenceSegment>) {
+  return composeTranscriptText([...segments.values()].sort((left, right) => {
+    if (left.startTime !== right.startTime) return left.startTime - right.startTime;
+    return left.arrivalIndex - right.arrivalIndex;
+  }).map((segment) => segment.text).filter(Boolean));
+}
+
+function serializeTranscriptSegmentsForDebug(segments: Map<string, SentenceSegment>) {
+  return [...segments.entries()]
+    .sort(([, left], [, right]) => {
+      if (left.startTime !== right.startTime) return left.startTime - right.startTime;
+      return left.arrivalIndex - right.arrivalIndex;
+    })
+    .map(([key, segment]) => ({
+      key,
+      uid: segment.uid,
+      startTime: segment.startTime,
+      text: segment.text,
+      textTs: segment.textTs,
+      revision: segment.revision,
+      arrivalIndex: segment.arrivalIndex,
+      ...(segment.pendingFinal ? { pendingFinal: segment.pendingFinal } : {}),
+    }));
+}
+
+function updateSentenceSegments(
+  segments: Map<string, SentenceSegment>,
+  candidate: ExtractedSttTranscript,
+  arrivalIndex: number,
+): SentenceUpdateResult {
+  const key = sentenceKey(candidate);
+  if (!key || candidate.time == null || candidate.textTs == null) {
+    return { text: rebuildSentenceTranscript(segments), action: "drop-missing-time-metadata", segments, sentencesCount: segments.size, reason: "missing time or textTs" };
+  }
+
+  const revision = transcriptRevision(candidate, arrivalIndex);
+  const nextSegments = new Map(segments);
+  const segment = nextSegments.get(key);
+  if (candidate.final) {
+    const pendingFinal = { text: candidate.text, textTs: candidate.textTs, revision, arrivalIndex };
+    nextSegments.set(key, segment
+      ? { ...segment, pendingFinal }
+      : {
+          uid: transcriptUid(candidate),
+          startTime: candidate.time,
+          text: "",
+          textTs: candidate.textTs,
+          revision,
+          arrivalIndex,
+          pendingFinal,
+        });
+    return {
+      text: rebuildSentenceTranscript(segments),
+      action: "hold-final-fragment",
+      segments: nextSegments,
+      sentenceKey: key,
+      sentenceStartTime: candidate.time,
+      existingTextTs: segment?.textTs,
+      textTs: candidate.textTs,
+      pendingFinalTextTs: candidate.textTs,
+      pendingFinalLength: candidate.text.length,
+      sentencesCount: nextSegments.size,
+    };
+  }
+
+  if (segment) {
+    const isOlderTextTs = candidate.textTs < segment.textTs;
+    const isSameTextTsStaleRevision = candidate.textTs === segment.textTs && revision < segment.revision;
+    if (isOlderTextTs || isSameTextTsStaleRevision) {
+      return {
+        text: rebuildSentenceTranscript(segments),
+        action: "drop-stale-sentence",
+        segments,
+        sentenceKey: key,
+        sentenceStartTime: candidate.time,
+        existingTextTs: segment.textTs,
+        textTs: candidate.textTs,
+        sentencesCount: segments.size,
+        reason: isOlderTextTs ? "older textTs" : "stale revision",
+      };
+    }
+  }
+
+  const appliedText = segment?.pendingFinal ? `${segment.pendingFinal.text}${candidate.text}` : candidate.text;
+
+  nextSegments.set(key, {
+    uid: transcriptUid(candidate),
+    startTime: candidate.time,
+    text: appliedText,
+    textTs: candidate.textTs,
+    revision,
+    arrivalIndex: segment?.arrivalIndex ?? arrivalIndex,
+  });
+  return {
+    text: rebuildSentenceTranscript(nextSegments),
+    action: segment?.pendingFinal ? "replace-sentence-with-held-final" : segment ? "replace-sentence" : "create-sentence",
+    segments: nextSegments,
+    sentenceKey: key,
+    sentenceStartTime: candidate.time,
+    existingTextTs: segment?.textTs,
+    textTs: candidate.textTs,
+    pendingFinalTextTs: segment?.pendingFinal?.textTs,
+    pendingFinalLength: segment?.pendingFinal?.text.length,
+    heldFinalApplied: Boolean(segment?.pendingFinal),
+    sentencesCount: nextSegments.size,
+  };
+}
+
 type SttPhase =
   | "idle"
   | "preparing_rtc"
   | "joining_rtc"
   | "asr_bot_starting"
   | "ready_mic_off"
-  | "capturing"
-  | "transcribing"
   | "draft_updating"
   | "error";
 
@@ -60,26 +245,6 @@ type SttResources = {
   preparedSession: SttSessionPrepareResponse;
   sttSession: SttSessionStartResponse | null;
 };
-
-function phaseLabel(phase: SttPhase) {
-  if (phase === "preparing_rtc" || phase === "joining_rtc") return "Preparing audio";
-  if (phase === "asr_bot_starting") return "Starting ASR bot";
-  if (phase === "ready_mic_off") return "Ready · mic off";
-  if (phase === "capturing") return "Capturing";
-  if (phase === "transcribing") return "Transcribing";
-  if (phase === "draft_updating") return "Draft updating";
-  if (phase === "error") return "Voice error";
-  return "Idle";
-}
-
-function payloadShape(payload: unknown) {
-  if (payload instanceof Uint8Array) return `${payload.byteLength} bytes`;
-  if (payload instanceof ArrayBuffer) return `${payload.byteLength} bytes`;
-  if (ArrayBuffer.isView(payload)) return `${payload.byteLength} bytes`;
-  if (typeof payload === "string") return `string ${payload.length}`;
-  if (!payload || typeof payload !== "object") return typeof payload;
-  return `object ${Object.keys(payload as Record<string, unknown>).slice(0, 4).join(",") || "empty"}`;
-}
 
 function ListBlock({ title, items }: { title: string; items?: string[] }) {
   if (!items || items.length === 0) return null;
@@ -135,28 +300,71 @@ export function BroDetailPage({
   sessionId,
   summary,
   onBack,
+  onGlobalError,
 }: {
   bro: BroCardModel;
   sessionId: string | null;
   summary: TaskSummary | null;
   onBack: () => void;
+  onGlobalError?: (message: string | null) => void;
 }) {
   const [sttPhase, setSttPhase] = useState<SttPhase>("idle");
-  const [sttError, setSttError] = useState<string | null>(null);
-  const [latestTranscriptText, setLatestTranscriptText] = useState("");
-  const [interimText, setInterimText] = useState("");
-  const [finalTurns, setFinalTurns] = useState<string[]>([]);
+  const [acceptedTranscript, setAcceptedTranscript] = useState("");
   const [draftSession, setDraftSession] = useState<DraftSession | null>(null);
-  const [voiceDebugEvents, setVoiceDebugEvents] = useState<string[]>([]);
+  const [micActive, setMicActive] = useState(false);
   const resourcesRef = useRef<SttResources | null>(null);
   const submittedRef = useRef<Set<string>>(new Set());
+  const acceptedTranscriptRef = useRef("");
+  const sentenceSegmentsRef = useRef<Map<string, SentenceSegment>>(new Map());
+  const transcriptArrivalIndexRef = useRef(0);
+  const silenceCommitTimerRef = useRef<number | null>(null);
   const activePointerIdRef = useRef<number | null>(null);
   const mountedRef = useRef(false);
   const generationRef = useRef(0);
 
-  const appendVoiceDebugEvent = useCallback((event: string) => {
-    setVoiceDebugEvents((current) => [event, ...current].slice(0, MAX_VOICE_DEBUG_EVENTS));
+  const clearSilenceCommitTimer = useCallback(() => {
+    if (silenceCommitTimerRef.current === null) return;
+    window.clearTimeout(silenceCommitTimerRef.current);
+    silenceCommitTimerRef.current = null;
   }, []);
+
+  const commitCurrentTranscript = useCallback(async (reason: "release" | "silence" | "final") => {
+    clearSilenceCommitTimer();
+    const draftRawText = acceptedTranscriptRef.current;
+    if (!draftRawText) return;
+    setSttPhase("draft_updating");
+    console.debug("[BroDetail][STT] commit reason", reason);
+    console.debug("[BroDetail][STT] draft raw text", draftRawText);
+
+    if (submittedRef.current.has(draftRawText)) {
+      setSttPhase("ready_mic_off");
+      return;
+    }
+    submittedRef.current.add(draftRawText);
+
+    if (sessionId) {
+      try {
+        const nextDraftSession = await submitDraftAsrTurn(sessionId, {
+          raw_text: draftRawText,
+          assigned_bro_id: bro.id,
+        });
+        setDraftSession(nextDraftSession as DraftSession);
+        setSttPhase("ready_mic_off");
+      } catch (error) {
+        onGlobalError?.(error instanceof Error ? error.message : "Failed to update draft from transcript.");
+        setSttPhase("error");
+      }
+    } else {
+      setSttPhase("ready_mic_off");
+    }
+  }, [bro.id, clearSilenceCommitTimer, onGlobalError, sessionId]);
+
+  const scheduleSilenceCommit = useCallback(() => {
+    clearSilenceCommitTimer();
+    silenceCommitTimerRef.current = window.setTimeout(() => {
+      void commitCurrentTranscript("silence");
+    }, STT_SILENCE_COMMIT_MS);
+  }, [clearSilenceCommitTimer, commitCurrentTranscript]);
 
   const leaveResources = useCallback(async (resources: SttResources | null) => {
     if (!resources) return;
@@ -178,48 +386,45 @@ export function BroDetailPage({
       }
     } catch (error) {
       if (mountedRef.current) {
-        setSttError(error instanceof Error ? error.message : "Failed to leave STT session.");
+        onGlobalError?.(error instanceof Error ? error.message : "Failed to leave STT session.");
       }
     }
-  }, []);
+  }, [onGlobalError]);
 
   const handleTranscript = useCallback(async (payload: unknown) => {
     const parsed = extractTranscriptText(payload);
     if (!parsed) {
-      appendVoiceDebugEvent(`unparsed stream-message · ${payloadShape(payload)}`);
+      console.debug("[BroDetail][STT] ignored payload", payload);
       return;
     }
-    appendVoiceDebugEvent(`stream-message parsed · ${parsed.source ?? "unknown"} · ${parsed.language ?? "no-lang"} · ${parsed.final ? "final" : "interim"}`);
-    setLatestTranscriptText(parsed.text);
-    if (!parsed.final) {
-      setInterimText(parsed.text);
-      return;
-    }
-    setInterimText("");
-    setSttPhase("draft_updating");
-    const key = parsed.text.toLowerCase();
-    if (submittedRef.current.has(key)) {
-      setSttPhase("ready_mic_off");
-      return;
-    }
-    submittedRef.current.add(key);
-    setFinalTurns((current) => [parsed.text, ...current].slice(0, 12));
-    if (sessionId) {
-      try {
-        const nextDraftSession = await submitDraftAsrTurn(sessionId, {
-          raw_text: parsed.text,
-          assigned_bro_id: bro.id,
-        });
-        setDraftSession(nextDraftSession as DraftSession);
-        setSttPhase("ready_mic_off");
-      } catch (error) {
-        setSttError(error instanceof Error ? error.message : "Failed to update draft from transcript.");
-        setSttPhase("error");
+    const arrivalIndex = ++transcriptArrivalIndexRef.current;
+    const update = updateSentenceSegments(sentenceSegmentsRef.current, parsed, arrivalIndex);
+    console.debug("[BroDetail][STT] received candidate", {
+      segments: serializeTranscriptSegmentsForDebug(update.segments),
+      displayText: update.text,
+      words: parsed.words ?? [],
+      protobuf: describeProtobufTranscriptPayload(payload),
+    });
+    if (
+      update.action === "create-sentence"
+      || update.action === "replace-sentence"
+      || update.action === "replace-sentence-with-held-final"
+      || update.action === "hold-final-fragment"
+    ) {
+      sentenceSegmentsRef.current = update.segments;
+      if (update.text !== acceptedTranscriptRef.current) {
+        acceptedTranscriptRef.current = update.text;
+        setAcceptedTranscript(update.text);
       }
     } else {
-      setSttPhase("ready_mic_off");
+      return;
     }
-  }, [appendVoiceDebugEvent, bro.id, sessionId]);
+    if (parsed.final) {
+      void commitCurrentTranscript("final");
+      return;
+    }
+    scheduleSilenceCommit();
+  }, [commitCurrentTranscript, scheduleSilenceCommit]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -231,7 +436,7 @@ export function BroDetailPage({
     async function start() {
       if (!sessionId) return;
       setSttPhase("preparing_rtc");
-      setSttError(null);
+      onGlobalError?.(null);
       try {
         preparedSession = await prepareSttSession({ synapse_session_id: sessionId, assigned_bro_id: bro.id });
         if (!mountedRef.current || generationRef.current !== generation) return;
@@ -239,17 +444,11 @@ export function BroDetailPage({
         const { AgoraRTC } = await loadAgoraBrowserStack();
         rtcClient = AgoraRTC.createClient({ mode: "rtc", codec: "vp8" });
         rtcClient.on?.("stream-message", (uid: string | number, payload: unknown) => {
-          appendVoiceDebugEvent(`stream-message from ${uid} · ${payloadShape(payload)}`);
           void handleTranscript(payload);
         });
         rtcClient.on?.("stream-message-error", (_uid: string | number, error: unknown) => {
-          setSttError(error instanceof Error ? error.message : "Failed to receive STT transcript.");
+          onGlobalError?.(error instanceof Error ? error.message : "Failed to receive STT transcript.");
         });
-        rtcClient.on?.("user-joined", (user: any) => appendVoiceDebugEvent(`user joined: ${user?.uid ?? "unknown"}`));
-        rtcClient.on?.("user-left", (user: any) => appendVoiceDebugEvent(`user left: ${user?.uid ?? "unknown"}`));
-        rtcClient.on?.("user-published", (user: any, mediaType: string) => appendVoiceDebugEvent(`user published: ${user?.uid ?? "unknown"} ${mediaType}`));
-        rtcClient.on?.("user-unpublished", (user: any, mediaType: string) => appendVoiceDebugEvent(`user unpublished: ${user?.uid ?? "unknown"} ${mediaType}`));
-        rtcClient.on?.("connection-state-change", (current: string, previous: string) => appendVoiceDebugEvent(`rtc ${previous} -> ${current}`));
         await rtcClient.join(preparedSession.app_id, preparedSession.channel_name, preparedSession.token, preparedSession.uid);
         micTrack = await AgoraRTC.createMicrophoneAudioTrack();
         await rtcClient.publish([micTrack]);
@@ -261,14 +460,12 @@ export function BroDetailPage({
           prepared_stt_session_id: preparedSession.prepared_stt_session_id,
         });
         resourcesRef.current = { rtcClient, micTrack, preparedSession, sttSession };
-        appendVoiceDebugEvent(`stt bots pub ${sttSession.pub_bot_uid} · sub ${sttSession.sub_bot_uid}`);
-        appendVoiceDebugEvent(`stt languages ${sttSession.languages?.join(",") || "unknown"} · subscribe ${sttSession.subscribe_audio_uids?.join(",") || "unknown"}`);
         if (!mountedRef.current || generationRef.current !== generation) return;
         setSttPhase("ready_mic_off");
       } catch (error) {
         const message = error instanceof Error ? error.message : "Failed to start STT session.";
         if (mountedRef.current && generationRef.current === generation) {
-          setSttError(message);
+          onGlobalError?.(message);
           setSttPhase("error");
         }
         await leaveResources(
@@ -284,11 +481,12 @@ export function BroDetailPage({
     return () => {
       mountedRef.current = false;
       generationRef.current += 1;
+      clearSilenceCommitTimer();
       const resources = resourcesRef.current;
       resourcesRef.current = null;
       void leaveResources(resources);
     };
-  }, [appendVoiceDebugEvent, bro.id, handleTranscript, leaveResources, sessionId]);
+  }, [bro.id, clearSilenceCommitTimer, handleTranscript, leaveResources, onGlobalError, sessionId]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -296,7 +494,7 @@ export function BroDetailPage({
       if (sttSessionId) {
         void heartbeatSttSession(sttSessionId).catch((error) => {
           if (mountedRef.current) {
-            setSttError(error instanceof Error ? error.message : "Failed to heartbeat STT session.");
+            onGlobalError?.(error instanceof Error ? error.message : "Failed to heartbeat STT session.");
           }
         });
       }
@@ -309,9 +507,12 @@ export function BroDetailPage({
     if (!micTrack || sttPhase === "error") return;
     try {
       await micTrack.setMuted?.(!enabled);
-      setSttPhase(enabled ? "capturing" : "transcribing");
+      setMicActive(enabled);
+      if (!enabled) {
+        void commitCurrentTranscript("release");
+      }
     } catch (error) {
-      setSttError(error instanceof Error ? error.message : "Failed to toggle microphone.");
+      onGlobalError?.(error instanceof Error ? error.message : "Failed to toggle microphone.");
       setSttPhase("error");
     }
   }
@@ -342,8 +543,9 @@ export function BroDetailPage({
     void setMicEnabled(false);
   }
 
-  const readyForMic = sttPhase === "ready_mic_off" || sttPhase === "capturing" || sttPhase === "transcribing" || sttPhase === "draft_updating";
-  const capturing = sttPhase === "capturing";
+  const readyForMic = sttPhase === "ready_mic_off" || sttPhase === "draft_updating";
+  const capturing = micActive;
+  const transcriptText = acceptedTranscript;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3 px-4 pb-4 pt-3 md:px-6 md:pb-6 xl:px-8 xl:pb-8">
@@ -354,7 +556,6 @@ export function BroDetailPage({
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
                 <div className="text-[11px] uppercase tracking-[0.22em] text-muted-foreground">Bro detail</div>
-                <span className="rounded-full border border-primary/15 bg-primary/10 px-2.5 py-0.5 text-[10px] uppercase tracking-[0.16em] text-primary">{phaseLabel(sttPhase)}</span>
               </div>
               <div className="mt-1 flex flex-wrap items-center gap-2">
                 <h1 className="serif-flow text-[30px] leading-none tracking-[-0.055em] text-foreground">{bro.name}</h1>
@@ -376,10 +577,8 @@ export function BroDetailPage({
             <div>
               <div className="text-[11px] uppercase tracking-[0.22em] text-primary">Draft Brain</div>
               <div className="mt-1 text-[13px] text-muted-foreground">Hold the mic to shape a draft for {bro.name}.</div>
-              {sttError ? <div className="mt-2 text-[13px] text-[#8d5a62]">{sttError}</div> : null}
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <span className="rounded-full border border-border/70 bg-white/65 px-3 py-1 text-[11px] uppercase tracking-[0.16em] text-muted-foreground">{phaseLabel(sttPhase)}</span>
               <Button
                 type="button"
                 className="h-10 rounded-full px-4"
@@ -394,28 +593,16 @@ export function BroDetailPage({
                 }}
               >
                 <Mic className="mr-2 size-4" />
-                {capturing ? "Release to transcribe" : "Hold to Talk"}
+                {capturing ? "Release to finish" : "Hold to Talk"}
               </Button>
             </div>
-            {voiceDebugEvents.length > 0 ? (
-              <div className="mt-2 text-[11px] leading-5 text-muted-foreground">
-                Voice debug: {voiceDebugEvents.slice(0, 3).join(" · ")}
-              </div>
-            ) : null}
           </div>
 
           <div className="mt-3 grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-[0.85fr_1.15fr]">
             <div className="flex min-h-[260px] flex-col rounded-[24px] border border-white/75 bg-white/58 p-4">
               <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">Live transcript</div>
-              <p className="mt-3 min-h-10 rounded-2xl bg-white/60 px-3 py-2 text-[14px] leading-7 text-foreground/78">{latestTranscriptText || "Latest transcript will appear here."}</p>
-              {interimText ? <div className="mt-2 text-[11px] uppercase tracking-[0.16em] text-muted-foreground">Listening live</div> : null}
-              <div className="mt-3 min-h-0 flex-1 overflow-auto pr-1">
-                <div className="grid gap-2">
-                  {finalTurns.length === 0 ? (
-                    <div className="rounded-2xl border border-dashed border-border/70 bg-white/45 px-3 py-6 text-center text-[13px] leading-6 text-muted-foreground">Completed turns appear here when ASR marks a segment final.</div>
-                  ) : null}
-                  {finalTurns.map((turn) => <div key={turn} className="rounded-2xl bg-white/72 px-3 py-2 text-[13px] leading-6 text-foreground/80">{turn}</div>)}
-                </div>
+              <div className="mt-3 min-h-0 flex-1 overflow-auto rounded-2xl bg-white/60 px-3 py-2 text-[14px] leading-7 text-foreground/78">
+                <p>{transcriptText || "Latest transcript will appear here."}</p>
               </div>
             </div>
 

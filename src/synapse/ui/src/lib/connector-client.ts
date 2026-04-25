@@ -1,3 +1,4 @@
+import { ensureOk } from "./http-errors";
 export interface ConnectorConfig {
   ready: boolean;
   service_base_url: string;
@@ -89,14 +90,6 @@ export interface ConnectorActivateResponse {
 
 const API_PREFIX = "/api";
 const configuredConnectorBaseUrl = getConfiguredConnectorBaseUrl();
-
-async function ensureOk(response: Response) {
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(text || `Request failed with status ${response.status}`);
-  }
-  return response;
-}
 
 function getConfiguredConnectorBaseUrl(): URL | null {
   const raw = import.meta.env.VITE_CONNECTOR_BASE_URL?.trim();

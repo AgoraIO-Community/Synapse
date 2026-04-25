@@ -37,8 +37,9 @@ class DeterministicDraftRewriter(DraftRewriter):
     async def rewrite(self, payload: DraftRewriteInput) -> Draft:
         text = _turn_text(payload.new_turn)
         previous = payload.previous_draft
+        locale = _draft_locale(text)
         if previous is None or _is_reset(text):
-            goal = _clean_goal(text)
+            goal = _clean_goal(text, locale)
             constraints: list[str] = []
             acceptance: list[str] = []
             assumptions: list[str] = []
@@ -52,9 +53,9 @@ class DeterministicDraftRewriter(DraftRewriter):
 
         lowered = text.lower()
         if _is_ambiguous_reference(lowered):
-            missing = _append_unique(missing, 'Which reference does "that style" refer to?')
+            missing = _append_unique(missing, _missing_reference_question(locale))
         if _negates_previous(lowered):
-            goal = _clean_goal(text)
+            goal = _clean_goal(text, locale)
             constraints = []
             acceptance = []
             assumptions = []
@@ -66,34 +67,34 @@ class DeterministicDraftRewriter(DraftRewriter):
             goal = "Redesign the target in an ElevenLabs-like dark futuristic style."
             missing = [item for item in missing if "that style" not in item]
         elif previous is None or _is_reset(text):
-            goal = _clean_goal(text)
+            goal = _clean_goal(text, locale)
 
         if _contains_any(lowered, ["don't touch backend", "do not touch backend", "不要动后端", "不动后端"]):
-            constraints = _append_unique(constraints, "Do not modify backend code.")
+            constraints = _append_unique(constraints, _constraint_text("no_backend", locale))
         if _contains_any(lowered, ["don't modify backend", "do not modify backend"]):
-            constraints = _append_unique(constraints, "Do not modify backend code.")
+            constraints = _append_unique(constraints, _constraint_text("no_backend", locale))
         if _contains_any(lowered, ["don't add dependencies", "do not add dependencies", "不要新增依赖", "不新增依赖"]):
-            constraints = _append_unique(constraints, "Do not add dependencies.")
+            constraints = _append_unique(constraints, _constraint_text("no_dependencies", locale))
         if _contains_any(lowered, ["keep existing", "preserve existing", "保留现有"]):
-            constraints = _append_unique(constraints, "Preserve existing behavior and flows.")
-        if "backend" in lowered and "Do not modify backend code." not in constraints and _contains_any(lowered, ["不要", "不", "don't", "do not"]):
-            constraints = _append_unique(constraints, "Do not modify backend code.")
-        if "依赖" in text and "Do not add dependencies." not in constraints and _contains_any(lowered, ["不要", "不"]):
-            constraints = _append_unique(constraints, "Do not add dependencies.")
+            constraints = _append_unique(constraints, _constraint_text("preserve_existing", locale))
+        if "backend" in lowered and _constraint_text("no_backend", locale) not in constraints and _contains_any(lowered, ["不要", "不", "don't", "do not"]):
+            constraints = _append_unique(constraints, _constraint_text("no_backend", locale))
+        if "依赖" in text and _constraint_text("no_dependencies", locale) not in constraints and _contains_any(lowered, ["不要", "不"]):
+            constraints = _append_unique(constraints, _constraint_text("no_dependencies", locale))
 
         if not acceptance:
-            acceptance = _default_acceptance(goal, constraints)
+            acceptance = _default_acceptance(goal, constraints, locale)
         else:
-            acceptance = _merge_acceptance(acceptance, constraints)
+            acceptance = _merge_acceptance(acceptance, constraints, locale)
 
         if not goal.strip():
-            goal = "Clarify the requested task before execution."
-            missing = _append_unique(missing, "What should Bro do?")
+            goal = "执行前先澄清要完成的任务。" if locale == "zh" else "Clarify the requested task before execution."
+            missing = _append_unique(missing, "Bro 需要做什么？" if locale == "zh" else "What should Bro do?")
 
         confidence = 0.45 if missing else 0.72
         risk = DraftRiskLevel.MEDIUM if missing else DraftRiskLevel.LOW
         title = _title_from_goal(goal)
-        canonical = _canonical_instruction(goal, constraints, acceptance, assumptions, missing)
+        canonical = _canonical_instruction(goal, constraints, acceptance, assumptions, missing, locale)
         return Draft(
             title=title,
             goal=goal,
@@ -102,7 +103,7 @@ class DeterministicDraftRewriter(DraftRewriter):
             canonical_instruction=canonical,
             assumptions=assumptions,
             missing_info=missing,
-            last_update_summary=_last_update_summary(previous, goal, constraints, missing),
+            last_update_summary=_last_update_summary(previous, goal, constraints, missing, locale),
             confidence=confidence,
             risk_level=risk,
         )
@@ -203,6 +204,10 @@ def _contains_any(text: str, needles: list[str]) -> bool:
     return any(needle in text for needle in needles)
 
 
+def _draft_locale(text: str) -> str:
+    return "zh" if any("\u4e00" <= character <= "\u9fff" for character in text) else "en"
+
+
 def _mentions_youmind(text: str) -> bool:
     return "youmind" in text or "you mind" in text
 
@@ -227,12 +232,14 @@ def _is_ambiguous_reference(text: str) -> bool:
     return _contains_any(text, ["that style", "那个风格", "那种风格", "像那个"])
 
 
-def _clean_goal(text: str) -> str:
+def _clean_goal(text: str, locale: str = "en") -> str:
     cleaned = " ".join(text.strip().split())
     if not cleaned:
         return ""
-    if not cleaned.endswith(('.', '。', '!', '?')):
-        cleaned += "."
+    if not cleaned.endswith(('.', '。', '!', '！', '?', '？')):
+        cleaned += "。" if locale == "zh" else "."
+    if locale == "zh":
+        return cleaned
     return cleaned[0].upper() + cleaned[1:]
 
 
@@ -242,27 +249,45 @@ def _append_unique(items: list[str], item: str) -> list[str]:
     return items
 
 
-def _default_acceptance(goal: str, constraints: list[str]) -> list[str]:
-    acceptance = ["The requested task is completed according to the draft goal."]
-    if "style" in goal.lower() or "redesign" in goal.lower():
+def _constraint_text(kind: str, locale: str) -> str:
+    if locale == "zh":
+        return {
+            "no_backend": "不要修改后端代码。",
+            "no_dependencies": "不要新增依赖。",
+            "preserve_existing": "保留现有行为和流程。",
+        }[kind]
+    return {
+        "no_backend": "Do not modify backend code.",
+        "no_dependencies": "Do not add dependencies.",
+        "preserve_existing": "Preserve existing behavior and flows.",
+    }[kind]
+
+
+def _missing_reference_question(locale: str) -> str:
+    return "“那个风格”具体指哪个参考？" if locale == "zh" else 'Which reference does "that style" refer to?'
+
+
+def _default_acceptance(goal: str, constraints: list[str], locale: str = "en") -> list[str]:
+    acceptance = ["任务按照草稿目标完成。"] if locale == "zh" else ["The requested task is completed according to the draft goal."]
+    if locale == "en" and ("style" in goal.lower() or "redesign" in goal.lower()):
         acceptance = ["The target looks cleaner and matches the requested style direction."]
-    if "Do not modify backend code." in constraints:
-        acceptance.append("Backend code is not modified.")
-    if "Do not add dependencies." in constraints:
-        acceptance.append("No new dependency is added.")
-    if "Preserve existing behavior and flows." in constraints:
-        acceptance.append("Existing behavior and flows still work.")
+    if _constraint_text("no_backend", locale) in constraints:
+        acceptance.append("后端代码没有被修改。" if locale == "zh" else "Backend code is not modified.")
+    if _constraint_text("no_dependencies", locale) in constraints:
+        acceptance.append("没有新增依赖。" if locale == "zh" else "No new dependency is added.")
+    if _constraint_text("preserve_existing", locale) in constraints:
+        acceptance.append("现有行为和流程保持可用。" if locale == "zh" else "Existing behavior and flows still work.")
     return acceptance
 
 
-def _merge_acceptance(acceptance: list[str], constraints: list[str]) -> list[str]:
+def _merge_acceptance(acceptance: list[str], constraints: list[str], locale: str = "en") -> list[str]:
     merged = list(acceptance)
-    if "Do not modify backend code." in constraints:
-        merged = _append_unique(merged, "Backend code is not modified.")
-    if "Do not add dependencies." in constraints:
-        merged = _append_unique(merged, "No new dependency is added.")
-    if "Preserve existing behavior and flows." in constraints:
-        merged = _append_unique(merged, "Existing behavior and flows still work.")
+    if _constraint_text("no_backend", locale) in constraints:
+        merged = _append_unique(merged, "后端代码没有被修改。" if locale == "zh" else "Backend code is not modified.")
+    if _constraint_text("no_dependencies", locale) in constraints:
+        merged = _append_unique(merged, "没有新增依赖。" if locale == "zh" else "No new dependency is added.")
+    if _constraint_text("preserve_existing", locale) in constraints:
+        merged = _append_unique(merged, "现有行为和流程保持可用。" if locale == "zh" else "Existing behavior and flows still work.")
     return merged
 
 
@@ -279,16 +304,24 @@ def _canonical_instruction(
     acceptance: list[str],
     assumptions: list[str],
     missing: list[str],
+    locale: str = "en",
 ) -> str:
-    sections = [f"Goal:\n{goal}"]
+    labels = {
+        "goal": "目标" if locale == "zh" else "Goal",
+        "constraints": "约束" if locale == "zh" else "Constraints",
+        "acceptance": "验收标准" if locale == "zh" else "Acceptance Criteria",
+        "assumptions": "假设" if locale == "zh" else "Assumptions",
+        "missing": "待确认信息" if locale == "zh" else "Missing Info",
+    }
+    sections = [f"{labels['goal']}:\n{goal}"]
     if constraints:
-        sections.append("Constraints:\n" + "\n".join(f"- {item}" for item in constraints))
+        sections.append(f"{labels['constraints']}:\n" + "\n".join(f"- {item}" for item in constraints))
     if acceptance:
-        sections.append("Acceptance Criteria:\n" + "\n".join(f"- {item}" for item in acceptance))
+        sections.append(f"{labels['acceptance']}:\n" + "\n".join(f"- {item}" for item in acceptance))
     if assumptions:
-        sections.append("Assumptions:\n" + "\n".join(f"- {item}" for item in assumptions))
+        sections.append(f"{labels['assumptions']}:\n" + "\n".join(f"- {item}" for item in assumptions))
     if missing:
-        sections.append("Missing Info:\n" + "\n".join(f"- {item}" for item in missing))
+        sections.append(f"{labels['missing']}:\n" + "\n".join(f"- {item}" for item in missing))
     return "\n\n".join(sections)
 
 
@@ -297,13 +330,24 @@ def _last_update_summary(
     goal: str,
     constraints: list[str],
     missing: list[str],
+    locale: str = "en",
 ) -> str:
     if previous is None:
+        if locale == "zh":
+            return "已根据最新语音创建第一个可执行草稿。"
         return "Created the first executable draft from the latest voice turn."
     if previous.goal != goal:
+        if locale == "zh":
+            return "已根据最新语音重写草稿目标。"
         return "Rewrote the draft goal based on the latest voice turn."
     if missing:
+        if locale == "zh":
+            return "已更新草稿并标出待确认信息。"
         return "Updated the draft and surfaced missing information."
     if constraints != previous.constraints:
+        if locale == "zh":
+            return "已根据最新语音更新草稿约束。"
         return "Updated the draft constraints based on the latest voice turn."
+    if locale == "zh":
+        return "已根据最新语音刷新草稿。"
     return "Refreshed the draft from the latest voice turn."
