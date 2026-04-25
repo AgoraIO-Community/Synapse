@@ -146,6 +146,8 @@ class SttSessionStartResponse(BaseModel):
     sub_bot_uid: int
     agent_id: str
     status: str
+    languages: list[str] = Field(default_factory=list)
+    subscribe_audio_uids: list[str] = Field(default_factory=list)
 
 
 class SttSessionQueryResponse(BaseModel):

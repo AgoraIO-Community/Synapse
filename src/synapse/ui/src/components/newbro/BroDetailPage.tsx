@@ -189,7 +189,7 @@ export function BroDetailPage({
       appendVoiceDebugEvent(`unparsed stream-message · ${payloadShape(payload)}`);
       return;
     }
-    appendVoiceDebugEvent(`stream-message parsed · ${parsed.final ? "final" : "interim"}`);
+    appendVoiceDebugEvent(`stream-message parsed · ${parsed.source ?? "unknown"} · ${parsed.language ?? "no-lang"} · ${parsed.final ? "final" : "interim"}`);
     setLatestTranscriptText(parsed.text);
     if (!parsed.final) {
       setInterimText(parsed.text);
@@ -262,6 +262,7 @@ export function BroDetailPage({
         });
         resourcesRef.current = { rtcClient, micTrack, preparedSession, sttSession };
         appendVoiceDebugEvent(`stt bots pub ${sttSession.pub_bot_uid} · sub ${sttSession.sub_bot_uid}`);
+        appendVoiceDebugEvent(`stt languages ${sttSession.languages?.join(",") || "unknown"} · subscribe ${sttSession.subscribe_audio_uids?.join(",") || "unknown"}`);
         if (!mountedRef.current || generationRef.current !== generation) return;
         setSttPhase("ready_mic_off");
       } catch (error) {

@@ -228,9 +228,11 @@ describe("connector-client transport base URL handling", () => {
         token: "rtc-token",
         uid: 101,
         pub_bot_uid: 100101,
-        sub_bot_uid: 100101,
+        sub_bot_uid: 100102,
         agent_id: "agent-1",
         status: "started",
+        languages: ["zh-CN"],
+        subscribe_audio_uids: ["101"],
       }),
     );
     vi.stubGlobal("fetch", fetchMock);
@@ -242,6 +244,8 @@ describe("connector-client transport base URL handling", () => {
     });
 
     expect(response.stt_session_id).toBe("stt-1");
+    expect(response.languages).toEqual(["zh-CN"]);
+    expect(response.subscribe_audio_uids).toEqual(["101"]);
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/connectors/agora-convoai/stt/sessions/start",
       {

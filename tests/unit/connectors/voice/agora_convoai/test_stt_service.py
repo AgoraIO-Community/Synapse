@@ -1,4 +1,5 @@
 import re
+import json
 
 import pytest
 import httpx
@@ -10,7 +11,7 @@ from synapse.connectors.voice.agora_convoai.models import (
     SttSessionStartRequest,
 )
 from synapse.connectors.voice.agora_convoai.settings import AgoraConvoAIConnectorSettings
-from synapse.connectors.voice.agora_convoai.stt_service import AgoraSttService
+from synapse.connectors.voice.agora_convoai.stt_service import AgoraSttService, _redact_stt_join_payload
 
 
 class _Clock:
@@ -22,6 +23,35 @@ class _Clock:
 
     def advance(self, seconds: float) -> None:
         self.value += seconds
+
+
+def test_redact_stt_join_payload_keeps_diagnostics_without_tokens():
+    payload = {
+        "name": "nbstt-task-1",
+        "languages": ["zh-CN"],
+        "maxIdleTime": 60,
+        "rtcConfig": {
+            "channelName": "nbstt-channel",
+            "pubBotUid": "100101",
+            "pubBotToken": "pub-secret-token",
+            "subBotUid": "100102",
+            "subBotToken": "sub-secret-token",
+            "subscribeAudioUids": ["101"],
+        },
+    }
+
+    redacted = _redact_stt_join_payload(payload)
+    serialized = json.dumps(redacted)
+
+    assert "pub-secret-token" not in serialized
+    assert "sub-secret-token" not in serialized
+    assert redacted["languages"] == ["zh-CN"]
+    assert redacted["rtcConfig"]["channelName"] == "nbstt-channel"
+    assert redacted["rtcConfig"]["pubBotUid"] == "100101"
+    assert redacted["rtcConfig"]["pubBotToken"] == "<redacted>"
+    assert redacted["rtcConfig"]["subBotUid"] == "100102"
+    assert redacted["rtcConfig"]["subBotToken"] == "<redacted>"
+    assert redacted["rtcConfig"]["subscribeAudioUids"] == ["101"]
 
 
 def test_stt_prepare_returns_unique_browser_join_credentials_without_joining_agora(monkeypatch):
@@ -103,6 +133,8 @@ async def test_stt_start_uses_prepared_channel_and_agora_token_auth(monkeypatch)
     assert "Basic" not in headers["Authorization"]
     assert payload["name"].startswith("nbstt-task-")
     assert payload["languages"] == ["zh-CN"]
+    assert response.languages == ["zh-CN"]
+    assert response.subscribe_audio_uids == [str(prepared.uid)]
     assert len(payload["name"]) <= 64
     assert re.fullmatch(r"[A-Za-z0-9_-]+", payload["name"])
     assert payload["rtcConfig"]["channelName"] == prepared.channel_name
@@ -113,7 +145,7 @@ async def test_stt_start_uses_prepared_channel_and_agora_token_auth(monkeypatch)
     assert payload["rtcConfig"]["subBotToken"].startswith("007")
     assert response.uid != response.pub_bot_uid
     assert response.uid != response.sub_bot_uid
-    assert response.pub_bot_uid == response.sub_bot_uid
+    assert response.pub_bot_uid != response.sub_bot_uid
     assert payload["rtcConfig"]["pubBotToken"].startswith("007")
 
 

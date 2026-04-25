@@ -221,9 +221,11 @@ const connectorMock = vi.hoisted(() => ({
     token: "stt-token",
     uid: 101,
     pub_bot_uid: 100101,
-    sub_bot_uid: 100101,
+    sub_bot_uid: 100102,
     agent_id: "agent-1",
     status: "started",
+    languages: ["zh-CN"],
+    subscribe_audio_uids: ["101"],
   })),
   heartbeatSttSession: vi.fn(async () => ({ status: "active" })),
   querySttSession: vi.fn(async () => ({

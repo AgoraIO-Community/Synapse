@@ -60,7 +60,9 @@ use the same channel.
 STT recognition defaults to Chinese via Agora `languages: ["zh-CN"]`, while
 explicit connector config can override the language list. The STT bot also
 subscribes explicitly to the browser RTC UID so it transcribes the user's audio
-source rather than relying on implicit channel subscription behavior.
+source rather than relying on implicit channel subscription behavior. The STT
+publisher and subscriber bot UIDs are distinct, matching the Agora REST STT join
+contract.
 
 The browser heartbeats active STT sessions every 15 seconds. Explicit Bro Detail
 leave stops the STT bot immediately. If the browser disappears without leave,

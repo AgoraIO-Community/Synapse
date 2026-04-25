@@ -4,6 +4,7 @@ import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass
 import hashlib
+import logging
 import re
 from time import monotonic
 from uuid import uuid4
@@ -30,6 +31,8 @@ PREPARED_SESSION_TTL_SECONDS = 60.0
 ACTIVE_HEARTBEAT_TIMEOUT_SECONDS = 60.0
 WATCHDOG_INTERVAL_SECONDS = 15.0
 MAX_AGORA_CHANNEL_NAME_LENGTH = 64
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -131,19 +134,20 @@ class AgoraSttService:
             raise KeyError("Unknown prepared STT session.")
         channel_name = prepared.channel_name
         uid = prepared.uid
-        bot_uid = _next_bot_uid(uid, offset=100000)
+        pub_bot_uid = _next_bot_uid(uid, offset=100000)
+        sub_bot_uid = _next_bot_uid(uid, offset=100001)
         languages = request.languages or list(self._settings.stt.languages)
         name = _build_stt_task_name(prepared.synapse_session_id, prepared.assigned_bro_id, channel_name)
         token = build_rtc_token(
             channel_name=channel_name,
-            rtc_uid=bot_uid,
+            rtc_uid=pub_bot_uid,
             app_id=app_id,
             app_certificate=app_certificate,
             token_expire=self._settings.stt.token_ttl_seconds,
         ).token
         sub_bot_token = build_rtc_token(
             channel_name=channel_name,
-            rtc_uid=bot_uid,
+            rtc_uid=sub_bot_uid,
             app_id=app_id,
             app_certificate=app_certificate,
             token_expire=self._settings.stt.token_ttl_seconds,
@@ -154,13 +158,14 @@ class AgoraSttService:
             "maxIdleTime": self._settings.stt.max_idle_time,
             "rtcConfig": {
                 "channelName": channel_name,
-                "pubBotUid": str(bot_uid),
+                "pubBotUid": str(pub_bot_uid),
                 "pubBotToken": token,
-                "subBotUid": str(bot_uid),
+                "subBotUid": str(sub_bot_uid),
                 "subBotToken": sub_bot_token,
                 "subscribeAudioUids": [str(uid)],
             },
         }
+        logger.info("Agora STT join payload: %s", _redact_stt_join_payload(payload))
         response = await self._http.post(
             f"https://api.agora.io/api/speech-to-text/v1/projects/{app_id}/join",
             headers={"Authorization": f"agora token={token}"},
@@ -178,8 +183,8 @@ class AgoraSttService:
             agent_id=agent_id,
             channel_name=channel_name,
             uid=uid,
-            pub_bot_uid=bot_uid,
-            sub_bot_uid=bot_uid,
+            pub_bot_uid=pub_bot_uid,
+            sub_bot_uid=sub_bot_uid,
             token=token,
             assigned_bro_id=prepared.assigned_bro_id,
             synapse_session_id=prepared.synapse_session_id,
@@ -191,10 +196,12 @@ class AgoraSttService:
             channel_name=channel_name,
             token=prepared.token,
             uid=uid,
-            pub_bot_uid=bot_uid,
-            sub_bot_uid=bot_uid,
+            pub_bot_uid=pub_bot_uid,
+            sub_bot_uid=sub_bot_uid,
             agent_id=agent_id,
             status=str(body.get("status") or "started"),
+            languages=languages,
+            subscribe_audio_uids=[str(uid)],
         )
 
     async def query_session(self, stt_session_id: str) -> SttSessionQueryResponse:
@@ -304,6 +311,23 @@ def _build_stt_task_name(synapse_session_id: str, assigned_bro_id: str, fallback
     raw = f"nbstt-task-{session_hash}-{bro_hash}-{unique_suffix}"
     sanitized = re.sub(r"[^A-Za-z0-9_-]+", "-", raw).strip("-_")
     return (sanitized or f"nbstt-task-{unique_suffix}")[:64]
+
+
+def _redact_stt_join_payload(payload: dict) -> dict:
+    rtc_config = payload.get("rtcConfig") if isinstance(payload.get("rtcConfig"), dict) else {}
+    return {
+        "name": payload.get("name"),
+        "languages": payload.get("languages"),
+        "maxIdleTime": payload.get("maxIdleTime"),
+        "rtcConfig": {
+            "channelName": rtc_config.get("channelName"),
+            "pubBotUid": rtc_config.get("pubBotUid"),
+            "pubBotToken": "<redacted>" if rtc_config.get("pubBotToken") else None,
+            "subBotUid": rtc_config.get("subBotUid"),
+            "subBotToken": "<redacted>" if rtc_config.get("subBotToken") else None,
+            "subscribeAudioUids": rtc_config.get("subscribeAudioUids"),
+        },
+    }
 
 
 def _require(value: str | None, name: str) -> str:

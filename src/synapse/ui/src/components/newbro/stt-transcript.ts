@@ -4,6 +4,8 @@ import { ungzip } from "pako";
 export type ExtractedSttTranscript = {
   text: string;
   final: boolean;
+  language?: string;
+  source?: string;
 };
 
 const sttRoot = protobuf.Root.fromJSON({
@@ -75,7 +77,7 @@ function extractStringTranscript(payload: string): ExtractedSttTranscript | null
   try {
     return extractTranscriptText(JSON.parse(trimmed));
   } catch {
-    return { text: trimmed, final: true };
+    return { text: trimmed, final: true, source: "plain-text" };
   }
 }
 
@@ -107,7 +109,7 @@ function decodeUtf8Transcript(bytes: Uint8Array): ExtractedSttTranscript | null 
       if (parsed) return parsed;
     }
     if (isMostlyPrintable(decoded)) {
-      return { text: decoded, final: true };
+      return { text: decoded, final: true, source: "utf8-text" };
     }
   } catch {}
   return null;
@@ -138,6 +140,7 @@ function decodeProtobufTranscript(bytes: Uint8Array): ExtractedSttTranscript | n
     return {
       text,
       final: decoded.end_of_segment === true || wordFinal || translationFinal,
+      source: wordText ? "protobuf-words" : "protobuf-translation",
     };
   } catch {
     return null;
@@ -147,7 +150,7 @@ function decodeProtobufTranscript(bytes: Uint8Array): ExtractedSttTranscript | n
 function extractRecordTranscript(record: Record<string, any>): ExtractedSttTranscript | null {
   const wrappedTranscript = extractWrappedTranscript(record.transcript);
   if (wrappedTranscript) return wrappedTranscript;
-  const originalTranscript = extractWrappedTranscript(record.translation?.original_transcript);
+  const originalTranscript = extractWrappedTranscript(record.translation?.original_transcript, "translation-original");
   if (originalTranscript) return originalTranscript;
   const nested = [record.result, record.data, record.payload].find((item) => item != null);
   if (nested != null && nested !== record) {
@@ -163,14 +166,15 @@ function extractRecordTranscript(record: Record<string, any>): ExtractedSttTrans
   const text = candidates.find((item) => typeof item === "string" && item.trim());
   if (!text) return null;
   const final = isFinalRecord(record);
-  return { text: text.trim(), final };
+  return { text: text.trim(), final, source: Array.isArray(record.words) ? "object-words" : "object" };
 }
 
-function extractWrappedTranscript(transcript: unknown): ExtractedSttTranscript | null {
+function extractWrappedTranscript(transcript: unknown, source = "transcript-wrapper"): ExtractedSttTranscript | null {
   if (!transcript || typeof transcript !== "object") return null;
   const record = transcript as Record<string, any>;
   if (typeof record.text !== "string" || !record.text.trim()) return null;
-  return { text: record.text.trim(), final: isFinalRecord(record) };
+  const language = typeof record.language === "string" ? record.language : typeof record.lang === "string" ? record.lang : undefined;
+  return { text: record.text.trim(), final: isFinalRecord(record), language, source };
 }
 
 function extractWordsText(words: unknown): string | null {

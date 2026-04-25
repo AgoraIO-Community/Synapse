@@ -207,6 +207,8 @@ export interface SttSessionStartResponse {
   sub_bot_uid: number;
   agent_id: string;
   status: string;
+  languages: string[];
+  subscribe_audio_uids: string[];
 }
 
 export interface SttSessionQueryResponse {
