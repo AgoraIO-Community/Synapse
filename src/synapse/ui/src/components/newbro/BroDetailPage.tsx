@@ -1,11 +1,14 @@
 import { ArrowLeft, CircleDot, Mic, SendHorizontal, Square } from "lucide-react";
-import { useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
+import { prepareSttSession, startSttSession, stopSttSession, type SttSessionStartResponse } from "../../lib/connector-client";
+import { submitDraftAsrTurn } from "../../lib/session-client";
+import { loadAgoraBrowserStack } from "../../lib/voice-runtime";
 import { Button } from "../ui/button";
 import { BroPortrait } from "./BroPortrait";
 import { BroProgress } from "./BroProgress";
+import { extractTranscriptText } from "./stt-transcript";
 import type { BroCardModel } from "./types";
 import type { TaskSummary } from "../../types";
-import type { useSttSession } from "./useSttSession";
 
 function liveStateText(bro: BroCardModel) {
   if (bro.liveState === "live") return "Live and ready";
@@ -13,30 +16,122 @@ function liveStateText(bro: BroCardModel) {
   return "Needs node binding";
 }
 
+type SttPhase = "idle" | "starting" | "listening" | "stopping" | "error";
+
+type SttResources = {
+  rtcClient: any;
+  micTrack: any;
+  sttSession: SttSessionStartResponse;
+};
+
 export function BroDetailPage({
   bro,
   sessionId,
   summary,
-  sttSession,
   onBack,
 }: {
   bro: BroCardModel;
   sessionId: string | null;
   summary: TaskSummary | null;
-  sttSession: ReturnType<typeof useSttSession>;
   onBack: () => void;
 }) {
-  const { state: sttState, setActiveBro, setMicMuted } = sttSession;
+  const [sttPhase, setSttPhase] = useState<SttPhase>("idle");
+  const [sttError, setSttError] = useState<string | null>(null);
+  const [interimText, setInterimText] = useState("");
+  const [finalTurns, setFinalTurns] = useState<string[]>([]);
+  const resourcesRef = useRef<SttResources | null>(null);
+  const submittedRef = useRef<Set<string>>(new Set());
+
+  async function stopListening() {
+    const resources = resourcesRef.current;
+    resourcesRef.current = null;
+    setSttPhase((current) => (current === "idle" ? current : "stopping"));
+    try {
+      resources?.micTrack?.stop?.();
+      resources?.micTrack?.close?.();
+    } catch {}
+    try {
+      await resources?.rtcClient?.leave?.();
+    } catch {}
+    try {
+      if (resources?.sttSession.stt_session_id) {
+        await stopSttSession(resources.sttSession.stt_session_id);
+      }
+      setSttPhase("idle");
+    } catch (error) {
+      setSttError(error instanceof Error ? error.message : "Failed to stop STT session.");
+      setSttPhase("error");
+    }
+  }
+
+  async function handleTranscript(payload: unknown) {
+    const parsed = extractTranscriptText(payload);
+    if (!parsed) return;
+    if (!parsed.final) {
+      setInterimText(parsed.text);
+      return;
+    }
+    setInterimText("");
+    const key = parsed.text.toLowerCase();
+    if (submittedRef.current.has(key)) return;
+    submittedRef.current.add(key);
+    setFinalTurns((current) => [parsed.text, ...current].slice(0, 12));
+    if (sessionId) {
+      await submitDraftAsrTurn(sessionId, {
+        raw_text: parsed.text,
+        assigned_bro_id: bro.id,
+      });
+    }
+  }
+
+  async function startListening() {
+    if (!sessionId || sttPhase === "starting" || sttPhase === "listening") return;
+    setSttPhase("starting");
+    setSttError(null);
+    let rtcClient: any | null = null;
+    let micTrack: any | null = null;
+    try {
+      const prepared = await prepareSttSession({ synapse_session_id: sessionId, channel_name: sessionId });
+      const { AgoraRTC } = await loadAgoraBrowserStack();
+      rtcClient = AgoraRTC.createClient({ mode: "rtc", codec: "vp8" });
+      rtcClient.on?.("stream-message", (_uid: string | number, payload: unknown) => {
+        void handleTranscript(payload);
+      });
+      rtcClient.on?.("stream-message-error", (_uid: string | number, error: unknown) => {
+        setSttError(error instanceof Error ? error.message : "Failed to receive STT transcript.");
+      });
+      await rtcClient.join(prepared.app_id, prepared.channel_name, prepared.token, prepared.uid);
+      micTrack = await AgoraRTC.createMicrophoneAudioTrack();
+      await rtcClient.publish([micTrack]);
+      const sttSession = await startSttSession({
+        synapse_session_id: sessionId,
+        assigned_bro_id: bro.id,
+        channel_name: prepared.channel_name,
+        user_uid: prepared.uid,
+      });
+      resourcesRef.current = { rtcClient, micTrack, sttSession };
+      setSttPhase("listening");
+    } catch (error) {
+      try {
+        micTrack?.stop?.();
+        micTrack?.close?.();
+      } catch {}
+      try {
+        await rtcClient?.leave?.();
+      } catch {}
+      setSttError(error instanceof Error ? error.message : "Failed to start STT session.");
+      setSttPhase("error");
+      await stopListening();
+    }
+  }
 
   useEffect(() => {
-    setActiveBro(bro.id);
     return () => {
-      setActiveBro(null);
-      void setMicMuted(true);
+      void stopListening();
     };
-  }, [bro.id, setActiveBro, setMicMuted]);
+  }, []);
 
-  const listening = sttState.phase === "listening" && !sttState.isMicMuted && sttState.activeBroId === bro.id;
+  const listening = sttPhase === "listening";
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4 px-4 pb-4 pt-4 md:px-6 md:pb-6 md:pt-5 xl:px-8 xl:pb-8 xl:pt-6">
@@ -68,40 +163,38 @@ export function BroDetailPage({
               <div className="text-[11px] uppercase tracking-[0.24em] text-primary">Draft Brain</div>
               <h2 className="serif-flow mt-2 text-[32px] tracking-[-0.05em]">Draft for {bro.name}</h2>
             </div>
-            <span className="rounded-full border border-primary/15 bg-primary/10 px-3 py-1 text-[11px] uppercase tracking-[0.18em] text-primary">
-              {sttState.phase}{sttState.isMicMuted ? " · muted" : " · live"}
-            </span>
+            <span className="rounded-full border border-primary/15 bg-primary/10 px-3 py-1 text-[11px] uppercase tracking-[0.18em] text-primary">{sttPhase}</span>
           </div>
           <div className="mt-8 rounded-[28px] border border-dashed border-border/70 bg-white/50 px-5 py-8 text-center">
             <Mic className="mx-auto size-8 text-primary" />
             <div className="serif-flow mt-4 text-[26px] tracking-[-0.04em]">Speak to draft</div>
-            <p className="mx-auto mt-3 max-w-[560px] text-[14px] leading-7 text-muted-foreground">Realtime STT is already started from Home with the local mic muted. Unmute here to send live transcript turns to this Bro.</p>
+            <p className="mx-auto mt-3 max-w-[560px] text-[14px] leading-7 text-muted-foreground">Agora STT listens in this Bro's RTC channel. Final transcript turns update Draft Brain.</p>
             <div className="mt-5 flex justify-center gap-3">
               {listening ? (
-                <Button type="button" variant="outline" className="rounded-full" onClick={() => void setMicMuted(true)}>
+                <Button type="button" variant="outline" className="rounded-full" onClick={() => void stopListening()}>
                   <Square className="mr-2 size-4" />
-                  Mute mic
+                  Stop
                 </Button>
               ) : (
-                <Button type="button" className="rounded-full" disabled={!sessionId || sttState.phase === "starting"} onClick={() => void setMicMuted(false)}>
+                <Button type="button" className="rounded-full" disabled={!sessionId || sttPhase === "starting"} onClick={() => void startListening()}>
                   <Mic className="mr-2 size-4" />
-                  {sttState.phase === "starting" ? "Starting..." : "Unmute mic"}
+                  {sttPhase === "starting" ? "Starting..." : "Start Talking"}
                 </Button>
               )}
             </div>
-            {sttState.error ? <div className="mt-4 text-[13px] text-[#8d5a62]">{sttState.error}</div> : null}
-            {sttState.sttSession ? (
+            {sttError ? <div className="mt-4 text-[13px] text-[#8d5a62]">{sttError}</div> : null}
+            {resourcesRef.current?.sttSession ? (
               <div className="mt-4 text-[11px] leading-5 text-muted-foreground">
-                STT agent {sttState.sttSession.agent_id} · pub {sttState.sttSession.pub_bot_uid} · sub {sttState.sttSession.sub_bot_uid}
+                STT agent {resourcesRef.current.sttSession.agent_id} · pub {resourcesRef.current.sttSession.pub_bot_uid} · sub {resourcesRef.current.sttSession.sub_bot_uid}
               </div>
             ) : null}
             <div className="mt-5 text-[12px] text-muted-foreground">Session {sessionId ?? "not connected"}</div>
           </div>
           <div className="mt-5 rounded-[24px] border border-white/75 bg-white/58 p-4">
             <div className="text-[12px] uppercase tracking-[0.18em] text-muted-foreground">Live transcript</div>
-            <p className="mt-3 min-h-8 text-[15px] leading-7 text-foreground/80">{sttState.interimText || "Interim transcript appears here after you unmute."}</p>
+            <p className="mt-3 min-h-8 text-[15px] leading-7 text-foreground/80">{interimText || "Interim transcript appears here."}</p>
             <div className="mt-4 grid gap-2">
-              {sttState.finalTurns.map((turn) => <div key={turn} className="rounded-2xl bg-white/70 px-3 py-2 text-[13px] text-foreground/80">{turn}</div>)}
+              {finalTurns.map((turn) => <div key={turn} className="rounded-2xl bg-white/70 px-3 py-2 text-[13px] text-foreground/80">{turn}</div>)}
             </div>
           </div>
           <div className="mt-5 flex flex-wrap gap-3">

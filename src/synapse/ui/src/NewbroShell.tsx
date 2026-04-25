@@ -18,7 +18,6 @@ import { ConversationMemory } from "./components/newbro/ConversationMemory";
 import { NodesPage } from "./components/newbro/NodesPage";
 import { Sidebar, type PageId } from "./components/newbro/Sidebar";
 import { buildBroCardModels } from "./components/newbro/adapters";
-import { useSttSession } from "./components/newbro/useSttSession";
 import { useVoiceSession } from "./components/newbro/useVoiceSession";
 import type { ExecutionRun, ExecutorNodeRecord, Persona, SessionSnapshot, TaskSummary } from "./types";
 
@@ -137,16 +136,7 @@ function useNewbroShellState() {
     });
   });
 
-  const { state: voiceSession } = useVoiceSession();
-  const bros = useMemo(
-    () => buildBroCardModels(runtimePersonas, executorNodes, executionRuns, taskSummaries),
-    [executorNodes, executionRuns, runtimePersonas, taskSummaries],
-  );
-  const sttSession = useSttSession({
-    sessionId: activeShellSessionId,
-    ready: hasLoadedShellSnapshot,
-    defaultBroId: bros[0]?.id ?? null,
-  });
+  const { state: voiceSession, start, stop, toggleMute } = useVoiceSession();
 
   useEffect(() => {
     mountedRef.current = true;
@@ -289,6 +279,11 @@ function useNewbroShellState() {
     replaceSessionIdInUrl(activeShellSessionId);
   }, [activeShellSessionId]);
 
+  const bros = useMemo(
+    () => buildBroCardModels(runtimePersonas, executorNodes, executionRuns, taskSummaries),
+    [executorNodes, executionRuns, runtimePersonas, taskSummaries],
+  );
+
   const sendMessage = (text: string): boolean => {
     const socket = socketRef.current;
     if (!socket || socket.readyState !== WebSocket.OPEN) return false;
@@ -300,7 +295,6 @@ function useNewbroShellState() {
   return {
     bros,
     voiceSession,
-    sttSession,
     activeShellSessionId,
     hasLoadedShellSnapshot,
     runtimePersonas,
@@ -435,7 +429,6 @@ export function BroDetailShellPage({
             bro={bro}
             sessionId={shell.activeShellSessionId}
             summary={activeSummary}
-            sttSession={shell.sttSession}
             onBack={() => onNavigate("Home")}
           />
         ) : (
