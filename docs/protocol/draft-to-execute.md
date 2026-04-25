@@ -15,6 +15,10 @@ Task = immutable execution contract after Send
 An `AsrTurn` is one completed voice turn. It is evidence for Draft Brain and is
 not executed directly.
 
+The browser shell starts the realtime STT service after Home session bootstrap
+with the local microphone muted. Live ASR turns are only produced after the user
+opens a Bro detail page and unmutes the local microphone for that Bro.
+
 Fields:
 
 - `id`

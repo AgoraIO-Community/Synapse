@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { RouterProvider } from "@tanstack/react-router";
 import React from "react";
 import App from "../App";
@@ -8,8 +8,11 @@ import { getRouter } from "../router";
 const voiceHarness = vi.hoisted(() => {
   const state = {
     voiceEvents: {} as Record<string, (...args: any[]) => void>,
+    rtcEvents: {} as Record<string, (...args: any[]) => void>,
     rtcClient: {
-      on: vi.fn(),
+      on: vi.fn((event: string, callback: (...args: any[]) => void) => {
+        state.rtcEvents[event] = callback;
+      }),
       subscribe: vi.fn(async () => {}),
       join: vi.fn(async () => {}),
       publish: vi.fn(async () => {}),
@@ -35,6 +38,7 @@ const voiceHarness = vi.hoisted(() => {
     },
     reset() {
       state.voiceEvents = {};
+      state.rtcEvents = {};
       state.rtcClient.on.mockClear();
       state.rtcClient.subscribe.mockClear();
       state.rtcClient.join.mockClear();
@@ -105,6 +109,7 @@ const clientMock = vi.hoisted(() => ({
   revealExecutorNodeConnectCommand: vi.fn(),
   deleteExecutorNode: vi.fn(),
   buildExecutorRunCommand: vi.fn(() => "newbro executor run --base-url 'http://localhost:8000' --node-id 'node-1' --token 'token-1'"),
+  submitDraftAsrTurn: vi.fn(async () => ({ draft_session_id: "draft-1" })),
 }));
 
 const connectorMock = vi.hoisted(() => ({
@@ -189,6 +194,24 @@ const connectorMock = vi.hoisted(() => ({
     },
   })),
   stopConnectorSessionBeacon: vi.fn(() => true),
+  prepareSttSession: vi.fn(async () => ({
+    app_id: "agora-app",
+    channel_name: "session-1",
+    token: "stt-token",
+    uid: 101,
+  })),
+  startSttSession: vi.fn(async () => ({
+    stt_session_id: "stt-1",
+    app_id: "agora-app",
+    channel_name: "session-1",
+    token: "stt-token",
+    uid: 101,
+    pub_bot_uid: 201,
+    sub_bot_uid: 202,
+    agent_id: "stt-agent-1",
+    status: "RUNNING",
+  })),
+  stopSttSession: vi.fn(async () => {}),
 }));
 
 const runtimeMock = vi.hoisted(() => ({
@@ -251,6 +274,10 @@ describe("Newbro voice shell", () => {
       session_id: sessionId,
       conversation_history: [],
     }));
+  });
+
+  afterEach(() => {
+    cleanup();
   });
 
   it("boots into an explicit empty interaction-memory state", async () => {
@@ -402,6 +429,44 @@ describe("Newbro voice shell", () => {
     expect(screen.queryByText("Transcript will appear here.")).not.toBeInTheDocument();
     expect(screen.getByText("2 turns")).toBeInTheDocument();
     expect(screen.getByText("Session session-1")).toBeInTheDocument();
+  });
+
+  it("auto-starts the home STT service with the local mic muted", async () => {
+    render(<App />);
+
+    expect(await screen.findByText("Session session-1")).toBeInTheDocument();
+    await waitFor(() => expect(connectorMock.prepareSttSession).toHaveBeenCalledWith({
+      synapse_session_id: "session-1",
+      channel_name: "session-1",
+    }));
+    expect(connectorMock.startSttSession).toHaveBeenCalledWith({
+      synapse_session_id: "session-1",
+      assigned_bro_id: "atlas",
+      channel_name: "session-1",
+      user_uid: 101,
+    });
+    expect(connectorMock.prepareConnectorSession).not.toHaveBeenCalled();
+    expect(connectorMock.activateConnectorSession).not.toHaveBeenCalled();
+    expect(voiceHarness.rtcClient.join).toHaveBeenCalledWith("agora-app", "session-1", "stt-token", 101);
+    expect(voiceHarness.micTrack.setEnabled).toHaveBeenCalledWith(false);
+    expect(voiceHarness.rtcClient.publish).toHaveBeenCalledWith([voiceHarness.micTrack]);
+  });
+
+  it("keeps the home STT service live across route navigation", async () => {
+    const router = getRouter();
+    render(<RouterProvider router={router} />);
+    await act(async () => {
+      await router.load();
+    });
+
+    expect(await screen.findByText("Available Bros")).toBeInTheDocument();
+    await waitFor(() => expect(connectorMock.startSttSession).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByRole("button", { name: "Bros" }));
+    expect(await screen.findByText("Worker Bros")).toBeInTheDocument();
+
+    expect(connectorMock.startSttSession).toHaveBeenCalledTimes(1);
+    expect(connectorMock.stopSttSession).not.toHaveBeenCalled();
   });
 
   it("switches to runtime persona cards when persona data exists", async () => {
