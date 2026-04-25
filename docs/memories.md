@@ -174,3 +174,5 @@ Short log of important design decisions and changes for Synapse.
 - Removed the stale repo-root `synapse.py` launcher, kept `./newbro` as the only root bootstrap launcher, and made `newbro service install` fail fast when the installed `newbro` console script is missing or not executable.
 
 - Adopted `newbro v0` as a draft-to-execute workflow: ASR turns update a mutable Draft, Send creates an immutable Task contract, and changing direction requires stopping and starting a new Draft.
+- Changed Bro Detail ASR to use connector-managed STT sessions with fast RTC prepare, unique Agora-safe channels per page start, press-to-talk microphone control, explicit leave stop, and heartbeat timeout cleanup after more than 60 seconds without heartbeat.
+- Changed Bro Detail STT defaults to recognize Chinese via `languages: ["zh-CN"]`, explicitly subscribe the STT bot to the browser RTC UID, and parse official JSON transcript wrappers.

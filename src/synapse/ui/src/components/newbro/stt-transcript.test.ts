@@ -28,6 +28,48 @@ describe("extractTranscriptText", () => {
     });
   });
 
+  it("extracts nested result transcripts", () => {
+    expect(extractTranscriptText({ result: { text: "nested interim", isFinal: false } })).toEqual({
+      text: "nested interim",
+      final: false,
+    });
+    expect(extractTranscriptText({ result: { text: "nested final", isFinal: true } })).toEqual({
+      text: "nested final",
+      final: true,
+    });
+  });
+
+  it("extracts nested data transcripts", () => {
+    expect(extractTranscriptText({ data: JSON.stringify({ text: "json data", final: true }) })).toEqual({
+      text: "json data",
+      final: true,
+    });
+    expect(extractTranscriptText({ data: { words: [{ word: "word" }, { word: "data", final: true }], final: true } })).toEqual({
+      text: "word data",
+      final: true,
+    });
+  });
+
+  it("extracts official JSON transcript wrappers", () => {
+    expect(extractTranscriptText({ transcript: { language: "zh-CN", text: "你好", isFinal: false } })).toEqual({
+      text: "你好",
+      final: false,
+    });
+    expect(extractTranscriptText({ transcript: { language: "zh-CN", text: "你好世界", isFinal: true } })).toEqual({
+      text: "你好世界",
+      final: true,
+    });
+  });
+
+  it("extracts original transcript from translation wrappers", () => {
+    expect(extractTranscriptText({
+      translation: {
+        original_transcript: { language: "zh-CN", text: "原始中文", isFinal: true },
+        translated_transcript: { language: "en-US", text: "original Chinese", isFinal: true },
+      },
+    })).toEqual({ text: "原始中文", final: true });
+  });
+
   it("extracts interim Agora protobuf transcripts", () => {
     const bytes = encodeAgoraSttMessage({
       data_type: "transcribe",

@@ -117,24 +117,23 @@ class ConnectorSessionStopResponse(BaseModel):
 
 
 class SttSessionStartRequest(BaseModel):
-    synapse_session_id: str
-    assigned_bro_id: str
-    channel_name: str | None = None
-    user_uid: int | None = None
+    prepared_stt_session_id: str
     languages: list[str] | None = None
 
 
 class SttSessionPrepareRequest(BaseModel):
     synapse_session_id: str
-    channel_name: str | None = None
+    assigned_bro_id: str
     user_uid: int | None = None
 
 
 class SttSessionPrepareResponse(BaseModel):
+    prepared_stt_session_id: str
     app_id: str
     channel_name: str
     token: str
     uid: int
+    status: str = "prepared"
 
 
 class SttSessionStartResponse(BaseModel):
@@ -154,6 +153,19 @@ class SttSessionQueryResponse(BaseModel):
     agent_id: str
     status: str
     raw: dict[str, Any] = Field(default_factory=dict)
+
+
+class SttSessionHeartbeatRequest(BaseModel):
+    stt_session_id: str
+
+
+class SttSessionHeartbeatResponse(BaseModel):
+    status: str = "active"
+
+
+class SttSessionLeaveRequest(BaseModel):
+    stt_session_id: str | None = None
+    prepared_stt_session_id: str | None = None
 
 
 class SttSessionStopRequest(BaseModel):

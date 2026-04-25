@@ -24,6 +24,48 @@ Fields:
 - `started_at`
 - `ended_at`
 
+## Bro Detail ASR Lifecycle
+
+Bro Detail uses a dedicated Agora STT bot for draft shaping. The connector owns
+the STT bot lifecycle; the browser owns RTC join, local microphone tracks, and
+press-to-talk interaction.
+
+Entering Bro Detail follows this state machine:
+
+```text
+Enter Bro Detail
+  -> prepare unique Agora-safe channel + browser RTC token
+  -> browser joins RTC with mic disabled
+  -> ASR bot starting
+  -> ASR bot ready + mic off
+```
+
+Microphone interaction is press-to-talk:
+
+```text
+ASR bot ready + mic off
+  -> press mic
+ASR bot ready + mic capturing
+  -> release mic
+ASR bot ready + transcribing
+  -> Draft updating
+  -> ASR bot ready + mic off
+```
+
+Each prepare call creates a fresh Agora `channel_name` instead of reusing the
+Synapse session id. The channel is ASCII-safe, bounded to the Agora channel name
+limits, and returned by the connector so the browser RTC join and STT bot join
+use the same channel.
+
+STT recognition defaults to Chinese via Agora `languages: ["zh-CN"]`, while
+explicit connector config can override the language list. The STT bot also
+subscribes explicitly to the browser RTC UID so it transcribes the user's audio
+source rather than relying on implicit channel subscription behavior.
+
+The browser heartbeats active STT sessions every 15 seconds. Explicit Bro Detail
+leave stops the STT bot immediately. If the browser disappears without leave,
+the connector stops the STT bot after more than 60 seconds without heartbeat.
+
 ## Draft Session
 
 A `DraftSession` is the mutable pre-send workspace for one potential task.

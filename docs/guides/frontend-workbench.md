@@ -73,6 +73,15 @@ Current behavior:
   unique generated channel only if no Synapse session id is available
 - pressing `Stop` tears down only the live voice session and retains the last
   transcript until the next live session replaces it
+- Bro Detail draft input uses a separate connector-managed Agora STT path: the
+  page first prepares a fresh Agora-safe channel and browser RTC token, then
+  starts the ASR bot after the browser joins RTC with the microphone disabled
+- Bro Detail does not use the shell `session_id` as the Agora channel name;
+  each page start receives a unique channel from the connector to avoid channel
+  conflicts
+- Bro Detail sends STT heartbeats every 15 seconds; explicit leave stops the ASR
+  bot immediately, and missing heartbeats for more than 60 seconds stop it from
+  the connector side
 
 ## Component Direction
 

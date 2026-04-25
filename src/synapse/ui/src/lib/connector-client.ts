@@ -178,24 +178,23 @@ export function stopConnectorSessionBeacon(bindingId: string): boolean {
 }
 
 export interface SttSessionStartRequest {
-  synapse_session_id: string;
-  assigned_bro_id: string;
-  channel_name?: string;
-  user_uid?: number;
+  prepared_stt_session_id: string;
   languages?: string[];
 }
 
 export interface SttSessionPrepareRequest {
   synapse_session_id: string;
-  channel_name?: string;
+  assigned_bro_id: string;
   user_uid?: number;
 }
 
 export interface SttSessionPrepareResponse {
+  prepared_stt_session_id: string;
   app_id: string;
   channel_name: string;
   token: string;
   uid: number;
+  status: string;
 }
 
 export interface SttSessionStartResponse {
@@ -215,6 +214,10 @@ export interface SttSessionQueryResponse {
   agent_id: string;
   status: string;
   raw: Record<string, unknown>;
+}
+
+export interface SttSessionHeartbeatResponse {
+  status: string;
 }
 
 export async function prepareSttSession(payload: SttSessionPrepareRequest): Promise<SttSessionPrepareResponse> {
@@ -246,6 +249,30 @@ export async function querySttSession(sttSessionId: string): Promise<SttSessionQ
     buildConnectorHttpUrl(`${API_PREFIX}/connectors/agora-convoai/stt/sessions/${sttSessionId}`),
   );
   return (await ensureOk(response)).json();
+}
+
+export async function heartbeatSttSession(sttSessionId: string): Promise<SttSessionHeartbeatResponse> {
+  const response = await fetch(
+    buildConnectorHttpUrl(`${API_PREFIX}/connectors/agora-convoai/stt/sessions/heartbeat`),
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ stt_session_id: sttSessionId }),
+    },
+  );
+  return (await ensureOk(response)).json();
+}
+
+export async function leaveSttSession(payload: { stt_session_id?: string; prepared_stt_session_id?: string }): Promise<void> {
+  const response = await fetch(
+    buildConnectorHttpUrl(`${API_PREFIX}/connectors/agora-convoai/stt/sessions/leave`),
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    },
+  );
+  await ensureOk(response);
 }
 
 export async function stopSttSession(sttSessionId: string): Promise<void> {

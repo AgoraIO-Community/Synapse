@@ -190,10 +190,12 @@ describe("connector-client transport base URL handling", () => {
   it("prepares STT browser join credentials through the connector route", async () => {
     const fetchMock = vi.fn(async () =>
       okJsonResponse({
+        prepared_stt_session_id: "prepared-stt-1",
         app_id: "agora-app",
-        channel_name: "session-1",
+        channel_name: "nbstt-session-bro-random",
         token: "rtc-token",
         uid: 101,
+        status: "prepared",
       }),
     );
     vi.stubGlobal("fetch", fetchMock);
@@ -202,15 +204,17 @@ describe("connector-client transport base URL handling", () => {
 
     const response = await client.prepareSttSession({
       synapse_session_id: "session-1",
+      assigned_bro_id: "bro-1",
     });
 
     expect(response.uid).toBe(101);
+    expect(response.channel_name).toBe("nbstt-session-bro-random");
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/connectors/agora-convoai/stt/sessions/prepare",
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ synapse_session_id: "session-1" }),
+        body: JSON.stringify({ synapse_session_id: "session-1", assigned_bro_id: "bro-1" }),
       },
     );
   });
@@ -224,7 +228,7 @@ describe("connector-client transport base URL handling", () => {
         token: "rtc-token",
         uid: 101,
         pub_bot_uid: 100101,
-        sub_bot_uid: 200101,
+        sub_bot_uid: 100101,
         agent_id: "agent-1",
         status: "started",
       }),
@@ -234,8 +238,7 @@ describe("connector-client transport base URL handling", () => {
     const client = await import("./connector-client");
 
     const response = await client.startSttSession({
-      synapse_session_id: "session-1",
-      assigned_bro_id: "bro-1",
+      prepared_stt_session_id: "prepared-stt-1",
     });
 
     expect(response.stt_session_id).toBe("stt-1");
@@ -244,7 +247,44 @@ describe("connector-client transport base URL handling", () => {
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ synapse_session_id: "session-1", assigned_bro_id: "bro-1" }),
+        body: JSON.stringify({ prepared_stt_session_id: "prepared-stt-1" }),
+      },
+    );
+  });
+
+  it("heartbeats STT sessions through the connector route", async () => {
+    const fetchMock = vi.fn(async () => okJsonResponse({ status: "active" }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = await import("./connector-client");
+
+    const response = await client.heartbeatSttSession("stt-1");
+
+    expect(response.status).toBe("active");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/connectors/agora-convoai/stt/sessions/heartbeat",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ stt_session_id: "stt-1" }),
+      },
+    );
+  });
+
+  it("leaves STT sessions through the connector route", async () => {
+    const fetchMock = vi.fn(async () => okJsonResponse({ status: "stopped" }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = await import("./connector-client");
+
+    await client.leaveSttSession({ stt_session_id: "stt-1" });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/connectors/agora-convoai/stt/sessions/leave",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ stt_session_id: "stt-1" }),
       },
     );
   });

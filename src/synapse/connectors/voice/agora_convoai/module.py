@@ -29,6 +29,9 @@ from .models import (
     SttSessionQueryResponse,
     SttSessionPrepareRequest,
     SttSessionPrepareResponse,
+    SttSessionHeartbeatRequest,
+    SttSessionHeartbeatResponse,
+    SttSessionLeaveRequest,
     SttSessionStartRequest,
     SttSessionStartResponse,
     SttSessionStopRequest,
@@ -151,8 +154,30 @@ class AgoraConvoAIConnectorModule(BaseConnectorModule):
         ) -> SttSessionStartResponse:
             try:
                 return await stt_service.start_session(payload)
+            except KeyError as exc:
+                raise HTTPException(status_code=404, detail=str(exc)) from exc
             except ConvoAIConfigurationError as exc:
                 raise HTTPException(status_code=503, detail=str(exc)) from exc
+            except ConvoAIRuntimeError as exc:
+                raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+        @router.post("/stt/sessions/heartbeat", response_model=SttSessionHeartbeatResponse)
+        async def heartbeat_stt_session(
+            payload: SttSessionHeartbeatRequest,
+        ) -> SttSessionHeartbeatResponse:
+            try:
+                return stt_service.heartbeat_session(payload)
+            except KeyError as exc:
+                raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+        @router.post("/stt/sessions/leave", response_model=SttSessionStopResponse)
+        async def leave_stt_session(
+            payload: SttSessionLeaveRequest,
+        ) -> SttSessionStopResponse:
+            try:
+                return await stt_service.leave_session(payload)
+            except KeyError as exc:
+                raise HTTPException(status_code=404, detail=str(exc)) from exc
             except ConvoAIRuntimeError as exc:
                 raise HTTPException(status_code=502, detail=str(exc)) from exc
 

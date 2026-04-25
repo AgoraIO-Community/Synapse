@@ -19,6 +19,7 @@ const voiceHarness = vi.hoisted(() => {
       stop: vi.fn(),
       close: vi.fn(),
       setEnabled: vi.fn(async () => {}),
+      setMuted: vi.fn(async () => {}),
     },
     rtmClient: {
       login: vi.fn(async () => {}),
@@ -43,6 +44,7 @@ const voiceHarness = vi.hoisted(() => {
       state.micTrack.stop.mockClear();
       state.micTrack.close.mockClear();
       state.micTrack.setEnabled.mockClear();
+      state.micTrack.setMuted.mockClear();
       state.rtmClient.login.mockClear();
       state.rtmClient.subscribe.mockClear();
       state.rtmClient.logout.mockClear();
@@ -105,6 +107,21 @@ const clientMock = vi.hoisted(() => ({
   revealExecutorNodeConnectCommand: vi.fn(),
   deleteExecutorNode: vi.fn(),
   buildExecutorRunCommand: vi.fn(() => "newbro executor run --base-url 'http://localhost:8000' --node-id 'node-1' --token 'token-1'"),
+  submitDraftAsrTurn: vi.fn(async () => ({
+    id: "draft-session-1",
+    assigned_bro_id: "forge",
+    status: "ready",
+    current_draft: {
+      title: "Draft landing page",
+      goal: "Create a refined landing page concept.",
+      canonical_instruction: "Design a polished landing page with a calm hero section.",
+      constraints: ["Keep it concise"],
+      acceptance_criteria: ["Shows a clear hero"],
+      assumptions: ["Use existing brand tone"],
+      missing_info: ["Confirm target audience"],
+      last_update_summary: "Created a first draft from voice input.",
+    },
+  })),
 }));
 
 const connectorMock = vi.hoisted(() => ({
@@ -189,6 +206,33 @@ const connectorMock = vi.hoisted(() => ({
     },
   })),
   stopConnectorSessionBeacon: vi.fn(() => true),
+  prepareSttSession: vi.fn(async () => ({
+    prepared_stt_session_id: "prepared-stt-1",
+    app_id: "agora-app",
+    channel_name: "nbstt-session-bro-random",
+    token: "stt-token",
+    uid: 101,
+    status: "prepared",
+  })),
+  startSttSession: vi.fn(async () => ({
+    stt_session_id: "stt-1",
+    app_id: "agora-app",
+    channel_name: "nbstt-session-bro-random",
+    token: "stt-token",
+    uid: 101,
+    pub_bot_uid: 100101,
+    sub_bot_uid: 100101,
+    agent_id: "agent-1",
+    status: "started",
+  })),
+  heartbeatSttSession: vi.fn(async () => ({ status: "active" })),
+  querySttSession: vi.fn(async () => ({
+    stt_session_id: "stt-1",
+    agent_id: "agent-1",
+    status: "running",
+    raw: {},
+  })),
+  leaveSttSession: vi.fn(async () => {}),
 }));
 
 const runtimeMock = vi.hoisted(() => ({
@@ -283,7 +327,7 @@ describe("Newbro voice shell", () => {
 
     expect(await screen.findByText("Bro detail")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Atlas" })).toBeInTheDocument();
-    expect(screen.getByText("Draft for Atlas")).toBeInTheDocument();
+    expect(screen.getByText("Draft Brain")).toBeInTheDocument();
     expect(window.location.pathname).toBe("/bros/atlas");
     expect(window.location.search).toBe("?sid=session-1");
   });
@@ -296,8 +340,121 @@ describe("Newbro voice shell", () => {
     await waitFor(() => expect(clientMock.getSessionSnapshot).toHaveBeenCalledWith("session-existing"));
     expect(await screen.findByText("Bro detail")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Forge" })).toBeInTheDocument();
-    expect(screen.getByText("Draft for Forge")).toBeInTheDocument();
-    expect(screen.getByText("Session session-existing")).toBeInTheDocument();
+    expect(screen.getByText("No draft yet. Hold the mic to start shaping one.")).toBeInTheDocument();
+    expect((await screen.findAllByText("Ready · mic off")).length).toBeGreaterThan(0);
+  });
+
+  it("publishes the Bro detail mic before muting it", async () => {
+    window.history.replaceState({}, "", "/bros/forge?sid=session-existing");
+
+    render(<RouterProvider router={getRouter()} />);
+
+    expect((await screen.findAllByText("Ready · mic off")).length).toBeGreaterThan(0);
+    expect(voiceHarness.rtcClient.publish).toHaveBeenCalledWith([voiceHarness.micTrack]);
+    expect(voiceHarness.micTrack.setEnabled).not.toHaveBeenCalledWith(false);
+    expect(voiceHarness.micTrack.setMuted).toHaveBeenCalledWith(true);
+    expect(
+      voiceHarness.rtcClient.publish.mock.invocationCallOrder[0],
+    ).toBeLessThan(voiceHarness.micTrack.setMuted.mock.invocationCallOrder[0]);
+
+    const micButton = screen.getByRole("button", { name: "Hold to Talk" });
+    fireEvent.pointerDown(micButton, { pointerId: 1 });
+    await waitFor(() => expect(voiceHarness.micTrack.setMuted).toHaveBeenCalledWith(false));
+    expect(screen.queryByTestId("talking-bars")).not.toBeInTheDocument();
+    fireEvent.blur(micButton);
+    expect(voiceHarness.micTrack.setMuted).toHaveBeenLastCalledWith(false);
+    fireEvent.pointerUp(micButton, { pointerId: 1 });
+    await waitFor(() => expect(voiceHarness.micTrack.setMuted).toHaveBeenLastCalledWith(true));
+  });
+
+  it("renders Bro detail RTC debug events and unparsed stream messages", async () => {
+    window.history.replaceState({}, "", "/bros/forge?sid=session-existing");
+
+    render(<RouterProvider router={getRouter()} />);
+
+    await screen.findAllByText("Ready · mic off");
+    const userJoinedHandler = voiceHarness.rtcClient.on.mock.calls.find(
+      ([eventName]) => eventName === "user-joined",
+    )?.[1];
+    const userPublishedHandler = voiceHarness.rtcClient.on.mock.calls.find(
+      ([eventName]) => eventName === "user-published",
+    )?.[1];
+    const transcriptHandler = voiceHarness.rtcClient.on.mock.calls.find(
+      ([eventName]) => eventName === "stream-message",
+    )?.[1];
+
+    await act(async () => {
+      userJoinedHandler({ uid: 200101 });
+      userPublishedHandler({ uid: 200101 }, "audio");
+      transcriptHandler(200101, { nope: true });
+    });
+
+    expect(await screen.findByText(/Voice debug:/)).toHaveTextContent("unparsed stream-message");
+    expect(screen.getByText(/Voice debug:/)).toHaveTextContent("object nope");
+  });
+
+  it("does not poll STT status from Bro detail", async () => {
+    window.history.replaceState({}, "", "/bros/forge?sid=session-existing");
+
+    render(<RouterProvider router={getRouter()} />);
+
+    await screen.findAllByText("Ready · mic off");
+
+    expect(connectorMock.querySttSession).not.toHaveBeenCalled();
+    expect(screen.getByText(/Voice debug:/)).not.toHaveTextContent("stt status");
+  });
+
+  it("renders final Bro detail transcript and returned draft content", async () => {
+    window.history.replaceState({}, "", "/bros/forge?sid=session-existing");
+
+    render(<RouterProvider router={getRouter()} />);
+
+    await screen.findAllByText("Ready · mic off");
+    const transcriptHandler = voiceHarness.rtcClient.on.mock.calls.find(
+      ([eventName]) => eventName === "stream-message",
+    )?.[1];
+    expect(transcriptHandler).toBeTypeOf("function");
+
+    await act(async () => {
+      transcriptHandler(200101, {
+        text: "Build a calm landing page",
+        isFinal: true,
+      });
+    });
+
+    expect((await screen.findAllByText("Build a calm landing page")).length).toBeGreaterThan(0);
+    expect(await screen.findByText("Draft landing page")).toBeInTheDocument();
+    expect(screen.getByText("Create a refined landing page concept.")).toBeInTheDocument();
+    expect(screen.getByText("Design a polished landing page with a calm hero section.")).toBeInTheDocument();
+    expect(clientMock.submitDraftAsrTurn).toHaveBeenCalledWith("session-existing", {
+      raw_text: "Build a calm landing page",
+      assigned_bro_id: "forge",
+    });
+  });
+
+  it("renders non-final Bro detail transcript without updating draft", async () => {
+    window.history.replaceState({}, "", "/bros/forge?sid=session-existing");
+
+    render(<RouterProvider router={getRouter()} />);
+
+    await screen.findAllByText("Ready · mic off");
+    const transcriptHandler = voiceHarness.rtcClient.on.mock.calls.find(
+      ([eventName]) => eventName === "stream-message",
+    )?.[1];
+    expect(transcriptHandler).toBeTypeOf("function");
+
+    await act(async () => {
+      transcriptHandler(200101, {
+        result: {
+          text: "Still listening to this sentence",
+          isFinal: false,
+        },
+      });
+    });
+
+    expect(await screen.findByText("Still listening to this sentence")).toBeInTheDocument();
+    expect(screen.getByText("Completed turns appear here when ASR marks a segment final.")).toBeInTheDocument();
+    expect(clientMock.submitDraftAsrTurn).not.toHaveBeenCalled();
   });
 
   it("hydrates interaction memory from durable history when the page opens", async () => {

@@ -145,17 +145,57 @@ function decodeProtobufTranscript(bytes: Uint8Array): ExtractedSttTranscript | n
 }
 
 function extractRecordTranscript(record: Record<string, any>): ExtractedSttTranscript | null {
+  const wrappedTranscript = extractWrappedTranscript(record.transcript);
+  if (wrappedTranscript) return wrappedTranscript;
+  const originalTranscript = extractWrappedTranscript(record.translation?.original_transcript);
+  if (originalTranscript) return originalTranscript;
+  const nested = [record.result, record.data, record.payload].find((item) => item != null);
+  if (nested != null && nested !== record) {
+    const parsed = extractTranscriptText(nested);
+    if (parsed) return parsed;
+  }
   const candidates = [
     record.text,
     record.transcript,
     record.message,
-    record.words?.map?.((word: any) => word.text ?? word.word)?.join?.(" "),
+    extractWordsText(record.words),
   ];
   const text = candidates.find((item) => typeof item === "string" && item.trim());
   if (!text) return null;
-  const status = String(record.status ?? record.type ?? record.isFinal ?? record.final ?? "").toLowerCase();
-  const final = record.final === true || record.isFinal === true || ["final", "end", "complete", "completed"].includes(status);
+  const final = isFinalRecord(record);
   return { text: text.trim(), final };
+}
+
+function extractWrappedTranscript(transcript: unknown): ExtractedSttTranscript | null {
+  if (!transcript || typeof transcript !== "object") return null;
+  const record = transcript as Record<string, any>;
+  if (typeof record.text !== "string" || !record.text.trim()) return null;
+  return { text: record.text.trim(), final: isFinalRecord(record) };
+}
+
+function extractWordsText(words: unknown): string | null {
+  if (!Array.isArray(words)) return null;
+  const text = words
+    .map((word) => {
+      if (typeof word === "string") return word;
+      if (!word || typeof word !== "object") return "";
+      const record = word as Record<string, any>;
+      return record.text ?? record.word ?? "";
+    })
+    .filter((item) => typeof item === "string" && item.trim())
+    .join(" ")
+    .trim();
+  return text || null;
+}
+
+function isFinalRecord(record: Record<string, any>): boolean {
+  const status = String(record.status ?? record.type ?? record.state ?? "").toLowerCase();
+  if (record.final === true || record.isFinal === true || record.end_of_segment === true || record.endOfSegment === true) return true;
+  if (["final", "end", "complete", "completed"].includes(status)) return true;
+  if (Array.isArray(record.words) && record.words.length > 0) {
+    return record.words.every((word: any) => word?.isFinal === true || word?.final === true);
+  }
+  return false;
 }
 
 function payloadToBytes(payload: unknown): Uint8Array | null {

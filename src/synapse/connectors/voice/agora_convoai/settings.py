@@ -12,6 +12,7 @@ DEFAULT_AGENT_INSTRUCTIONS = "You are a helpful voice assistant."
 DEFAULT_AGENT_GREETING = "Hello. How can I help you today?"
 DEFAULT_PROFILE = "VOICE"
 DEFAULT_DISPLAY_NAME = "Synapse Tester"
+DEFAULT_STT_LANGUAGES = ("zh-CN",)
 
 
 @dataclass(slots=True)
@@ -26,7 +27,7 @@ class AgoraConvoAIASRSettings:
 @dataclass(slots=True)
 class AgoraConvoAISttSettings:
     enabled: bool = True
-    languages: tuple[str, ...] = ("en-US",)
+    languages: tuple[str, ...] = DEFAULT_STT_LANGUAGES
     max_idle_time: int = 60
     token_ttl_seconds: int = 3600
     query_interval_seconds: float = 1.0
@@ -177,7 +178,7 @@ def _parse_yaml_stt_settings(raw_stt, source_path: Path) -> AgoraConvoAISttSetti
         raw_stt = {}
     if not isinstance(raw_stt, dict):
         raise ConnectorConfigError(f"'connectors.agora-convoai.stt' must be a mapping in {source_path}")
-    raw_languages = raw_stt.get("languages", ["en-US"])
+    raw_languages = raw_stt.get("languages", list(DEFAULT_STT_LANGUAGES))
     if isinstance(raw_languages, str):
         languages = tuple(part.strip() for part in raw_languages.split(",") if part.strip())
     elif isinstance(raw_languages, list):
@@ -185,7 +186,7 @@ def _parse_yaml_stt_settings(raw_stt, source_path: Path) -> AgoraConvoAISttSetti
     else:
         raise ConnectorConfigError(f"'connectors.agora-convoai.stt.languages' must be a string or list in {source_path}")
     if not languages:
-        languages = ("en-US",)
+        languages = DEFAULT_STT_LANGUAGES
     return AgoraConvoAISttSettings(
         enabled=_parse_bool_scalar(
             raw_stt.get("enabled", True),
