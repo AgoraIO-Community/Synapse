@@ -335,7 +335,8 @@ describe("Newbro voice shell", () => {
   it("boots into an explicit empty interaction-memory state", async () => {
     render(<App />);
 
-    expect(await screen.findByText("Transcript will appear here.")).toBeInTheDocument();
+    expect(await screen.findByText("COMMAND CENTER")).toBeInTheDocument();
+    expect(screen.queryByText("Transcript will appear here.")).not.toBeInTheDocument();
     expect(screen.queryByTestId("voice-session-start")).not.toBeInTheDocument();
     expect(screen.queryByTestId("voice-session-stop")).not.toBeInTheDocument();
     expect(screen.queryByTestId("voice-session-mic-toggle")).not.toBeInTheDocument();
@@ -1276,7 +1277,7 @@ describe("Newbro voice shell", () => {
     }
   });
 
-  it("hydrates interaction memory from durable history when the page opens", async () => {
+  it("loads durable history without rendering interaction memory on Home", async () => {
     clientMock.getConversationSnapshot.mockResolvedValueOnce({
       session_id: "session-1",
       conversation_history: [
@@ -1287,10 +1288,12 @@ describe("Newbro voice shell", () => {
 
     render(<App />);
 
-    expect(await screen.findByText("Hello from Synapse.")).toBeInTheDocument();
-    expect(screen.getByText("Please summarize the plan.")).toBeInTheDocument();
+    expect(await screen.findByText("COMMAND CENTER")).toBeInTheDocument();
+    expect(clientMock.getConversationSnapshot).toHaveBeenCalledWith("session-1");
+    expect(screen.queryByText("Hello from Synapse.")).not.toBeInTheDocument();
+    expect(screen.queryByText("Please summarize the plan.")).not.toBeInTheDocument();
     expect(screen.queryByText("Transcript will appear here.")).not.toBeInTheDocument();
-    expect(screen.getByText("2 turns")).toBeInTheDocument();
+    expect(screen.queryByText("2 turns")).not.toBeInTheDocument();
   });
 
   it("resumes the shell session from the sid query parameter", async () => {
@@ -1300,7 +1303,8 @@ describe("Newbro voice shell", () => {
 
     await waitFor(() => expect(clientMock.getSessionSnapshot).toHaveBeenCalledWith("session-existing"));
     expect(clientMock.createSession).not.toHaveBeenCalled();
-    expect(await screen.findByText("Session session-existing")).toBeInTheDocument();
+    expect(await screen.findByText("COMMAND CENTER")).toBeInTheDocument();
+    expect(screen.queryByText("Session session-existing")).not.toBeInTheDocument();
     expect(window.location.search).toBe("?sid=session-existing");
   });
 
@@ -1342,7 +1346,8 @@ describe("Newbro voice shell", () => {
     expect(screen.getByTestId("global-message")).toHaveClass("fixed");
     expect(screen.getByText(/Could not resume the requested session/)).toBeInTheDocument();
     expect(screen.getByText(/session-missing/)).toBeInTheDocument();
-    expect(screen.getByText("Session session-2")).toBeInTheDocument();
+    expect(screen.getByText("COMMAND CENTER")).toBeInTheDocument();
+    expect(screen.queryByText("Session session-2")).not.toBeInTheDocument();
 
     await act(async () => {
       vi.advanceTimersByTime(5_999);
@@ -1360,12 +1365,12 @@ describe("Newbro voice shell", () => {
     vi.useRealTimers();
   });
 
-  it("renders Synapse user and assistant stream events in interaction memory", async () => {
+  it("keeps Synapse stream events out of the simplified Home surface", async () => {
     render(<App />);
 
-    await screen.findByText("Session session-1");
+    await screen.findByText("COMMAND CENTER");
     expect(screen.queryByTestId("voice-session-start")).not.toBeInTheDocument();
-    expect(screen.getByText("Transcript will appear here.")).toBeInTheDocument();
+    expect(screen.queryByText("Transcript will appear here.")).not.toBeInTheDocument();
 
     await act(async () => {
       socketHarness.emitMessage({
@@ -1377,9 +1382,8 @@ describe("Newbro voice shell", () => {
       });
     });
 
-    expect(await screen.findByText("Please create a follow-up task.")).toBeInTheDocument();
-    expect(screen.getAllByText("Please create a follow-up task.")).toHaveLength(1);
-    expect(screen.getByText("Me")).toBeInTheDocument();
+    expect(screen.queryByText("Please create a follow-up task.")).not.toBeInTheDocument();
+    expect(screen.queryByText("Me")).not.toBeInTheDocument();
 
     await act(async () => {
       socketHarness.emitMessage({
@@ -1392,11 +1396,11 @@ describe("Newbro voice shell", () => {
       });
     });
 
-    expect(await screen.findByText("Hello. How can I help you today?")).toBeInTheDocument();
-    expect(screen.getByText("NewBro")).toBeInTheDocument();
+    expect(screen.queryByText("Hello. How can I help you today?")).not.toBeInTheDocument();
+    expect(screen.queryByText("NewBro")).not.toBeInTheDocument();
     expect(screen.queryByText("Transcript will appear here.")).not.toBeInTheDocument();
-    expect(screen.getByText("2 turns")).toBeInTheDocument();
-    expect(screen.getByText("Session session-1")).toBeInTheDocument();
+    expect(screen.queryByText("2 turns")).not.toBeInTheDocument();
+    expect(screen.queryByText("Session session-1")).not.toBeInTheDocument();
   });
 
   it("switches to runtime persona cards when persona data exists", async () => {
@@ -1461,7 +1465,7 @@ describe("Newbro voice shell", () => {
 
     expect(await screen.findByText("Rook")).toBeInTheDocument();
     expect(screen.getByText("Vale")).toBeInTheDocument();
-    expect(screen.getByText("2 live")).toBeInTheDocument();
+    expect(screen.queryByText("2 live")).not.toBeInTheDocument();
     expect(screen.queryByText("Atlas")).not.toBeInTheDocument();
   });
 
@@ -2233,7 +2237,7 @@ describe("Newbro voice shell", () => {
       await router.load();
     });
 
-    expect(await screen.findByText("Available Bros")).toBeInTheDocument();
+    expect(await screen.findByText("COMMAND CENTER")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Bros" }));
     await waitFor(() => expect(window.location.pathname).toBe("/bros"));
     expect(window.location.search).toBe("?sid=session-1");

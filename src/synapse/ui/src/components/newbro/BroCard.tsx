@@ -1,23 +1,15 @@
 import { motion } from "framer-motion";
 import { BroPortrait } from "./BroPortrait";
-import { BroProgress } from "./BroProgress";
 import type { BroCardModel } from "./types";
 
-function liveStateLabel(bro: BroCardModel) {
+function liveStateNote(bro: BroCardModel) {
   if (bro.liveState === "live") {
-    return "live";
+    return bro.nodeName ? `Live on ${bro.nodeName}` : "Live runtime route";
   }
   if (bro.liveState === "offline") {
-    return "bound offline";
+    return bro.nodeName ? `Waiting for ${bro.nodeName} to reconnect.` : "Waiting for executor node to reconnect.";
   }
-  return "unbound";
-}
-
-function liveStateClasses(bro: BroCardModel) {
-  if (bro.liveState === "live") {
-    return "bg-[#d5f5f2] text-[#087372]";
-  }
-  return "bg-[#ffe3d6] text-[#b33b15]";
+  return "Needs node binding.";
 }
 
 export function BroCard({
@@ -35,15 +27,15 @@ export function BroCard({
       type="button"
       whileTap={{ scale: 0.997 }}
       onClick={() => onClick?.(bro.id)}
-      className="queue-card min-h-[210px] w-full rounded-[14px] border border-black/11 bg-white/43 px-5 py-5 text-left text-black backdrop-blur-sm transition duration-300 hover:-translate-y-0.5 hover:bg-white/62"
+      className="queue-card min-h-[150px] w-full rounded-[14px] border border-black/11 bg-white/43 px-5 py-5 text-left text-black backdrop-blur-sm transition duration-300 hover:-translate-y-0.5 hover:bg-white/62"
     >
       <div className="flex items-start gap-4">
         <BroPortrait bro={bro} active={isBusy} talking={false} />
 
         <div className="min-w-0 flex-1">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <div className="flex items-center gap-2">
+          <div className="flex min-w-0 flex-col gap-4">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
                 <div className="newbro-condensed text-[30px] leading-none">{bro.name}</div>
                 <div
                   className={`rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] ${
@@ -54,19 +46,18 @@ export function BroCard({
                 >
                   {bro.status}
                 </div>
-                <div
-                  className={`rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] ${liveStateClasses(bro)}`}
-                >
-                  {liveStateLabel(bro)}
-                </div>
               </div>
-              <div className="mt-2 text-[12px] text-black/50">
-                {bro.nodeName ? `${bro.role} · ${bro.nodeName}` : `${bro.role} · needs binding`}
+              <div className="mt-2 text-[12px] leading-5 text-black/50">
+                {bro.role} · {liveStateNote(bro)}
+              </div>
+            </div>
+
+            <div className="rounded-[18px] border border-white/75 bg-[hsl(var(--paper))]/82 px-4 py-3">
+              <div className="serif-flow text-[18px] leading-snug tracking-[-0.03em] text-foreground">
+                {bro.taskTitle}
               </div>
             </div>
           </div>
-
-          <BroProgress bro={bro} talking={false} />
         </div>
       </div>
     </motion.button>

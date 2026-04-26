@@ -21,12 +21,11 @@ import { readSessionIdFromUrl, replaceSessionIdInUrl } from "./lib/session-url";
 import { BroDetailPage } from "./components/newbro/BroDetailPage";
 import { BrosPage } from "./components/newbro/BrosPage";
 import { BrosPanel } from "./components/newbro/BrosPanel";
-import { ConversationMemory } from "./components/newbro/ConversationMemory";
 import { NodesPage } from "./components/newbro/NodesPage";
 import { Sidebar, type PageId } from "./components/newbro/Sidebar";
 import { buildBroCardModels, buildBroTaskRecords } from "./components/newbro/adapters";
 import { useVoiceSession } from "./components/newbro/useVoiceSession";
-import { StatusPill, WindowDots } from "./components/newbro/visual";
+import { WindowDots } from "./components/newbro/visual";
 import type {
   DraftOutputCompletedStreamEvent,
   DraftOutputDeltaStreamEvent,
@@ -477,42 +476,19 @@ export function HomeShellPage({
       {shell.hasLoadedShellSnapshot ? (
         <div className="flex min-h-0 flex-1 flex-col px-6 pb-8 pt-8 lg:min-h-screen lg:px-14 lg:pb-10 lg:pt-14 xl:px-20">
           <section className="min-h-0 flex-1 overflow-y-auto subtle-scrollbar">
-            <div className="mb-8 flex flex-wrap items-end justify-between gap-6">
-              <div>
-                <h1 className="newbro-condensed text-[64px] leading-[0.78] sm:text-[96px] xl:text-[118px]">
-                  COMMAND CENTER
-                  <span className="text-[#ff4b16]">*</span>
-                </h1>
-                <p className="newbro-mono mt-4 text-xs font-semibold uppercase tracking-[0.22em] text-black/55 sm:text-sm">
-                  Available Bros / Runner state / Shared session
-                </p>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <StatusPill>{shell.bros.filter((bro) => bro.liveState === "live").length} live</StatusPill>
-                {shell.activeShellSessionId ? <StatusPill>Session {shell.activeShellSessionId}</StatusPill> : null}
-              </div>
+            <div className="mb-7">
+              <h1 className="newbro-condensed text-[64px] leading-[0.78] sm:text-[96px] xl:text-[118px]">
+                COMMAND CENTER
+                <span className="text-[#ff4b16]">*</span>
+              </h1>
             </div>
-            <div>
-              <div className="sr-only">
-                <ConversationMemory
-                  phase={shell.voiceSession.phase}
-                  messages={shell.chatMessages.map((msg) => ({
-                    role: msg.role,
-                    text: msg.text,
-                    message_id: msg.id,
-                  }))}
-                  error={shell.voiceSession.error}
-                  lastToolkitMessage={shell.voiceSession.lastToolkitMessage}
-                />
-              </div>
-              <BrosPanel
-                bros={shell.bros}
-                sessionId={shell.activeShellSessionId}
-                onBroClick={(broId) => {
-                  onBroNavigate?.(broId);
-                }}
-              />
-            </div>
+            <BrosPanel
+              bros={shell.bros}
+              sessionId={shell.activeShellSessionId}
+              onBroClick={(broId) => {
+                onBroNavigate?.(broId);
+              }}
+            />
           </section>
         </div>
       ) : shell.shellError ? (
