@@ -141,6 +141,11 @@ const clientMock = vi.hoisted(() => ({
     draft_snapshot_id: "draft-snap-1",
   })),
   clearDraft: vi.fn(async () => ({ status: "cleared" })),
+  submitTaskCommand: vi.fn(async () => ({
+    command_id: "cmd-1",
+    status: "accepted",
+    affected_task_ids: ["task-active"],
+  })),
   submitDraftAsrTurn: vi.fn(async () => ({
     id: "draft-session-1",
     assigned_bro_id: "forge",
@@ -1872,6 +1877,131 @@ describe("Newbro voice shell", () => {
     expect(screen.queryByText("qz is connected. This bro can pick up the next task immediately.")).not.toBeInTheDocument();
     expect(screen.queryByText("Available for routing through qz.")).not.toBeInTheDocument();
     expect(screen.getByText("Ready to pick up the next runtime assignment.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Stop Task" })).toBeDisabled();
+  });
+
+  it("submits a cancel command from the Bro detail Stop Task button", async () => {
+    clientMock.getSessionSnapshot.mockResolvedValueOnce({
+      session_id: "session-existing",
+      tasks: [
+        {
+          task_id: "task-active",
+          root_task_id: "task-active",
+          parent_task_id: null,
+          title: "Run active scrape",
+          goal: "Run the active scrape.",
+          status: "running",
+          priority: 5,
+          interruptible: true,
+          requires_confirmation: false,
+          preferred_executor: "codex",
+          session_affinity: "workspace-task-active",
+          task_revision: 0,
+          latest_instruction: "Run the active scrape.",
+          metadata: { persona_id: "persona-rook" },
+        },
+      ],
+      execution_sessions: [],
+      execution_runs: [],
+      execution_modes: [],
+      bindings: [],
+      summaries: [],
+      notification_candidates: [],
+      personas: [
+        {
+          persona_id: "persona-rook",
+          name: "Rook",
+          avatar: "bro",
+          base_prompt: "",
+          executor_node_id: "node-1",
+          status: "busy",
+          current_task_id: "task-active",
+        },
+      ],
+      interaction_requests: [],
+      attention_items: [],
+      executor_capabilities: [],
+      executor_nodes: [],
+      communication_persona_prompt: "",
+    });
+    window.history.replaceState({}, "", "/bros/persona-rook?sid=session-existing");
+
+    render(<RouterProvider router={getRouter()} />);
+
+    const stopButton = await screen.findByRole("button", { name: "Stop Task" });
+    expect(stopButton).not.toBeDisabled();
+
+    await act(async () => {
+      fireEvent.click(stopButton);
+      await Promise.resolve();
+    });
+
+    await waitFor(() => expect(clientMock.submitTaskCommand).toHaveBeenCalledWith("session-existing", {
+      command_type: "cancel_task",
+      task_id: "task-active",
+      reason: "Stopped from Bro detail Runner Brain.",
+    }));
+  });
+
+  it("keeps the current task visible when Stop Task fails", async () => {
+    clientMock.submitTaskCommand.mockImplementationOnce(async () => {
+      throw new Error("stop failed");
+    });
+    clientMock.getSessionSnapshot.mockResolvedValueOnce({
+      session_id: "session-existing",
+      tasks: [
+        {
+          task_id: "task-active",
+          root_task_id: "task-active",
+          parent_task_id: null,
+          title: "Run active scrape",
+          goal: "Run the active scrape.",
+          status: "running",
+          priority: 5,
+          interruptible: true,
+          requires_confirmation: false,
+          preferred_executor: "codex",
+          session_affinity: "workspace-task-active",
+          task_revision: 0,
+          latest_instruction: "Run the active scrape.",
+          metadata: { persona_id: "persona-rook" },
+        },
+      ],
+      execution_sessions: [],
+      execution_runs: [],
+      execution_modes: [],
+      bindings: [],
+      summaries: [],
+      notification_candidates: [],
+      personas: [
+        {
+          persona_id: "persona-rook",
+          name: "Rook",
+          avatar: "bro",
+          base_prompt: "",
+          executor_node_id: "node-1",
+          status: "busy",
+          current_task_id: "task-active",
+        },
+      ],
+      interaction_requests: [],
+      attention_items: [],
+      executor_capabilities: [],
+      executor_nodes: [],
+      communication_persona_prompt: "",
+    });
+    window.history.replaceState({}, "", "/bros/persona-rook?sid=session-existing");
+
+    render(<RouterProvider router={getRouter()} />);
+
+    const stopButton = await screen.findByRole("button", { name: "Stop Task" });
+    await act(async () => {
+      fireEvent.click(stopButton);
+      await Promise.resolve();
+    });
+
+    expect(await screen.findByText("Run active scrape")).toBeInTheDocument();
+    expect((await screen.findAllByText("stop failed")).length).toBeGreaterThan(0);
   });
 
   it("keeps completed Bro tasks visible in Bro detail recent tasks after persona is released", async () => {

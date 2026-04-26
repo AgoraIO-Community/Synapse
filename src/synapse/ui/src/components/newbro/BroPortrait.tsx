@@ -10,19 +10,21 @@ export function BroPortrait({
   talking: boolean;
 }) {
   const accent = active || talking;
-  const stroke = accent ? "#2f6cf3" : "#23262d";
-  const muted = accent ? "rgba(47,108,243,0.55)" : "#8d96a5";
+  const stroke = accent ? "#b9fffb" : "#27d6d1";
+  const muted = accent ? "rgba(185,255,251,0.72)" : "rgba(39,214,209,0.5)";
   const panelBg = accent
-    ? "bg-[rgba(237,244,255,0.95)] border-[rgba(47,108,243,0.14)]"
-    : "bg-white/72 border-white/80";
+    ? "bg-[#062f33]/90 border-[#27d6d1]/35 shadow-[inset_0_1px_0_rgba(255,255,255,.14),0_14px_28px_rgba(0,0,0,.18)]"
+    : "bg-[#062f33]/72 border-[#27d6d1]/25 shadow-[inset_0_1px_0_rgba(255,255,255,.12)]";
 
   return (
     <div
       className={`relative h-[68px] w-[68px] shrink-0 overflow-hidden rounded-[18px] border ${panelBg}`}
     >
+      <div className="absolute inset-2 rounded-full border border-[#27d6d1]/18" />
+      <div className="absolute -left-4 -top-5 h-16 w-16 rounded-full bg-[#27d6d1]/12 blur-xl" />
       <svg
         viewBox="0 0 68 68"
-        className="h-full w-full"
+        className="relative h-full w-full"
         fill="none"
         xmlns="http://www.w3.org/2000/svg"
       >
@@ -117,7 +119,7 @@ export function BroPortrait({
       <div
         className={`absolute right-2 top-2 h-2.5 w-2.5 rounded-full ring-2 ${
           accent ? "ring-[rgba(255,255,255,0.92)]" : "ring-white"
-        } ${bro.status === "busy" ? "bg-primary" : "bg-neutral-300"}`}
+        } ${bro.status === "busy" ? "bg-[#27d6d1] shadow-[0_0_10px_rgba(39,214,209,.8)]" : "bg-[#27d6d1]/55"}`}
       />
     </div>
   );

@@ -1,4 +1,3 @@
-import { ArrowLeft, CircleDot, Mic, SendHorizontal, Square } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import {
   heartbeatSttSession,
@@ -8,13 +7,10 @@ import {
   type SttSessionPrepareResponse,
   type SttSessionStartResponse,
 } from "../../lib/connector-client";
-import { clearDraft, sendDraft, submitDraftAsrTurn } from "../../lib/session-client";
+import { clearDraft, sendDraft, submitDraftAsrTurn, submitTaskCommand } from "../../lib/session-client";
 import { loadAgoraBrowserStack } from "../../lib/voice-runtime";
-import { Button } from "../ui/button";
-import { MarkdownText } from "../ui/markdown-text";
-import { BroPortrait } from "./BroPortrait";
-import { BroProgress } from "./BroProgress";
 import { describeProtobufTranscriptPayload, describeTranscriptPayload, extractTranscriptText, type ExtractedSttTranscript } from "./stt-transcript";
+import { BroDetailHeader, DraftBrainPanel, LiveTranscriptPanel, RunnerBrainPanel, VoicePad } from "./visual";
 import type { BroCardModel, BroTaskRecord } from "./types";
 import type { DraftOutputCompletedStreamEvent, DraftOutputDeltaStreamEvent, DraftOutputFailedStreamEvent, DraftOutputStartedStreamEvent, TaskSummary } from "../../types";
 
@@ -38,12 +34,6 @@ type DraftOutputEvent =
   | DraftOutputDeltaStreamEvent
   | DraftOutputCompletedStreamEvent
   | DraftOutputFailedStreamEvent;
-
-function liveStateText(bro: BroCardModel) {
-  if (bro.liveState === "live") return "Live and ready";
-  if (bro.liveState === "offline") return "Bound node offline";
-  return "Needs node binding";
-}
 
 function normalizeTranscriptSegmentForDisplay(text: string) {
   return text.replace(/\s*\n+\s*/g, " ").trim();
@@ -293,6 +283,7 @@ function DraftPanel({
 export function BroDetailPage({
   bro,
   sessionId,
+  activeTaskId,
   summary,
   taskRecords,
   snapshotDraftSession,
@@ -303,6 +294,7 @@ export function BroDetailPage({
 }: {
   bro: BroCardModel;
   sessionId: string | null;
+  activeTaskId: string | null;
   summary: TaskSummary | null;
   taskRecords?: BroTaskRecord[];
   snapshotDraftSession: DraftSession | null;
@@ -326,6 +318,8 @@ export function BroDetailPage({
   const [sendingDraft, setSendingDraft] = useState(false);
   const [clearingDraft, setClearingDraft] = useState(false);
   const [draftActionError, setDraftActionError] = useState<string | null>(null);
+  const [stoppingTask, setStoppingTask] = useState(false);
+  const [taskActionError, setTaskActionError] = useState<string | null>(null);
   const resourcesRef = useRef<SttResources | null>(null);
   const submittedRef = useRef<Set<string>>(new Set());
   const acceptedTranscriptRef = useRef("");
@@ -716,141 +710,99 @@ export function BroDetailPage({
     }
   }
 
+  async function handleStopTask() {
+    if (!sessionId || !activeTaskId || stoppingTask) return;
+    setStoppingTask(true);
+    setTaskActionError(null);
+    onGlobalError?.(null);
+    try {
+      await submitTaskCommand(sessionId, {
+        command_type: "cancel_task",
+        task_id: activeTaskId,
+        reason: "Stopped from Bro detail Runner Brain.",
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to stop task.";
+      setTaskActionError(message);
+      onGlobalError?.(message);
+    } finally {
+      if (mountedRef.current) {
+        setStoppingTask(false);
+      }
+    }
+  }
+
   const readyForMic = sttPhase === "ready_mic_off" || sttPhase === "draft_updating";
   const capturing = micActive;
   const transcriptText = acceptedTranscript;
   const draftReady = Boolean(draftSession?.current_draft);
   const draftActionPending = sendingDraft || clearingDraft;
   const canSendDraft = bro.source === "runtime";
+  const draftText = streamingDraftText || draftSession?.current_draft?.text || "";
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-3 px-4 pb-4 pt-3 md:px-6 md:pb-6 xl:px-8 xl:pb-8">
-      <div className="glass-panel rounded-[24px] border border-white/75 px-4 py-3 md:px-5">
-        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <div className="flex items-center gap-3">
-            <BroPortrait bro={bro} active={bro.status === "busy"} talking={false} />
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <div className="text-[11px] uppercase tracking-[0.22em] text-muted-foreground">Bro detail</div>
-              </div>
-              <div className="mt-1 flex flex-wrap items-center gap-2">
-                <h1 className="serif-flow text-[30px] leading-none tracking-[-0.055em] text-foreground">{bro.name}</h1>
-                <span className="rounded-full border border-border/70 bg-white/60 px-2.5 py-1 text-[11px] text-muted-foreground">{bro.role}</span>
-                <span className="rounded-full border border-border/70 bg-white/60 px-2.5 py-1 text-[11px] text-muted-foreground">{liveStateText(bro)}</span>
-              </div>
-            </div>
-          </div>
-          <Button type="button" variant="outline" className="h-9 rounded-full px-3" onClick={onBack}>
-            <ArrowLeft className="mr-2 size-4" />
-            Back home
-          </Button>
+    <div className="grid min-h-0 flex-1 grid-cols-1 gap-8 overflow-y-auto px-6 pb-8 pt-8 lg:min-h-screen lg:grid-cols-[minmax(0,1fr)_minmax(360px,520px)] lg:overflow-hidden lg:px-12 lg:pb-10 lg:pt-10 xl:gap-16 xl:px-20">
+      <section className="relative z-10 flex min-w-0 flex-col">
+        <BroDetailHeader bro={bro} onBack={onBack} />
+        <header className="relative mt-8 max-w-[900px]">
+          <h2 className="newbro-condensed relative inline-block text-[70px] leading-[0.78] sm:text-[112px] md:text-[132px] xl:text-[148px]">
+            DRAFT BRAIN
+            <span className="absolute -right-10 -top-6 text-[72px] leading-none text-[#ff4b16] sm:-right-14 sm:-top-8 sm:text-[104px]">*</span>
+          </h2>
+          <div className="sr-only">Draft Brain</div>
+          <p className="newbro-mono mt-5 text-xs font-semibold uppercase tracking-[0.22em] text-black/55 sm:text-sm">
+            AI-optimized draft for {bro.name}
+          </p>
+        </header>
+
+        <div className="mt-5 max-w-[860px]">
+          <DraftBrainPanel
+            draftText={draftText}
+            summary={draftSession?.current_draft?.last_update_summary}
+            canSend={canSendDraft}
+            sendDisabled={!sessionId || !draftReady || draftActionPending}
+            clearDisabled={!sessionId || !draftReady || draftActionPending}
+            sending={sendingDraft}
+            clearing={clearingDraft}
+            error={draftActionError}
+            onSend={() => {
+              void handleSendDraft();
+            }}
+            onClear={() => {
+              void handleClearDraft();
+            }}
+          />
         </div>
+
+        <div className="mt-7 max-w-[860px]">
+          <LiveTranscriptPanel active={capturing} transcriptText={transcriptText} />
+        </div>
+
+        <VoicePad
+          active={capturing}
+          disabled={!sessionId || !readyForMic || sttPhase === "draft_updating" || draftActionPending}
+          onPointerDown={handleMicPointerDown}
+          onPointerUp={handleMicPointerUp}
+          onPointerCancel={(event) => handleMicPointerUp(event)}
+          onKeyDown={handleMicKeyDown}
+          onKeyUp={handleMicKeyUp}
+          onBlur={() => {
+            if (activePointerIdRef.current === null) void setMicEnabled(false);
+          }}
+        />
+      </section>
+
+      <RunnerBrainPanel
+        bro={bro}
+        summary={summary}
+        taskRecords={taskRecords}
+        activeTaskId={activeTaskId}
+        stoppingTask={stoppingTask}
+        stopTaskError={taskActionError}
+        onStopTask={() => {
+          void handleStopTask();
+        }}
+      />
       </div>
-
-      <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 xl:grid-cols-[1.35fr_0.65fr]">
-        <section className="glass-panel flex min-h-[520px] flex-col rounded-[28px] border border-white/75 p-4">
-          <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-[0.85fr_1.15fr]">
-            <div className="flex min-h-[260px] flex-col rounded-[24px] border border-white/75 bg-white/58 p-4">
-              <div className="text-[11px] uppercase tracking-[0.22em] text-primary">Draft Brain</div>
-              <div className="mt-1 text-[13px] text-muted-foreground">Hold the mic to shape a draft for {bro.name}.</div>
-              <div className="mt-5 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">Live transcript</div>
-              <div className="mt-3 min-h-0 flex-1 overflow-auto rounded-2xl bg-white/60 px-3 py-2 text-[14px] leading-7 text-foreground/78">
-                <p>{transcriptText || "Latest transcript will appear here."}</p>
-              </div>
-            </div>
-
-            <div className="flex min-h-[260px] flex-col">
-              <DraftPanel draftSession={draftSession} streamingDraftText={streamingDraftText} />
-            </div>
-          </div>
-
-          <div className="mt-3 flex flex-wrap gap-2">
-            <Button
-              type="button"
-              className="h-9 rounded-full px-4"
-              disabled={!sessionId || !readyForMic || sttPhase === "draft_updating" || draftActionPending}
-              onPointerDown={handleMicPointerDown}
-              onPointerUp={handleMicPointerUp}
-              onPointerCancel={(event) => handleMicPointerUp(event)}
-              onKeyDown={handleMicKeyDown}
-              onKeyUp={handleMicKeyUp}
-              onBlur={() => {
-                if (activePointerIdRef.current === null) void setMicEnabled(false);
-              }}
-            >
-              <Mic className="mr-2 size-4" />
-              {capturing ? "Release to finish" : "Hold to Talk"}
-            </Button>
-            <Button
-              type="button"
-              className="h-9 rounded-full"
-              disabled={!sessionId || !draftReady || draftActionPending || !canSendDraft}
-              onClick={() => {
-                void handleSendDraft();
-              }}
-            >
-              <SendHorizontal className="mr-2 size-4" />
-              {sendingDraft ? "Sending" : "Send to Bro"}
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              className="h-9 rounded-full"
-              disabled={!sessionId || !draftReady || draftActionPending}
-              onClick={() => {
-                void handleClearDraft();
-              }}
-            >
-              {clearingDraft ? "Clearing" : "Clear Draft"}
-            </Button>
-          </div>
-          {draftActionError ? (
-            <div className="mt-2 text-[13px] leading-6 text-red-600" role="status">
-              {draftActionError}
-            </div>
-          ) : null}
-        </section>
-
-        <aside className="glass-panel min-h-[420px] overflow-y-auto rounded-[28px] border border-white/75 p-4">
-          <div className="text-[11px] uppercase tracking-[0.22em] text-primary">Runner Brain</div>
-          <h2 className="serif-flow mt-1 text-[26px] tracking-[-0.05em]">Current task</h2>
-          <div className="mt-4 rounded-[22px] border border-white/75 bg-white/58 p-4">
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.16em] text-muted-foreground"><CircleDot className="size-4 text-primary" />{bro.status}</div>
-              <div className="text-[11px] text-muted-foreground">{bro.progressLabel}</div>
-            </div>
-            <div className="mt-3 text-[16px] font-medium text-foreground">{bro.taskTitle}</div>
-            <BroProgress bro={bro} talking={false} compact />
-          </div>
-          {summary ? (
-            <div className="mt-3 rounded-[22px] border border-white/75 bg-white/58 p-4">
-              <div className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">Latest summary</div>
-              <MarkdownText className="mt-3 text-[13px] leading-6 text-foreground/80">
-                {summary.conversational_summary ?? summary.operational_summary ?? ""}
-              </MarkdownText>
-            </div>
-          ) : null}
-          {taskRecords && taskRecords.length > 0 ? (
-            <div className="mt-3 rounded-[22px] border border-white/75 bg-white/58 p-4">
-              <div className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">Recent tasks</div>
-              <div className="mt-3 space-y-3">
-                {taskRecords.map((record) => (
-                  <div key={record.taskId} className="rounded-2xl border border-white/70 bg-white/45 px-3 py-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0 text-[13px] font-medium text-foreground">{record.title}</div>
-                      <div className="shrink-0 text-[10px] uppercase tracking-[0.14em] text-muted-foreground">{record.statusLabel}</div>
-                    </div>
-                    <MarkdownText className="mt-2 text-[12px] leading-5 text-foreground/72">
-                      {record.summary}
-                    </MarkdownText>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ) : null}
-          <Button type="button" variant="outline" className="mt-4 w-full rounded-full" disabled={bro.status !== "busy"}><Square className="mr-2 size-4" />Stop Task</Button>
-        </aside>
-      </div>
-    </div>
   );
 }

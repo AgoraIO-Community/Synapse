@@ -280,7 +280,7 @@ export function VoiceModePanel({
               <Waves className="size-3.5 text-[#7e9862]" />
               <span>Voice Transcript</span>
             </div>
-            <h3 className="mt-2 font-['Noto_Sans_SC','Noto_Sans','Geist_Variable',sans-serif] text-[1.65rem] font-bold tracking-[-0.05em] text-[#1f2521]">
+            <h3 className="mt-2 text-[1.65rem] font-bold tracking-[-0.05em] text-[#1f2521]">
               Live channel transcript
             </h3>
           </div>

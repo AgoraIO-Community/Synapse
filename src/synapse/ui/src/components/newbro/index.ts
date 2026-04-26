@@ -8,3 +8,13 @@ export { BrosPanel } from "./BrosPanel";
 export { TopVoiceBar } from "./TopVoiceBar";
 export { useVoiceSession } from "./useVoiceSession";
 export { BroDetailPage } from "./BroDetailPage";
+export {
+  BroDetailHeader,
+  DraftBrainPanel,
+  LiveTranscriptPanel,
+  NewbroLogo,
+  RunnerBrainPanel,
+  StatusPill,
+  VoicePad,
+  WindowDots,
+} from "./visual";

@@ -476,8 +476,9 @@ export function BrosPage({
   const liveCount = personas.filter((persona) => nodeStateLabel(persona, nodesById) === "live").length;
 
   return (
-    <div className="grid min-h-0 flex-1 grid-cols-1 gap-8 overflow-auto px-8 py-8 lg:grid-cols-[minmax(240px,0.58fr)_minmax(820px,1.72fr)] xl:px-10 xl:py-10">
+    <div className="grid min-h-0 flex-1 grid-cols-1 gap-8 overflow-auto px-6 py-8 lg:grid-cols-[minmax(240px,0.58fr)_minmax(720px,1.72fr)] lg:px-12 xl:px-20 xl:py-10">
       <section className="flex min-h-0 flex-col pt-4">
+        <h1 className="newbro-condensed mb-6 text-[58px] leading-[0.82] text-black">BROS</h1>
         <SectionHeader title="Brain Persona" />
         <CommBrainSection
           sessionId={sessionId}
@@ -486,6 +487,11 @@ export function BrosPage({
       </section>
 
       <section className="flex flex-col items-stretch lg:pt-4">
+        <div className="mb-6 hidden lg:block">
+          <div className="newbro-mono text-xs font-semibold uppercase tracking-[0.22em] text-black/45">
+            Communication Brain / Worker Bindings
+          </div>
+        </div>
         <SectionHeader
           title="Worker Bros"
           trailing={

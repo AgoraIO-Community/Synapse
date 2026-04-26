@@ -3,8 +3,9 @@
 The main frontend under `src/synapse/ui/` renders the `Newbro` command-center
 shell at `/`.
 
-It keeps the concept-first visual language, but now uses real session snapshots
-plus a focused voice runtime path.
+It keeps the protocol-first runtime behavior, but the active shell now uses the
+Newbro Draft Brain visual system: warm paper surfaces, orange voice controls,
+deep-teal runner panels, compressed display headings, and task queue cards.
 
 ## Current Structure
 
@@ -17,13 +18,13 @@ The current frontend stack is:
 - `framer-motion` for shell motion
 - Agora connector/browser voice integration for live transcript state
 
-The root shell remains a fixed-height command center:
+The root shell remains a routed command center:
 
 - left sidebar: `Home`, `Bros`, `Nodes`, `Settings`
-- top bar: explicit `Start` / `Stop` / mic controls for voice
-- left column: `Interaction memory`
-- main column: Bro cards on `Home`, Bro management on `Bros`, node enrollment on
-  `Nodes`
+- home page: command-center heading plus queue-card Bro grid
+- Bro detail page: `DRAFT BRAIN`, live transcript, orange hold-to-talk pad,
+  `RUNNER BRAIN`, current task, summaries, and recent task queue
+- management pages: Bro management on `Bros`, node enrollment on `Nodes`
 - left-menu pages are real routed paths, so refresh and direct open preserve the
   selected page instead of falling back to `Home`
 
@@ -85,10 +86,9 @@ Current behavior:
 
 ## Component Direction
 
-The main reusable pieces are:
+The visual shell uses reusable pieces under `src/components/newbro/`:
 
 - `Sidebar`
-- `TopVoiceBar`
 - `ConversationMemory`
 - `BrosPanel`
 - `BrosPage`
@@ -96,14 +96,23 @@ The main reusable pieces are:
 - `BroCard`
 - `BroPortrait`
 - `BroProgress`
+- `NewbroLogo`
+- `WindowDots`
+- `VoicePad`
+- `DraftBrainPanel`
+- `LiveTranscriptPanel`
+- `RunnerBrainPanel`
 - `useVoiceSession`
 
-The visual language should stay close to the reference shell:
+The visual language should stay close to the Draft Brain reference:
 
 - warm off-white surfaces
-- soft rounded geometry
-- restrained iconography
-- subtle motion instead of dashboard-heavy chrome
+- orange `#ff4b16` as the main action color
+- deep teal/cyan runner and avatar surfaces
+- compressed display headings via `newbro-condensed`
+- monospace operational labels via `newbro-mono`
+- queue-card task and Bro surfaces
+- subtle voice-ring motion on the hold-to-talk pad
 
 ## Constraints
 

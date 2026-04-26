@@ -495,6 +495,23 @@ export async function sendDraft(
   return (await ensureOk(response)).json();
 }
 
+export async function submitTaskCommand(
+  sessionId: string,
+  payload: {
+    command_type: TaskCommandType;
+    task_id?: string | null;
+    reason?: string | null;
+    payload?: Record<string, unknown>;
+  },
+) {
+  const response = await fetch(buildHttpUrl(`${API_PREFIX}/sessions/${sessionId}/commands`), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return (await ensureOk(response)).json();
+}
+
 export async function clearDraft(
   sessionId: string,
   payload: {

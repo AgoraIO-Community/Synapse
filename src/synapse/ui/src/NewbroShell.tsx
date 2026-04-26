@@ -26,6 +26,7 @@ import { NodesPage } from "./components/newbro/NodesPage";
 import { Sidebar, type PageId } from "./components/newbro/Sidebar";
 import { buildBroCardModels, buildBroTaskRecords } from "./components/newbro/adapters";
 import { useVoiceSession } from "./components/newbro/useVoiceSession";
+import { StatusPill, WindowDots } from "./components/newbro/visual";
 import type {
   DraftOutputCompletedStreamEvent,
   DraftOutputDeltaStreamEvent,
@@ -441,17 +442,16 @@ function ShellFrame({
   children: ReactNode;
 }) {
   return (
-    <div className="page-wash min-h-screen bg-background text-foreground antialiased">
-      <div className="min-h-screen w-full p-3 md:p-5">
-        <div className="glass-panel flex h-[calc(100vh-1.5rem)] flex-col overflow-hidden rounded-[36px] border border-white/75 md:h-[calc(100vh-2.5rem)] lg:flex-row">
-          <Sidebar activePage={activePage} onNavigate={onNavigate} />
-          <main data-testid="newbro-shell" className="relative flex min-w-0 flex-1 flex-col">
-            {children}
-          </main>
-          {globalMessage && onGlobalMessageDismiss ? (
-            <GlobalMessageBanner message={globalMessage} onDismiss={onGlobalMessageDismiss} />
-          ) : null}
-        </div>
+    <div className="page-wash min-h-screen bg-[#f7f6f1] text-black antialiased">
+      <WindowDots />
+      <div className="grid min-h-screen grid-cols-1 lg:grid-cols-[236px_minmax(0,1fr)]">
+        <Sidebar activePage={activePage} onNavigate={onNavigate} />
+        <main data-testid="newbro-shell" className="relative flex min-w-0 flex-col overflow-hidden">
+          {children}
+        </main>
+        {globalMessage && onGlobalMessageDismiss ? (
+          <GlobalMessageBanner message={globalMessage} onDismiss={onGlobalMessageDismiss} />
+        ) : null}
       </div>
     </div>
   );
@@ -475,9 +475,24 @@ export function HomeShellPage({
     >
 
       {shell.hasLoadedShellSnapshot ? (
-        <div className="flex min-h-0 flex-1 flex-col gap-5 px-4 pb-4 pt-4 md:px-6 md:pb-6 md:pt-5 xl:px-8 xl:pb-8 xl:pt-6">
-          <section className="min-h-0 flex-1 overflow-y-auto">
-            <div className="glass-panel h-full rounded-[32px] border border-white/75 px-4 py-5 md:px-5 md:py-6">
+        <div className="flex min-h-0 flex-1 flex-col px-6 pb-8 pt-8 lg:min-h-screen lg:px-14 lg:pb-10 lg:pt-14 xl:px-20">
+          <section className="min-h-0 flex-1 overflow-y-auto subtle-scrollbar">
+            <div className="mb-8 flex flex-wrap items-end justify-between gap-6">
+              <div>
+                <h1 className="newbro-condensed text-[64px] leading-[0.78] sm:text-[96px] xl:text-[118px]">
+                  COMMAND CENTER
+                  <span className="text-[#ff4b16]">*</span>
+                </h1>
+                <p className="newbro-mono mt-4 text-xs font-semibold uppercase tracking-[0.22em] text-black/55 sm:text-sm">
+                  Available Bros / Runner state / Shared session
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <StatusPill>{shell.bros.filter((bro) => bro.liveState === "live").length} live</StatusPill>
+                {shell.activeShellSessionId ? <StatusPill>Session {shell.activeShellSessionId}</StatusPill> : null}
+              </div>
+            </div>
+            <div>
               <div className="sr-only">
                 <ConversationMemory
                   phase={shell.voiceSession.phase}
@@ -547,6 +562,7 @@ export function BroDetailShellPage({
           <BroDetailPage
             bro={bro}
             sessionId={shell.activeShellSessionId}
+            activeTaskId={activePersona?.current_task_id ?? null}
             summary={activeSummary}
             taskRecords={taskRecords}
             snapshotDraftSession={shell.draftSession}

@@ -8,8 +8,8 @@ export function SectionHeader({
   trailing?: ReactNode;
 }) {
   return (
-    <div className="mb-5 flex items-center justify-between gap-4 border-b border-border/55 pb-3">
-      <div className="text-[10px] font-medium uppercase tracking-[0.28em] text-muted-foreground">
+    <div className="mb-5 flex items-center justify-between gap-4 border-b border-black/10 pb-3">
+      <div className="newbro-mono text-[10px] font-semibold uppercase tracking-[0.28em] text-black/45">
         {title}
       </div>
       {trailing ? <div>{trailing}</div> : null}

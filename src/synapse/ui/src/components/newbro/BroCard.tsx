@@ -15,9 +15,9 @@ function liveStateLabel(bro: BroCardModel) {
 
 function liveStateClasses(bro: BroCardModel) {
   if (bro.liveState === "live") {
-    return "border border-primary/12 bg-primary/10 text-primary";
+    return "bg-[#d5f5f2] text-[#087372]";
   }
-  return "border border-border/70 bg-[hsl(var(--paper))] text-muted-foreground";
+  return "bg-[#ffe3d6] text-[#b33b15]";
 }
 
 export function BroCard({
@@ -35,7 +35,7 @@ export function BroCard({
       type="button"
       whileTap={{ scale: 0.997 }}
       onClick={() => onClick?.(bro.id)}
-      className="min-h-[250px] w-full rounded-[28px] border border-white/80 bg-white/62 px-5 py-5 text-left text-foreground shadow-[0_18px_46px_-42px_rgba(15,23,42,0.18)] backdrop-blur-xl transition duration-300 hover:border-white hover:bg-white/82"
+      className="queue-card min-h-[210px] w-full rounded-[14px] border border-black/11 bg-white/43 px-5 py-5 text-left text-black backdrop-blur-sm transition duration-300 hover:-translate-y-0.5 hover:bg-white/62"
     >
       <div className="flex items-start gap-4">
         <BroPortrait bro={bro} active={isBusy} talking={false} />
@@ -44,23 +44,23 @@ export function BroCard({
           <div className="flex items-center justify-between gap-3">
             <div>
               <div className="flex items-center gap-2">
-                <div className="serif-flow text-[22px] leading-none tracking-[-0.04em]">{bro.name}</div>
+                <div className="newbro-condensed text-[30px] leading-none">{bro.name}</div>
                 <div
-                  className={`rounded-full px-2.5 py-1 text-[10px] uppercase tracking-[0.18em] ${
+                  className={`rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] ${
                     isBusy
-                      ? "border border-primary/12 bg-primary/10 text-primary"
-                      : "border border-border/70 bg-[hsl(var(--paper))] text-muted-foreground"
+                      ? "bg-[#ffe3d6] text-[#b33b15]"
+                      : "bg-[#d5f5f2] text-[#087372]"
                   }`}
                 >
                   {bro.status}
                 </div>
                 <div
-                  className={`rounded-full px-2.5 py-1 text-[10px] uppercase tracking-[0.18em] ${liveStateClasses(bro)}`}
+                  className={`rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] ${liveStateClasses(bro)}`}
                 >
                   {liveStateLabel(bro)}
                 </div>
               </div>
-              <div className="mt-2 text-[12px] text-muted-foreground">
+              <div className="mt-2 text-[12px] text-black/50">
                 {bro.nodeName ? `${bro.role} · ${bro.nodeName}` : `${bro.role} · needs binding`}
               </div>
             </div>
