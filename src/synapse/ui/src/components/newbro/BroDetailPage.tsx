@@ -164,19 +164,26 @@ function updateSentenceSegments(
   const startTime = timedKey ? candidate.time as number : Number.MAX_SAFE_INTEGER;
   if (candidate.final) {
     const pendingFinal = { text: candidate.text, textTs: candidate.textTs, revision, arrivalIndex };
+    const shouldUseFinalText = !segment || !segment.text;
     nextSegments.set(key, segment
-      ? { ...segment, pendingFinal }
+      ? {
+          ...segment,
+          text: shouldUseFinalText ? candidate.text : segment.text,
+          textTs: shouldUseFinalText ? candidate.textTs : segment.textTs,
+          revision: shouldUseFinalText ? revision : segment.revision,
+          pendingFinal,
+        }
       : {
           uid: transcriptUid(candidate),
           startTime,
-          text: "",
+          text: candidate.text,
           textTs: candidate.textTs,
           revision,
           arrivalIndex,
           pendingFinal,
         });
     return {
-      text: rebuildSentenceTranscript(segments),
+      text: rebuildSentenceTranscript(nextSegments),
       action: "hold-final-fragment",
       segments: nextSegments,
       sentenceKey: key,
@@ -741,55 +748,50 @@ export function BroDetailPage({
   const draftText = streamingDraftText || draftSession?.current_draft?.text || "";
 
   return (
-    <div className="grid min-h-0 flex-1 grid-cols-1 gap-8 overflow-y-auto px-6 pb-8 pt-8 lg:min-h-screen lg:grid-cols-[minmax(0,1fr)_minmax(360px,520px)] lg:overflow-hidden lg:px-12 lg:pb-10 lg:pt-10 xl:gap-16 xl:px-20">
-      <section className="relative z-10 flex min-w-0 flex-col">
+    <div className="grid min-h-0 flex-1 grid-cols-1 gap-6 overflow-y-auto px-4 pb-[calc(1.5rem+env(safe-area-inset-bottom))] pt-5 sm:px-6 sm:pb-8 sm:pt-8 lg:h-screen lg:min-h-0 lg:grid-cols-[minmax(0,1fr)_minmax(360px,520px)] lg:gap-8 lg:overflow-hidden lg:px-12 lg:pb-7 lg:pt-7 xl:gap-16 xl:px-20">
+      <section className="relative z-10 flex min-h-0 min-w-0 flex-col lg:overflow-hidden">
         <BroDetailHeader bro={bro} onBack={onBack} />
-        <header className="relative mt-8 max-w-[900px]">
-          <h2 className="newbro-condensed relative inline-block text-[70px] leading-[0.78] sm:text-[112px] md:text-[132px] xl:text-[148px]">
-            DRAFT BRAIN
-            <span className="absolute -right-10 -top-6 text-[72px] leading-none text-[#ff4b16] sm:-right-14 sm:-top-8 sm:text-[104px]">*</span>
-          </h2>
-          <div className="sr-only">Draft Brain</div>
-          <p className="newbro-mono mt-5 text-xs font-semibold uppercase tracking-[0.22em] text-black/55 sm:text-sm">
-            AI-optimized draft for {bro.name}
-          </p>
-        </header>
+        <h2 className="sr-only">Draft workspace for {bro.name}</h2>
 
-        <div className="mt-5 max-w-[860px]">
-          <DraftBrainPanel
-            draftText={draftText}
-            summary={draftSession?.current_draft?.last_update_summary}
-            canSend={canSendDraft}
-            sendDisabled={!sessionId || !draftReady || draftActionPending}
-            clearDisabled={!sessionId || !draftReady || draftActionPending}
-            sending={sendingDraft}
-            clearing={clearingDraft}
-            error={draftActionError}
-            onSend={() => {
-              void handleSendDraft();
-            }}
-            onClear={() => {
-              void handleClearDraft();
-            }}
-          />
+        <div className="mt-3 flex min-h-0 w-full max-w-[860px] flex-1 flex-col gap-4">
+          <div className="min-h-[170px] lg:min-h-0 lg:flex-[1.45]">
+            <DraftBrainPanel
+              draftText={draftText}
+              summary={draftSession?.current_draft?.last_update_summary}
+              canSend={canSendDraft}
+              sendDisabled={!sessionId || !draftReady || draftActionPending}
+              clearDisabled={!sessionId || !draftReady || draftActionPending}
+              sending={sendingDraft}
+              clearing={clearingDraft}
+              error={draftActionError}
+              onSend={() => {
+                void handleSendDraft();
+              }}
+              onClear={() => {
+                void handleClearDraft();
+              }}
+            />
+          </div>
+
+          <div className="min-h-[120px] lg:min-h-0 lg:flex-[0.75]">
+            <LiveTranscriptPanel active={capturing} transcriptText={transcriptText} />
+          </div>
+
+          <div className="mt-auto shrink-0">
+            <VoicePad
+              active={capturing}
+              disabled={!sessionId || !readyForMic || sttPhase === "draft_updating" || draftActionPending}
+              onPointerDown={handleMicPointerDown}
+              onPointerUp={handleMicPointerUp}
+              onPointerCancel={(event) => handleMicPointerUp(event)}
+              onKeyDown={handleMicKeyDown}
+              onKeyUp={handleMicKeyUp}
+              onBlur={() => {
+                if (activePointerIdRef.current === null) void setMicEnabled(false);
+              }}
+            />
+          </div>
         </div>
-
-        <div className="mt-7 max-w-[860px]">
-          <LiveTranscriptPanel active={capturing} transcriptText={transcriptText} />
-        </div>
-
-        <VoicePad
-          active={capturing}
-          disabled={!sessionId || !readyForMic || sttPhase === "draft_updating" || draftActionPending}
-          onPointerDown={handleMicPointerDown}
-          onPointerUp={handleMicPointerUp}
-          onPointerCancel={(event) => handleMicPointerUp(event)}
-          onKeyDown={handleMicKeyDown}
-          onKeyUp={handleMicKeyUp}
-          onBlur={() => {
-            if (activePointerIdRef.current === null) void setMicEnabled(false);
-          }}
-        />
       </section>
 
       <RunnerBrainPanel

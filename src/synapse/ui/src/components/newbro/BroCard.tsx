@@ -27,16 +27,18 @@ export function BroCard({
       type="button"
       whileTap={{ scale: 0.997 }}
       onClick={() => onClick?.(bro.id)}
-      className="queue-card min-h-[150px] w-full rounded-[14px] border border-black/11 bg-white/43 px-5 py-5 text-left text-black backdrop-blur-sm transition duration-300 hover:-translate-y-0.5 hover:bg-white/62"
+      className="queue-card min-h-[132px] w-full rounded-[14px] border border-black/11 bg-white/43 px-4 py-4 text-left text-black backdrop-blur-sm transition duration-300 hover:-translate-y-0.5 hover:bg-white/62 sm:min-h-[150px] sm:px-5 sm:py-5"
     >
-      <div className="flex items-start gap-4">
-        <BroPortrait bro={bro} active={isBusy} talking={false} />
+      <div className="flex items-start gap-3 sm:gap-4">
+        <div className="scale-[0.86] origin-top-left sm:scale-100">
+          <BroPortrait bro={bro} active={isBusy} talking={false} />
+        </div>
 
-        <div className="min-w-0 flex-1">
+        <div className="-ml-2 min-w-0 flex-1 sm:ml-0">
           <div className="flex min-w-0 flex-col gap-4">
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
-                <div className="newbro-condensed text-[30px] leading-none">{bro.name}</div>
+                <div className="newbro-condensed text-[26px] leading-none sm:text-[30px]">{bro.name}</div>
                 <div
                   className={`rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] ${
                     isBusy
@@ -52,8 +54,8 @@ export function BroCard({
               </div>
             </div>
 
-            <div className="rounded-[18px] border border-white/75 bg-[hsl(var(--paper))]/82 px-4 py-3">
-              <div className="serif-flow text-[18px] leading-snug tracking-[-0.03em] text-foreground">
+            <div className="rounded-[16px] border border-white/75 bg-[hsl(var(--paper))]/82 px-3 py-2.5 sm:rounded-[18px] sm:px-4 sm:py-3">
+              <div className="serif-flow text-[16px] leading-snug tracking-[0] text-foreground sm:text-[18px]">
                 {bro.taskTitle}
               </div>
             </div>

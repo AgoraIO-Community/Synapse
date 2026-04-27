@@ -335,7 +335,8 @@ describe("Newbro voice shell", () => {
   it("boots into an explicit empty interaction-memory state", async () => {
     render(<App />);
 
-    expect(await screen.findByText("COMMAND CENTER")).toBeInTheDocument();
+    expect(await screen.findByTestId("bros-panel")).toBeInTheDocument();
+    expect(screen.queryByText("COMMAND CENTER")).not.toBeInTheDocument();
     expect(screen.queryByText("Transcript will appear here.")).not.toBeInTheDocument();
     expect(screen.queryByTestId("voice-session-start")).not.toBeInTheDocument();
     expect(screen.queryByTestId("voice-session-stop")).not.toBeInTheDocument();
@@ -363,7 +364,8 @@ describe("Newbro voice shell", () => {
 
     expect(await screen.findByText("Bro detail")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Atlas" })).toBeInTheDocument();
-    expect(screen.getByText("Draft Brain")).toBeInTheDocument();
+    expect(screen.getByText("Current draft")).toBeInTheDocument();
+    expect(screen.queryByText("Draft Brain")).not.toBeInTheDocument();
     expect(window.location.pathname).toBe("/bros/atlas");
     expect(window.location.search).toBe("?sid=session-1");
   });
@@ -461,6 +463,31 @@ describe("Newbro voice shell", () => {
 
     expect(connectorMock.querySttSession).not.toHaveBeenCalled();
     expect(screen.queryByText(/Voice debug:/)).not.toBeInTheDocument();
+  });
+
+  it("keeps the Bro detail STT session alive across shell stream re-renders", async () => {
+    window.history.replaceState({}, "", "/bros/forge?sid=session-existing");
+
+    render(<RouterProvider router={getRouter()} />);
+
+    expect(await screen.findByRole("button", { name: "Hold to Talk" })).toBeInTheDocument();
+    await waitFor(() => expect(connectorMock.startSttSession).toHaveBeenCalledTimes(1));
+    expect(connectorMock.prepareSttSession).toHaveBeenCalledTimes(1);
+    expect(connectorMock.leaveSttSession).not.toHaveBeenCalled();
+
+    await act(async () => {
+      socketHarness.emitMessage({
+        type: "user_message_appended",
+        sequence: 99,
+        message_id: "msg-rerender",
+        text: "Trigger a shell render.",
+      });
+      await Promise.resolve();
+    });
+
+    expect(connectorMock.prepareSttSession).toHaveBeenCalledTimes(1);
+    expect(connectorMock.startSttSession).toHaveBeenCalledTimes(1);
+    expect(connectorMock.leaveSttSession).not.toHaveBeenCalled();
   });
 
   it("renders final Bro detail transcript and returned draft content", async () => {
@@ -700,7 +727,7 @@ describe("Newbro voice shell", () => {
     await waitFor(() => expect(clientMock.sendDraft).toHaveBeenCalledWith("session-existing", {
       draft_session_id: "draft-session-1",
     }));
-    expect(await screen.findByText("send failed")).toBeInTheDocument();
+    expect(await screen.findAllByText("send failed")).not.toHaveLength(0);
     expect(screen.getByText("Design a polished landing page with a calm hero section.")).toBeInTheDocument();
     expect(screen.queryByText("No draft yet. Hold the mic to start shaping one.")).not.toBeInTheDocument();
   });
@@ -1180,6 +1207,50 @@ describe("Newbro voice shell", () => {
     }
   });
 
+  it("submits final-only Bro detail ASR after release plus silence", async () => {
+    window.history.replaceState({}, "", "/bros/forge?sid=session-existing");
+
+    render(<RouterProvider router={getRouter()} />);
+
+    const micButton = await screen.findByRole("button", { name: "Hold to Talk" });
+    const transcriptHandler = voiceHarness.rtcClient.on.mock.calls.find(
+      ([eventName]) => eventName === "stream-message",
+    )?.[1];
+    expect(transcriptHandler).toBeTypeOf("function");
+
+    vi.useFakeTimers();
+    try {
+      await act(async () => {
+        fireEvent.pointerDown(micButton, { pointerId: 24 });
+        await Promise.resolve();
+        fireEvent.pointerUp(micButton, { pointerId: 24 });
+        await Promise.resolve();
+      });
+      expect(clientMock.sendSocketDraftAsrTurn).not.toHaveBeenCalled();
+
+      await act(async () => {
+        vi.advanceTimersByTime(400);
+        transcriptHandler(200101, { uid: 101, text: "Final only draft", isFinal: true, time: 100, textTs: 110 });
+        await Promise.resolve();
+      });
+      expect(screen.getByText("Final only draft")).toBeInTheDocument();
+      expect(clientMock.sendSocketDraftAsrTurn).not.toHaveBeenCalled();
+
+      await act(async () => {
+        vi.advanceTimersByTime(1_200);
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(clientMock.sendSocketDraftAsrTurn).toHaveBeenCalledTimes(1);
+      expect(clientMock.sendSocketDraftAsrTurn).toHaveBeenCalledWith(socketHarness.socket, expect.any(String), {
+        raw_text: "Final only draft",
+        assigned_bro_id: "forge",
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("includes tail transcript and resets the Bro detail draft update timer after release", async () => {
     window.history.replaceState({}, "", "/bros/forge?sid=session-existing");
 
@@ -1288,7 +1359,7 @@ describe("Newbro voice shell", () => {
 
     render(<App />);
 
-    expect(await screen.findByText("COMMAND CENTER")).toBeInTheDocument();
+    expect(await screen.findByTestId("bros-panel")).toBeInTheDocument();
     expect(clientMock.getConversationSnapshot).toHaveBeenCalledWith("session-1");
     expect(screen.queryByText("Hello from Synapse.")).not.toBeInTheDocument();
     expect(screen.queryByText("Please summarize the plan.")).not.toBeInTheDocument();
@@ -1303,7 +1374,7 @@ describe("Newbro voice shell", () => {
 
     await waitFor(() => expect(clientMock.getSessionSnapshot).toHaveBeenCalledWith("session-existing"));
     expect(clientMock.createSession).not.toHaveBeenCalled();
-    expect(await screen.findByText("COMMAND CENTER")).toBeInTheDocument();
+    expect(await screen.findByTestId("bros-panel")).toBeInTheDocument();
     expect(screen.queryByText("Session session-existing")).not.toBeInTheDocument();
     expect(window.location.search).toBe("?sid=session-existing");
   });
@@ -1346,7 +1417,7 @@ describe("Newbro voice shell", () => {
     expect(screen.getByTestId("global-message")).toHaveClass("fixed");
     expect(screen.getByText(/Could not resume the requested session/)).toBeInTheDocument();
     expect(screen.getByText(/session-missing/)).toBeInTheDocument();
-    expect(screen.getByText("COMMAND CENTER")).toBeInTheDocument();
+    expect(screen.getByTestId("bros-panel")).toBeInTheDocument();
     expect(screen.queryByText("Session session-2")).not.toBeInTheDocument();
 
     await act(async () => {
@@ -1368,7 +1439,7 @@ describe("Newbro voice shell", () => {
   it("keeps Synapse stream events out of the simplified Home surface", async () => {
     render(<App />);
 
-    await screen.findByText("COMMAND CENTER");
+    await screen.findByTestId("bros-panel");
     expect(screen.queryByTestId("voice-session-start")).not.toBeInTheDocument();
     expect(screen.queryByText("Transcript will appear here.")).not.toBeInTheDocument();
 
@@ -1702,7 +1773,8 @@ describe("Newbro voice shell", () => {
 
     render(<RouterProvider router={getRouter()} />);
 
-    expect(await screen.findByText("Runner Brain")).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Stop Task" })).toBeInTheDocument();
+    expect(screen.queryByText("Runner Brain")).not.toBeInTheDocument();
     expect(screen.getAllByText("Prepare draft execution")).toHaveLength(1);
     expect(screen.queryByText("queued: Prepare draft execution")).not.toBeInTheDocument();
     expect(screen.queryByText("Latest summary")).not.toBeInTheDocument();
@@ -1817,7 +1889,8 @@ describe("Newbro voice shell", () => {
 
     const { container } = render(<RouterProvider router={getRouter()} />);
 
-    expect(await screen.findByText("Runner Brain")).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Stop Task" })).toBeInTheDocument();
+    expect(screen.queryByText("Runner Brain")).not.toBeInTheDocument();
     expect(screen.getByText("bold detail").tagName).toBe("STRONG");
     expect(screen.getAllByText("summary").some((element) => element.tagName === "EM")).toBe(true);
     expect(screen.getByText("inline_code").tagName).toBe("CODE");
@@ -1875,7 +1948,8 @@ describe("Newbro voice shell", () => {
 
     render(<RouterProvider router={getRouter()} />);
 
-    expect(await screen.findByText("Runner Brain")).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Stop Task" })).toBeInTheDocument();
+    expect(screen.queryByText("Runner Brain")).not.toBeInTheDocument();
     expect(screen.getAllByText("Waiting for assignment")).toHaveLength(1);
     expect(screen.queryByText("Current state")).not.toBeInTheDocument();
     expect(screen.queryByText("qz is connected. This bro can pick up the next task immediately.")).not.toBeInTheDocument();
@@ -2237,7 +2311,7 @@ describe("Newbro voice shell", () => {
       await router.load();
     });
 
-    expect(await screen.findByText("COMMAND CENTER")).toBeInTheDocument();
+    expect(await screen.findByTestId("bros-panel")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Bros" }));
     await waitFor(() => expect(window.location.pathname).toBe("/bros"));
     expect(window.location.search).toBe("?sid=session-1");

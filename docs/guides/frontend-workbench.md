@@ -22,8 +22,12 @@ The root shell remains a routed command center:
 
 - left sidebar: `Home`, `Bros`, `Nodes`, `Settings`
 - home page: command-center heading plus queue-card Bro grid
-- Bro detail page: `DRAFT BRAIN`, live transcript, orange hold-to-talk pad,
-  `RUNNER BRAIN`, current task, summaries, and recent task queue
+- Bro detail page: compact draft panel and live transcript fill the main
+  column, a bottom-anchored orange hold-to-talk pad, runner current-task panel,
+  summaries, and recent task queue
+- mobile layouts use a compact top navigation, single-column content, contained
+  technical strings, and mobile-safe voice controls without horizontal page
+  overflow
 - management pages: Bro management on `Bros`, node enrollment on `Nodes`
 - left-menu pages are real routed paths, so refresh and direct open preserve the
   selected page instead of falling back to `Home`

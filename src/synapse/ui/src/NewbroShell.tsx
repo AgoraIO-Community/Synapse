@@ -1,6 +1,7 @@
 import {
   createContext,
   startTransition,
+  useCallback,
   useContext,
   useEffect,
   useEffectEvent,
@@ -362,15 +363,15 @@ function useNewbroShellState() {
     setShellWarning(null);
   });
 
-  const sendMessage = (text: string): boolean => {
+  const sendMessage = useCallback((text: string): boolean => {
     const socket = socketRef.current;
     if (!socket || socket.readyState !== WebSocket.OPEN) return false;
     const requestId = `msg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     sendSocketMessage(socket, requestId, text);
     return true;
-  };
+  }, []);
 
-  const submitDraftAsrTurn = (payload: {
+  const submitDraftAsrTurn = useCallback((payload: {
     raw_text: string;
     normalized_text?: string;
     confidence?: number;
@@ -381,7 +382,7 @@ function useNewbroShellState() {
     const requestId = `draft-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     sendSocketDraftAsrTurn(socket, requestId, payload);
     return requestId;
-  };
+  }, []);
 
   return {
     bros,
@@ -445,7 +446,7 @@ function ShellFrame({
       <WindowDots />
       <div className="grid min-h-screen grid-cols-1 lg:grid-cols-[236px_minmax(0,1fr)]">
         <Sidebar activePage={activePage} onNavigate={onNavigate} />
-        <main data-testid="newbro-shell" className="relative flex min-w-0 flex-col overflow-hidden">
+        <main data-testid="newbro-shell" className="relative flex min-w-0 flex-col overflow-x-hidden">
           {children}
         </main>
         {globalMessage && onGlobalMessageDismiss ? (
@@ -474,14 +475,8 @@ export function HomeShellPage({
     >
 
       {shell.hasLoadedShellSnapshot ? (
-        <div className="flex min-h-0 flex-1 flex-col px-6 pb-8 pt-8 lg:min-h-screen lg:px-14 lg:pb-10 lg:pt-14 xl:px-20">
+        <div className="flex min-h-0 flex-1 flex-col px-4 pb-[calc(1.5rem+env(safe-area-inset-bottom))] pt-5 sm:px-6 sm:pb-8 sm:pt-8 lg:min-h-screen lg:px-14 lg:pb-10 lg:pt-14 xl:px-20">
           <section className="min-h-0 flex-1 overflow-y-auto subtle-scrollbar">
-            <div className="mb-7">
-              <h1 className="newbro-condensed text-[64px] leading-[0.78] sm:text-[96px] xl:text-[118px]">
-                COMMAND CENTER
-                <span className="text-[#ff4b16]">*</span>
-              </h1>
-            </div>
             <BrosPanel
               bros={shell.bros}
               sessionId={shell.activeShellSessionId}
@@ -638,7 +633,7 @@ export function SettingsShellPage({ onNavigate }: { onNavigate: PageNavigator })
       globalMessage={globalMessageFor(shell)}
       onGlobalMessageDismiss={shell.clearGlobalMessage}
     >
-      <div className="flex flex-1 items-center justify-center">
+      <div className="flex flex-1 items-center justify-center px-4 py-10">
         <div className="text-[14px] text-neutral-400">Settings coming soon.</div>
       </div>
     </ShellFrame>

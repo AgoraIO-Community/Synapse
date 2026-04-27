@@ -20,11 +20,11 @@ export function NewbroLogo() {
   return (
     <div className="flex items-start gap-3 lg:block">
       <div className="flex items-center gap-2">
-        <div className="relative h-10 w-6 text-[#ff4b16]" aria-hidden="true">
-          <div className="absolute left-2 top-0 h-7 w-3 -skew-x-12 bg-[#ff4b16]" />
-          <div className="absolute left-0 top-4 h-8 w-3 -skew-x-12 bg-[#ff4b16]" />
+        <div className="relative h-8 w-5 text-[#ff4b16] sm:h-10 sm:w-6" aria-hidden="true">
+          <div className="absolute left-2 top-0 h-6 w-2.5 -skew-x-12 bg-[#ff4b16] sm:h-7 sm:w-3" />
+          <div className="absolute left-0 top-3 h-7 w-2.5 -skew-x-12 bg-[#ff4b16] sm:top-4 sm:h-8 sm:w-3" />
         </div>
-        <div className="newbro-condensed text-[34px] leading-none">NEWBRO</div>
+        <div className="newbro-condensed text-[28px] leading-none sm:text-[34px]">NEWBRO</div>
       </div>
       <p className="newbro-mono mt-3 hidden text-xs font-semibold uppercase leading-5 tracking-[0.14em] text-black/45 lg:block">
         Voice Command
@@ -60,13 +60,13 @@ export function VoicePad({
 }) {
   const ringCenter = { left: "30%", top: "47%" };
   const baseRings = [0, 1, 2, 3, 4].map((i) => ({
-    width: 150 + i * 98,
-    height: 80 + i * 62,
+    width: 120 + i * 75,
+    height: 64 + i * 48,
   }));
   const rippleBase = baseRings[2];
 
   return (
-    <div className="voice-pad-stage relative mt-2 min-h-[230px] max-w-[860px] pt-2 sm:min-h-[280px] lg:mt-auto lg:min-h-[330px]">
+    <div className="voice-pad-stage relative mt-3 min-h-[135px] w-full max-w-[860px] overflow-hidden pt-1 sm:min-h-[150px] lg:min-h-[150px]">
       <button
         type="button"
         aria-label={active ? "Release to finish" : label}
@@ -77,7 +77,7 @@ export function VoicePad({
         onKeyDown={onKeyDown}
         onKeyUp={onKeyUp}
         onBlur={onBlur}
-        className={`orange-pad paper-grain absolute bottom-[-64px] left-[-72px] h-[250px] w-[620px] max-w-[105vw] select-none touch-manipulation overflow-hidden bg-[#ff4b16] text-left text-black transition duration-300 focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-8px] focus-visible:outline-black disabled:cursor-not-allowed disabled:opacity-50 sm:h-[300px] sm:w-[760px] lg:h-[330px] lg:w-[820px] ${
+        className={`orange-pad paper-grain absolute bottom-[-10px] left-0 h-[155px] w-full max-w-[430px] select-none touch-manipulation overflow-hidden bg-[#ff4b16] text-left text-black transition duration-300 focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-8px] focus-visible:outline-black disabled:cursor-not-allowed disabled:opacity-50 sm:left-[-24px] sm:h-[165px] sm:w-[500px] lg:left-[-36px] lg:h-[160px] lg:w-[520px] ${
           active ? "scale-[1.025] brightness-110" : "enabled:hover:scale-[1.01]"
         }`}
       >
@@ -105,8 +105,8 @@ export function VoicePad({
         <div
           className={`pointer-events-none absolute inset-0 transition-opacity duration-200 ${active ? "opacity-100" : "opacity-0"}`}
           style={{
-            WebkitMaskImage: "radial-gradient(ellipse 380px 270px at 30% 47%, black 0%, black 74%, transparent 88%)",
-            maskImage: "radial-gradient(ellipse 380px 270px at 30% 47%, black 0%, black 74%, transparent 88%)",
+            WebkitMaskImage: "radial-gradient(ellipse 300px 210px at 30% 47%, black 0%, black 74%, transparent 88%)",
+            maskImage: "radial-gradient(ellipse 300px 210px at 30% 47%, black 0%, black 74%, transparent 88%)",
           }}
           aria-hidden="true"
         >
@@ -142,7 +142,7 @@ export function VoicePad({
         </div>
 
         <div
-          className="newbro-condensed relative z-10 ml-24 mt-14 text-[66px] leading-[0.82] sm:ml-28 sm:mt-16 sm:text-[86px] lg:text-[96px]"
+          className="newbro-condensed relative z-10 ml-[48px] mt-7 text-[38px] leading-[0.82] sm:ml-[72px] sm:mt-8 sm:text-[46px] lg:text-[48px]"
           style={{
             animation: active ? "textBreathe 1.85s ease-in-out infinite" : undefined,
             transformOrigin: "left center",
@@ -155,7 +155,7 @@ export function VoicePad({
         </div>
       </button>
 
-      <div className="absolute bottom-[52px] right-4 hidden rotate-[-8deg] sm:block lg:right-8" aria-hidden="true">
+      <div className="absolute bottom-[18px] right-4 hidden rotate-[-8deg] sm:block lg:right-8" aria-hidden="true">
         <div
           style={{
             animationName: active ? "textBreatheSoft" : undefined,
@@ -167,10 +167,10 @@ export function VoicePad({
             filter: active ? "drop-shadow(0 0 9px rgba(255,255,255,.14))" : undefined,
           }}
         >
-          <div className="newbro-mono text-lg font-black leading-4 tracking-[-0.02em]">
+          <div className="newbro-mono text-base font-black leading-4 tracking-[0]">
             {statusLabel.toUpperCase().replace("'", "").split(" ").slice(0, 2).join("\n")}
           </div>
-          <svg className="ml-3 mt-2 h-20 w-24" viewBox="0 0 110 80" fill="none">
+          <svg className="ml-3 mt-1.5 h-16 w-20" viewBox="0 0 110 80" fill="none">
             <path d="M98 4C88 43 50 49 14 54" stroke="black" strokeWidth="3" strokeLinecap="round" />
             <path d="M23 43L11 55L27 64" stroke="black" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
@@ -188,8 +188,8 @@ export function LiveTranscriptPanel({
   transcriptText: string;
 }) {
   return (
-    <div className="w-full">
-      <div className="mb-4 flex items-center gap-3">
+    <div className="flex h-full min-h-0 w-full flex-col">
+      <div className="mb-2 flex items-center gap-3">
         <h2 className="text-xl font-black uppercase tracking-[0.08em]">Live Transcript</h2>
         <span
           className="h-2.5 w-2.5 rounded-full bg-[#27d6d1]"
@@ -199,8 +199,8 @@ export function LiveTranscriptPanel({
           {active ? "Listening..." : "Standby"}
         </span>
       </div>
-      <div className="queue-card rounded-[14px] border border-black/13 bg-white/46 px-6 py-5">
-        <p className="newbro-mono min-h-[82px] text-[13px] leading-6 sm:text-sm">
+      <div className="queue-card flex min-h-0 flex-1 rounded-[14px] border border-black/13 bg-white/46 px-5 py-3">
+        <p className="newbro-mono min-h-[44px] flex-1 overflow-auto text-[13px] leading-6 sm:text-sm subtle-scrollbar">
           {transcriptText ? (
             <span className="text-black/80">{transcriptText}</span>
           ) : (
@@ -236,15 +236,15 @@ export function DraftBrainPanel({
   onClear: () => void;
 }) {
   return (
-    <div className="queue-card relative w-full rounded-[14px] border border-[#ff4b16] bg-white/32 px-6 pb-24 pt-5 backdrop-blur-sm sm:min-h-[220px]">
+    <div className="queue-card flex h-full min-h-[170px] w-full flex-col rounded-[14px] border border-[#ff4b16] bg-white/32 px-5 py-4 backdrop-blur-sm">
       <div className="newbro-mono text-xs font-semibold uppercase tracking-[0.18em] text-[#ff4b16]">Current draft</div>
       {summary ? <p className="mt-2 text-[12px] leading-5 text-black/48">{summary}</p> : null}
       {draftText ? (
-        <p className="mt-4 max-h-[280px] overflow-auto whitespace-pre-wrap text-[14px] leading-7 text-black/78 subtle-scrollbar">
+        <p className="mt-3 min-h-0 flex-1 overflow-auto whitespace-pre-wrap text-[14px] leading-7 text-black/78 subtle-scrollbar">
           {draftText}
         </p>
       ) : (
-        <p className="newbro-mono mt-4 min-h-[150px] text-sm leading-7 text-black/42">
+        <p className="newbro-mono mt-3 min-h-[58px] flex-1 text-sm leading-7 text-black/42">
           <span>No draft yet. Hold the mic to start shaping one.</span>
           <br />
           Tell your bro what to build.
@@ -255,10 +255,10 @@ export function DraftBrainPanel({
           {error}
         </div>
       ) : null}
-      <div className="absolute inset-x-6 bottom-5 flex flex-wrap items-center justify-between gap-3">
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
         <button
           type="button"
-          className="newbro-mono inline-flex items-center justify-center gap-2 rounded-full border border-black/12 bg-white/45 px-4 py-3 text-[11px] font-black uppercase tracking-[0.12em] text-black/45 shadow-[0_10px_24px_rgba(0,0,0,.04)] transition duration-200 hover:-translate-y-0.5 hover:border-[#ff4b16]/35 hover:bg-white/70 hover:text-[#ff4b16] active:translate-y-0 disabled:pointer-events-none disabled:cursor-not-allowed disabled:translate-y-0 disabled:opacity-50 disabled:shadow-none sm:text-xs"
+          className="newbro-mono inline-flex items-center justify-center gap-2 rounded-full border border-black/12 bg-white/45 px-3 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-black/45 shadow-[0_8px_18px_rgba(0,0,0,.04)] transition duration-200 hover:-translate-y-0.5 hover:border-[#ff4b16]/35 hover:bg-white/70 hover:text-[#ff4b16] active:translate-y-0 disabled:pointer-events-none disabled:cursor-not-allowed disabled:translate-y-0 disabled:opacity-50 disabled:shadow-none sm:text-[11px]"
           disabled={clearDisabled}
           onClick={onClear}
         >
@@ -267,7 +267,7 @@ export function DraftBrainPanel({
         </button>
         <button
           type="button"
-          className="group newbro-mono inline-flex items-center justify-center gap-3 rounded-full border border-[#ff4b16]/80 bg-[#ff4b16] px-5 py-3.5 text-xs font-black uppercase tracking-[0.14em] text-white shadow-[0_14px_34px_rgba(255,75,22,.24)] transition duration-200 hover:-translate-y-0.5 hover:bg-[#ff5a2a] hover:shadow-[0_18px_42px_rgba(255,75,22,.3)] active:translate-y-0 active:shadow-[0_10px_24px_rgba(255,75,22,.2)] disabled:pointer-events-none disabled:cursor-not-allowed disabled:translate-y-0 disabled:opacity-50 disabled:shadow-none sm:px-6 sm:py-4 sm:text-sm"
+          className="group newbro-mono inline-flex items-center justify-center gap-2 rounded-full border border-[#ff4b16]/80 bg-[#ff4b16] px-4 py-2.5 text-[11px] font-black uppercase tracking-[0.12em] text-white shadow-[0_10px_24px_rgba(255,75,22,.22)] transition duration-200 hover:-translate-y-0.5 hover:bg-[#ff5a2a] hover:shadow-[0_14px_30px_rgba(255,75,22,.28)] active:translate-y-0 active:shadow-[0_8px_18px_rgba(255,75,22,.2)] disabled:pointer-events-none disabled:cursor-not-allowed disabled:translate-y-0 disabled:opacity-50 disabled:shadow-none sm:px-5 sm:text-xs"
           disabled={sendDisabled || !canSend}
           onClick={onSend}
         >
@@ -317,14 +317,12 @@ export function RunnerBrainPanel({
   const canStopTask = Boolean(activeTaskId) && bro.status === "busy";
 
   return (
-    <aside className="relative z-10 min-h-0 overflow-y-auto pb-4 subtle-scrollbar lg:pt-4">
-      <h2 className="newbro-condensed text-[40px] leading-none sm:text-[48px]">RUNNER BRAIN</h2>
-      <div className="sr-only">Runner Brain</div>
-      <div className="mt-2 h-1.5 w-40 -rotate-6 rounded-full bg-[#0b7777]" />
-      <div className="runner-glow mt-5 rounded-[14px] bg-gradient-to-br from-[#064a4d] to-[#02282b] p-6 text-white">
-        <div className="flex flex-wrap items-start gap-5">
+    <aside className="relative z-10 min-h-0 overflow-y-auto pb-4 subtle-scrollbar">
+      <h2 className="sr-only">Runner workspace</h2>
+      <div className="runner-glow rounded-[14px] bg-gradient-to-br from-[#064a4d] to-[#02282b] p-4 text-white sm:p-6">
+        <div className="flex flex-col items-start gap-4 sm:flex-row sm:flex-wrap sm:gap-5">
           <BroPortrait bro={bro} active={bro.status === "busy"} talking={false} />
-          <div className="min-w-[180px] flex-1">
+          <div className="min-w-0 flex-1 sm:min-w-[180px]">
             <p className="newbro-mono text-base font-black tracking-wide">
               Current task: <span className="text-[#25e0db]">{bro.status === "busy" ? "Running" : "Idle"}</span>
             </p>
@@ -334,7 +332,7 @@ export function RunnerBrainPanel({
           <button
             type="button"
             aria-label="Stop Task"
-            className="newbro-mono shrink-0 rounded-full border border-white/18 bg-white/8 px-4 py-2.5 text-[11px] font-black uppercase tracking-[0.12em] text-white/70 transition duration-200 hover:-translate-y-0.5 hover:border-[#ff4b16]/55 hover:bg-[#ff4b16]/18 hover:text-white active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:translate-y-0 disabled:hover:border-white/18 disabled:hover:bg-white/8 disabled:hover:text-white/70"
+            className="newbro-mono min-h-[44px] shrink-0 rounded-full border border-white/18 bg-white/8 px-4 py-2.5 text-[11px] font-black uppercase tracking-[0.12em] text-white/70 transition duration-200 hover:-translate-y-0.5 hover:border-[#ff4b16]/55 hover:bg-[#ff4b16]/18 hover:text-white active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:translate-y-0 disabled:hover:border-white/18 disabled:hover:bg-white/8 disabled:hover:text-white/70"
             disabled={!canStopTask || stoppingTask}
             onClick={onStopTask}
           >
@@ -388,15 +386,12 @@ export function BroDetailHeader({
 }) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-4">
-      <div className="flex min-w-0 items-center gap-3">
-        <BroPortrait bro={bro} active={bro.status === "busy"} talking={false} />
-        <div className="min-w-0">
-          <div className="text-[11px] uppercase tracking-[0.22em] text-black/45">Bro detail</div>
-          <div className="mt-1 flex flex-wrap items-center gap-2">
-            <h1 className="newbro-condensed text-[34px] leading-none text-black">{bro.name}</h1>
-            <span className="rounded-full border border-black/12 bg-white/44 px-2.5 py-1 text-[11px] text-black/58">{bro.role}</span>
-            <span className="rounded-full border border-black/12 bg-white/44 px-2.5 py-1 text-[11px] text-black/58">{bro.liveState}</span>
-          </div>
+      <div className="min-w-0">
+        <div className="text-[11px] uppercase tracking-[0.22em] text-black/45">Bro detail</div>
+        <div className="mt-1 flex flex-wrap items-center gap-2">
+          <h1 className="newbro-condensed text-[34px] leading-none text-black">{bro.name}</h1>
+          <span className="rounded-full border border-black/12 bg-white/44 px-2.5 py-1 text-[11px] text-black/58">{bro.role}</span>
+          <span className="rounded-full border border-black/12 bg-white/44 px-2.5 py-1 text-[11px] text-black/58">{bro.liveState}</span>
         </div>
       </div>
       <Button type="button" variant="outline" className="h-9 rounded-full border-black/15 bg-white/42 px-3 text-black" onClick={onBack}>
