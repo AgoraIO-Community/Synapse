@@ -35,6 +35,8 @@ type DraftOutputEvent =
   | DraftOutputCompletedStreamEvent
   | DraftOutputFailedStreamEvent;
 
+type MobileDetailPage = "draft" | "status";
+
 function normalizeTranscriptSegmentForDisplay(text: string) {
   return text.replace(/\s*\n+\s*/g, " ").trim();
 }
@@ -327,6 +329,7 @@ export function BroDetailPage({
   const [draftActionError, setDraftActionError] = useState<string | null>(null);
   const [stoppingTask, setStoppingTask] = useState(false);
   const [taskActionError, setTaskActionError] = useState<string | null>(null);
+  const [mobileDetailPage, setMobileDetailPage] = useState<MobileDetailPage>("draft");
   const resourcesRef = useRef<SttResources | null>(null);
   const submittedRef = useRef<Set<string>>(new Set());
   const acceptedTranscriptRef = useRef("");
@@ -746,15 +749,60 @@ export function BroDetailPage({
   const draftActionPending = sendingDraft || clearingDraft;
   const canSendDraft = bro.source === "runtime";
   const draftText = streamingDraftText || draftSession?.current_draft?.text || "";
+  const mobileTabClass = (page: MobileDetailPage) => (
+    `min-h-[44px] flex-1 rounded-full px-4 py-2 text-[12px] font-black uppercase tracking-[0.12em] transition ${
+      mobileDetailPage === page
+        ? "bg-black text-white shadow-[0_10px_24px_rgba(0,0,0,.12)]"
+        : "bg-white/48 text-black/52 hover:bg-white/70 hover:text-black"
+    }`
+  );
+
+  const renderRunnerPanel = () => (
+    <RunnerBrainPanel
+      bro={bro}
+      summary={summary}
+      taskRecords={taskRecords}
+      activeTaskId={activeTaskId}
+      stoppingTask={stoppingTask}
+      stopTaskError={taskActionError}
+      onStopTask={() => {
+        void handleStopTask();
+      }}
+    />
+  );
 
   return (
-    <div className="grid min-h-0 flex-1 grid-cols-1 gap-6 overflow-y-auto px-4 pb-[calc(1.5rem+env(safe-area-inset-bottom))] pt-5 sm:px-6 sm:pb-8 sm:pt-8 lg:h-screen lg:min-h-0 lg:grid-cols-[minmax(0,1fr)_minmax(360px,520px)] lg:gap-8 lg:overflow-hidden lg:px-12 lg:pb-7 lg:pt-7 xl:gap-16 xl:px-20">
+    <div className="grid min-h-0 flex-1 content-start grid-cols-1 gap-3 overflow-y-auto px-3 pb-[calc(1.25rem+env(safe-area-inset-bottom))] pt-4 sm:px-6 sm:pb-8 sm:pt-8 lg:h-dvh lg:min-h-0 lg:content-normal lg:grid-cols-[minmax(0,1fr)_minmax(340px,520px)] lg:gap-8 lg:overflow-hidden lg:px-12 lg:pb-7 lg:pt-7 xl:gap-16 xl:px-20">
       <section className="relative z-10 flex min-h-0 min-w-0 flex-col lg:overflow-hidden">
         <BroDetailHeader bro={bro} onBack={onBack} />
+        <div
+          className="mt-4 flex rounded-full border border-black/10 bg-white/36 p-1 lg:hidden"
+          role="tablist"
+          aria-label="Bro detail sections"
+        >
+          <button
+            type="button"
+            role="tab"
+            aria-selected={mobileDetailPage === "draft"}
+            className={mobileTabClass("draft")}
+            onClick={() => setMobileDetailPage("draft")}
+          >
+            Draft
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={mobileDetailPage === "status"}
+            className={mobileTabClass("status")}
+            onClick={() => setMobileDetailPage("status")}
+          >
+            Status
+          </button>
+        </div>
         <h2 className="sr-only">Draft workspace for {bro.name}</h2>
 
-        <div className="mt-3 flex min-h-0 w-full max-w-[860px] flex-1 flex-col gap-4">
-          <div className="min-h-[170px] lg:min-h-0 lg:flex-[1.45]">
+        <div className={`${mobileDetailPage === "draft" ? "flex" : "hidden"} mt-3 min-h-0 w-full max-w-[860px] flex-1 flex-col gap-4 lg:flex`}>
+          <div className="min-h-[180px] lg:min-h-0 lg:flex-[1.45]">
             <DraftBrainPanel
               draftText={draftText}
               summary={draftSession?.current_draft?.last_update_summary}
@@ -773,7 +821,7 @@ export function BroDetailPage({
             />
           </div>
 
-          <div className="min-h-[120px] lg:min-h-0 lg:flex-[0.75]">
+          <div className="min-h-[130px] lg:min-h-0 lg:flex-[0.75]">
             <LiveTranscriptPanel active={capturing} transcriptText={transcriptText} />
           </div>
 
@@ -794,17 +842,9 @@ export function BroDetailPage({
         </div>
       </section>
 
-      <RunnerBrainPanel
-        bro={bro}
-        summary={summary}
-        taskRecords={taskRecords}
-        activeTaskId={activeTaskId}
-        stoppingTask={stoppingTask}
-        stopTaskError={taskActionError}
-        onStopTask={() => {
-          void handleStopTask();
-        }}
-      />
+      <div className={`${mobileDetailPage === "status" ? "block" : "hidden"} min-h-0 lg:block`}>
+        {renderRunnerPanel()}
+      </div>
       </div>
   );
 }

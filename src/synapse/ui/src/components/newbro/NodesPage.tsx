@@ -91,13 +91,13 @@ function NodeForm({
             })
           }
           disabled={!name.trim() || enabledExecutors.length === 0}
-          className="rounded-full border border-neutral-900 bg-neutral-950 px-4 py-1.5 text-[12px] font-medium text-white transition hover:bg-neutral-800 disabled:opacity-30"
+          className="min-h-[44px] rounded-full border border-neutral-900 bg-neutral-950 px-4 py-1.5 text-[12px] font-medium text-white transition hover:bg-neutral-800 disabled:opacity-30 sm:min-h-0"
         >
           {submitLabel}
         </button>
         <button
           onClick={onCancel}
-          className="rounded-full border border-neutral-200 px-4 py-1.5 text-[12px] font-medium text-neutral-600 transition hover:bg-neutral-100"
+          className="min-h-[44px] rounded-full border border-neutral-200 px-4 py-1.5 text-[12px] font-medium text-neutral-600 transition hover:bg-neutral-100 sm:min-h-0"
         >
           Cancel
         </button>
@@ -249,18 +249,21 @@ function NodeCard({
           </button>
           <button
             onClick={onEdit}
+            aria-label={`Edit ${node.name}`}
             className="min-h-[44px] min-w-[44px] rounded-full border border-neutral-200 p-2 text-neutral-500 transition hover:border-neutral-300 hover:text-neutral-700"
           >
             <Pencil className="h-3.5 w-3.5" strokeWidth={1.8} />
           </button>
           <button
             onClick={onRotate}
+            aria-label={`Rotate credentials for ${node.name}`}
             className="min-h-[44px] min-w-[44px] rounded-full border border-neutral-200 p-2 text-neutral-500 transition hover:border-neutral-300 hover:text-neutral-700"
           >
             <RotateCcw className="h-3.5 w-3.5" strokeWidth={1.8} />
           </button>
           <button
             onClick={onDelete}
+            aria-label={`Delete ${node.name}`}
             className="min-h-[44px] min-w-[44px] rounded-full border border-neutral-200 p-2 text-neutral-500 transition hover:border-red-300 hover:text-red-600"
           >
             <Trash2 className="h-3.5 w-3.5" strokeWidth={1.8} />
@@ -467,9 +470,9 @@ export function NodesPage({
   const editingNode = editingNodeId ? nodes.find((node) => node.node_id === editingNodeId) ?? null : null;
 
   return (
-    <div className="space-y-5 overflow-auto px-4 py-5 pb-[calc(1.5rem+env(safe-area-inset-bottom))] sm:space-y-6 sm:px-6 sm:py-8 lg:px-12 xl:px-20 xl:py-10">
+    <div className="space-y-5 px-3 py-4 pb-[calc(1.25rem+env(safe-area-inset-bottom))] sm:space-y-6 sm:px-6 sm:py-8 lg:overflow-auto lg:px-12 xl:px-20 xl:py-10">
       <div className="queue-card rounded-[14px] border border-black/11 bg-white/43 px-4 py-5 backdrop-blur-sm sm:px-6 sm:py-6">
-        <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="flex flex-col items-stretch justify-between gap-4 sm:flex-row sm:items-start">
           <div>
             <div className="newbro-mono text-[11px] uppercase tracking-[0.22em] text-black/45">Executor Nodes</div>
             <div className="newbro-condensed mt-2 text-[42px] leading-[0.82] text-black sm:text-[54px]">
@@ -489,7 +492,7 @@ export function NodesPage({
                 setError(null);
                 setStatus(null);
               }}
-              className="flex min-h-[44px] items-center gap-2 rounded-full border border-[#ff4b16] bg-[#ff4b16] px-4 py-2 text-[12px] font-medium text-white transition hover:bg-[#ff5a2a]"
+              className="flex min-h-[44px] items-center justify-center gap-2 rounded-full border border-[#ff4b16] bg-[#ff4b16] px-4 py-2 text-[12px] font-medium text-white transition hover:bg-[#ff5a2a]"
             >
               <Plus className="h-3.5 w-3.5" strokeWidth={2} />
               New Node

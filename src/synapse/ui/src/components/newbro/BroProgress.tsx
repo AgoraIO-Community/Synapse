@@ -15,13 +15,13 @@ export function BroProgress({
   if (!isBusy) {
     if (compact) {
       return (
-        <div className="mt-4 space-y-2.5">
+        <div className="mt-2 space-y-1.5 lg:mt-4 lg:space-y-2.5">
           {bro.progressDetails.slice(0, 1).map((detail) => (
             <div
               key={detail}
-              className="flex items-start gap-2.5 text-[12px] leading-6 text-muted-foreground"
+              className="flex items-start gap-2 text-[12px] leading-5 text-muted-foreground lg:gap-2.5 lg:leading-6"
             >
-              <div className={`mt-[9px] h-1.5 w-1.5 rounded-full ${talking ? "bg-primary/65" : "bg-muted-foreground/35"}`} />
+              <div className={`mt-[7px] h-1.5 w-1.5 rounded-full lg:mt-[9px] ${talking ? "bg-primary/65" : "bg-muted-foreground/35"}`} />
               <MarkdownText className="text-muted-foreground">{detail}</MarkdownText>
             </div>
           ))}
@@ -89,13 +89,13 @@ export function BroProgress({
         />
       </div>
 
-      {bro.progressDetails.length > 0 ? <div className="mt-4 space-y-2.5">
+      {bro.progressDetails.length > 0 ? <div className="mt-2 space-y-1.5 lg:mt-4 lg:space-y-2.5">
         {bro.progressDetails.map((detail) => (
           <div
             key={detail}
-            className="flex items-start gap-2.5 text-[12px] leading-6 text-muted-foreground"
+            className="flex items-start gap-2 text-[12px] leading-5 text-muted-foreground lg:gap-2.5 lg:leading-6"
           >
-            <div className={`mt-[9px] h-1.5 w-1.5 rounded-full ${talking ? "bg-primary/65" : "bg-muted-foreground/35"}`} />
+            <div className={`mt-[7px] h-1.5 w-1.5 rounded-full lg:mt-[9px] ${talking ? "bg-primary/65" : "bg-muted-foreground/35"}`} />
             <MarkdownText className="text-muted-foreground">{detail}</MarkdownText>
           </div>
         ))}

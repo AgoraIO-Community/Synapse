@@ -52,10 +52,13 @@
   html {
     scroll-behavior: smooth;
     background-color: hsl(var(--background));
+    overflow-x: hidden;
   }
 
   body {
     min-height: 100vh;
+    min-height: 100dvh;
+    overflow-x: hidden;
     background: #f7f6f1;
     color: hsl(var(--foreground));
     font-family: var(--font-sans);
@@ -73,6 +76,19 @@
   h3,
   h4 {
     text-wrap: pretty;
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+  }
+
+  #app {
+    min-height: 100vh;
+    min-height: 100dvh;
+    overflow-x: hidden;
   }
 }
 

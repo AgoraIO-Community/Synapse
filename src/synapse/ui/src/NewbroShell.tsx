@@ -119,7 +119,7 @@ function GlobalMessageBanner({ message, onDismiss }: { message: GlobalMessage; o
   return (
     <div
       data-testid="global-message"
-      className={`fixed right-5 top-5 z-50 max-w-[420px] rounded-2xl border px-4 py-3 pr-10 text-[13px] leading-6 shadow-[0_20px_60px_-32px_rgba(15,23,42,0.45)] backdrop-blur md:right-7 md:top-7 ${toneClass}`}
+      className={`fixed inset-x-4 top-[calc(4.75rem+env(safe-area-inset-top))] z-50 rounded-2xl border px-4 py-3 pr-10 text-[13px] leading-6 shadow-[0_20px_60px_-32px_rgba(15,23,42,0.45)] backdrop-blur sm:left-auto sm:right-5 sm:top-5 sm:max-w-[420px] md:right-7 md:top-7 ${toneClass}`}
       role="status"
     >
       <div>{message.detail}</div>
@@ -442,9 +442,9 @@ function ShellFrame({
   children: ReactNode;
 }) {
   return (
-    <div className="page-wash min-h-screen bg-[#f7f6f1] text-black antialiased">
+    <div className="page-wash min-h-dvh overflow-x-hidden bg-[#f7f6f1] text-black antialiased">
       <WindowDots />
-      <div className="grid min-h-screen grid-cols-1 lg:grid-cols-[236px_minmax(0,1fr)]">
+      <div className="grid min-h-dvh grid-cols-1 grid-rows-[auto_minmax(0,1fr)] lg:grid-cols-[236px_minmax(0,1fr)] lg:grid-rows-none">
         <Sidebar activePage={activePage} onNavigate={onNavigate} />
         <main data-testid="newbro-shell" className="relative flex min-w-0 flex-col overflow-x-hidden">
           {children}
@@ -475,8 +475,8 @@ export function HomeShellPage({
     >
 
       {shell.hasLoadedShellSnapshot ? (
-        <div className="flex min-h-0 flex-1 flex-col px-4 pb-[calc(1.5rem+env(safe-area-inset-bottom))] pt-5 sm:px-6 sm:pb-8 sm:pt-8 lg:min-h-screen lg:px-14 lg:pb-10 lg:pt-14 xl:px-20">
-          <section className="min-h-0 flex-1 overflow-y-auto subtle-scrollbar">
+        <div className="flex min-h-0 flex-1 flex-col px-3 pb-[calc(1.25rem+env(safe-area-inset-bottom))] pt-4 sm:px-6 sm:pb-8 sm:pt-8 lg:min-h-dvh lg:px-14 lg:pb-10 lg:pt-14 xl:px-20">
+          <section className="min-h-0 flex-1 lg:overflow-y-auto lg:pr-1 subtle-scrollbar">
             <BrosPanel
               bros={shell.bros}
               sessionId={shell.activeShellSessionId}
@@ -579,7 +579,7 @@ export function BrosShellPage({ onNavigate }: { onNavigate: PageNavigator }) {
       onGlobalMessageDismiss={shell.clearGlobalMessage}
     >
       {shell.activeShellSessionId && shell.hasLoadedShellSnapshot ? (
-        <div className="min-h-0 flex-1 overflow-auto">
+        <div className="min-h-0 flex-1 lg:overflow-auto">
           <BrosPage
             sessionId={shell.activeShellSessionId}
             communicationPersonaPrompt={shell.communicationPersonaPrompt}
@@ -607,7 +607,7 @@ export function NodesShellPage({ onNavigate }: { onNavigate: PageNavigator }) {
       onGlobalMessageDismiss={shell.clearGlobalMessage}
     >
       {shell.activeShellSessionId && shell.hasLoadedShellSnapshot ? (
-        <div className="min-h-0 flex-1 overflow-auto">
+        <div className="min-h-0 flex-1 lg:overflow-auto">
           <NodesPage
             sessionId={shell.activeShellSessionId}
             initialNodes={shell.executorNodes}

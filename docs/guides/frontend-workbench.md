@@ -20,12 +20,15 @@ The current frontend stack is:
 
 The root shell remains a routed command center:
 
-- left sidebar: `Home`, `Bros`, `Nodes`, `Settings`
+- desktop left sidebar: `Home`, `Bros`, `Nodes`, `Settings`
+- mobile header with the menu on the left, logo on the right, and a drawer menu
+  for the same navigation
 - home page: command-center heading plus queue-card Bro grid
-- Bro detail page: compact draft panel and live transcript fill the main
-  column, a bottom-anchored orange hold-to-talk pad, runner current-task panel,
-  summaries, and recent task queue
-- mobile layouts use a compact top navigation, single-column content, contained
+- Bro detail page: desktop keeps draft/live transcript/hold-to-talk beside the
+  runner current-task panel, summaries, and recent task queue; mobile splits the
+  same content into `Draft` and a compact `Status` dashboard with current task,
+  summary, stop action, and recent tasks
+- mobile layouts use a drawer navigation, single-column content, contained
   technical strings, and mobile-safe voice controls without horizontal page
   overflow
 - management pages: Bro management on `Bros`, node enrollment on `Nodes`
