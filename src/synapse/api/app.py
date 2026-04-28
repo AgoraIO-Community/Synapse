@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from synapse.api.logging import install_access_log_filters
 from synapse.api.paths import API_PREFIX, api_path
 from synapse.api.routes.commands import router as commands_router
+from synapse.api.routes.drafts import router as drafts_router
 from synapse.api.routes.executor_nodes import router as executor_nodes_router
 from synapse.api.routes.health import router as health_router
 from synapse.api.routes.interaction_requests import router as interaction_requests_router
@@ -41,6 +42,7 @@ def create_app(*, settings: Settings | None = None) -> FastAPI:
     app.include_router(sessions_router, prefix=API_PREFIX)
     app.include_router(messages_router, prefix=API_PREFIX)
     app.include_router(commands_router, prefix=API_PREFIX)
+    app.include_router(drafts_router, prefix=API_PREFIX)
     app.include_router(interaction_requests_router, prefix=API_PREFIX)
     app.include_router(personas_router, prefix=API_PREFIX)
     app.include_router(executor_nodes_router, prefix=API_PREFIX)

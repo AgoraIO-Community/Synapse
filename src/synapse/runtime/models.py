@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 
 from synapse.protocol import (
     AttentionItem,
+    DraftSession,
     TaskExecutionMode,
     ExecutionRun,
     ExecutionSession,
@@ -40,6 +41,7 @@ class SessionSnapshot(BaseModel):
     executor_capabilities: list[dict[str, object]] = Field(default_factory=list)
     executor_nodes: list[ExecutorNodeRecord] = Field(default_factory=list)
     communication_persona_prompt: str = ""
+    draft_session: DraftSession | None = None
  
 
 class ConversationSnapshot(BaseModel):
@@ -100,6 +102,30 @@ class AssistantResponseCompletedStreamEvent(SessionStreamEventBase):
 
 class AssistantResponseFailedStreamEvent(SessionStreamEventBase):
     type: Literal["assistant_response_failed"] = "assistant_response_failed"
+    request_id: str
+    message: str
+
+
+class DraftOutputStartedStreamEvent(SessionStreamEventBase):
+    type: Literal["draft_output_started"] = "draft_output_started"
+    request_id: str
+
+
+class DraftOutputDeltaStreamEvent(SessionStreamEventBase):
+    type: Literal["draft_output_delta"] = "draft_output_delta"
+    request_id: str
+    delta: str
+
+
+class DraftOutputCompletedStreamEvent(SessionStreamEventBase):
+    type: Literal["draft_output_completed"] = "draft_output_completed"
+    request_id: str
+    draft_session_id: str
+    draft_text: str
+
+
+class DraftOutputFailedStreamEvent(SessionStreamEventBase):
+    type: Literal["draft_output_failed"] = "draft_output_failed"
     request_id: str
     message: str
 

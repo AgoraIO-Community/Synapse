@@ -3,6 +3,7 @@
 The Communication Brain owns:
 
 - acknowledgement
+- pre-send draft shaping for `newbro v0`
 - clarification
 - user-intent understanding inside the communication loop
 - direct conversational replies
@@ -18,6 +19,7 @@ It does not own:
 
 Core communication policy:
 
+- in `newbro v0`, ASR turns update a mutable Draft and only Send creates an immutable Task contract
 - tool success is an internal fact
 - user-facing replies should express action commitment
 - default replies should sound like a human accepting and starting work

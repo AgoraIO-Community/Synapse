@@ -1,5 +1,5 @@
-import type { ExecutionRun, TaskSummary } from "../../types";
-import type { BroCardModel, RuntimeExecutorNodeInput, RuntimePersonaInput } from "./types";
+import type { ExecutionRun, Task, TaskStatus, TaskSummary } from "../../types";
+import type { BroCardModel, BroTaskRecord, RuntimeExecutorNodeInput, RuntimePersonaInput } from "./types";
 import { sampleBros } from "./data";
 
 const avatarCycle = ["fox", "cat", "bunny", "bro"] as const;
@@ -72,16 +72,34 @@ function buildIdleNote(liveState: BroCardModel["liveState"], nodeName: string | 
   return "No executor node is bound yet. Bind one from Bros or Nodes to bring this bro online.";
 }
 
-export function buildBroCardModels(
-  personas?: RuntimePersonaInput[] | null,
-  executorNodes?: RuntimeExecutorNodeInput[] | null,
-  executionRuns?: ExecutionRun[] | null,
-  summaries?: TaskSummary[] | null,
-): BroCardModel[] {
-  if (!personas || personas.length === 0) {
-    return sampleBros;
+function taskStatusLabel(status: TaskStatus): string {
+  if (status === "waiting_executor") return "Waiting for executor";
+  if (status === "waiting_user_input") return "Waiting for input";
+  return status.replace(/_/g, " ");
+}
+
+function taskStatusProgress(status: TaskStatus): number {
+  if (status === "completed") return 100;
+  if (status === "running") return 60;
+  if (status === "waiting_user_input" || status === "waiting_executor") return 35;
+  if (status === "queued" || status === "created") return 18;
+  if (status === "paused") return 45;
+  return 30;
+}
+
+function uniqueDetails(details: Array<string | null | undefined>): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const detail of details) {
+    const normalized = detail?.trim();
+    if (!normalized || seen.has(normalized)) continue;
+    seen.add(normalized);
+    result.push(normalized);
   }
-  const nodesById = new Map((executorNodes ?? []).map((node) => [node.node_id, node]));
+  return result;
+}
+
+function latestRunsByTaskId(executionRuns?: ExecutionRun[] | null): Map<string, ExecutionRun> {
   const runsByTaskId = new Map<string, ExecutionRun>();
   for (const run of executionRuns ?? []) {
     const existing = runsByTaskId.get(run.task_id);
@@ -89,6 +107,83 @@ export function buildBroCardModels(
       runsByTaskId.set(run.task_id, run);
     }
   }
+  return runsByTaskId;
+}
+
+function taskBelongsToBro(task: Task, broId: string, activeTaskId?: string | null): boolean {
+  return (
+    task.task_id === activeTaskId
+    || task.metadata.persona_id === broId
+    || task.metadata.assigned_bro_id === broId
+  );
+}
+
+function taskRecordSummary(
+  task: Task,
+  run: ExecutionRun | undefined,
+  summary: TaskSummary | undefined,
+): string {
+  return (
+    summary?.conversational_summary
+    ?? summary?.operational_summary
+    ?? run?.output_summary
+    ?? run?.failure_reason
+    ?? run?.block_reason
+    ?? run?.latest_progress_message
+    ?? task.goal
+  );
+}
+
+export function buildBroTaskRecords(
+  broId: string,
+  options: {
+    activeTaskId?: string | null;
+    broDetailSessionId?: string | null;
+    tasks?: Task[] | null;
+    executionRuns?: ExecutionRun[] | null;
+    summaries?: TaskSummary[] | null;
+    limit?: number;
+  },
+): BroTaskRecord[] {
+  const runsByTaskId = latestRunsByTaskId(options.executionRuns);
+  const summaryByTaskId = new Map((options.summaries ?? []).map((summary) => [summary.task_id, summary]));
+  const records: BroTaskRecord[] = [];
+  for (const task of [...(options.tasks ?? [])].reverse()) {
+    if (task.task_id === options.activeTaskId) continue;
+    if (!taskBelongsToBro(task, broId, options.activeTaskId)) continue;
+    if (
+      options.broDetailSessionId
+      && task.metadata.bro_detail_session_id !== options.broDetailSessionId
+    ) {
+      continue;
+    }
+    const run = runsByTaskId.get(task.task_id);
+    const summary = summaryByTaskId.get(task.task_id);
+    records.push({
+      taskId: task.task_id,
+      title: task.title,
+      status: task.status,
+      statusLabel: taskStatusLabel(task.status),
+      summary: taskRecordSummary(task, run, summary),
+    });
+    if (records.length >= (options.limit ?? 5)) break;
+  }
+  return records;
+}
+
+export function buildBroCardModels(
+  personas?: RuntimePersonaInput[] | null,
+  executorNodes?: RuntimeExecutorNodeInput[] | null,
+  executionRuns?: ExecutionRun[] | null,
+  summaries?: TaskSummary[] | null,
+  tasks?: Task[] | null,
+): BroCardModel[] {
+  if (!personas || personas.length === 0) {
+    return sampleBros;
+  }
+  const taskByTaskId = new Map((tasks ?? []).map((task) => [task.task_id, task]));
+  const nodesById = new Map((executorNodes ?? []).map((node) => [node.node_id, node]));
+  const runsByTaskId = latestRunsByTaskId(executionRuns);
   const summaryByTaskId = new Map((summaries ?? []).map((s) => [s.task_id, s]));
 
   return personas.map((persona) => {
@@ -97,12 +192,14 @@ export function buildBroCardModels(
     const liveState = buildLiveState(persona, nodesById);
 
     // Pull real execution data when available
+    const activeTask = persona.current_task_id ? taskByTaskId.get(persona.current_task_id) : null;
     const activeRun = persona.current_task_id ? runsByTaskId.get(persona.current_task_id) : null;
     const activeSummary = persona.current_task_id ? summaryByTaskId.get(persona.current_task_id) : null;
 
     const progressText = activeRun?.latest_progress_message ?? activeRun?.output_summary ?? null;
     const summaryText = activeSummary?.conversational_summary ?? activeSummary?.operational_summary ?? null;
     const runStatus = activeRun?.status ?? null;
+    const taskStatus = activeTask?.status ?? null;
 
     // Build progress details from real data
     let progressDetails: string[];
@@ -111,14 +208,23 @@ export function buildBroCardModels(
     let progress: number;
 
     if (busy && (progressText || summaryText)) {
-      const details: string[] = [];
-      if (progressText) details.push(progressText);
-      if (summaryText && summaryText !== progressText) details.push(summaryText);
-      if (activeRun?.block_reason) details.push(`Blocked: ${activeRun.block_reason}`);
+      const details = uniqueDetails([
+        progressText,
+        summaryText,
+        activeRun?.block_reason ? `Blocked: ${activeRun.block_reason}` : null,
+      ]);
       progressDetails = details.length > 0 ? details : buildBusyDetails(persona, liveState, nodeName);
-      taskTitle = activeSummary?.latest_user_visible_status ?? "Handle active runtime work";
-      progressLabel = runStatus === "running" ? "Running" : runStatus ?? "Syncing";
-      progress = runStatus === "completed" ? 100 : runStatus === "running" ? 60 : 30;
+      taskTitle = activeTask?.title ?? activeSummary?.latest_user_visible_status ?? "Handle active runtime work";
+      progressLabel = runStatus === "running" ? "Running" : runStatus ?? (taskStatus ? taskStatusLabel(taskStatus) : "Syncing");
+      progress = runStatus === "completed" ? 100 : runStatus === "running" ? 60 : taskStatus ? taskStatusProgress(taskStatus) : 30;
+    } else if (busy && activeTask) {
+      progressDetails = uniqueDetails([
+        activeTask.goal,
+        ...buildBusyDetails(persona, liveState, nodeName).slice(2),
+      ]);
+      taskTitle = activeTask.title;
+      progress = taskStatusProgress(activeTask.status);
+      progressLabel = taskStatusLabel(activeTask.status);
     } else if (busy) {
       progressDetails = buildBusyDetails(persona, liveState, nodeName);
       taskTitle = "Handle active runtime work";

@@ -1,4 +1,4 @@
-import type { ExecutorNodeRecord, Persona } from "../../types";
+import type { ExecutorNodeRecord, Persona, TaskStatus } from "../../types";
 
 export type NavItem = {
   label: string;
@@ -27,9 +27,17 @@ export type BroCardModel = {
   source: "sample" | "runtime";
 };
 
+export type BroTaskRecord = {
+  taskId: string;
+  title: string;
+  status: TaskStatus;
+  statusLabel: string;
+  summary: string;
+};
+
 export type RuntimePersonaInput = Pick<
   Persona,
-  "persona_id" | "name" | "avatar" | "status" | "current_task_id" | "executor_node_id"
+  "persona_id" | "name" | "avatar" | "status" | "current_task_id" | "executor_node_id" | "bro_detail_session_id"
 >;
 
 export type RuntimeExecutorNodeInput = Pick<

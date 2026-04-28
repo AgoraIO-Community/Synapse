@@ -2,6 +2,7 @@
 
 from .assignment import AssignmentLease
 from .command import TaskCommand
+from .draft import AsrTurn, Draft, DraftSession, DraftSessionStatus, DraftSnapshot
 from .enums import (
     AttentionItemKind,
     AttentionItemStatus,
@@ -54,10 +55,15 @@ __all__ = [
     "AttentionItemStatus",
     "AttentionPriority",
     "AssignmentLease",
+    "AsrTurn",
     "BindingStatus",
     "ConversationEffect",
     "CancelRunCommand",
     "DispatchRunCommand",
+    "Draft",
+    "DraftSession",
+    "DraftSessionStatus",
+    "DraftSnapshot",
     "ExecutionMode",
     "ExecutionRun",
     "ExecutionSession",

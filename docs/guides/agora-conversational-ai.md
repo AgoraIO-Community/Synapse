@@ -18,9 +18,9 @@ That connector module owns:
 - the public custom-LLM callback URL used by Agora
 - proactive notification speech through the local ConvoAI session
 
-The browser demo remains outside the connector host under:
+The active browser UI lives under:
 
-- `example-ui/`
+- `src/synapse/ui/`
 
 The connector host runs separately from the main Synapse API server:
 
@@ -44,7 +44,7 @@ The `agora-convoai` module exposes headless routes:
 - the connector module owns Agora auth and calls Agora APIs on behalf of the integration
 - proactive notification delivery is triggered only for Synapse notification events
 - normal chat replies are not replayed through `/speak`
-- any browser demo is a client of the connector host and is not part of the connector boundary
+- the browser UI is a client of the connector host and is not part of the connector boundary
 
 ## LLM Path
 
@@ -122,13 +122,7 @@ For development with frontend + connector together:
 ./newbro dev
 ```
 
-For the example browser test client:
-
-```bash
-cd example-ui
-npm install
-npm run dev
-```
+For frontend development, use the active shell under `src/synapse/ui/` through `./newbro dev`.
 
 The connector host reads its live config from the shared `~/.newbro/config.yaml`
 file and shared runtime env from `~/.newbro/.env`.
@@ -140,5 +134,6 @@ For this example, Synapse fixes `connectors.agora-convoai.convoai_area` to `US`.
 
 ## Ownership Note
 
-The browser demo under `example-ui/` is an example
-client only. It is not part of the connector-host architecture boundary.
+The active browser UI under `src/synapse/ui/` is the supported frontend. It is a
+client of the connector host and is not part of the connector-host architecture
+boundary.

@@ -1,6 +1,7 @@
 import {
   createContext,
   startTransition,
+  useCallback,
   useContext,
   useEffect,
   useEffectEvent,
@@ -9,24 +10,51 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { createSession, getConversationSnapshot, getSessionSnapshot, openSessionStream, sendSocketMessage, setVoiceTarget } from "./lib/session-client";
+import {
+  createSession,
+  getConversationSnapshot,
+  getSessionSnapshot,
+  openSessionStream,
+  sendSocketDraftAsrTurn,
+  sendSocketMessage,
+} from "./lib/session-client";
 import { readSessionIdFromUrl, replaceSessionIdInUrl } from "./lib/session-url";
+import { BroDetailPage } from "./components/newbro/BroDetailPage";
 import { BrosPage } from "./components/newbro/BrosPage";
 import { BrosPanel } from "./components/newbro/BrosPanel";
-import { ConversationMemory } from "./components/newbro/ConversationMemory";
 import { NodesPage } from "./components/newbro/NodesPage";
 import { Sidebar, type PageId } from "./components/newbro/Sidebar";
-import { TopVoiceBar } from "./components/newbro/TopVoiceBar";
-import { buildBroCardModels } from "./components/newbro/adapters";
+import { buildBroCardModels, buildBroTaskRecords } from "./components/newbro/adapters";
 import { useVoiceSession } from "./components/newbro/useVoiceSession";
-import type { ExecutionRun, ExecutorNodeRecord, Persona, SessionSnapshot, TaskSummary } from "./types";
+import { WindowDots } from "./components/newbro/visual";
+import type {
+  DraftOutputCompletedStreamEvent,
+  DraftOutputDeltaStreamEvent,
+  DraftOutputFailedStreamEvent,
+  DraftOutputStartedStreamEvent,
+  DraftSession,
+  ExecutionRun,
+  ExecutorNodeRecord,
+  Persona,
+  SessionSnapshot,
+  Task,
+  TaskSummary,
+} from "./types";
 
 export type PageNavigator = (page: PageId) => void;
+export type BroNavigator = (broId: string) => void;
+
+type DraftOutputEvent =
+  | DraftOutputStartedStreamEvent
+  | DraftOutputDeltaStreamEvent
+  | DraftOutputCompletedStreamEvent
+  | DraftOutputFailedStreamEvent;
 
 const SHELL_API_ERROR_TITLE = "Unable to reach the Synapse API";
 const SHELL_API_ERROR_HINT =
   "This deployment must proxy /api/* requests to the backend before the shell can load live data.";
 const RESUME_FALLBACK_WARNING_PREFIX = "Could not resume the requested session.";
+const GLOBAL_MESSAGE_AUTO_DISMISS_MS = 6_000;
 
 function describeApiFailure(error: unknown, fallback: string): string {
   if (!(error instanceof Error)) {
@@ -50,14 +78,14 @@ function ShellApiErrorPanel({ detail }: { detail: string }) {
   return (
     <div
       data-testid="shell-api-error"
-      className="mx-8 my-8 rounded-[28px] border border-red-200 bg-red-50 px-6 py-6 xl:mx-10 xl:my-10"
+      className="paper-panel mx-4 my-4 rounded-[30px] border border-white/80 px-6 py-6 shadow-[0_24px_54px_-40px_rgba(15,23,42,0.22)] md:mx-6 md:my-6 xl:mx-8 xl:my-8"
     >
-      <div className="text-[12px] uppercase tracking-[0.22em] text-red-500">Connection problem</div>
-      <div className="mt-2 text-[28px] font-medium tracking-[-0.04em] text-red-950">
+      <div className="text-[11px] uppercase tracking-[0.24em] text-[#8d5a62]">Connection problem</div>
+      <div className="serif-flow mt-3 text-[32px] tracking-[-0.05em] text-foreground">
         {SHELL_API_ERROR_TITLE}
       </div>
-      <div className="mt-3 max-w-[720px] text-[14px] leading-7 text-red-800">{detail}</div>
-      <div className="mt-3 max-w-[720px] text-[13px] leading-6 text-red-700/90">{SHELL_API_ERROR_HINT}</div>
+      <div className="mt-3 max-w-[720px] text-[14px] leading-7 text-foreground/82">{detail}</div>
+      <div className="mt-3 max-w-[720px] text-[13px] leading-6 text-muted-foreground">{SHELL_API_ERROR_HINT}</div>
     </div>
   );
 }
@@ -66,20 +94,43 @@ function ShellLoadingPanel() {
   return (
     <div
       data-testid="shell-connecting"
-      className="mx-8 my-8 rounded-[28px] border border-neutral-200 bg-white px-6 py-6 text-[14px] text-neutral-500 xl:mx-10 xl:my-10"
+      className="glass-panel mx-4 my-4 rounded-[30px] border border-white/80 px-6 py-6 text-[14px] text-muted-foreground md:mx-6 md:my-6 xl:mx-8 xl:my-8"
     >
       Connecting to session…
     </div>
   );
 }
 
-function ShellWarningBanner({ detail }: { detail: string }) {
+type GlobalMessage = {
+  detail: string;
+  tone: "error" | "warning";
+};
+
+function GlobalMessageBanner({ message, onDismiss }: { message: GlobalMessage; onDismiss: () => void }) {
+  const toneClass = message.tone === "error"
+    ? "border-red-200 bg-red-50 text-red-600"
+    : "border-amber-200 bg-amber-50 text-amber-700";
+
+  useEffect(() => {
+    const timer = window.setTimeout(onDismiss, GLOBAL_MESSAGE_AUTO_DISMISS_MS);
+    return () => window.clearTimeout(timer);
+  }, [message.detail, message.tone, onDismiss]);
+
   return (
     <div
-      data-testid="shell-warning"
-      className="mx-8 mt-8 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-[13px] text-amber-800 xl:mx-10"
+      data-testid="global-message"
+      className={`fixed inset-x-4 top-[calc(4.75rem+env(safe-area-inset-top))] z-50 rounded-2xl border px-4 py-3 pr-10 text-[13px] leading-6 shadow-[0_20px_60px_-32px_rgba(15,23,42,0.45)] backdrop-blur sm:left-auto sm:right-5 sm:top-5 sm:max-w-[420px] md:right-7 md:top-7 ${toneClass}`}
+      role="status"
     >
-      {detail}
+      <div>{message.detail}</div>
+      <button
+        type="button"
+        aria-label="Dismiss message"
+        className="absolute right-3 top-2 text-[18px] leading-none opacity-55 transition hover:opacity-90"
+        onClick={onDismiss}
+      >
+        ×
+      </button>
     </div>
   );
 }
@@ -88,9 +139,20 @@ function buildResumeFallbackWarning(sessionId: string) {
   return `${RESUME_FALLBACK_WARNING_PREFIX} Opened a new session instead of ${sessionId}.`;
 }
 
+function globalMessageFor(shell: Pick<NewbroShellState, "shellError" | "shellWarning" | "hasLoadedShellSnapshot">): GlobalMessage | null {
+  if (shell.shellError && shell.hasLoadedShellSnapshot) {
+    return { detail: shell.shellError, tone: "error" };
+  }
+  if (shell.shellWarning) {
+    return { detail: shell.shellWarning, tone: "warning" };
+  }
+  return null;
+}
+
 function useNewbroShellState() {
   const [runtimePersonas, setRuntimePersonas] = useState<Persona[]>([]);
   const [executorNodes, setExecutorNodes] = useState<ExecutorNodeRecord[]>([]);
+  const [tasks, setTasks] = useState<Task[]>([]);
   const [executionRuns, setExecutionRuns] = useState<ExecutionRun[]>([]);
   const [taskSummaries, setTaskSummaries] = useState<TaskSummary[]>([]);
   const [communicationPersonaPrompt, setCommunicationPersonaPrompt] = useState("");
@@ -98,9 +160,9 @@ function useNewbroShellState() {
   const [hasLoadedShellSnapshot, setHasLoadedShellSnapshot] = useState(false);
   const [shellError, setShellError] = useState<string | null>(null);
   const [shellWarning, setShellWarning] = useState<string | null>(null);
-  const [activeBroId, setActiveBroId] = useState<string | null>(null);
-  const [isTalking, setIsTalking] = useState(false);
   const [chatMessages, setChatMessages] = useState<Array<{ role: "user" | "assistant"; text: string; id: string }>>([]);
+  const [draftSession, setDraftSession] = useState<DraftSession | null>(null);
+  const [latestDraftOutputEvent, setLatestDraftOutputEvent] = useState<DraftOutputEvent | null>(null);
   const mountedRef = useRef(false);
   const shellLoadSequenceRef = useRef(0);
   const socketRef = useRef<WebSocket | null>(null);
@@ -108,9 +170,11 @@ function useNewbroShellState() {
   function applySnapshot(snapshot: SessionSnapshot) {
     setRuntimePersonas(snapshot.personas);
     setExecutorNodes(snapshot.executor_nodes ?? []);
+    setTasks(snapshot.tasks ?? []);
     setExecutionRuns(snapshot.execution_runs ?? []);
     setTaskSummaries(snapshot.summaries ?? []);
     setCommunicationPersonaPrompt(snapshot.communication_persona_prompt ?? "");
+    setDraftSession(snapshot.draft_session ?? null);
     setHasLoadedShellSnapshot(true);
     setShellError(null);
   }
@@ -228,6 +292,15 @@ function useNewbroShellState() {
           startTransition(() => applySnapshot(event.snapshot));
           return;
         }
+        if (
+          event.type === "draft_output_started"
+          || event.type === "draft_output_delta"
+          || event.type === "draft_output_completed"
+          || event.type === "draft_output_failed"
+        ) {
+          startTransition(() => setLatestDraftOutputEvent(event));
+          return;
+        }
         if (event.type === "user_message_appended") {
           startTransition(() => {
             setChatMessages((prev) => {
@@ -281,43 +354,35 @@ function useNewbroShellState() {
   }, [activeShellSessionId]);
 
   const bros = useMemo(
-    () => buildBroCardModels(runtimePersonas, executorNodes, executionRuns, taskSummaries),
-    [executorNodes, executionRuns, runtimePersonas, taskSummaries],
+    () => buildBroCardModels(runtimePersonas, executorNodes, executionRuns, taskSummaries, tasks),
+    [executorNodes, executionRuns, runtimePersonas, taskSummaries, tasks],
   );
 
-  useEffect(() => {
-    if (bros.length === 0) {
-      setActiveBroId(null);
-      return;
-    }
-    if (!bros.some((bro) => bro.id === activeBroId)) {
-      setActiveBroId(bros[0]?.id ?? null);
-    }
-  }, [activeBroId, bros]);
+  const clearGlobalMessage = useEffectEvent(() => {
+    setShellError(null);
+    setShellWarning(null);
+  });
 
-  const sendMessage = (text: string): boolean => {
+  const sendMessage = useCallback((text: string): boolean => {
     const socket = socketRef.current;
     if (!socket || socket.readyState !== WebSocket.OPEN) return false;
     const requestId = `msg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     sendSocketMessage(socket, requestId, text);
     return true;
-  };
+  }, []);
 
-  const startTalkToBro = (broId: string) => {
-    if (voiceSession.phase !== "connected") return;
-    const sessionId = activeShellSessionId;
-    if (!sessionId) return;
-    setActiveBroId(broId);
-    setIsTalking(true);
-    void setVoiceTarget(sessionId, broId);
-  };
-
-  const endTalkToBro = () => {
-    if (!isTalking) return;
-    setIsTalking(false);
-    // Don't clear voice target here — it will be cleared after the next
-    // user message is processed by the backend.
-  };
+  const submitDraftAsrTurn = useCallback((payload: {
+    raw_text: string;
+    normalized_text?: string;
+    confidence?: number;
+    assigned_bro_id?: string;
+  }): string | null => {
+    const socket = socketRef.current;
+    if (!socket || socket.readyState !== WebSocket.OPEN) return null;
+    const requestId = `draft-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    sendSocketDraftAsrTurn(socket, requestId, payload);
+    return requestId;
+  }, []);
 
   return {
     bros,
@@ -326,20 +391,19 @@ function useNewbroShellState() {
     hasLoadedShellSnapshot,
     runtimePersonas,
     executorNodes,
+    tasks,
+    executionRuns,
+    taskSummaries,
     shellError,
     shellWarning,
-    activeBroId,
-    setActiveBroId,
-    isTalking,
-    startTalkToBro,
-    endTalkToBro,
+    setShellError,
+    clearGlobalMessage,
     communicationPersonaPrompt,
-    start,
-    stop,
-    toggleMute,
     sendMessage,
+    submitDraftAsrTurn,
+    draftSession,
+    latestDraftOutputEvent,
     chatMessages,
-    voiceConnected: voiceSession.phase === "connected",
   };
 }
 
@@ -367,134 +431,134 @@ function useNewbroShell() {
 function ShellFrame({
   activePage,
   onNavigate,
+  globalMessage,
+  onGlobalMessageDismiss,
   children,
 }: {
   activePage: PageId;
   onNavigate: PageNavigator;
+  globalMessage?: GlobalMessage | null;
+  onGlobalMessageDismiss?: () => void;
   children: ReactNode;
 }) {
   return (
-    <div className="min-h-screen bg-[#f3f0ea] text-neutral-950 antialiased">
-      <div className="h-screen w-full p-4 md:p-5">
-        <div className="flex h-full overflow-hidden rounded-[32px] border border-neutral-200 bg-[#fcfaf5]">
-          <Sidebar activePage={activePage} onNavigate={onNavigate} />
-          <main data-testid="newbro-shell" className="flex min-w-0 flex-1 flex-col">
-            {children}
-          </main>
-        </div>
+    <div className="page-wash min-h-dvh overflow-x-hidden bg-[#f7f6f1] text-black antialiased">
+      <WindowDots />
+      <div className="grid min-h-dvh grid-cols-1 grid-rows-[auto_minmax(0,1fr)] lg:grid-cols-[236px_minmax(0,1fr)] lg:grid-rows-none">
+        <Sidebar activePage={activePage} onNavigate={onNavigate} />
+        <main data-testid="newbro-shell" className="relative flex min-w-0 flex-col overflow-x-hidden">
+          {children}
+        </main>
+        {globalMessage && onGlobalMessageDismiss ? (
+          <GlobalMessageBanner message={globalMessage} onDismiss={onGlobalMessageDismiss} />
+        ) : null}
       </div>
     </div>
   );
 }
 
-export function HomeShellPage({ onNavigate }: { onNavigate: PageNavigator }) {
+export function HomeShellPage({
+  onNavigate,
+  onBroNavigate,
+}: {
+  onNavigate: PageNavigator;
+  onBroNavigate?: BroNavigator;
+}) {
   const shell = useNewbroShell();
-  const [composer, setComposer] = useState("");
-  const [sendError, setSendError] = useState<string | null>(null);
-  const scrollRef = useRef<HTMLDivElement | null>(null);
-
-  // Auto-scroll when chat messages change
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (el) {
-      el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
-    }
-  }, [shell.chatMessages.length]);
-
-  function handleSend(e: React.FormEvent) {
-    e.preventDefault();
-    const text = composer.trim();
-    if (!text) return;
-    setSendError(null);
-    const sent = shell.sendMessage(text);
-    if (sent) {
-      setComposer("");
-    } else {
-      setSendError("Not connected. Message was not sent.");
-    }
-  }
 
   return (
-    <ShellFrame activePage="Home" onNavigate={onNavigate}>
-      <TopVoiceBar
-        bros={shell.bros}
-        voicePhase={shell.voiceSession.phase}
-        error={shell.voiceSession.error}
-        isMicMuted={shell.voiceSession.isMicMuted}
-        messageCount={shell.chatMessages.length}
-        sessionId={shell.activeShellSessionId}
-        onStart={() => {
-          void shell.start(shell.activeShellSessionId);
-        }}
-        onStop={() => {
-          void shell.stop();
-        }}
-        onToggleMute={() => {
-          void shell.toggleMute();
-        }}
-      />
-
-      {shell.shellWarning ? <ShellWarningBanner detail={shell.shellWarning} /> : null}
-
-      {shell.shellError && shell.hasLoadedShellSnapshot ? (
-        <div className="mx-8 mt-8 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-[13px] text-amber-800 xl:mx-10">
-          {shell.shellError}
-        </div>
-      ) : null}
+    <ShellFrame
+      activePage="Home"
+      onNavigate={onNavigate}
+      globalMessage={globalMessageFor(shell)}
+      onGlobalMessageDismiss={shell.clearGlobalMessage}
+    >
 
       {shell.hasLoadedShellSnapshot ? (
-        <div className="grid min-h-0 flex-1 grid-cols-1 gap-8 px-8 py-8 lg:grid-cols-[minmax(220px,0.56fr)_minmax(840px,1.74fr)] xl:px-10 xl:py-10">
-          <section className="flex min-h-0 flex-col pt-4">
-            <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
-              <ConversationMemory
-                phase={shell.voiceSession.phase}
-                messages={shell.chatMessages.map((msg) => ({
-                  role: msg.role,
-                  text: msg.text,
-                  message_id: msg.id,
-                }))}
-                error={shell.voiceSession.error}
-                lastToolkitMessage={shell.voiceSession.lastToolkitMessage}
-              />
-            </div>
-
-            {/* Pinned input */}
-            {sendError && (
-              <div className="mt-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-[12px] text-red-600">
-                {sendError}
-              </div>
-            )}
-            <form onSubmit={handleSend} className="mt-3 flex shrink-0 gap-2">
-              <input
-                type="text"
-                value={composer}
-                onChange={(e) => setComposer(e.target.value)}
-                placeholder="Type a message…"
-                className="min-w-0 flex-1 rounded-2xl border border-neutral-200 bg-white px-4 py-2.5 text-[14px] text-neutral-900 placeholder-neutral-400 outline-none transition focus:border-neutral-400 focus:ring-1 focus:ring-neutral-300"
-              />
-              <button
-                type="submit"
-                disabled={!composer.trim()}
-                className="shrink-0 rounded-2xl border border-neutral-900 bg-neutral-950 px-4 py-2.5 text-[13px] font-medium text-white transition hover:bg-neutral-800 disabled:opacity-30"
-              >
-                Send
-              </button>
-            </form>
-          </section>
-
-          <section className="flex min-h-0 items-start justify-stretch overflow-y-auto lg:pt-4">
+        <div className="flex min-h-0 flex-1 flex-col px-3 pb-[calc(1.25rem+env(safe-area-inset-bottom))] pt-4 sm:px-6 sm:pb-8 sm:pt-8 lg:min-h-dvh lg:px-14 lg:pb-10 lg:pt-14 xl:px-20">
+          <section className="min-h-0 flex-1 lg:overflow-y-auto lg:pr-1 subtle-scrollbar">
             <BrosPanel
               bros={shell.bros}
-              activeBroId={shell.activeBroId}
-              isTalking={shell.isTalking}
-              voiceConnected={shell.voiceConnected}
-              onBroPressStart={(broId) => {
-                shell.startTalkToBro(broId);
+              sessionId={shell.activeShellSessionId}
+              onBroClick={(broId) => {
+                onBroNavigate?.(broId);
               }}
-              onBroPressEnd={() => shell.endTalkToBro()}
             />
           </section>
         </div>
+      ) : shell.shellError ? (
+        <ShellApiErrorPanel detail={shell.shellError} />
+      ) : (
+        <ShellLoadingPanel />
+      )}
+    </ShellFrame>
+  );
+}
+
+
+export function BroDetailShellPage({
+  broId,
+  onNavigate,
+}: {
+  broId: string;
+  onNavigate: PageNavigator;
+}) {
+  const shell = useNewbroShell();
+  const bro = shell.bros.find((candidate) => candidate.id === broId) ?? null;
+  const activeSummary = bro?.source === "runtime"
+    ? shell.taskSummaries.find((summary) => summary.task_id === shell.runtimePersonas.find((persona) => persona.persona_id === bro.id)?.current_task_id) ?? null
+    : null;
+  const activePersona = bro?.source === "runtime"
+    ? shell.runtimePersonas.find((persona) => persona.persona_id === bro.id) ?? null
+    : null;
+  const taskRecords = bro?.source === "runtime"
+    ? buildBroTaskRecords(bro.id, {
+        activeTaskId: activePersona?.current_task_id ?? null,
+        broDetailSessionId: activePersona?.bro_detail_session_id ?? null,
+        tasks: shell.tasks,
+        executionRuns: shell.executionRuns,
+        summaries: shell.taskSummaries,
+      })
+    : [];
+
+  return (
+    <ShellFrame
+      activePage="Home"
+      onNavigate={onNavigate}
+      globalMessage={globalMessageFor(shell)}
+      onGlobalMessageDismiss={shell.clearGlobalMessage}
+    >
+      {shell.hasLoadedShellSnapshot ? (
+        bro ? (
+          <BroDetailPage
+            bro={bro}
+            sessionId={shell.activeShellSessionId}
+            activeTaskId={activePersona?.current_task_id ?? null}
+            summary={activeSummary}
+            taskRecords={taskRecords}
+            snapshotDraftSession={shell.draftSession}
+            latestDraftOutputEvent={shell.latestDraftOutputEvent}
+            onSubmitDraftAsrTurn={shell.submitDraftAsrTurn}
+            onBack={() => onNavigate("Home")}
+            onGlobalError={shell.setShellError}
+          />
+        ) : (
+          <div className="flex flex-1 items-center justify-center p-6">
+            <div className="glass-panel max-w-[520px] rounded-[30px] border border-white/75 px-6 py-6 text-center">
+              <div className="serif-flow text-[32px] tracking-[-0.05em]">Bro not found</div>
+              <p className="mt-3 text-[14px] leading-7 text-muted-foreground">
+                This Bro is not available in the current session.
+              </p>
+              <button
+                type="button"
+                className="mt-5 rounded-full border border-border/70 bg-white/70 px-4 py-2 text-[14px]"
+                onClick={() => onNavigate("Home")}
+              >
+                Back home
+              </button>
+            </div>
+          </div>
+        )
       ) : shell.shellError ? (
         <ShellApiErrorPanel detail={shell.shellError} />
       ) : (
@@ -508,10 +572,14 @@ export function BrosShellPage({ onNavigate }: { onNavigate: PageNavigator }) {
   const shell = useNewbroShell();
 
   return (
-    <ShellFrame activePage="Bros" onNavigate={onNavigate}>
-      {shell.shellWarning ? <ShellWarningBanner detail={shell.shellWarning} /> : null}
+    <ShellFrame
+      activePage="Bros"
+      onNavigate={onNavigate}
+      globalMessage={globalMessageFor(shell)}
+      onGlobalMessageDismiss={shell.clearGlobalMessage}
+    >
       {shell.activeShellSessionId && shell.hasLoadedShellSnapshot ? (
-        <div className="min-h-0 flex-1 overflow-auto">
+        <div className="min-h-0 flex-1 lg:overflow-auto">
           <BrosPage
             sessionId={shell.activeShellSessionId}
             communicationPersonaPrompt={shell.communicationPersonaPrompt}
@@ -532,10 +600,14 @@ export function NodesShellPage({ onNavigate }: { onNavigate: PageNavigator }) {
   const shell = useNewbroShell();
 
   return (
-    <ShellFrame activePage="Nodes" onNavigate={onNavigate}>
-      {shell.shellWarning ? <ShellWarningBanner detail={shell.shellWarning} /> : null}
+    <ShellFrame
+      activePage="Nodes"
+      onNavigate={onNavigate}
+      globalMessage={globalMessageFor(shell)}
+      onGlobalMessageDismiss={shell.clearGlobalMessage}
+    >
       {shell.activeShellSessionId && shell.hasLoadedShellSnapshot ? (
-        <div className="min-h-0 flex-1 overflow-auto">
+        <div className="min-h-0 flex-1 lg:overflow-auto">
           <NodesPage
             sessionId={shell.activeShellSessionId}
             initialNodes={shell.executorNodes}
@@ -555,9 +627,13 @@ export function SettingsShellPage({ onNavigate }: { onNavigate: PageNavigator })
   const shell = useNewbroShell();
 
   return (
-    <ShellFrame activePage="Settings" onNavigate={onNavigate}>
-      {shell.shellWarning ? <ShellWarningBanner detail={shell.shellWarning} /> : null}
-      <div className="flex flex-1 items-center justify-center">
+    <ShellFrame
+      activePage="Settings"
+      onNavigate={onNavigate}
+      globalMessage={globalMessageFor(shell)}
+      onGlobalMessageDismiss={shell.clearGlobalMessage}
+    >
+      <div className="flex flex-1 items-center justify-center px-4 py-10">
         <div className="text-[14px] text-neutral-400">Settings coming soon.</div>
       </div>
     </ShellFrame>

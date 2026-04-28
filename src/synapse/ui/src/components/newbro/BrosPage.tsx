@@ -93,7 +93,7 @@ function CommBrainSection({
   }
 
   return (
-    <div className="rounded-[24px] border border-neutral-200 bg-white px-6 py-5">
+    <div className="rounded-[24px] border border-neutral-200 bg-white px-4 py-4 sm:px-6 sm:py-5">
       <div className="mb-4 flex items-center gap-3">
         <div className="flex h-9 w-9 items-center justify-center rounded-full border border-neutral-200 bg-[#f7f5f0]">
           <Brain className="h-4 w-4 text-neutral-600" strokeWidth={1.8} />
@@ -128,11 +128,11 @@ function CommBrainSection({
         </div>
       )}
 
-      <div className="mt-3 flex items-center gap-2">
+      <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
         <button
           onClick={handleSave}
           disabled={!dirty || saving}
-          className="rounded-full border border-neutral-900 bg-neutral-950 px-4 py-1.5 text-[12px] font-medium text-white transition hover:bg-neutral-800 disabled:opacity-30"
+          className="min-h-[44px] rounded-full border border-neutral-900 bg-neutral-950 px-4 py-1.5 text-[12px] font-medium text-white transition hover:bg-neutral-800 disabled:opacity-30 sm:min-h-0"
         >
           {saving ? "Saving…" : "Save"}
         </button>
@@ -142,7 +142,7 @@ function CommBrainSection({
               setValue(savedValue);
               setSaved(false);
             }}
-            className="rounded-full border border-neutral-200 px-4 py-1.5 text-[12px] font-medium text-neutral-600 transition hover:bg-neutral-100"
+            className="min-h-[44px] rounded-full border border-neutral-200 px-4 py-1.5 text-[12px] font-medium text-neutral-600 transition hover:bg-neutral-100 sm:min-h-0"
           >
             Reset
           </button>
@@ -182,7 +182,7 @@ function BroForm({
   const [executorNodeId, setExecutorNodeId] = useState(initial?.executorNodeId ?? "");
 
   return (
-    <div className="space-y-3 rounded-[24px] border border-neutral-200 bg-white px-6 py-5">
+    <div className="space-y-3 rounded-[24px] border border-neutral-200 bg-white px-4 py-4 sm:px-6 sm:py-5">
       <input
         type="text"
         placeholder="Bro name"
@@ -191,7 +191,7 @@ function BroForm({
         className="w-full rounded-2xl border border-neutral-200 bg-[#f7f5f0] px-4 py-2.5 text-[14px] text-neutral-900 placeholder-neutral-400 outline-none transition focus:border-neutral-400 focus:ring-1 focus:ring-neutral-300"
       />
 
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         {AVATAR_TYPES.map((type) => (
           <button
             key={type}
@@ -238,7 +238,7 @@ function BroForm({
         className="w-full rounded-2xl border border-neutral-200 bg-[#f7f5f0] px-4 py-3 text-[14px] text-neutral-900 placeholder-neutral-400 outline-none transition focus:border-neutral-400 focus:ring-1 focus:ring-neutral-300"
       />
 
-      <div className="flex gap-2">
+      <div className="flex flex-col gap-2 sm:flex-row">
         <button
           onClick={() =>
             onSubmit({
@@ -249,13 +249,13 @@ function BroForm({
             })
           }
           disabled={!name.trim()}
-          className="rounded-full border border-neutral-900 bg-neutral-950 px-4 py-1.5 text-[12px] font-medium text-white transition hover:bg-neutral-800 disabled:opacity-30"
+          className="min-h-[44px] rounded-full border border-neutral-900 bg-neutral-950 px-4 py-1.5 text-[12px] font-medium text-white transition hover:bg-neutral-800 disabled:opacity-30 sm:min-h-0"
         >
           {submitLabel}
         </button>
         <button
           onClick={onCancel}
-          className="rounded-full border border-neutral-200 px-4 py-1.5 text-[12px] font-medium text-neutral-600 transition hover:bg-neutral-100"
+          className="min-h-[44px] rounded-full border border-neutral-200 px-4 py-1.5 text-[12px] font-medium text-neutral-600 transition hover:bg-neutral-100 sm:min-h-0"
         >
           Cancel
         </button>
@@ -306,7 +306,7 @@ function BroRow({
   const nodeState = nodeStateLabel(persona, nodesById);
 
   return (
-    <div className="flex items-center gap-4 rounded-[24px] border border-neutral-200 bg-white px-5 py-4 transition hover:border-neutral-300">
+    <div className="flex flex-col gap-4 rounded-[24px] border border-neutral-200 bg-white px-4 py-4 transition hover:border-neutral-300 sm:flex-row sm:items-center sm:px-5">
       <BroPortrait bro={personaToBroCard(persona)} talking={false} />
 
       <div className="min-w-0 flex-1">
@@ -330,9 +330,9 @@ function BroRow({
         ) : (
           <div className="mt-1 text-[12px] italic text-neutral-400">No prompt configured</div>
         )}
-        <div className="mt-3 flex items-center gap-2 text-[12px] text-neutral-500">
+        <div className="mt-3 flex min-w-0 items-center gap-2 text-[12px] text-neutral-500">
           <Server className="h-3.5 w-3.5 text-neutral-400" strokeWidth={1.8} />
-          <span>
+          <span className="min-w-0 break-words">
             {node
               ? `${node.name} · ${node.connection_status === "connected" ? "connected" : "offline"}`
               : "No executor node bound"}
@@ -340,16 +340,18 @@ function BroRow({
         </div>
       </div>
 
-      <div className="flex shrink-0 gap-1.5">
+      <div className="flex w-full shrink-0 gap-1.5 self-end sm:w-auto sm:self-auto">
         <button
           onClick={onEdit}
-          className="rounded-full border border-neutral-200 p-2 text-neutral-500 transition hover:border-neutral-300 hover:text-neutral-700"
+          className="grid min-h-[44px] min-w-[44px] place-items-center rounded-full border border-neutral-200 p-2 text-neutral-500 transition hover:border-neutral-300 hover:text-neutral-700"
+          aria-label={`Edit ${persona.name}`}
         >
           <Pencil className="h-3.5 w-3.5" strokeWidth={1.8} />
         </button>
         <button
           onClick={onDelete}
-          className="rounded-full border border-neutral-200 p-2 text-neutral-500 transition hover:border-red-300 hover:text-red-600"
+          className="grid min-h-[44px] min-w-[44px] place-items-center rounded-full border border-neutral-200 p-2 text-neutral-500 transition hover:border-red-300 hover:text-red-600"
+          aria-label={`Delete ${persona.name}`}
         >
           <Trash2 className="h-3.5 w-3.5" strokeWidth={1.8} />
         </button>
@@ -476,8 +478,9 @@ export function BrosPage({
   const liveCount = personas.filter((persona) => nodeStateLabel(persona, nodesById) === "live").length;
 
   return (
-    <div className="grid min-h-0 flex-1 grid-cols-1 gap-8 overflow-auto px-8 py-8 lg:grid-cols-[minmax(240px,0.58fr)_minmax(820px,1.72fr)] xl:px-10 xl:py-10">
-      <section className="flex min-h-0 flex-col pt-4">
+    <div className="grid min-h-0 flex-1 grid-cols-1 gap-6 px-3 py-4 pb-[calc(1.25rem+env(safe-area-inset-bottom))] sm:px-6 sm:py-8 lg:grid-cols-[minmax(0,0.58fr)_minmax(0,1.72fr)] lg:gap-8 lg:overflow-auto lg:px-12 xl:px-20 xl:py-10">
+      <section className="flex min-h-0 flex-col pt-1 sm:pt-4">
+        <h1 className="newbro-condensed mb-4 text-[44px] leading-[0.82] text-black sm:mb-6 sm:text-[58px]">BROS</h1>
         <SectionHeader title="Brain Persona" />
         <CommBrainSection
           sessionId={sessionId}
@@ -486,10 +489,15 @@ export function BrosPage({
       </section>
 
       <section className="flex flex-col items-stretch lg:pt-4">
+        <div className="mb-6 hidden lg:block">
+          <div className="newbro-mono text-xs font-semibold uppercase tracking-[0.22em] text-black/45">
+            Communication Brain / Worker Bindings
+          </div>
+        </div>
         <SectionHeader
           title="Worker Bros"
           trailing={
-            <div className="flex items-center gap-3">
+            <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:gap-3">
               <div className="rounded-full border border-neutral-200 px-2.5 py-1 text-[11px] text-neutral-500">
                 {personas.length} configured
               </div>
@@ -504,7 +512,7 @@ export function BrosPage({
                     setError(null);
                     setStatus(null);
                   }}
-                  className="flex items-center gap-1.5 rounded-full border border-neutral-200 px-3 py-1.5 text-[11px] font-medium text-neutral-600 transition hover:border-neutral-300 hover:bg-white"
+                  className="flex min-h-[44px] items-center gap-1.5 rounded-full border border-neutral-200 px-3 py-1.5 text-[11px] font-medium text-neutral-600 transition hover:border-neutral-300 hover:bg-white sm:min-h-[36px]"
                 >
                   <Plus className="h-3 w-3" strokeWidth={2} />
                   New Bro

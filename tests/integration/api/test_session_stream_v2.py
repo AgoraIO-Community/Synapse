@@ -9,9 +9,10 @@ from synapse.communication.model import ToolCall
 from synapse.communication.models import ScriptedCommunicationModel
 from synapse.communication.models.scripted import ScriptedPlan
 from synapse.runtime import build_runtime_container
-from synapse.protocol import Task, TaskStatus
+from synapse.protocol import Draft, Task, TaskStatus
 from synapse.runtime import Settings
 from synapse.runtime.container import RuntimeContainer
+from synapse.runtime.drafts import DraftRewriteInput, DraftRewriteUpstreamError, DraftRewriter
 
 from tests.helpers.asgi_websocket import ASGIWebSocketSession
 
@@ -62,6 +63,29 @@ class FailedToolCallingProvider:
                 }
             )
         return "I couldn't resume that because the control command was invalid.", []
+
+
+class StreamingDraftRewriter(DraftRewriter):
+    async def rewrite(self, payload: DraftRewriteInput, *, on_text_delta=None) -> Draft:
+        chunks = ["Clean ", "sendable task text."]
+        for chunk in chunks:
+            if on_text_delta is not None:
+                maybe_awaitable = on_text_delta(chunk)
+                if hasattr(maybe_awaitable, "__await__"):
+                    await maybe_awaitable
+        text = "".join(chunks)
+        return Draft(
+            text=text,
+        )
+
+
+class FailingDraftRewriter(DraftRewriter):
+    async def rewrite(self, payload: DraftRewriteInput, *, on_text_delta=None) -> Draft:
+        if on_text_delta is not None:
+            maybe_awaitable = on_text_delta("partial")
+            if hasattr(maybe_awaitable, "__await__"):
+                await maybe_awaitable
+        raise DraftRewriteUpstreamError("Draft cleaner request failed.")
 
 
 async def _receive_until(websocket, predicate, *, limit: int = 12):
@@ -160,6 +184,107 @@ async def test_session_stream_accepts_message_actions_and_keeps_snapshot_events(
     assert appended[-1]["text"] == "Check flights"
     assert appended[-1]["source"] == "user"
     assert conversation["conversation_history"][-1]["text"] == "I'll take care of that."
+
+
+@pytest.mark.anyio
+async def test_session_stream_submit_asr_turn_streams_draft_output_and_snapshot():
+    app = create_app()
+    app.state.runtime_container = RuntimeContainer(
+        communication_model=ScriptedCommunicationModel(
+            {"__default__": ScriptedPlan(conversational_act="model_reply", reply_override="Noted.")}
+        ),
+        settings=Settings(),
+        draft_rewriter=StreamingDraftRewriter(),
+    )
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        session_id = (await client.post("/api/sessions")).json()["session_id"]
+
+        async with ASGIWebSocketSession(app, f"/api/sessions/{session_id}/stream") as websocket:
+            initial_event = await websocket.receive_json()
+            assert initial_event["type"] == "snapshot"
+
+            await websocket.send_json(
+                {
+                    "type": "submit_asr_turn",
+                    "request_id": "req-draft",
+                    "raw_text": "clean this draft",
+                    "assigned_bro_id": "codex",
+                }
+            )
+
+            events = await _receive_until(
+                websocket,
+                lambda items: any(item["type"] == "draft_output_completed" for item in items)
+                and any(item["type"] == "action_accepted" for item in items)
+                and any(
+                    item["type"] == "snapshot"
+                    and item["snapshot"]["draft_session"]["current_draft"]["text"]
+                    == "Clean sendable task text."
+                    for item in items
+                ),
+                limit=10,
+            )
+
+    event_types = [event["type"] for event in events]
+    assert event_types.index("draft_output_started") < event_types.index("draft_output_delta")
+    assert event_types.index("draft_output_delta") < event_types.index("draft_output_completed")
+    assert event_types.index("draft_output_completed") < event_types.index("snapshot")
+    assert [event["delta"] for event in events if event["type"] == "draft_output_delta"] == [
+        "Clean ",
+        "sendable task text.",
+    ]
+    completed = next(event for event in events if event["type"] == "draft_output_completed")
+    assert completed["request_id"] == "req-draft"
+    assert completed["draft_session_id"].startswith("draft-")
+    assert completed["draft_text"] == "Clean sendable task text."
+    assert "{" not in completed["draft_text"]
+
+
+@pytest.mark.anyio
+async def test_session_stream_submit_asr_turn_failure_emits_failed_and_rejected():
+    app = create_app()
+    app.state.runtime_container = RuntimeContainer(
+        communication_model=ScriptedCommunicationModel(
+            {"__default__": ScriptedPlan(conversational_act="model_reply", reply_override="Noted.")}
+        ),
+        settings=Settings(),
+        draft_rewriter=FailingDraftRewriter(),
+    )
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        session_id = (await client.post("/api/sessions")).json()["session_id"]
+
+        async with ASGIWebSocketSession(app, f"/api/sessions/{session_id}/stream") as websocket:
+            initial_event = await websocket.receive_json()
+            assert initial_event["type"] == "snapshot"
+
+            await websocket.send_json(
+                {
+                    "type": "submit_asr_turn",
+                    "request_id": "req-draft-fail",
+                    "raw_text": "clean this draft",
+                }
+            )
+
+            events = await _receive_until(
+                websocket,
+                lambda items: any(item["type"] == "draft_output_failed" for item in items)
+                and any(item["type"] == "action_rejected" for item in items),
+                limit=8,
+            )
+
+    failed = next(event for event in events if event["type"] == "draft_output_failed")
+    rejected = next(event for event in events if event["type"] == "action_rejected")
+    assert failed["request_id"] == "req-draft-fail"
+    assert failed["message"] == "Draft cleaner request failed."
+    assert rejected["error_code"] == "draft_rewriter_upstream_error"
 
 
 @pytest.mark.anyio

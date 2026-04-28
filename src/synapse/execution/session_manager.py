@@ -30,6 +30,8 @@ class SessionManager:
             if isinstance(metadata_node_id, str) and metadata_node_id
             else getattr(executor, "executor_node_id", None)
         )
+        executor_type = executor.get_capabilities().executor_type
+        continuity_key = _task_continuity_key(task)
         if binding.execution_session_id:
             existing = await store.get_session(binding.execution_session_id)
             if existing is not None:
@@ -78,12 +80,45 @@ class SessionManager:
                     )
                 return existing, active_binding, executor_session
 
+        if continuity_key is not None:
+            reusable = await _find_reusable_session(
+                store,
+                continuity_key=continuity_key,
+                executor_type=executor_type,
+                executor_node_id=executor_node_id,
+            )
+            if reusable is not None:
+                cached = self._live_sessions.get(reusable.execution_session_id)
+                if cached is None:
+                    cached = await executor.create_session(task.session_affinity)
+                    _hydrate_resume_handle(cached, reusable.latest_resume_handle)
+                    self._live_sessions[reusable.execution_session_id] = cached
+                active_binding = binding.model_copy(
+                    update={
+                        "execution_session_id": reusable.execution_session_id,
+                        "session_id": cached.session_id,
+                        "executor_node_id": executor_node_id,
+                        "binding_status": BindingStatus.ACTIVE,
+                    }
+                )
+                await store.put_binding(active_binding)
+                if self._observability is not None:
+                    self._observability.session_reused(
+                        task_id=task.task_id,
+                        execution_session_id=reusable.execution_session_id,
+                        executor_session_id=cached.session_id,
+                        executor_type=cached.executor_type,
+                        reason_code=EXISTING_LIVE_SESSION_REUSED,
+                    )
+                return reusable, active_binding, cached
+
         executor_session = await executor.create_session(task.session_affinity)
         execution_session = ExecutionSession(
             execution_session_id=f"exec-session-{uuid4().hex[:8]}",
             task_id=task.task_id,
-            base_executor_id=executor.get_capabilities().executor_type,
+            base_executor_id=executor_type,
             executor_node_id=executor_node_id,
+            continuity_key=continuity_key,
         )
         self._live_sessions[execution_session.execution_session_id] = executor_session
         updated_binding = binding.model_copy(
@@ -120,3 +155,27 @@ def _hydrate_resume_handle(
         session.metadata.pop("latest_resume_handle", None)
         return
     session.metadata["latest_resume_handle"] = resume_handle.model_dump(mode="json")
+
+
+def _task_continuity_key(task: Task) -> str | None:
+    value = task.metadata.get("bro_detail_session_id")
+    return value if isinstance(value, str) and value else None
+
+
+async def _find_reusable_session(
+    store: BlackboardStore,
+    *,
+    continuity_key: str,
+    executor_type: str,
+    executor_node_id: str | None,
+) -> ExecutionSession | None:
+    candidates = [
+        session
+        for session in await store.list_sessions()
+        if session.continuity_key == continuity_key
+        and session.base_executor_id == executor_type
+        and session.executor_node_id == executor_node_id
+    ]
+    if not candidates:
+        return None
+    return candidates[-1]

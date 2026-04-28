@@ -140,4 +140,52 @@ describe("session-client transport base URL handling", () => {
     });
     expect(revealed.token).toBe("token-1");
   });
+
+  it("submits task commands to the session commands endpoint", async () => {
+    const fetchMock = vi.fn(async () =>
+      okJsonResponse({
+        command_id: "cmd-1",
+        status: "accepted",
+        affected_task_ids: ["task-1"],
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = await import("./session-client");
+    await client.submitTaskCommand("session-1", {
+      command_type: "cancel_task",
+      task_id: "task-1",
+      reason: "Stopped from Bro detail Runner Brain.",
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith("/api/sessions/session-1/commands", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        command_type: "cancel_task",
+        task_id: "task-1",
+        reason: "Stopped from Bro detail Runner Brain.",
+      }),
+    });
+  });
+});
+
+describe("session-client HTTP error formatting", () => {
+  afterEach(() => {
+    vi.resetModules();
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
+
+  it.each([
+    [JSON.stringify({ detail: "Not found." }), "Not found."],
+    [JSON.stringify({ detail: JSON.stringify({ detail: "core: db failed, task not found", reason: "TaskNotFound" }) }), "core: db failed, task not found"],
+    [JSON.stringify({ reason: "TaskNotFound" }), "TaskNotFound"],
+    ["plain failure", "plain failure"],
+  ])("formats failed response body %s", async (body, expected) => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(body, { status: 404 })));
+    const client = await import("./session-client");
+
+    await expect(client.getSessionSnapshot("session-missing")).rejects.toThrow(expected);
+  });
 });

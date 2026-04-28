@@ -29,6 +29,10 @@ connectors:
       credential_mode: managed
       model: nova-3
       language: en-US
+    stt:
+      enabled: true
+      languages:
+        - zh-CN
     tts:
       vendor: minimax
       credential_mode: managed

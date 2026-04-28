@@ -27,14 +27,14 @@ export function ConversationMemory({
   }, [phase, messageItems.length]);
 
   return (
-    <div data-testid="conversation-memory" className="flex min-h-0 max-w-[400px] flex-1 flex-col space-y-3">
+    <div data-testid="conversation-memory" className="flex min-h-0 flex-1 flex-col gap-4">
       <SectionHeader
         title="Interaction memory"
         trailing={
           showMetaChips ? (
             <div className="flex items-center gap-2">
               {messageItems.length > 0 ? (
-                <div className="rounded-full border border-neutral-200 px-2.5 py-1 text-[11px] text-neutral-500">
+                <div className="rounded-full border border-white/80 bg-white/76 px-3 py-1 text-[11px] text-muted-foreground">
                   {messageItems.length} turns
                 </div>
               ) : null}
@@ -43,38 +43,41 @@ export function ConversationMemory({
         }
       />
 
-      <div ref={viewportRef} className="min-h-[420px] flex-1 overflow-y-auto pr-2">
+      <div
+        ref={viewportRef}
+        className="subtle-scrollbar min-h-[220px] flex-1 overflow-y-auto pr-1 md:min-h-[280px] xl:min-h-[340px]"
+      >
         {phase === "error" && messageItems.length === 0 ? (
-          <div className="px-1 py-2 text-[13px] leading-6 text-rose-700">
+          <div className="serif-flow px-2 py-6 text-[17px] leading-8 text-[#8d5a62]">
             {error ?? lastToolkitMessage ?? "Voice session failed to start."}
           </div>
         ) : messageItems.length === 0 ? (
-          <div className="flex h-full min-h-[280px] items-center justify-center text-center text-[13px] leading-6 text-neutral-400">
+          <div className="serif-flow flex h-full min-h-[220px] items-center justify-center text-center text-[18px] leading-9 text-muted-foreground md:min-h-[240px] xl:min-h-[280px]">
             Transcript will appear here.
           </div>
         ) : (
-          <div className="space-y-3 pb-1">
+          <div className="space-y-4 pb-1">
             {messageItems.map((item, index) => {
               const localSpeaker = item.role === "user";
               return (
                 <motion.div
                   key={`${item.message_id}-${index}`}
-                  initial={{ opacity: 0, y: 8 }}
+                  initial={{ opacity: 0, y: 6 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.28 }}
-                  className={localSpeaker ? "ml-8" : "mr-8"}
+                  transition={{ duration: 0.22, ease: "easeOut" }}
+                  className={localSpeaker ? "pl-8 md:pl-14" : "pr-8 md:pr-14"}
                 >
                   <div
                     className={`rounded-[22px] border px-4 py-3 ${
                       localSpeaker
-                        ? "rounded-tr-md border-neutral-200 bg-white"
-                        : "rounded-tl-md border-neutral-200 bg-[#f1ede5]"
+                        ? "rounded-tr-md border-white/80 bg-white/82 shadow-[0_18px_40px_-34px_rgba(15,23,42,0.18)]"
+                        : "rounded-tl-md border-white/80 bg-[hsl(var(--paper))] shadow-[0_18px_40px_-34px_rgba(15,23,42,0.12)]"
                     }`}
                   >
-                    <div className="mb-1 text-[11px] uppercase tracking-[0.18em] text-neutral-400">
+                    <div className="mb-2 text-[10px] uppercase tracking-[0.24em] text-muted-foreground">
                       {item.role === "user" ? "Me" : "NewBro"}
                     </div>
-                    <div className="whitespace-pre-wrap text-[13px] leading-6 text-neutral-800">
+                    <div className="serif-flow whitespace-pre-wrap text-[15px] leading-7 text-foreground/92">
                       {item.text}
                     </div>
                   </div>

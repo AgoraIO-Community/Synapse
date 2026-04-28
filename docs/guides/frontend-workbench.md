@@ -3,8 +3,9 @@
 The main frontend under `src/synapse/ui/` renders the `Newbro` command-center
 shell at `/`.
 
-It keeps the concept-first visual language, but now uses real session snapshots
-plus a focused voice runtime path.
+It keeps the protocol-first runtime behavior, but the active shell now uses the
+Newbro Draft Brain visual system: warm paper surfaces, orange voice controls,
+deep-teal runner panels, compressed display headings, and task queue cards.
 
 ## Current Structure
 
@@ -17,13 +18,20 @@ The current frontend stack is:
 - `framer-motion` for shell motion
 - Agora connector/browser voice integration for live transcript state
 
-The root shell remains a fixed-height command center:
+The root shell remains a routed command center:
 
-- left sidebar: `Home`, `Bros`, `Nodes`, `Settings`
-- top bar: explicit `Start` / `Stop` / mic controls for voice
-- left column: `Interaction memory`
-- main column: Bro cards on `Home`, Bro management on `Bros`, node enrollment on
-  `Nodes`
+- desktop left sidebar: `Home`, `Bros`, `Nodes`, `Settings`
+- mobile header with the menu on the left, logo on the right, and a drawer menu
+  for the same navigation
+- home page: command-center heading plus queue-card Bro grid
+- Bro detail page: desktop keeps draft/live transcript/hold-to-talk beside the
+  runner current-task panel, summaries, and recent task queue; mobile splits the
+  same content into `Draft` and a compact `Status` dashboard with current task,
+  summary, stop action, and recent tasks
+- mobile layouts use a drawer navigation, single-column content, contained
+  technical strings, and mobile-safe voice controls without horizontal page
+  overflow
+- management pages: Bro management on `Bros`, node enrollment on `Nodes`
 - left-menu pages are real routed paths, so refresh and direct open preserve the
   selected page instead of falling back to `Home`
 
@@ -73,13 +81,21 @@ Current behavior:
   unique generated channel only if no Synapse session id is available
 - pressing `Stop` tears down only the live voice session and retains the last
   transcript until the next live session replaces it
+- Bro Detail draft input uses a separate connector-managed Agora STT path: the
+  page first prepares a fresh Agora-safe channel and browser RTC token, then
+  starts the ASR bot after the browser joins RTC with the microphone disabled
+- Bro Detail does not use the shell `session_id` as the Agora channel name;
+  each page start receives a unique channel from the connector to avoid channel
+  conflicts
+- Bro Detail sends STT heartbeats every 15 seconds; explicit leave stops the ASR
+  bot immediately, and missing heartbeats for more than 60 seconds stop it from
+  the connector side
 
 ## Component Direction
 
-The main reusable pieces are:
+The visual shell uses reusable pieces under `src/components/newbro/`:
 
 - `Sidebar`
-- `TopVoiceBar`
 - `ConversationMemory`
 - `BrosPanel`
 - `BrosPage`
@@ -87,14 +103,23 @@ The main reusable pieces are:
 - `BroCard`
 - `BroPortrait`
 - `BroProgress`
+- `NewbroLogo`
+- `WindowDots`
+- `VoicePad`
+- `DraftBrainPanel`
+- `LiveTranscriptPanel`
+- `RunnerBrainPanel`
 - `useVoiceSession`
 
-The visual language should stay close to the reference shell:
+The visual language should stay close to the Draft Brain reference:
 
 - warm off-white surfaces
-- soft rounded geometry
-- restrained iconography
-- subtle motion instead of dashboard-heavy chrome
+- orange `#ff4b16` as the main action color
+- deep teal/cyan runner and avatar surfaces
+- compressed display headings via `newbro-condensed`
+- monospace operational labels via `newbro-mono`
+- queue-card task and Bro surfaces
+- subtle voice-ring motion on the hold-to-talk pad
 
 ## Constraints
 
@@ -102,6 +127,6 @@ The visual language should stay close to the reference shell:
 - Keep the transport/runtime separation intact: the left-pane interaction
   memory comes from Synapse conversation state, while the voice connector owns
   RTC/RTM/session lifecycle and browser-local microphone/media behavior.
-- Keep `example-ui/` separate from the main frontend.
+- Treat `src/synapse/ui/` as the only active frontend.
 - Do not reintroduce the old chat/workbench root experience unless a later task
   explicitly broadens scope.

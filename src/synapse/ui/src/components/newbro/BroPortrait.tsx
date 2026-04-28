@@ -2,22 +2,29 @@ import type { BroCardModel } from "./types";
 
 export function BroPortrait({
   bro,
+  active = false,
   talking,
 }: {
   bro: BroCardModel;
+  active?: boolean;
   talking: boolean;
 }) {
-  const stroke = talking ? "white" : "#171717";
-  const muted = talking ? "rgba(255,255,255,0.7)" : "#737373";
-  const panelBg = talking ? "bg-white/5 border-white/10" : "bg-[#f7f5f0] border-neutral-200";
+  const accent = active || talking;
+  const stroke = accent ? "#b9fffb" : "#27d6d1";
+  const muted = accent ? "rgba(185,255,251,0.72)" : "rgba(39,214,209,0.5)";
+  const panelBg = accent
+    ? "bg-[#062f33]/90 border-[#27d6d1]/35 shadow-[inset_0_1px_0_rgba(255,255,255,.14),0_14px_28px_rgba(0,0,0,.18)]"
+    : "bg-[#062f33]/72 border-[#27d6d1]/25 shadow-[inset_0_1px_0_rgba(255,255,255,.12)]";
 
   return (
     <div
-      className={`relative h-[88px] w-[68px] shrink-0 overflow-hidden rounded-[18px] border ${panelBg}`}
+      className={`relative h-[68px] w-[68px] shrink-0 overflow-hidden rounded-[18px] border ${panelBg}`}
     >
+      <div className="absolute inset-2 rounded-full border border-[#27d6d1]/18" />
+      <div className="absolute -left-4 -top-5 h-16 w-16 rounded-full bg-[#27d6d1]/12 blur-xl" />
       <svg
-        viewBox="0 0 68 88"
-        className="h-full w-full"
+        viewBox="0 0 68 68"
+        className="relative h-full w-full"
         fill="none"
         xmlns="http://www.w3.org/2000/svg"
       >
@@ -107,21 +114,12 @@ export function BroPortrait({
             />
           </>
         )}
-
-        <rect
-          x="22"
-          y="71"
-          width="24"
-          height="3"
-          rx="1.5"
-          fill={talking ? "rgba(255,255,255,0.35)" : "#d4d4d4"}
-        />
       </svg>
 
       <div
         className={`absolute right-2 top-2 h-2.5 w-2.5 rounded-full ring-2 ${
-          talking ? "ring-neutral-900 bg-white" : "ring-white"
-        } ${bro.status === "busy" ? "bg-emerald-500" : "bg-neutral-300"}`}
+          accent ? "ring-[rgba(255,255,255,0.92)]" : "ring-white"
+        } ${bro.status === "busy" ? "bg-[#27d6d1] shadow-[0_0_10px_rgba(39,214,209,.8)]" : "bg-[#27d6d1]/55"}`}
       />
     </div>
   );

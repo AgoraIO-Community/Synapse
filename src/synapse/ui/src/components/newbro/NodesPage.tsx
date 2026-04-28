@@ -50,7 +50,7 @@ function NodeForm({
   }
 
   return (
-    <div className="space-y-3 rounded-[24px] border border-neutral-200 bg-white px-6 py-5">
+    <div className="space-y-3 rounded-[24px] border border-neutral-200 bg-white px-4 py-4 sm:px-6 sm:py-5">
       <input
         type="text"
         placeholder="Node name"
@@ -82,7 +82,7 @@ function NodeForm({
         </div>
       </div>
 
-      <div className="flex gap-2">
+      <div className="flex flex-col gap-2 sm:flex-row">
         <button
           onClick={() =>
             onSubmit({
@@ -91,13 +91,13 @@ function NodeForm({
             })
           }
           disabled={!name.trim() || enabledExecutors.length === 0}
-          className="rounded-full border border-neutral-900 bg-neutral-950 px-4 py-1.5 text-[12px] font-medium text-white transition hover:bg-neutral-800 disabled:opacity-30"
+          className="min-h-[44px] rounded-full border border-neutral-900 bg-neutral-950 px-4 py-1.5 text-[12px] font-medium text-white transition hover:bg-neutral-800 disabled:opacity-30 sm:min-h-0"
         >
           {submitLabel}
         </button>
         <button
           onClick={onCancel}
-          className="rounded-full border border-neutral-200 px-4 py-1.5 text-[12px] font-medium text-neutral-600 transition hover:bg-neutral-100"
+          className="min-h-[44px] rounded-full border border-neutral-200 px-4 py-1.5 text-[12px] font-medium text-neutral-600 transition hover:bg-neutral-100 sm:min-h-0"
         >
           Cancel
         </button>
@@ -129,11 +129,11 @@ function CredentialsPanel({
   }
 
   return (
-    <div className="rounded-[28px] border border-neutral-200 bg-white px-6 py-6">
+    <div className="rounded-[28px] border border-neutral-200 bg-white px-4 py-5 sm:px-6 sm:py-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <div className="text-[11px] uppercase tracking-[0.22em] text-neutral-400">Enrollment Kit</div>
-          <div className="mt-2 text-[28px] font-medium tracking-[-0.04em] text-neutral-950">
+          <div className="mt-2 text-[24px] font-medium tracking-[0] text-neutral-950 sm:text-[28px]">
             {issue.node.name}
           </div>
           <div className="mt-2 max-w-[640px] text-[13px] leading-6 text-neutral-500">
@@ -149,19 +149,19 @@ function CredentialsPanel({
         <div className="space-y-3 rounded-[24px] border border-neutral-200 bg-[#fbfaf7] p-4">
           <div>
             <div className="text-[11px] uppercase tracking-[0.18em] text-neutral-400">Node Id</div>
-            <div className="mt-2 rounded-2xl border border-neutral-200 bg-white px-4 py-3 font-mono text-[13px] text-neutral-800">
+            <div className="mt-2 break-all rounded-2xl border border-neutral-200 bg-white px-4 py-3 font-mono text-[13px] text-neutral-800">
               {issue.node.node_id}
             </div>
           </div>
           <div>
             <div className="text-[11px] uppercase tracking-[0.18em] text-neutral-400">Token</div>
-            <div className="mt-2 rounded-2xl border border-neutral-200 bg-white px-4 py-3 font-mono text-[13px] leading-6 text-neutral-800">
+            <div className="mt-2 break-all rounded-2xl border border-neutral-200 bg-white px-4 py-3 font-mono text-[13px] leading-6 text-neutral-800">
               {issue.token}
             </div>
           </div>
           <div>
             <div className="text-[11px] uppercase tracking-[0.18em] text-neutral-400">Connect Command</div>
-            <div className="mt-2 rounded-2xl border border-neutral-200 bg-white px-4 py-3 font-mono text-[12px] leading-6 text-neutral-800">
+            <div className="mt-2 overflow-x-auto rounded-2xl border border-neutral-200 bg-white px-4 py-3 font-mono text-[12px] leading-6 text-neutral-800 subtle-scrollbar">
               {command}
             </div>
           </div>
@@ -221,7 +221,7 @@ function NodeCard({
   const connected = node.connection_status === "connected";
 
   return (
-    <div className="rounded-[26px] border border-neutral-200 bg-white px-5 py-5">
+    <div className="rounded-[26px] border border-neutral-200 bg-white px-4 py-4 sm:px-5 sm:py-5">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
@@ -236,32 +236,35 @@ function NodeCard({
               {connected ? "connected" : "offline"}
             </div>
           </div>
-          <div className="mt-2 text-[13px] text-neutral-500">{node.node_id}</div>
+          <div className="mt-2 break-all text-[13px] text-neutral-500">{node.node_id}</div>
         </div>
 
-        <div className="flex flex-wrap justify-end gap-1.5">
+        <div className="flex w-full flex-wrap justify-start gap-1.5 sm:w-auto sm:justify-end">
           <button
             onClick={onCopyCommand}
-            className="flex min-h-[36px] items-center gap-1.5 rounded-full border border-neutral-200 px-3 py-1.5 text-[11px] font-medium text-neutral-600 transition hover:border-neutral-300 hover:bg-neutral-50 hover:text-neutral-800"
+            className="flex min-h-[44px] items-center gap-1.5 rounded-full border border-neutral-200 px-3 py-1.5 text-[11px] font-medium text-neutral-600 transition hover:border-neutral-300 hover:bg-neutral-50 hover:text-neutral-800"
           >
             <Copy className="h-3.5 w-3.5" strokeWidth={1.8} />
             {copied ? "Copied" : "Copy command"}
           </button>
           <button
             onClick={onEdit}
-            className="rounded-full border border-neutral-200 p-2 text-neutral-500 transition hover:border-neutral-300 hover:text-neutral-700"
+            aria-label={`Edit ${node.name}`}
+            className="min-h-[44px] min-w-[44px] rounded-full border border-neutral-200 p-2 text-neutral-500 transition hover:border-neutral-300 hover:text-neutral-700"
           >
             <Pencil className="h-3.5 w-3.5" strokeWidth={1.8} />
           </button>
           <button
             onClick={onRotate}
-            className="rounded-full border border-neutral-200 p-2 text-neutral-500 transition hover:border-neutral-300 hover:text-neutral-700"
+            aria-label={`Rotate credentials for ${node.name}`}
+            className="min-h-[44px] min-w-[44px] rounded-full border border-neutral-200 p-2 text-neutral-500 transition hover:border-neutral-300 hover:text-neutral-700"
           >
             <RotateCcw className="h-3.5 w-3.5" strokeWidth={1.8} />
           </button>
           <button
             onClick={onDelete}
-            className="rounded-full border border-neutral-200 p-2 text-neutral-500 transition hover:border-red-300 hover:text-red-600"
+            aria-label={`Delete ${node.name}`}
+            className="min-h-[44px] min-w-[44px] rounded-full border border-neutral-200 p-2 text-neutral-500 transition hover:border-red-300 hover:text-red-600"
           >
             <Trash2 className="h-3.5 w-3.5" strokeWidth={1.8} />
           </button>
@@ -467,15 +470,15 @@ export function NodesPage({
   const editingNode = editingNodeId ? nodes.find((node) => node.node_id === editingNodeId) ?? null : null;
 
   return (
-    <div className="space-y-6 overflow-auto px-8 py-8 xl:px-10 xl:py-10">
-      <div className="rounded-[30px] border border-neutral-200 bg-white px-6 py-6">
-        <div className="flex flex-wrap items-start justify-between gap-4">
+    <div className="space-y-5 px-3 py-4 pb-[calc(1.25rem+env(safe-area-inset-bottom))] sm:space-y-6 sm:px-6 sm:py-8 lg:overflow-auto lg:px-12 xl:px-20 xl:py-10">
+      <div className="queue-card rounded-[14px] border border-black/11 bg-white/43 px-4 py-5 backdrop-blur-sm sm:px-6 sm:py-6">
+        <div className="flex flex-col items-stretch justify-between gap-4 sm:flex-row sm:items-start">
           <div>
-            <div className="text-[11px] uppercase tracking-[0.22em] text-neutral-400">Executor Nodes</div>
-            <div className="mt-2 text-[32px] font-medium tracking-[-0.05em] text-neutral-950">
-              Local machine enrollment
+            <div className="newbro-mono text-[11px] uppercase tracking-[0.22em] text-black/45">Executor Nodes</div>
+            <div className="newbro-condensed mt-2 text-[42px] leading-[0.82] text-black sm:text-[54px]">
+              NODE FLEET
             </div>
-            <div className="mt-3 max-w-[720px] text-[13px] leading-6 text-neutral-500">
+            <div className="mt-3 max-w-[720px] text-[13px] leading-6 text-black/55">
               Create a node, issue its credential pair, and bind Bros to that machine. A Bro only becomes live
               after its bound node reconnects to Synapse with the matching node id and token.
             </div>
@@ -489,7 +492,7 @@ export function NodesPage({
                 setError(null);
                 setStatus(null);
               }}
-              className="flex min-h-[44px] items-center gap-2 rounded-full border border-neutral-900 bg-neutral-950 px-4 py-2 text-[12px] font-medium text-white transition hover:bg-neutral-800"
+              className="flex min-h-[44px] items-center justify-center gap-2 rounded-full border border-[#ff4b16] bg-[#ff4b16] px-4 py-2 text-[12px] font-medium text-white transition hover:bg-[#ff5a2a]"
             >
               <Plus className="h-3.5 w-3.5" strokeWidth={2} />
               New Node
@@ -498,17 +501,17 @@ export function NodesPage({
         </div>
 
         <div className="mt-6 grid grid-cols-1 gap-3 md:grid-cols-3">
-          <div className="rounded-[22px] border border-neutral-200 bg-[#fbfaf7] px-4 py-4">
-            <div className="text-[11px] uppercase tracking-[0.18em] text-neutral-400">Configured Nodes</div>
-            <div className="mt-2 text-[24px] font-medium tracking-[-0.04em] text-neutral-950">{nodes.length}</div>
+          <div className="rounded-[14px] border border-black/10 bg-white/45 px-4 py-4">
+            <div className="newbro-mono text-[11px] uppercase tracking-[0.18em] text-black/42">Configured Nodes</div>
+            <div className="newbro-condensed mt-2 text-[32px] leading-none text-black">{nodes.length}</div>
           </div>
-          <div className="rounded-[22px] border border-neutral-200 bg-[#fbfaf7] px-4 py-4">
-            <div className="text-[11px] uppercase tracking-[0.18em] text-neutral-400">Connected</div>
-            <div className="mt-2 text-[24px] font-medium tracking-[-0.04em] text-neutral-950">{connectedCount}</div>
+          <div className="rounded-[14px] border border-black/10 bg-white/45 px-4 py-4">
+            <div className="newbro-mono text-[11px] uppercase tracking-[0.18em] text-black/42">Connected</div>
+            <div className="newbro-condensed mt-2 text-[32px] leading-none text-black">{connectedCount}</div>
           </div>
-          <div className="rounded-[22px] border border-neutral-200 bg-[#fbfaf7] px-4 py-4">
-            <div className="text-[11px] uppercase tracking-[0.18em] text-neutral-400">Bound Bros</div>
-            <div className="mt-2 text-[24px] font-medium tracking-[-0.04em] text-neutral-950">
+          <div className="rounded-[14px] border border-black/10 bg-white/45 px-4 py-4">
+            <div className="newbro-mono text-[11px] uppercase tracking-[0.18em] text-black/42">Bound Bros</div>
+            <div className="newbro-condensed mt-2 text-[32px] leading-none text-black">
               {personas.filter((persona) => Boolean(persona.executor_node_id)).length}
             </div>
           </div>
@@ -534,7 +537,7 @@ export function NodesPage({
       )}
 
       {(mode === "add" || editingNode) && (
-        <div className="rounded-[28px] border border-neutral-200 bg-white px-6 py-6">
+        <div className="rounded-[28px] border border-neutral-200 bg-white px-4 py-5 sm:px-6 sm:py-6">
           <SectionHeader title={editingNode ? "Edit Node" : "Create Node"} />
           <NodeForm
             initial={

@@ -26,6 +26,40 @@ def test_frontend_tool_falls_back_to_npm(monkeypatch):
     assert cli_main.preferred_frontend_tool() == "npm"
 
 
+def test_frontend_dev_command_passes_explicit_vite_config_for_bun(monkeypatch):
+    monkeypatch.setattr(cli_main.shutil, "which", lambda name: f"/usr/bin/{name}" if name == "bun" else None)
+
+    assert cli_main.frontend_dev_command("0.0.0.0", 5173) == [
+        "bun",
+        "run",
+        "dev",
+        "--",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "5173",
+        "--config",
+        "vite.config.ts",
+    ]
+
+
+def test_frontend_dev_command_passes_explicit_vite_config_for_npm(monkeypatch):
+    monkeypatch.setattr(cli_main.shutil, "which", lambda name: "/usr/bin/npm" if name == "npm" else None)
+
+    assert cli_main.frontend_dev_command("127.0.0.1", 15173) == [
+        "npm",
+        "run",
+        "dev",
+        "--",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "15173",
+        "--config",
+        "vite.config.ts",
+    ]
+
+
 def configure_repo_paths(monkeypatch, root: Path) -> None:
     monkeypatch.setattr(cli_main, "ROOT", root)
     monkeypatch.setattr(cli_main, "FRONTEND", root / "src" / "synapse" / "ui")

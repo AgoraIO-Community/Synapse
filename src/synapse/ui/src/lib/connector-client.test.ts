@@ -187,4 +187,151 @@ describe("connector-client transport base URL handling", () => {
       "https://connectors.example.com/runtime/api/connectors/agora-convoai/sessions/stop",
     );
   });
+  it("prepares STT browser join credentials through the connector route", async () => {
+    const fetchMock = vi.fn(async () =>
+      okJsonResponse({
+        prepared_stt_session_id: "prepared-stt-1",
+        app_id: "agora-app",
+        channel_name: "nbstt-session-bro-random",
+        token: "rtc-token",
+        uid: 101,
+        status: "prepared",
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = await import("./connector-client");
+
+    const response = await client.prepareSttSession({
+      synapse_session_id: "session-1",
+      assigned_bro_id: "bro-1",
+    });
+
+    expect(response.uid).toBe(101);
+    expect(response.channel_name).toBe("nbstt-session-bro-random");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/connectors/agora-convoai/stt/sessions/prepare",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ synapse_session_id: "session-1", assigned_bro_id: "bro-1" }),
+      },
+    );
+  });
+
+  it("starts STT sessions through the connector route", async () => {
+    const fetchMock = vi.fn(async () =>
+      okJsonResponse({
+        stt_session_id: "stt-1",
+        app_id: "agora-app",
+        channel_name: "session-1",
+        token: "rtc-token",
+        uid: 101,
+        pub_bot_uid: 100101,
+        sub_bot_uid: 100102,
+        agent_id: "agent-1",
+        status: "started",
+        languages: ["zh-CN", "en-US"],
+        subscribe_audio_uids: ["101"],
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = await import("./connector-client");
+
+    const response = await client.startSttSession({
+      prepared_stt_session_id: "prepared-stt-1",
+    });
+
+    expect(response.stt_session_id).toBe("stt-1");
+    expect(response.languages).toEqual(["zh-CN", "en-US"]);
+    expect(response.subscribe_audio_uids).toEqual(["101"]);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/connectors/agora-convoai/stt/sessions/start",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prepared_stt_session_id: "prepared-stt-1" }),
+      },
+    );
+  });
+
+  it("heartbeats STT sessions through the connector route", async () => {
+    const fetchMock = vi.fn(async () => okJsonResponse({ status: "active" }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = await import("./connector-client");
+
+    const response = await client.heartbeatSttSession("stt-1");
+
+    expect(response.status).toBe("active");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/connectors/agora-convoai/stt/sessions/heartbeat",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ stt_session_id: "stt-1" }),
+      },
+    );
+  });
+
+  it("leaves STT sessions through the connector route", async () => {
+    const fetchMock = vi.fn(async () => okJsonResponse({ status: "stopped" }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = await import("./connector-client");
+
+    await client.leaveSttSession({ stt_session_id: "stt-1" });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/connectors/agora-convoai/stt/sessions/leave",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ stt_session_id: "stt-1" }),
+      },
+    );
+  });
+
+  it("stops STT sessions through the connector route", async () => {
+    const fetchMock = vi.fn(async () => okJsonResponse({ status: "stopped" }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = await import("./connector-client");
+
+    await client.stopSttSession("stt-1");
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/connectors/agora-convoai/stt/sessions/stop",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ stt_session_id: "stt-1" }),
+      },
+    );
+  });
+
+});
+
+describe("connector-client HTTP error formatting", () => {
+  afterEach(() => {
+    vi.resetModules();
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
+
+  it("formats nested JSON detail strings from failed connector responses", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(
+        JSON.stringify({ detail: JSON.stringify({ detail: "core: db failed, task not found", reason: "TaskNotFound" }) }),
+        { status: 404 },
+      )),
+    );
+    const client = await import("./connector-client");
+
+    await expect(client.prepareSttSession({ synapse_session_id: "session-1", assigned_bro_id: "bro-1" })).rejects.toThrow(
+      "core: db failed, task not found",
+    );
+  });
 });

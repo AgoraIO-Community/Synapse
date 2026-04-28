@@ -13,15 +13,6 @@ const externalFontLinks: Array<
     ? []
     : [
         {
-          rel: "preconnect",
-          href: "https://fonts.googleapis.com",
-        },
-        {
-          rel: "preconnect",
-          href: "https://fonts.gstatic.com",
-          crossOrigin: "anonymous" as const,
-        },
-        {
           rel: "stylesheet",
           href:
             "https://fonts.googleapis.com/css2?family=Noto+Sans:wght@400;600;700&family=Noto+Sans+SC:wght@400;700&display=swap",
@@ -37,11 +28,11 @@ export const Route = createRootRoute({
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Newbro Voice Command Center" },
+      { title: "Newbro Voice Writing Desk" },
       {
         name: "description",
         content:
-          "Sample-style Newbro voice command center shell for the Synapse frontend.",
+          "A calm voice-first writing desk for the Synapse frontend shell.",
       },
     ],
     links: externalFontLinks,

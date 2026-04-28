@@ -9,13 +9,13 @@ const buttonVariants = cva(
     variants: {
       variant: {
         default:
-          "bg-[linear-gradient(135deg,#12907a_0%,#0b5748_100%)] text-white shadow-[0_18px_40px_-22px_rgba(11,87,72,0.55)] hover:-translate-y-px",
+          "bg-primary text-primary-foreground shadow-[0_18px_40px_-24px_rgba(47,108,243,0.45)] hover:-translate-y-px hover:bg-[#245fe5]",
         secondary:
-          "bg-white/85 text-[#1a2a23] shadow-[inset_0_0_0_1px_rgba(30,41,59,0.12)] hover:-translate-y-px",
-        ghost: "text-[#5e6d66] hover:bg-white/70 hover:text-[#1a2a23]",
+          "border border-border/70 bg-white/78 text-foreground shadow-[0_16px_40px_-30px_rgba(15,23,42,0.18),inset_0_1px_0_rgba(255,255,255,0.9)] backdrop-blur-md hover:-translate-y-px hover:bg-white/92",
+        ghost: "text-muted-foreground hover:bg-white/68 hover:text-foreground",
         outline:
-          "bg-transparent text-[#1a2a23] shadow-[inset_0_0_0_1px_rgba(30,41,59,0.12)] hover:bg-white/70",
-        destructive: "bg-[#cb4d3d] text-white hover:-translate-y-px",
+          "bg-transparent text-foreground shadow-[inset_0_0_0_1px_hsl(var(--border))] hover:bg-white/70",
+        destructive: "bg-[#51423d] text-white hover:-translate-y-px hover:bg-[#433732]",
       },
       size: {
         default: "min-h-10 px-4 py-2",

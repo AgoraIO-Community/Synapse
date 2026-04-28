@@ -6,6 +6,7 @@ from synapse.infrastructure.llm import OpenAIProvider
 
 from .config import Settings, load_settings
 from .container import RuntimeContainer
+from .drafts import OpenAIDraftRewriter
 
 
 def build_runtime_container(
@@ -15,8 +16,13 @@ def build_runtime_container(
 ) -> RuntimeContainer:
     settings = settings or load_settings()
     if settings.communication_backend != "scripted" and settings.openai_api_key:
-        model = OpenAICommunicationModel(provider or OpenAIProvider(settings))
-        return RuntimeContainer(communication_model=model, settings=settings)
+        llm_provider = provider or OpenAIProvider(settings)
+        model = OpenAICommunicationModel(llm_provider)
+        return RuntimeContainer(
+            communication_model=model,
+            settings=settings,
+            draft_rewriter=OpenAIDraftRewriter(llm_provider, model=settings.openai_model),
+        )
 
     default_model = ScriptedCommunicationModel(
         {

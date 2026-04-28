@@ -12,6 +12,7 @@ DEFAULT_AGENT_INSTRUCTIONS = "You are a helpful voice assistant."
 DEFAULT_AGENT_GREETING = "Hello. How can I help you today?"
 DEFAULT_PROFILE = "VOICE"
 DEFAULT_DISPLAY_NAME = "Synapse Tester"
+DEFAULT_STT_LANGUAGES = ("zh-CN",)
 
 
 @dataclass(slots=True)
@@ -21,6 +22,15 @@ class AgoraConvoAIASRSettings:
     model: str = "nova-3"
     language: str = "en-US"
     api_key: str | None = None
+
+
+@dataclass(slots=True)
+class AgoraConvoAISttSettings:
+    enabled: bool = True
+    languages: tuple[str, ...] = DEFAULT_STT_LANGUAGES
+    max_idle_time: int = 60
+    token_ttl_seconds: int = 3600
+    query_interval_seconds: float = 1.0
 
 
 @dataclass(slots=True)
@@ -42,6 +52,7 @@ class AgoraConvoAIConnectorSettings:
     app_certificate: str | None = None
     convoai_area: str = "US"
     asr: AgoraConvoAIASRSettings = field(default_factory=AgoraConvoAIASRSettings)
+    stt: AgoraConvoAISttSettings = field(default_factory=AgoraConvoAISttSettings)
     tts: AgoraConvoAITTSSettings = field(default_factory=AgoraConvoAITTSSettings)
     agent_instructions: str = DEFAULT_AGENT_INSTRUCTIONS
     agent_greeting: str = DEFAULT_AGENT_GREETING
@@ -72,6 +83,7 @@ def load_agora_connector_settings(*, env_file: Path | None = None) -> AgoraConvo
             app_certificate=None,
             convoai_area="US",
             asr=AgoraConvoAIASRSettings(),
+            stt=AgoraConvoAISttSettings(),
             tts=AgoraConvoAITTSSettings(),
             agent_instructions=DEFAULT_AGENT_INSTRUCTIONS,
             agent_greeting=DEFAULT_AGENT_GREETING,
@@ -103,6 +115,7 @@ def _load_agora_connector_settings_from_yaml(loaded_connector_config) -> AgoraCo
 
     host_settings = loaded_connector_config.host_settings
     asr = _parse_yaml_asr_settings(raw_connector.get("asr"), source_path)
+    stt = _parse_yaml_stt_settings(raw_connector.get("stt"), source_path)
     tts = _parse_yaml_tts_settings(raw_connector.get("tts"), source_path)
     return AgoraConvoAIConnectorSettings(
         uses_yaml_config=True,
@@ -112,6 +125,7 @@ def _load_agora_connector_settings_from_yaml(loaded_connector_config) -> AgoraCo
         app_certificate=_read_optional_string(raw_connector, "app_certificate", source_path),
         convoai_area="US",
         asr=asr,
+        stt=stt,
         tts=tts,
         agent_instructions=DEFAULT_AGENT_INSTRUCTIONS,
         agent_greeting=DEFAULT_AGENT_GREETING,
@@ -157,6 +171,33 @@ def _parse_yaml_asr_settings(raw_asr, source_path: Path) -> AgoraConvoAIASRSetti
         )
     return settings
 
+
+
+def _parse_yaml_stt_settings(raw_stt, source_path: Path) -> AgoraConvoAISttSettings:
+    if raw_stt is None:
+        raw_stt = {}
+    if not isinstance(raw_stt, dict):
+        raise ConnectorConfigError(f"'connectors.agora-convoai.stt' must be a mapping in {source_path}")
+    raw_languages = raw_stt.get("languages", list(DEFAULT_STT_LANGUAGES))
+    if isinstance(raw_languages, str):
+        languages = tuple(part.strip() for part in raw_languages.split(",") if part.strip())
+    elif isinstance(raw_languages, list):
+        languages = tuple(str(item).strip() for item in raw_languages if str(item).strip())
+    else:
+        raise ConnectorConfigError(f"'connectors.agora-convoai.stt.languages' must be a string or list in {source_path}")
+    if not languages:
+        languages = DEFAULT_STT_LANGUAGES
+    return AgoraConvoAISttSettings(
+        enabled=_parse_bool_scalar(
+            raw_stt.get("enabled", True),
+            field_name="connectors.agora-convoai.stt.enabled",
+            source_path=source_path,
+        ),
+        languages=languages,
+        max_idle_time=int(raw_stt.get("max_idle_time", 60)),
+        token_ttl_seconds=int(raw_stt.get("token_ttl_seconds", 3600)),
+        query_interval_seconds=float(raw_stt.get("query_interval_seconds", 1.0)),
+    )
 
 def _parse_yaml_tts_settings(raw_tts, source_path: Path) -> AgoraConvoAITTSSettings:
     if raw_tts is None:

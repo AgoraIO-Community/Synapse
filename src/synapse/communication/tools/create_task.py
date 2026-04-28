@@ -82,12 +82,17 @@ class CreateTaskTool:
                 session_affinity = prior_task.session_affinity
                 metadata["continue_from_task_id"] = continue_from_task_id
         if session_affinity is None:
-            session_affinity = create_workspace(task_id)
+            session_affinity = (
+                f"ws-{persona.bro_detail_session_id}"
+                if persona is not None
+                else create_workspace(task_id)
+            )
 
         if persona is not None:
             metadata["persona_id"] = persona.persona_id
             metadata["persona_name"] = persona.name
             metadata["persona_avatar"] = persona.avatar
+            metadata["bro_detail_session_id"] = persona.bro_detail_session_id
             if persona.executor_node_id:
                 metadata["executor_node_id"] = persona.executor_node_id
             await self._store.put_persona(

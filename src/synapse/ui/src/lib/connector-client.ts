@@ -1,3 +1,4 @@
+import { ensureOk } from "./http-errors";
 export interface ConnectorConfig {
   ready: boolean;
   service_base_url: string;
@@ -90,14 +91,6 @@ export interface ConnectorActivateResponse {
 const API_PREFIX = "/api";
 const configuredConnectorBaseUrl = getConfiguredConnectorBaseUrl();
 
-async function ensureOk(response: Response) {
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(text || `Request failed with status ${response.status}`);
-  }
-  return response;
-}
-
 function getConfiguredConnectorBaseUrl(): URL | null {
   const raw = import.meta.env.VITE_CONNECTOR_BASE_URL?.trim();
   if (!raw) {
@@ -175,4 +168,116 @@ export function stopConnectorSessionBeacon(bindingId: string): boolean {
     buildConnectorHttpUrl(`${API_PREFIX}/connectors/agora-convoai/sessions/stop`),
     new Blob([payload], { type: "application/json" }),
   );
+}
+
+export interface SttSessionStartRequest {
+  prepared_stt_session_id: string;
+  languages?: string[];
+}
+
+export interface SttSessionPrepareRequest {
+  synapse_session_id: string;
+  assigned_bro_id: string;
+  user_uid?: number;
+}
+
+export interface SttSessionPrepareResponse {
+  prepared_stt_session_id: string;
+  app_id: string;
+  channel_name: string;
+  token: string;
+  uid: number;
+  status: string;
+}
+
+export interface SttSessionStartResponse {
+  stt_session_id: string;
+  app_id: string;
+  channel_name: string;
+  token: string;
+  uid: number;
+  pub_bot_uid: number;
+  sub_bot_uid: number;
+  agent_id: string;
+  status: string;
+  languages: string[];
+  subscribe_audio_uids: string[];
+}
+
+export interface SttSessionQueryResponse {
+  stt_session_id: string;
+  agent_id: string;
+  status: string;
+  raw: Record<string, unknown>;
+}
+
+export interface SttSessionHeartbeatResponse {
+  status: string;
+}
+
+export async function prepareSttSession(payload: SttSessionPrepareRequest): Promise<SttSessionPrepareResponse> {
+  const response = await fetch(
+    buildConnectorHttpUrl(`${API_PREFIX}/connectors/agora-convoai/stt/sessions/prepare`),
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    },
+  );
+  return (await ensureOk(response)).json();
+}
+
+export async function startSttSession(payload: SttSessionStartRequest): Promise<SttSessionStartResponse> {
+  const response = await fetch(
+    buildConnectorHttpUrl(`${API_PREFIX}/connectors/agora-convoai/stt/sessions/start`),
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    },
+  );
+  return (await ensureOk(response)).json();
+}
+
+export async function querySttSession(sttSessionId: string): Promise<SttSessionQueryResponse> {
+  const response = await fetch(
+    buildConnectorHttpUrl(`${API_PREFIX}/connectors/agora-convoai/stt/sessions/${sttSessionId}`),
+  );
+  return (await ensureOk(response)).json();
+}
+
+export async function heartbeatSttSession(sttSessionId: string): Promise<SttSessionHeartbeatResponse> {
+  const response = await fetch(
+    buildConnectorHttpUrl(`${API_PREFIX}/connectors/agora-convoai/stt/sessions/heartbeat`),
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ stt_session_id: sttSessionId }),
+    },
+  );
+  return (await ensureOk(response)).json();
+}
+
+export async function leaveSttSession(payload: { stt_session_id?: string; prepared_stt_session_id?: string }): Promise<void> {
+  const response = await fetch(
+    buildConnectorHttpUrl(`${API_PREFIX}/connectors/agora-convoai/stt/sessions/leave`),
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    },
+  );
+  await ensureOk(response);
+}
+
+export async function stopSttSession(sttSessionId: string): Promise<void> {
+  const response = await fetch(
+    buildConnectorHttpUrl(`${API_PREFIX}/connectors/agora-convoai/stt/sessions/stop`),
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ stt_session_id: sttSessionId }),
+    },
+  );
+  await ensureOk(response);
 }

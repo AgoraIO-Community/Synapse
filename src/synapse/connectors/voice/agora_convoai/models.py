@@ -114,3 +114,65 @@ class ConnectorSessionStopRequest(BaseModel):
 
 class ConnectorSessionStopResponse(BaseModel):
     status: str = "stopped"
+
+
+class SttSessionStartRequest(BaseModel):
+    prepared_stt_session_id: str
+    languages: list[str] | None = None
+
+
+class SttSessionPrepareRequest(BaseModel):
+    synapse_session_id: str
+    assigned_bro_id: str
+    user_uid: int | None = None
+
+
+class SttSessionPrepareResponse(BaseModel):
+    prepared_stt_session_id: str
+    app_id: str
+    channel_name: str
+    token: str
+    uid: int
+    status: str = "prepared"
+
+
+class SttSessionStartResponse(BaseModel):
+    stt_session_id: str
+    app_id: str
+    channel_name: str
+    token: str
+    uid: int
+    pub_bot_uid: int
+    sub_bot_uid: int
+    agent_id: str
+    status: str
+    languages: list[str] = Field(default_factory=list)
+    subscribe_audio_uids: list[str] = Field(default_factory=list)
+
+
+class SttSessionQueryResponse(BaseModel):
+    stt_session_id: str
+    agent_id: str
+    status: str
+    raw: dict[str, Any] = Field(default_factory=dict)
+
+
+class SttSessionHeartbeatRequest(BaseModel):
+    stt_session_id: str
+
+
+class SttSessionHeartbeatResponse(BaseModel):
+    status: str = "active"
+
+
+class SttSessionLeaveRequest(BaseModel):
+    stt_session_id: str | None = None
+    prepared_stt_session_id: str | None = None
+
+
+class SttSessionStopRequest(BaseModel):
+    stt_session_id: str
+
+
+class SttSessionStopResponse(BaseModel):
+    status: str = "stopped"

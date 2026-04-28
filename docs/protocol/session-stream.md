@@ -18,6 +18,15 @@ Client actions:
     - `task_id` or `reference`
     - optional `payload`
     - optional `reason`
+- `submit_asr_turn`
+  - fields:
+    - `request_id`
+    - `raw_text`
+    - optional `normalized_text`
+    - optional `confidence`
+    - optional `started_at`
+    - optional `ended_at`
+    - optional `assigned_bro_id`
 
 Server events:
 
@@ -32,6 +41,10 @@ Server events:
 - `assistant_response_delta`
 - `assistant_response_completed`
 - `assistant_response_failed`
+- `draft_output_started`
+- `draft_output_delta`
+- `draft_output_completed`
+- `draft_output_failed`
 
 Assistant stream rules:
 
@@ -39,6 +52,17 @@ Assistant stream rules:
 - assistant deltas are transient and are not persisted in conversation history
 - only the final assistant reply is durable in `conversation_history`
 - communication-model tool calls remain internal and are not exposed on the websocket
+
+Draft stream rules:
+
+- draft output events are emitted for websocket `submit_asr_turn`
+- draft output events are correlated by the originating `request_id`
+- `draft_output_delta` carries transient plain text chunks from the Draft Cleaner
+- draft deltas are not persisted directly; the durable state remains the
+  `DraftSession` inside the next `snapshot`
+- `draft_output_completed` carries `draft_session_id` and the final plain
+  `draft_text`
+- `draft_output_failed` is followed by `action_rejected`
 
 Projection rules:
 
