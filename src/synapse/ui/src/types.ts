@@ -252,6 +252,7 @@ export interface ExecutorNodeRecord {
   node_id: string;
   name: string;
   enabled_executors: string[];
+  acpx_agent?: string | null;
   connected_executors: string[];
   connection_status: "connected" | "disconnected";
   token_hint: string | null;

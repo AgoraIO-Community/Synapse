@@ -28,6 +28,7 @@ class StoredExecutorNodeRecord(BaseModel):
     node_id: str
     name: str
     enabled_executors: list[str] = Field(default_factory=list)
+    acpx_agent: str | None = None
     raw_token: str | None = None
     token_hash: str
     token_hint: str
@@ -78,19 +79,26 @@ class ExecutorNodeRegistry:
         *,
         name: str,
         enabled_executors: list[str],
+        acpx_agent: str | None = None,
     ) -> ExecutorNodeCredentialIssue:
         normalized_name = name.strip()
         normalized_executors = _normalize_executor_list(enabled_executors)
+        normalized_acpx_agent = _normalize_optional_text(acpx_agent)
         if not normalized_name:
             raise ExecutorNodeRegistryError("Executor node name is required.")
         if not normalized_executors:
-            raise ExecutorNodeRegistryError("Executor node must enable at least one executor family.")
+            raise ExecutorNodeRegistryError("Executor node must enable exactly one executor family.")
+        if len(normalized_executors) > 1:
+            raise ExecutorNodeRegistryError("Executor node must choose exactly one executor family.")
+        if "acpx" in normalized_executors and not normalized_acpx_agent:
+            normalized_acpx_agent = "codex"
         node_id = f"node-{uuid4().hex[:8]}"
         token = secrets.token_urlsafe(24)
         record = StoredExecutorNodeRecord(
             node_id=node_id,
             name=normalized_name,
             enabled_executors=normalized_executors,
+            acpx_agent=normalized_acpx_agent,
             raw_token=token,
             token_hash=_hash_token(token),
             token_hint=_hint(token),
@@ -109,6 +117,7 @@ class ExecutorNodeRegistry:
         *,
         name: str | None = None,
         enabled_executors: list[str] | None = None,
+        acpx_agent: str | None = None,
         connection: ExecutorNodeConnectionView | None = None,
     ) -> ExecutorNodeRecord:
         async with self._lock:
@@ -124,9 +133,17 @@ class ExecutorNodeRegistry:
             if enabled_executors is not None:
                 normalized_executors = _normalize_executor_list(enabled_executors)
                 if not normalized_executors:
-                    raise ExecutorNodeRegistryError("Executor node must enable at least one executor family.")
+                    raise ExecutorNodeRegistryError("Executor node must enable exactly one executor family.")
+                if len(normalized_executors) > 1:
+                    raise ExecutorNodeRegistryError("Executor node must choose exactly one executor family.")
                 updates["enabled_executors"] = normalized_executors
+            if acpx_agent is not None:
+                updates["acpx_agent"] = _normalize_optional_text(acpx_agent)
             updated = record.model_copy(update=updates) if updates else record
+            if "acpx" in updated.enabled_executors and not updated.acpx_agent:
+                updated = updated.model_copy(update={"acpx_agent": "codex"})
+            if "acpx" not in updated.enabled_executors and updated.acpx_agent is not None:
+                updated = updated.model_copy(update={"acpx_agent": None})
             self._records[node_id] = updated
             self._persist_locked()
         return _public_record(updated, connection=connection)
@@ -252,6 +269,7 @@ def _public_record(
         node_id=record.node_id,
         name=record.name,
         enabled_executors=list(record.enabled_executors),
+        acpx_agent=record.acpx_agent,
         connected_executors=list(connection.executors) if connection is not None else [],
         connection_status="connected" if connection is not None and connection.connected else "disconnected",
         token_hint=record.token_hint,
@@ -295,6 +313,7 @@ def _write_records(path: Path, records: Iterable[StoredExecutorNodeRecord]) -> N
         lines.append("    enabled_executors:")
         for executor_type in record.enabled_executors:
             lines.append(f"      - {_yaml_quote(executor_type)}")
+        lines.append(f"    acpx_agent: {_yaml_quote(record.acpx_agent) if record.acpx_agent else 'null'}")
         lines.append(f"    raw_token: {_yaml_quote(record.raw_token) if record.raw_token else 'null'}")
         lines.append(f"    token_hash: {_yaml_quote(record.token_hash)}")
         lines.append(f"    token_hint: {_yaml_quote(record.token_hint)}")
@@ -308,3 +327,10 @@ def _write_records(path: Path, records: Iterable[StoredExecutorNodeRecord]) -> N
 def _yaml_quote(value: str) -> str:
     escaped = value.replace("\\", "\\\\").replace('"', '\\"')
     return f'"{escaped}"'
+
+
+def _normalize_optional_text(value: str | None) -> str | None:
+    if value is None:
+        return None
+    cleaned = value.strip()
+    return cleaned or None

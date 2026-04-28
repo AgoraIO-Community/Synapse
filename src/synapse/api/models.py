@@ -130,11 +130,13 @@ class PersonaUpdateRequest(BaseModel):
 class ExecutorNodeCreateRequest(BaseModel):
     name: str
     enabled_executors: list[str] = Field(default_factory=list)
+    acpx_agent: str | None = None
 
 
 class ExecutorNodeUpdateRequest(BaseModel):
     name: str | None = None
     enabled_executors: list[str] | None = None
+    acpx_agent: str | None = None
 
 
 __all__ = [

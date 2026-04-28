@@ -352,9 +352,10 @@ class SessionRuntime:
             raise ValueError(f"{persona.name} is busy with another task right now.")
 
         available_executor_types = set(self.registry.list_executor_types())
-        preferred_executor = self.default_executor_type
-        if preferred_executor not in available_executor_types:
-            preferred_executor = "mock" if "mock" in available_executor_types else None
+        preferred_executor = await self._resolve_draft_preferred_executor(
+            persona=persona,
+            available_executor_types=available_executor_types,
+        )
         session_affinity = (
             f"ws-{persona.bro_detail_session_id}"
             if persona is not None
@@ -417,6 +418,25 @@ class SessionRuntime:
         )
         saved = await self.blackboard.get_task(task_id)
         return saved or task
+
+    async def _resolve_draft_preferred_executor(
+        self,
+        *,
+        persona,
+        available_executor_types: set[str],
+    ) -> str | None:
+        if persona is not None and persona.executor_node_id:
+            for node in await self.executor_node_manager.list_nodes():
+                if node.node_id != persona.executor_node_id:
+                    continue
+                for executor_type in node.enabled_executors:
+                    if executor_type in available_executor_types:
+                        return executor_type
+                break
+        preferred_executor = self.default_executor_type
+        if preferred_executor not in available_executor_types:
+            preferred_executor = "mock" if "mock" in available_executor_types else None
+        return preferred_executor
 
     async def validate_task_command(self, task: Task, command_type: TaskCommandType) -> str | None:
         if command_type not in {TaskCommandType.PAUSE_TASK, TaskCommandType.PREEMPT_TASK}:
@@ -1247,7 +1267,7 @@ def create_session_runtime(
                         manager=executor_node_manager,
                         supports_resume=True,
                         supports_follow_up=True,
-                        supports_pause=False,
+                        supports_pause=True,
                     )
                 )
     elif settings.acpx_executor_enabled:
@@ -1257,7 +1277,7 @@ def create_session_runtime(
                 manager=executor_node_manager,
                 supports_resume=True,
                 supports_follow_up=True,
-                supports_pause=False,
+                supports_pause=True,
             )
         )
     if settings.codex_executor_enabled:

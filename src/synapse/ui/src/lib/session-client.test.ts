@@ -101,8 +101,13 @@ describe("session-client transport base URL handling", () => {
     vi.stubEnv("VITE_API_BASE_URL", "https://api.example.com/runtime/");
     const client = await import("./session-client");
 
-    expect(client.buildExecutorRunCommand("node-1", "tok'en")).toBe(
-      "newbro executor run --base-url 'https://api.example.com/runtime' --node-id 'node-1' --token 'tok'\"'\"'en'",
+    expect(
+      client.buildExecutorRunCommand("node-1", "tok'en", {
+        enabledExecutors: ["acpx"],
+        acpxAgent: "openclaw",
+      }),
+    ).toBe(
+      "newbro executor run --base-url 'https://api.example.com/runtime' --node-id 'node-1' --token 'tok'\"'\"'en' --enabled-executor 'acpx' --acpx-agent 'openclaw'",
     );
   });
 
@@ -121,6 +126,7 @@ describe("session-client transport base URL handling", () => {
           node_id: "node-1",
           name: "Studio Mac",
           enabled_executors: ["codex"],
+          acpx_agent: null,
           connected_executors: [],
           connection_status: "disconnected",
           token_hint: "tok...1111",
