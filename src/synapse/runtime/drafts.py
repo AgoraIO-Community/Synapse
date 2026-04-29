@@ -367,9 +367,7 @@ def _last_update_summary(
     locale: str = "en",
 ) -> str:
     if previous is None:
-        if locale == "zh":
-            return "已根据最新语音创建第一个可执行草稿。"
-        return "Created the first executable draft from the latest voice turn."
+        return ""
     if previous.text != text:
         if locale == "zh":
             return "已根据最新语音重写草稿。"

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import stat
 import sys
 import textwrap
@@ -262,6 +261,139 @@ def _write_noisy_fake_codex(tmp_path):
     return script
 
 
+def _write_content_text_fake_codex(tmp_path):
+    script = tmp_path / "fake-codex-content-text"
+    script.write_text(
+        textwrap.dedent(
+            f"""\
+            #!{sys.executable}
+            import json
+            import sys
+
+            def send(payload):
+                sys.stdout.write(json.dumps(payload) + "\\n")
+                sys.stdout.flush()
+
+            for raw in sys.stdin:
+                if not raw.strip():
+                    continue
+                msg = json.loads(raw)
+                method = msg.get("method")
+                request_id = msg.get("id")
+                if method == "initialize":
+                    send({{"id": request_id, "result": {{"ok": True}}}})
+                elif method == "initialized":
+                    continue
+                elif method == "account/read":
+                    send({{"id": request_id, "result": {{"account": {{"type": "apiKey"}}, "requiresOpenaiAuth": True}}}})
+                elif method == "thread/start":
+                    send({{"id": request_id, "result": {{"thread": {{"id": "thread-1"}}}}}})
+                elif method == "turn/start":
+                    send({{"id": request_id, "result": {{"turn": {{"id": "turn-1", "status": "inProgress"}}}}}})
+                    send({{"method": "item/completed", "params": {{"turnId": "turn-1", "item": {{"type": "assistantMessage", "content": [{{"text": "Checked "}}, {{"text": "availability."}}]}}}}}})
+                    send({{"method": "turn/completed", "params": {{"turn": {{"id": "turn-1", "status": "completed", "error": None}}}}}})
+                elif method == "thread/read":
+                    send({{"id": request_id, "result": {{"thread": {{"id": "thread-1", "turns": [{{"id": "turn-1", "items": [{{"type": "assistantMessage", "content": [{{"text": "Checked "}}, {{"text": "availability."}}]}}]}}]}}}}}})
+                else:
+                    send({{"id": request_id, "error": {{"message": "unknown"}}}})
+            """
+        )
+    )
+    script.chmod(script.stat().st_mode | stat.S_IEXEC)
+    return script
+
+
+def _write_lifecycle_only_fake_codex(tmp_path):
+    script = tmp_path / "fake-codex-lifecycle-only"
+    script.write_text(
+        textwrap.dedent(
+            f"""\
+            #!{sys.executable}
+            import json
+            import sys
+
+            def send(payload):
+                sys.stdout.write(json.dumps(payload) + "\\n")
+                sys.stdout.flush()
+
+            for raw in sys.stdin:
+                if not raw.strip():
+                    continue
+                msg = json.loads(raw)
+                method = msg.get("method")
+                request_id = msg.get("id")
+                if method == "initialize":
+                    send({{"id": request_id, "result": {{"ok": True}}}})
+                elif method == "initialized":
+                    continue
+                elif method == "account/read":
+                    send({{"id": request_id, "result": {{"account": {{"type": "apiKey"}}, "requiresOpenaiAuth": True}}}})
+                elif method == "thread/start":
+                    send({{"id": request_id, "result": {{"thread": {{"id": "thread-1"}}}}}})
+                elif method == "turn/start":
+                    send({{"id": request_id, "result": {{"turn": {{"id": "turn-1", "status": "inProgress"}}}}}})
+                    send({{"method": "item/started", "params": {{"turnId": "turn-1", "item": {{"type": "reasoning"}}}}}})
+                    send({{"method": "item/completed", "params": {{"turnId": "turn-1", "item": {{"type": "webSearch"}}}}}})
+                    send({{"method": "turn/completed", "params": {{"turn": {{"id": "turn-1", "status": "completed", "error": None}}}}}})
+                elif method == "thread/read":
+                    send({{"id": request_id, "result": {{"thread": {{"id": "thread-1", "turns": [{{"id": "turn-1", "items": [{{"type": "agentMessage", "text": "Final text after lifecycle only."}}]}}]}}}}}})
+                else:
+                    send({{"id": request_id, "error": {{"message": "unknown"}}}})
+            """
+        )
+    )
+    script.chmod(script.stat().st_mode | stat.S_IEXEC)
+    return script
+
+
+def _write_delta_fake_codex(tmp_path):
+    script = tmp_path / "fake-codex-delta"
+    script.write_text(
+        textwrap.dedent(
+            f"""\
+            #!{sys.executable}
+            import json
+            import sys
+
+            def send(payload):
+                sys.stdout.write(json.dumps(payload) + "\\n")
+                sys.stdout.flush()
+
+            for raw in sys.stdin:
+                if not raw.strip():
+                    continue
+                msg = json.loads(raw)
+                method = msg.get("method")
+                request_id = msg.get("id")
+                if method == "initialize":
+                    send({{"id": request_id, "result": {{"ok": True}}}})
+                elif method == "initialized":
+                    continue
+                elif method == "account/read":
+                    send({{"id": request_id, "result": {{"account": {{"type": "apiKey"}}, "requiresOpenaiAuth": True}}}})
+                elif method == "thread/start":
+                    send({{"id": request_id, "result": {{"thread": {{"id": "thread-1"}}}}}})
+                elif method == "turn/start":
+                    send({{"id": request_id, "result": {{"turn": {{"id": "turn-1", "status": "inProgress"}}}}}})
+                    send({{"method": "item/started", "params": {{"turnId": "turn-1", "item": {{"type": "agentMessage", "id": "commentary-1", "text": "", "phase": "commentary"}}}}}})
+                    send({{"method": "item/agentMessage/delta", "params": {{"turnId": "turn-1", "itemId": "commentary-1", "delta": "Found UI package.json and checking scripts"}}}})
+                    send({{"method": "item/agentMessage/delta", "params": {{"turnId": "turn-1", "itemId": "commentary-1", "delta": "."}}}})
+                    send({{"method": "item/completed", "params": {{"turnId": "turn-1", "item": {{"type": "agentMessage", "id": "commentary-1", "text": "Found UI package.json and checking scripts.", "phase": "commentary"}}}}}})
+                    send({{"method": "item/started", "params": {{"turnId": "turn-1", "item": {{"type": "agentMessage", "id": "final-1", "text": "", "phase": "final_answer"}}}}}})
+                    send({{"method": "item/agentMessage/delta", "params": {{"turnId": "turn-1", "itemId": "final-1", "delta": "Final answer should not become progress."}}}})
+                    send({{"method": "item/completed", "params": {{"turnId": "turn-1", "item": {{"type": "agentMessage", "id": "final-1", "text": "Final answer should not become progress.", "phase": "final_answer"}}}}}})
+                    send({{"method": "turn/completed", "params": {{"turn": {{"id": "turn-1", "status": "completed", "error": None}}}}}})
+                elif method == "thread/read":
+                    send({{"id": request_id, "result": {{"thread": {{"id": "thread-1", "turns": [{{"id": "turn-1", "items": [{{"type": "agentMessage", "id": "final-1", "text": "Final answer should not become progress.", "phase": "final_answer"}}]}}]}}}}}})
+                else:
+                    send({{"id": request_id, "error": {{"message": "unknown"}}}})
+            """
+        )
+    )
+    script.chmod(script.stat().st_mode | stat.S_IEXEC)
+    return script
+
+
 @pytest.mark.anyio
 async def test_codex_executor_completes_task_with_fake_app_server(tmp_path):
     command = _write_fake_codex(tmp_path)
@@ -417,8 +549,89 @@ async def test_codex_executor_reads_final_text_from_thread_when_no_live_assistan
 
     events = [event async for event in executor.run_task(run, task, session)]
 
+    assert [event.event_type.value for event in events] == ["completed"]
     assert events[-1].event_type.value == "completed"
     assert events[-1].message == "Final text from thread read."
+    await session.close()
+
+
+@pytest.mark.anyio
+async def test_codex_executor_uses_assistant_content_text_as_progress(tmp_path):
+    command = _write_content_text_fake_codex(tmp_path)
+    executor = CodexExecutor(command=str(command))
+    session = await executor.create_session(str(tmp_path))
+    task = Task(
+        task_id="task-content",
+        root_task_id="task-content",
+        title="Content task",
+        goal="Read content text",
+    )
+    run = ExecutionRun(
+        run_id="run-content",
+        task_id="task-content",
+        execution_session_id="exec-content",
+        executor_type="codex",
+    )
+
+    events = [event async for event in executor.run_task(run, task, session)]
+
+    assert [event.event_type.value for event in events] == ["progress", "completed"]
+    assert events[0].message == "Checked availability."
+    assert events[1].message == "Checked availability."
+    await session.close()
+
+
+@pytest.mark.anyio
+async def test_codex_executor_ignores_lifecycle_items_without_text(tmp_path):
+    command = _write_lifecycle_only_fake_codex(tmp_path)
+    executor = CodexExecutor(command=str(command))
+    session = await executor.create_session(str(tmp_path))
+    task = Task(
+        task_id="task-lifecycle",
+        root_task_id="task-lifecycle",
+        title="Lifecycle task",
+        goal="Do not synthesize progress",
+    )
+    run = ExecutionRun(
+        run_id="run-lifecycle",
+        task_id="task-lifecycle",
+        execution_session_id="exec-lifecycle",
+        executor_type="codex",
+    )
+
+    events = [event async for event in executor.run_task(run, task, session)]
+
+    assert [event.event_type.value for event in events] == ["completed"]
+    assert events[0].message == "Final text after lifecycle only."
+    await session.close()
+
+
+@pytest.mark.anyio
+async def test_codex_executor_streams_commentary_delta_as_progress(tmp_path):
+    command = _write_delta_fake_codex(tmp_path)
+    executor = CodexExecutor(command=str(command))
+    session = await executor.create_session(str(tmp_path))
+    task = Task(
+        task_id="task-delta",
+        root_task_id="task-delta",
+        title="Delta task",
+        goal="Stream commentary progress",
+    )
+    run = ExecutionRun(
+        run_id="run-delta",
+        task_id="task-delta",
+        execution_session_id="exec-delta",
+        executor_type="codex",
+    )
+
+    events = [event async for event in executor.run_task(run, task, session)]
+
+    assert [event.event_type.value for event in events] == ["progress", "progress", "completed"]
+    assert events[0].message == "Found UI package.json and checking scripts"
+    assert events[0].metadata["source"] == "codex"
+    assert events[0].metadata["phase"] == "commentary"
+    assert events[1].message == "Found UI package.json and checking scripts."
+    assert events[2].message == "Final answer should not become progress."
     await session.close()
 
 

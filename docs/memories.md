@@ -190,3 +190,7 @@ Short log of important design decisions and changes for Synapse.
 - Changed Draft Brain rewriting to use the LLM-backed Draft Cleaner prompt and fail when no LLM draft rewriter is configured, removing deterministic draft generation from the active runtime path.
 - Changed Draft Cleaner output to plain sendable task text, with websocket `submit_asr_turn` streaming transient `draft_output_*` events while durable snapshots keep the existing `DraftSession` shape.
 - Simplified the Draft protocol model to `text` and update summary; Send maps `Draft.text` into the immutable Task contract.
+
+## 2026-04-30
+
+- Changed the Codex executor adapter to normalize `agentMessage` commentary deltas into progress events so `ExecutionRun.latest_progress_message` updates during a run rather than only after completed assistant items.

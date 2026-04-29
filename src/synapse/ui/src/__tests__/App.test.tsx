@@ -1890,14 +1890,18 @@ describe("Newbro voice shell", () => {
     const { container } = render(<RouterProvider router={getRouter()} />);
 
     expect(await screen.findByRole("button", { name: "Stop Task" })).toBeInTheDocument();
+    expect(container.querySelector(".nb-status-card")).toHaveStyle("--nb-task-progress: 60%");
     expect(screen.queryByText("Runner Brain")).not.toBeInTheDocument();
     expect(screen.getByText("bold detail").tagName).toBe("STRONG");
     expect(screen.getAllByText("summary").some((element) => element.tagName === "EM")).toBe(true);
     expect(screen.getByText("inline_code").tagName).toBe("CODE");
     expect(screen.getByText("queued step").closest("ul")).toBeInTheDocument();
-    expect(screen.getByText("Two").closest("ol")).toBeInTheDocument();
-    expect(screen.getByText("const value = 1;").tagName).toBe("CODE");
-    expect(screen.getByText("C").closest("table")).toBeInTheDocument();
+    const recentTaskCard = screen.getByText("Previous markdown task").closest("article");
+    expect(recentTaskCard).toBeInTheDocument();
+    expect(within(recentTaskCard!).getByText(/Recent summary:/)).toHaveClass("nb-task-desc");
+    expect(recentTaskCard!.querySelector("ol")).not.toBeInTheDocument();
+    expect(recentTaskCard!.querySelector("table")).not.toBeInTheDocument();
+    expect(recentTaskCard!.querySelector("code")).not.toBeInTheDocument();
     const link = screen.getAllByRole("link", { name: "docs" })[0];
     expect(link).toHaveAttribute("href", "https://example.com/docs");
     expect(link).toHaveAttribute("target", "_blank");
@@ -1946,9 +1950,10 @@ describe("Newbro voice shell", () => {
     });
     window.history.replaceState({}, "", "/bros/persona-rook?sid=session-existing");
 
-    render(<RouterProvider router={getRouter()} />);
+    const { container } = render(<RouterProvider router={getRouter()} />);
 
     expect(await screen.findByRole("button", { name: "Stop Task" })).toBeInTheDocument();
+    expect(container.querySelector(".nb-status-card")).toHaveStyle("--nb-task-progress: 0%");
     expect(screen.queryByText("Runner Brain")).not.toBeInTheDocument();
     expect(screen.getAllByText("Waiting for assignment")).toHaveLength(1);
     expect(screen.queryByText("Current state")).not.toBeInTheDocument();
@@ -2158,9 +2163,11 @@ describe("Newbro voice shell", () => {
     expect(await screen.findByText("Recent tasks")).toBeInTheDocument();
     expect(screen.getByText("Publish travel notes")).toBeInTheDocument();
     expect(screen.getByText("completed")).toBeInTheDocument();
-    const summary = screen.getByText((_, element) => element?.textContent === completedSummary, { selector: "p" });
-    expect(summary).toBeInTheDocument();
-    expect(summary).not.toHaveClass("line-clamp-2");
+    const taskCard = screen.getByText("Publish travel notes").closest("article");
+    expect(taskCard).toBeInTheDocument();
+    const description = within(taskCard!).getByText(/Published notes with the final itinerary/);
+    expect(description).toHaveClass("nb-task-desc");
+    expect(description).not.toHaveTextContent("\n");
   });
 
   it("does not duplicate the active task in Bro detail recent tasks", async () => {
@@ -2431,7 +2438,102 @@ describe("buildBroCardModels", () => {
       progressLabel: "queued",
       progress: 18,
     });
-    expect(bros[0].progressDetails[0]).toBe("Prepare the execution plan.");
+    expect(bros[0].progressDetails).toEqual([]);
+    expect(bros[0].progressDetails).not.toContain("Prepare the execution plan.");
     expect(bros[0].progressDetails).not.toContain("queued: Prepare draft execution");
+  });
+
+  it("uses non-redundant runtime summaries as bro progress detail", () => {
+    const bros = buildBroCardModels([
+      {
+        persona_id: "persona-1",
+        name: "Rook",
+        avatar: "/avatars/avatar-01.png",
+        executor_node_id: "node-1",
+        bro_detail_session_id: "bro-detail-1",
+        status: "busy",
+        current_task_id: "task-1234",
+      },
+    ], [
+      {
+        node_id: "node-1",
+        name: "Studio Mac",
+        connection_status: "connected",
+      },
+    ], [], [
+      {
+        task_id: "task-1234",
+        operational_summary: "Checked available morning flights and narrowed the hotel area.",
+        conversational_summary: "Checked available morning flights and narrowed the hotel area.",
+        latest_user_visible_status: "running",
+        needs_user_input: false,
+      },
+    ], [
+      {
+        task_id: "task-1234",
+        root_task_id: "task-1234",
+        parent_task_id: null,
+        title: "Book Beijing travel",
+        goal: "Book flights and hotel for Beijing.",
+        status: "running",
+        priority: 5,
+        interruptible: true,
+        requires_confirmation: false,
+        preferred_executor: "codex",
+        session_affinity: "workspace-task-1234",
+        task_revision: 0,
+        latest_instruction: "Book flights and hotel for Beijing.",
+        metadata: {},
+      },
+    ]);
+
+    expect(bros[0].progressDetails).toEqual(["Checked available morning flights and narrowed the hotel area."]);
+  });
+
+  it("filters runtime summary fallbacks out of bro progress detail", () => {
+    const bros = buildBroCardModels([
+      {
+        persona_id: "persona-1",
+        name: "Rook",
+        avatar: "/avatars/avatar-01.png",
+        executor_node_id: "node-1",
+        bro_detail_session_id: "bro-detail-1",
+        status: "busy",
+        current_task_id: "task-1234",
+      },
+    ], [
+      {
+        node_id: "node-1",
+        name: "Studio Mac",
+        connection_status: "connected",
+      },
+    ], [], [
+      {
+        task_id: "task-1234",
+        operational_summary: "Running: Book Beijing travel",
+        conversational_summary: "Running: Book Beijing travel",
+        latest_user_visible_status: "running",
+        needs_user_input: false,
+      },
+    ], [
+      {
+        task_id: "task-1234",
+        root_task_id: "task-1234",
+        parent_task_id: null,
+        title: "Book Beijing travel",
+        goal: "Book flights and hotel for Beijing.",
+        status: "running",
+        priority: 5,
+        interruptible: true,
+        requires_confirmation: false,
+        preferred_executor: "codex",
+        session_affinity: "workspace-task-1234",
+        task_revision: 0,
+        latest_instruction: "Book flights and hotel for Beijing.",
+        metadata: {},
+      },
+    ]);
+
+    expect(bros[0].progressDetails).toEqual([]);
   });
 });

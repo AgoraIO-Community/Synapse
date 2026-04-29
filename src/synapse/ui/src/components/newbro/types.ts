@@ -32,7 +32,9 @@ export type BroTaskRecord = {
   title: string;
   status: TaskStatus;
   statusLabel: string;
+  description: string;
   summary: string;
+  timeLabel?: string;
 };
 
 export type RuntimePersonaInput = Pick<

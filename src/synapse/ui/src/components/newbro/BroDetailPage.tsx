@@ -750,10 +750,10 @@ export function BroDetailPage({
   const canSendDraft = bro.source === "runtime";
   const draftText = streamingDraftText || draftSession?.current_draft?.text || "";
   const mobileTabClass = (page: MobileDetailPage) => (
-    `min-h-[44px] flex-1 rounded-full px-4 py-2 text-[12px] font-black uppercase tracking-[0.12em] transition ${
+    `min-h-[40px] flex-1 rounded-lg px-4 py-2 text-[12px] font-semibold uppercase tracking-[0.12em] transition ${
       mobileDetailPage === page
-        ? "bg-black text-white shadow-[0_10px_24px_rgba(0,0,0,.12)]"
-        : "bg-white/48 text-black/52 hover:bg-white/70 hover:text-black"
+        ? "bg-[#fff0ec] text-[#ff6a3d]"
+        : "bg-white text-[#6b7280] hover:bg-[#f1f3f5] hover:text-[#111827]"
     }`
   );
 
@@ -772,11 +772,11 @@ export function BroDetailPage({
   );
 
   return (
-    <div className="grid min-h-0 flex-1 content-start grid-cols-1 gap-3 overflow-y-auto px-3 pb-[calc(1.25rem+env(safe-area-inset-bottom))] pt-4 sm:px-6 sm:pb-8 sm:pt-8 lg:h-dvh lg:min-h-0 lg:content-normal lg:grid-cols-[minmax(0,1fr)_minmax(340px,520px)] lg:gap-8 lg:overflow-hidden lg:px-12 lg:pb-7 lg:pt-7 xl:gap-16 xl:px-20">
-      <section className="relative z-10 flex min-h-0 min-w-0 flex-col lg:overflow-hidden">
+    <div className="nb-detail-shell">
+      <section className="nb-detail-main">
         <BroDetailHeader bro={bro} onBack={onBack} />
         <div
-          className="mt-4 flex rounded-full border border-black/10 bg-white/36 p-1 lg:hidden"
+          className="mt-4 flex rounded-xl border border-[#e5e7eb] bg-white p-1 lg:hidden"
           role="tablist"
           aria-label="Bro detail sections"
         >
@@ -801,8 +801,7 @@ export function BroDetailPage({
         </div>
         <h2 className="sr-only">Draft workspace for {bro.name}</h2>
 
-        <div className={`${mobileDetailPage === "draft" ? "flex" : "hidden"} mt-3 min-h-0 w-full max-w-[860px] flex-1 flex-col gap-4 lg:flex`}>
-          <div className="min-h-[180px] lg:min-h-0 lg:flex-[1.45]">
+        <div className={`${mobileDetailPage === "draft" ? "flex" : "hidden"} mt-4 nb-detail-scroll nb-draft-tab-content lg:mt-0 lg:block`}>
             <DraftBrainPanel
               draftText={draftText}
               summary={draftSession?.current_draft?.last_update_summary}
@@ -819,13 +818,9 @@ export function BroDetailPage({
                 void handleClearDraft();
               }}
             />
-          </div>
 
-          <div className="min-h-[130px] lg:min-h-0 lg:flex-[0.75]">
-            <LiveTranscriptPanel active={capturing} transcriptText={transcriptText} />
-          </div>
+          <LiveTranscriptPanel active={capturing} transcriptText={transcriptText} />
 
-          <div className="mt-auto shrink-0">
             <VoicePad
               active={capturing}
               disabled={!sessionId || !readyForMic || sttPhase === "draft_updating" || draftActionPending}
@@ -838,11 +833,15 @@ export function BroDetailPage({
                 if (activePointerIdRef.current === null) void setMicEnabled(false);
               }}
             />
-          </div>
         </div>
+        {mobileDetailPage === "status" ? (
+          <div className="mt-4 nb-detail-scroll lg:hidden">
+            {renderRunnerPanel()}
+          </div>
+        ) : null}
       </section>
 
-      <div className={`${mobileDetailPage === "status" ? "block" : "hidden"} min-h-0 lg:block`}>
+      <div className="hidden min-h-0 overflow-hidden lg:block">
         {renderRunnerPanel()}
       </div>
       </div>

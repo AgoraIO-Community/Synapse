@@ -56,6 +56,10 @@ Executor-node note:
 Adapter direction:
 
 - Codex is one real adapter family
+- Codex `agentMessage` commentary deltas are normalized into progress
+  `ExecutorEvent`s so execution runs expose live user-facing progress through
+  `latest_progress_message` snapshots without leaking Codex-native event
+  shapes to clients
 - OpenClaw or other executor families should fit behind the same normalized executor contract
 
 This is why:

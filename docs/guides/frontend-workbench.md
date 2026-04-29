@@ -3,9 +3,10 @@
 The main frontend under `src/synapse/ui/` renders the `Newbro` command-center
 shell at `/`.
 
-It keeps the protocol-first runtime behavior, but the active shell now uses the
-Newbro Draft Brain visual system: warm paper surfaces, orange voice controls,
-deep-teal runner panels, compressed display headings, and task queue cards.
+It keeps the protocol-first runtime behavior, but the active shell now uses a
+Newbro voice command-center visual system: light gray app surfaces, white
+bordered panels, compact navigation, orange voice controls, green live state,
+mono operational labels, and task queue cards.
 
 ## Current Structure
 
@@ -24,10 +25,11 @@ The root shell remains a routed command center:
 - mobile header with the menu on the left, logo on the right, and a drawer menu
   for the same navigation
 - home page: command-center heading plus queue-card Bro grid
-- Bro detail page: desktop keeps draft/live transcript/hold-to-talk beside the
-  runner current-task panel, summaries, and recent task queue; mobile splits the
-  same content into `Draft` and a compact `Status` dashboard with current task,
-  summary, stop action, and recent tasks
+- Bro detail page: desktop uses the command-center shape from the voice-command
+  reference, with central draft/live transcript/hold-to-talk controls and a
+  right runtime status/task panel; mobile splits the same content into `Draft`
+  and a compact `Status` dashboard with current task, summary, stop action, and
+  recent tasks
 - mobile layouts use a drawer navigation, single-column content, contained
   technical strings, and mobile-safe voice controls without horizontal page
   overflow
@@ -111,15 +113,16 @@ The visual shell uses reusable pieces under `src/components/newbro/`:
 - `RunnerBrainPanel`
 - `useVoiceSession`
 
-The visual language should stay close to the Draft Brain reference:
+The visual language should stay close to the `NEWBRO` voice command-center
+reference:
 
-- warm off-white surfaces
-- orange `#ff4b16` as the main action color
-- deep teal/cyan runner and avatar surfaces
-- compressed display headings via `newbro-condensed`
+- light gray app background with white bordered panels
+- orange `#ff6a3d` as the main action color
+- green live/listening state with restrained status cards
+- compact Inter-like headings rather than poster-scale display type
 - monospace operational labels via `newbro-mono`
-- queue-card task and Bro surfaces
-- subtle voice-ring motion on the hold-to-talk pad
+- compact queue-card task and Bro surfaces
+- pill-shaped hold-to-talk control with animated listening bars
 
 ## Constraints
 

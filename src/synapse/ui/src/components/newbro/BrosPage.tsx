@@ -38,7 +38,7 @@ function nodeStateClasses(persona: Persona, nodesById: Map<string, ExecutorNodeR
   if (state === "bound offline") {
     return "border-amber-200 bg-amber-50 text-amber-700";
   }
-  return "border-neutral-200 bg-[#f6f5f2] text-neutral-600";
+  return "border-[#e5e7eb] bg-[#f1f3f5] text-[#6b7280]";
 }
 
 /* ------------------------------------------------------------------ */
@@ -93,14 +93,14 @@ function CommBrainSection({
   }
 
   return (
-    <div className="rounded-[24px] border border-neutral-200 bg-white px-4 py-4 sm:px-6 sm:py-5">
+    <div className="command-panel px-4 py-4 sm:px-6 sm:py-5">
       <div className="mb-4 flex items-center gap-3">
-        <div className="flex h-9 w-9 items-center justify-center rounded-full border border-neutral-200 bg-[#f7f5f0]">
-          <Brain className="h-4 w-4 text-neutral-600" strokeWidth={1.8} />
+        <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-[#e5e7eb] bg-[#fafbfc]">
+          <Brain className="h-4 w-4 text-[#6b7280]" strokeWidth={1.8} />
         </div>
         <div>
-          <div className="text-[14px] font-medium text-neutral-900">Communication Persona</div>
-          <div className="text-[12px] text-neutral-500">
+          <div className="text-[14px] font-medium text-[#111827]">Communication Persona</div>
+          <div className="text-[12px] text-[#6b7280]">
             Controls the conversation brain&apos;s tone and style
           </div>
         </div>
@@ -114,7 +114,7 @@ function CommBrainSection({
           setSaved(false);
         }}
         rows={3}
-        className="w-full rounded-2xl border border-neutral-200 bg-[#f7f5f0] px-4 py-3 text-[14px] text-neutral-900 placeholder-neutral-400 outline-none transition focus:border-neutral-400 focus:ring-1 focus:ring-neutral-300"
+        className="command-field w-full px-4 py-3 text-[14px] text-[#111827] placeholder-[#9ca3af] outline-none transition focus:border-[#ffb89e] focus:ring-2 focus:ring-[#ff6a3d]/10"
       />
 
       {error && (
@@ -132,7 +132,7 @@ function CommBrainSection({
         <button
           onClick={handleSave}
           disabled={!dirty || saving}
-          className="min-h-[44px] rounded-full border border-neutral-900 bg-neutral-950 px-4 py-1.5 text-[12px] font-medium text-white transition hover:bg-neutral-800 disabled:opacity-30 sm:min-h-0"
+          className="min-h-[40px] rounded-full border border-transparent bg-[#ff6a3d] px-4 py-1.5 text-[12px] font-semibold text-white shadow-[0_2px_8px_rgba(255,106,61,.25)] transition hover:bg-[#f05a2e] disabled:opacity-30 sm:min-h-0"
         >
           {saving ? "Saving…" : "Save"}
         </button>
@@ -142,7 +142,7 @@ function CommBrainSection({
               setValue(savedValue);
               setSaved(false);
             }}
-            className="min-h-[44px] rounded-full border border-neutral-200 px-4 py-1.5 text-[12px] font-medium text-neutral-600 transition hover:bg-neutral-100 sm:min-h-0"
+            className="min-h-[40px] rounded-full border border-[#e5e7eb] bg-white px-4 py-1.5 text-[12px] font-medium text-[#6b7280] transition hover:bg-[#f1f3f5] sm:min-h-0"
           >
             Reset
           </button>
@@ -182,13 +182,13 @@ function BroForm({
   const [executorNodeId, setExecutorNodeId] = useState(initial?.executorNodeId ?? "");
 
   return (
-    <div className="space-y-3 rounded-[24px] border border-neutral-200 bg-white px-4 py-4 sm:px-6 sm:py-5">
+    <div className="command-panel space-y-3 px-4 py-4 sm:px-6 sm:py-5">
       <input
         type="text"
         placeholder="Bro name"
         value={name}
         onChange={(e) => setName(e.target.value)}
-        className="w-full rounded-2xl border border-neutral-200 bg-[#f7f5f0] px-4 py-2.5 text-[14px] text-neutral-900 placeholder-neutral-400 outline-none transition focus:border-neutral-400 focus:ring-1 focus:ring-neutral-300"
+        className="command-field w-full px-4 py-2.5 text-[14px] text-[#111827] placeholder-[#9ca3af] outline-none transition focus:border-[#ffb89e] focus:ring-2 focus:ring-[#ff6a3d]/10"
       />
 
       <div className="flex flex-wrap gap-2">
@@ -199,8 +199,8 @@ function BroForm({
             onClick={() => setAvatarType(type)}
             className={`rounded-[14px] border px-3 py-1.5 text-[11px] uppercase tracking-[0.14em] transition ${
               avatarType === type
-                ? "border-neutral-900 bg-neutral-950 text-white"
-                : "border-neutral-200 bg-[#f7f5f0] text-neutral-600 hover:border-neutral-300"
+                ? "border-[#ff6a3d] bg-[#ff6a3d] text-white"
+                : "border-[#e5e7eb] bg-[#fafbfc] text-[#6b7280] hover:border-[#d1d5db]"
             }`}
           >
             {type}
@@ -209,14 +209,14 @@ function BroForm({
       </div>
 
       <div className="space-y-2">
-        <div className="flex items-center gap-2 text-[12px] uppercase tracking-[0.18em] text-neutral-400">
+        <div className="flex items-center gap-2 text-[12px] uppercase tracking-[0.18em] text-[#9ca3af]">
           <Link2 className="h-3.5 w-3.5" strokeWidth={1.8} />
           Executor Node
         </div>
         <select
           value={executorNodeId}
           onChange={(e) => setExecutorNodeId(e.target.value)}
-          className="w-full rounded-2xl border border-neutral-200 bg-[#f7f5f0] px-4 py-2.5 text-[14px] text-neutral-900 outline-none transition focus:border-neutral-400 focus:ring-1 focus:ring-neutral-300"
+          className="command-field w-full px-4 py-2.5 text-[14px] text-[#111827] outline-none transition focus:border-[#ffb89e] focus:ring-2 focus:ring-[#ff6a3d]/10"
         >
           <option value="">Unbound</option>
           {nodes.map((node) => (
@@ -225,7 +225,7 @@ function BroForm({
             </option>
           ))}
         </select>
-        <div className="text-[12px] leading-5 text-neutral-500">
+        <div className="text-[12px] leading-5 text-[#6b7280]">
           Unbound Bros stay dark until you attach them to a local executor node.
         </div>
       </div>
@@ -235,7 +235,7 @@ function BroForm({
         value={basePrompt}
         onChange={(e) => setBasePrompt(e.target.value)}
         rows={2}
-        className="w-full rounded-2xl border border-neutral-200 bg-[#f7f5f0] px-4 py-3 text-[14px] text-neutral-900 placeholder-neutral-400 outline-none transition focus:border-neutral-400 focus:ring-1 focus:ring-neutral-300"
+        className="command-field w-full px-4 py-3 text-[14px] text-[#111827] placeholder-[#9ca3af] outline-none transition focus:border-[#ffb89e] focus:ring-2 focus:ring-[#ff6a3d]/10"
       />
 
       <div className="flex flex-col gap-2 sm:flex-row">
@@ -249,13 +249,13 @@ function BroForm({
             })
           }
           disabled={!name.trim()}
-          className="min-h-[44px] rounded-full border border-neutral-900 bg-neutral-950 px-4 py-1.5 text-[12px] font-medium text-white transition hover:bg-neutral-800 disabled:opacity-30 sm:min-h-0"
+          className="min-h-[40px] rounded-full border border-transparent bg-[#ff6a3d] px-4 py-1.5 text-[12px] font-semibold text-white transition hover:bg-[#f05a2e] disabled:opacity-30 sm:min-h-0"
         >
           {submitLabel}
         </button>
         <button
           onClick={onCancel}
-          className="min-h-[44px] rounded-full border border-neutral-200 px-4 py-1.5 text-[12px] font-medium text-neutral-600 transition hover:bg-neutral-100 sm:min-h-0"
+          className="min-h-[40px] rounded-full border border-[#e5e7eb] bg-white px-4 py-1.5 text-[12px] font-medium text-[#6b7280] transition hover:bg-[#f1f3f5] sm:min-h-0"
         >
           Cancel
         </button>
@@ -306,15 +306,15 @@ function BroRow({
   const nodeState = nodeStateLabel(persona, nodesById);
 
   return (
-    <div className="flex flex-col gap-4 rounded-[24px] border border-neutral-200 bg-white px-4 py-4 transition hover:border-neutral-300 sm:flex-row sm:items-center sm:px-5">
+    <div className="command-panel flex flex-col gap-4 px-4 py-4 transition hover:border-[#d1d5db] hover:bg-[#f8fafc] sm:flex-row sm:items-center sm:px-5">
       <BroPortrait bro={personaToBroCard(persona)} talking={false} />
 
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
-          <div className="text-[15px] font-medium tracking-[-0.02em] text-neutral-900">
+          <div className="text-[15px] font-medium tracking-[-0.02em] text-[#111827]">
             {persona.name}
           </div>
-          <div className="rounded-full border border-neutral-200 bg-[#f6f5f2] px-2 py-0.5 text-[10px] uppercase tracking-[0.16em] text-neutral-600">
+          <div className="rounded-full border border-[#e5e7eb] bg-[#f1f3f5] px-2 py-0.5 text-[10px] uppercase tracking-[0.16em] text-[#6b7280]">
             {avatarType}
           </div>
           <div
@@ -480,7 +480,8 @@ export function BrosPage({
   return (
     <div className="grid min-h-0 flex-1 grid-cols-1 gap-6 px-3 py-4 pb-[calc(1.25rem+env(safe-area-inset-bottom))] sm:px-6 sm:py-8 lg:grid-cols-[minmax(0,0.58fr)_minmax(0,1.72fr)] lg:gap-8 lg:overflow-auto lg:px-12 xl:px-20 xl:py-10">
       <section className="flex min-h-0 flex-col pt-1 sm:pt-4">
-        <h1 className="newbro-condensed mb-4 text-[44px] leading-[0.82] text-black sm:mb-6 sm:text-[58px]">BROS</h1>
+        <div className="mb-4 text-[12px] text-[#9ca3af]">Workspace <span className="text-[#d1d5db]">/</span> <span className="font-medium text-[#6b7280]">Bros</span></div>
+        <h1 className="mb-5 text-[28px] font-bold tracking-[-0.03em] text-[#111827]">Bros</h1>
         <SectionHeader title="Brain Persona" />
         <CommBrainSection
           sessionId={sessionId}
@@ -490,7 +491,7 @@ export function BrosPage({
 
       <section className="flex flex-col items-stretch lg:pt-4">
         <div className="mb-6 hidden lg:block">
-          <div className="newbro-mono text-xs font-semibold uppercase tracking-[0.22em] text-black/45">
+          <div className="command-label text-[#9ca3af]">
             Communication Brain / Worker Bindings
           </div>
         </div>
@@ -498,10 +499,10 @@ export function BrosPage({
           title="Worker Bros"
           trailing={
             <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:gap-3">
-              <div className="rounded-full border border-neutral-200 px-2.5 py-1 text-[11px] text-neutral-500">
+              <div className="command-chip px-2.5 py-1 text-[11px]">
                 {personas.length} configured
               </div>
-              <div className="rounded-full border border-neutral-200 px-2.5 py-1 text-[11px] text-neutral-500">
+              <div className="command-chip px-2.5 py-1 text-[11px]">
                 {liveCount} live
               </div>
               {!editingId && mode !== "add" && (
@@ -512,7 +513,7 @@ export function BrosPage({
                     setError(null);
                     setStatus(null);
                   }}
-                  className="flex min-h-[44px] items-center gap-1.5 rounded-full border border-neutral-200 px-3 py-1.5 text-[11px] font-medium text-neutral-600 transition hover:border-neutral-300 hover:bg-white sm:min-h-[36px]"
+                  className="flex min-h-[40px] items-center gap-1.5 rounded-full border border-[#e5e7eb] bg-white px-3 py-1.5 text-[11px] font-medium text-[#6b7280] transition hover:border-[#d1d5db] hover:bg-[#f1f3f5] sm:min-h-[36px]"
                 >
                   <Plus className="h-3 w-3" strokeWidth={2} />
                   New Bro
@@ -534,28 +535,28 @@ export function BrosPage({
         )}
 
         <div className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-3">
-          <div className="rounded-[22px] border border-neutral-200 bg-white px-4 py-4">
-            <div className="text-[11px] uppercase tracking-[0.18em] text-neutral-400">Live Bros</div>
-            <div className="mt-2 text-[24px] font-medium tracking-[-0.04em] text-neutral-950">{liveCount}</div>
-            <div className="mt-1 text-[12px] leading-5 text-neutral-500">
+          <div className="command-panel px-4 py-4">
+            <div className="command-label text-[#9ca3af]">Live Bros</div>
+            <div className="mt-2 text-[24px] font-bold tracking-[-0.04em] text-[#111827]">{liveCount}</div>
+            <div className="mt-1 text-[12px] leading-5 text-[#6b7280]">
               Bound to a node that is actively connected to Synapse.
             </div>
           </div>
-          <div className="rounded-[22px] border border-neutral-200 bg-white px-4 py-4">
-            <div className="text-[11px] uppercase tracking-[0.18em] text-neutral-400">Offline Bindings</div>
-            <div className="mt-2 text-[24px] font-medium tracking-[-0.04em] text-neutral-950">
+          <div className="command-panel px-4 py-4">
+            <div className="command-label text-[#9ca3af]">Offline Bindings</div>
+            <div className="mt-2 text-[24px] font-bold tracking-[-0.04em] text-[#111827]">
               {personas.filter((persona) => nodeStateLabel(persona, nodesById) === "bound offline").length}
             </div>
-            <div className="mt-1 text-[12px] leading-5 text-neutral-500">
+            <div className="mt-1 text-[12px] leading-5 text-[#6b7280]">
               Bros already assigned to a node, but the node still needs to reconnect.
             </div>
           </div>
-          <div className="rounded-[22px] border border-neutral-200 bg-white px-4 py-4">
-            <div className="text-[11px] uppercase tracking-[0.18em] text-neutral-400">Unbound Bros</div>
-            <div className="mt-2 text-[24px] font-medium tracking-[-0.04em] text-neutral-950">
+          <div className="command-panel px-4 py-4">
+            <div className="command-label text-[#9ca3af]">Unbound Bros</div>
+            <div className="mt-2 text-[24px] font-bold tracking-[-0.04em] text-[#111827]">
               {personas.filter((persona) => nodeStateLabel(persona, nodesById) === "unbound").length}
             </div>
-            <div className="mt-1 text-[12px] leading-5 text-neutral-500">
+            <div className="mt-1 text-[12px] leading-5 text-[#6b7280]">
               Bind these Bros to a node from here or create one in the Nodes page.
             </div>
           </div>

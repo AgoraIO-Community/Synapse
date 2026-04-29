@@ -470,15 +470,18 @@ export function NodesPage({
   const editingNode = editingNodeId ? nodes.find((node) => node.node_id === editingNodeId) ?? null : null;
 
   return (
-    <div className="space-y-5 px-3 py-4 pb-[calc(1.25rem+env(safe-area-inset-bottom))] sm:space-y-6 sm:px-6 sm:py-8 lg:overflow-auto lg:px-12 xl:px-20 xl:py-10">
-      <div className="queue-card rounded-[14px] border border-black/11 bg-white/43 px-4 py-5 backdrop-blur-sm sm:px-6 sm:py-6">
+    <div className="space-y-5 px-4 py-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] sm:space-y-6 sm:px-6 sm:py-8 lg:overflow-auto lg:px-8 xl:py-8">
+      <div className="command-panel px-4 py-5 sm:px-6 sm:py-6">
         <div className="flex flex-col items-stretch justify-between gap-4 sm:flex-row sm:items-start">
           <div>
-            <div className="newbro-mono text-[11px] uppercase tracking-[0.22em] text-black/45">Executor Nodes</div>
-            <div className="newbro-condensed mt-2 text-[42px] leading-[0.82] text-black sm:text-[54px]">
-              NODE FLEET
+            <div className="text-[12px] text-[#9ca3af]">
+              <span className="sr-only">Executor Nodes</span>
+              Workspace <span className="text-[#d1d5db]">/</span> <span className="font-medium text-[#6b7280]">Nodes</span>
             </div>
-            <div className="mt-3 max-w-[720px] text-[13px] leading-6 text-black/55">
+            <div className="mt-4 text-[28px] font-bold tracking-[-0.03em] text-[#111827]">
+              Node Fleet
+            </div>
+            <div className="mt-3 max-w-[720px] text-[13px] leading-6 text-[#6b7280]">
               Create a node, issue its credential pair, and bind Bros to that machine. A Bro only becomes live
               after its bound node reconnects to Synapse with the matching node id and token.
             </div>
@@ -492,7 +495,7 @@ export function NodesPage({
                 setError(null);
                 setStatus(null);
               }}
-              className="flex min-h-[44px] items-center justify-center gap-2 rounded-full border border-[#ff4b16] bg-[#ff4b16] px-4 py-2 text-[12px] font-medium text-white transition hover:bg-[#ff5a2a]"
+              className="flex min-h-[40px] items-center justify-center gap-2 rounded-full border border-transparent bg-[#ff6a3d] px-4 py-2 text-[12px] font-semibold text-white shadow-[0_2px_8px_rgba(255,106,61,.25)] transition hover:bg-[#f05a2e]"
             >
               <Plus className="h-3.5 w-3.5" strokeWidth={2} />
               New Node
@@ -501,17 +504,17 @@ export function NodesPage({
         </div>
 
         <div className="mt-6 grid grid-cols-1 gap-3 md:grid-cols-3">
-          <div className="rounded-[14px] border border-black/10 bg-white/45 px-4 py-4">
-            <div className="newbro-mono text-[11px] uppercase tracking-[0.18em] text-black/42">Configured Nodes</div>
-            <div className="newbro-condensed mt-2 text-[32px] leading-none text-black">{nodes.length}</div>
+          <div className="rounded-xl border border-[#e5e7eb] bg-[#fafbfc] px-4 py-4">
+            <div className="command-label text-[#9ca3af]">Configured Nodes</div>
+            <div className="mt-2 text-[28px] font-bold leading-none text-[#111827]">{nodes.length}</div>
           </div>
-          <div className="rounded-[14px] border border-black/10 bg-white/45 px-4 py-4">
-            <div className="newbro-mono text-[11px] uppercase tracking-[0.18em] text-black/42">Connected</div>
-            <div className="newbro-condensed mt-2 text-[32px] leading-none text-black">{connectedCount}</div>
+          <div className="rounded-xl border border-[#e5e7eb] bg-[#fafbfc] px-4 py-4">
+            <div className="command-label text-[#9ca3af]">Connected</div>
+            <div className="mt-2 text-[28px] font-bold leading-none text-[#111827]">{connectedCount}</div>
           </div>
-          <div className="rounded-[14px] border border-black/10 bg-white/45 px-4 py-4">
-            <div className="newbro-mono text-[11px] uppercase tracking-[0.18em] text-black/42">Bound Bros</div>
-            <div className="newbro-condensed mt-2 text-[32px] leading-none text-black">
+          <div className="rounded-xl border border-[#e5e7eb] bg-[#fafbfc] px-4 py-4">
+            <div className="command-label text-[#9ca3af]">Bound Bros</div>
+            <div className="mt-2 text-[28px] font-bold leading-none text-[#111827]">
               {personas.filter((persona) => Boolean(persona.executor_node_id)).length}
             </div>
           </div>
@@ -537,7 +540,7 @@ export function NodesPage({
       )}
 
       {(mode === "add" || editingNode) && (
-        <div className="rounded-[28px] border border-neutral-200 bg-white px-4 py-5 sm:px-6 sm:py-6">
+        <div className="command-panel px-4 py-5 sm:px-6 sm:py-6">
           <SectionHeader title={editingNode ? "Edit Node" : "Create Node"} />
           <NodeForm
             initial={

@@ -27,7 +27,7 @@ export function BroCard({
       type="button"
       whileTap={{ scale: 0.997 }}
       onClick={() => onClick?.(bro.id)}
-      className="queue-card min-h-[132px] w-full rounded-[14px] border border-black/11 bg-white/43 px-3 py-4 text-left text-black backdrop-blur-sm transition duration-300 hover:-translate-y-0.5 hover:bg-white/62 sm:min-h-[150px] sm:px-5 sm:py-5"
+      className="command-panel min-h-[132px] w-full px-3 py-4 text-left transition duration-200 hover:-translate-y-px hover:border-[#d1d5db] hover:bg-[#f8fafc] sm:min-h-[150px] sm:px-5 sm:py-5"
     >
       <div className="flex min-w-0 items-start gap-2.5 sm:gap-4">
         <div className="shrink-0 scale-[0.82] origin-top-left sm:scale-100">
@@ -38,24 +38,24 @@ export function BroCard({
           <div className="flex min-w-0 flex-col gap-4">
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
-                <div className="newbro-condensed min-w-0 break-words text-[25px] leading-none sm:text-[30px]">{bro.name}</div>
+                <div className="min-w-0 break-words text-[20px] font-semibold leading-tight tracking-[-0.02em] text-[#111827] sm:text-[22px]">{bro.name}</div>
                 <div
-                  className={`rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] ${
+                  className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${
                     isBusy
-                      ? "bg-[#ffe3d6] text-[#b33b15]"
-                      : "bg-[#d5f5f2] text-[#087372]"
+                      ? "border-[#ff6a3d]/20 bg-[#fff0ec] text-[#ff6a3d]"
+                      : "border-[#10b981]/20 bg-[#ecfdf5] text-[#059669]"
                   }`}
                 >
                   {bro.status}
                 </div>
               </div>
-              <div className="mt-2 break-words text-[12px] leading-5 text-black/50">
+              <div className="mt-2 break-words text-[12px] leading-5 text-[#6b7280]">
                 {bro.role} · {liveStateNote(bro)}
               </div>
             </div>
 
-            <div className="rounded-[16px] border border-white/75 bg-[hsl(var(--paper))]/82 px-3 py-2.5 sm:rounded-[18px] sm:px-4 sm:py-3">
-              <div className="serif-flow break-words text-[16px] leading-snug tracking-[0] text-foreground sm:text-[18px]">
+            <div className="command-field px-3 py-2.5 sm:px-4 sm:py-3">
+              <div className="break-words text-[14px] leading-snug text-[#111827]">
                 {bro.taskTitle}
               </div>
             </div>

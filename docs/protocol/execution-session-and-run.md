@@ -41,6 +41,9 @@ Core rule:
 
 - task identity is durable
 - run identity is disposable
+- `ExecutionRun.latest_progress_message` is the normalized current
+  user-facing progress text; adapters may derive it from executor-native
+  streams such as ACPX output chunks or Codex commentary deltas
 
 Detached-executor additions:
 

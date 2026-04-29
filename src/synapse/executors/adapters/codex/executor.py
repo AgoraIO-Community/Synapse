@@ -93,6 +93,9 @@ class CodexExecutor:
                 raise RuntimeError("Codex turn/start did not return a turn id.")
 
             last_assistant_message: str | None = None
+            assistant_item_phases: dict[str, str | None] = {}
+            assistant_item_text: dict[str, str] = {}
+            assistant_item_emitted_text: dict[str, str] = {}
             while True:
                 event = await session.client.next_event()
                 method = str(event.get("method", ""))
@@ -132,20 +135,64 @@ class CodexExecutor:
                 if method == "error":
                     continue
 
+                if method == "item/agentMessage/delta":
+                    item_id = params.get("itemId")
+                    delta = params.get("delta")
+                    if not isinstance(item_id, str) or not isinstance(delta, str) or not delta:
+                        continue
+                    if assistant_item_phases.get(item_id) != "commentary":
+                        continue
+                    accumulated = assistant_item_text.get(item_id, "") + delta
+                    assistant_item_text[item_id] = accumulated
+                    candidate = accumulated.strip()
+                    previous = assistant_item_emitted_text.get(item_id, "")
+                    if candidate and _should_emit_codex_delta_progress(candidate, previous):
+                        assistant_item_emitted_text[item_id] = candidate
+                        yield ExecutorEvent(
+                            run_id=run.run_id,
+                            session_id=session.session_id,
+                            event_type=ExecutorEventType.PROGRESS,
+                            message=candidate,
+                            metadata={
+                                "thread_id": session.thread_id or "",
+                                "source": "codex",
+                                "codex_item_id": item_id,
+                                "phase": "commentary",
+                            },
+                        )
+                    continue
+
                 if method in {"item/started", "item/completed"}:
                     item = params.get("item")
                     if isinstance(item, dict):
                         item_type = item.get("type")
                         if item_type in {"assistantMessage", "agentMessage"}:
+                            item_id = item.get("id")
+                            phase = item.get("phase")
+                            if isinstance(item_id, str):
+                                assistant_item_phases[item_id] = phase if isinstance(phase, str) else None
                             extracted = _extract_item_text(item)
                             if extracted:
                                 last_assistant_message = extracted
+                                if (
+                                    isinstance(item_id, str)
+                                    and assistant_item_emitted_text.get(item_id) == extracted
+                                ):
+                                    continue
+                                if phase == "final_answer":
+                                    continue
+                                if isinstance(item_id, str):
+                                    assistant_item_emitted_text[item_id] = extracted
                                 yield ExecutorEvent(
                                     run_id=run.run_id,
                                     session_id=session.session_id,
                                     event_type=ExecutorEventType.PROGRESS,
                                     message=extracted,
-                                    metadata={"thread_id": session.thread_id or ""},
+                                    metadata={
+                                        "thread_id": session.thread_id or "",
+                                        "source": "codex",
+                                        "phase": phase if isinstance(phase, str) else "",
+                                    },
                                 )
                                 continue
                     continue
@@ -299,6 +346,15 @@ def _extract_item_text(item: dict[str, object]) -> str | None:
             if isinstance(text, str):
                 parts.append(text)
     return "".join(parts).strip() or None
+
+
+def _should_emit_codex_delta_progress(candidate: str, previous: str) -> bool:
+    if candidate == previous:
+        return False
+    if not previous:
+        return len(candidate) >= 24 or candidate.endswith((".", "。", "!", "！", "?", "？", "\n"))
+    added = candidate[len(previous) :]
+    return len(added) >= 24 or candidate.endswith((".", "。", "!", "！", "?", "？", "\n"))
 
 
 def _extract_question_text(params: dict[str, object]) -> str | None:

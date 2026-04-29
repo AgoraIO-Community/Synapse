@@ -51,13 +51,11 @@ function buildBusyDetails(
 
 function buildIdleDetails(liveState: BroCardModel["liveState"], nodeName: string | null) {
   const nodeLabel = nodeName ?? "an executor node";
+  if (liveState === "live") return [];
   return [
-    "Ready to pick up the next runtime assignment.",
-    liveState === "live"
-      ? `Available for routing through ${nodeLabel}.`
-      : liveState === "offline"
-        ? `Bound to ${nodeLabel}, but waiting for it to reconnect.`
-        : "Bind this bro to an executor node to make it live.",
+    liveState === "offline"
+      ? `Bound to ${nodeLabel}, but waiting for it to reconnect.`
+      : "Bind this bro to an executor node to make it live.",
   ];
 }
 
@@ -134,6 +132,93 @@ function taskRecordSummary(
   );
 }
 
+function taskRecordDescription(summary: string): string {
+  return summary
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/[*_~#>]+/g, "")
+    .replace(/^\s*[-*+]\s+/gm, "")
+    .replace(/^\s*\d+\.\s+/gm, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function metadataString(metadata: Record<string, unknown>, key: string): string | null {
+  const value = metadata[key];
+  return typeof value === "string" && value.trim() ? value : null;
+}
+
+function formatRelativeTime(value: string): string | undefined {
+  const timestamp = Date.parse(value);
+  if (Number.isNaN(timestamp)) return undefined;
+  const seconds = Math.max(0, Math.floor((Date.now() - timestamp) / 1000));
+  if (seconds < 60) return "just now";
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} hr ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days} day${days === 1 ? "" : "s"} ago`;
+  return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).format(new Date(timestamp));
+}
+
+function taskRecordTimeLabel(task: Task): string | undefined {
+  const value =
+    metadataString(task.metadata, "updated_at")
+    ?? metadataString(task.metadata, "completed_at")
+    ?? metadataString(task.metadata, "created_at");
+  return value ? formatRelativeTime(value) : undefined;
+}
+
+function normalizeProgressCandidate(value: string | null | undefined): string | null {
+  const normalized = value?.replace(/\s+/g, " ").trim();
+  return normalized ? normalized : null;
+}
+
+function isFallbackProgressText(value: string, task: Task | null): boolean {
+  if (!task) return false;
+  const normalized = value.toLowerCase();
+  const title = task.title.trim().toLowerCase();
+  const goal = task.goal.trim().toLowerCase();
+  const instruction = task.latest_instruction?.trim().toLowerCase() ?? "";
+  const fallbackTexts = [
+    title,
+    goal,
+    instruction,
+    `running: ${title}`,
+    `queued: ${title}`,
+    `completed: ${title}`,
+    `paused: ${title}`,
+    `cancelled: ${title}`,
+    `failed: ${title}`,
+    `waiting for executor node: ${title}`,
+    `i queued ${title} again.`,
+    `i paused ${title}.`,
+  ].filter(Boolean);
+  return fallbackTexts.includes(normalized);
+}
+
+function progressDetailsFromRuntime(
+  task: Task | null,
+  run: ExecutionRun | null,
+  summary: TaskSummary | null,
+): string[] {
+  const directDetails = uniqueDetails([
+    run?.latest_progress_message,
+    run?.output_summary,
+    run?.block_reason ? `Blocked: ${run.block_reason}` : null,
+    run?.failure_reason ? `Failed: ${run.failure_reason}` : null,
+  ]);
+  if (directDetails.length > 0) return directDetails;
+
+  return uniqueDetails([
+    normalizeProgressCandidate(summary?.conversational_summary),
+    normalizeProgressCandidate(summary?.operational_summary),
+  ].filter((value) => value && !isFallbackProgressText(value, task)));
+}
+
 export function buildBroTaskRecords(
   broId: string,
   options: {
@@ -159,12 +244,15 @@ export function buildBroTaskRecords(
     }
     const run = runsByTaskId.get(task.task_id);
     const summary = summaryByTaskId.get(task.task_id);
+    const recordSummary = taskRecordSummary(task, run, summary);
     records.push({
       taskId: task.task_id,
       title: task.title,
       status: task.status,
       statusLabel: taskStatusLabel(task.status),
-      summary: taskRecordSummary(task, run, summary),
+      description: taskRecordDescription(recordSummary),
+      summary: recordSummary,
+      timeLabel: taskRecordTimeLabel(task),
     });
     if (records.length >= (options.limit ?? 5)) break;
   }
@@ -192,12 +280,11 @@ export function buildBroCardModels(
     const liveState = buildLiveState(persona, nodesById);
 
     // Pull real execution data when available
-    const activeTask = persona.current_task_id ? taskByTaskId.get(persona.current_task_id) : null;
+    const activeTask = persona.current_task_id ? (taskByTaskId.get(persona.current_task_id) ?? null) : null;
     const activeRun = persona.current_task_id ? runsByTaskId.get(persona.current_task_id) : null;
     const activeSummary = persona.current_task_id ? summaryByTaskId.get(persona.current_task_id) : null;
 
-    const progressText = activeRun?.latest_progress_message ?? activeRun?.output_summary ?? null;
-    const summaryText = activeSummary?.conversational_summary ?? activeSummary?.operational_summary ?? null;
+    const progressDetailsFromData = progressDetailsFromRuntime(activeTask, activeRun ?? null, activeSummary ?? null);
     const runStatus = activeRun?.status ?? null;
     const taskStatus = activeTask?.status ?? null;
 
@@ -207,21 +294,13 @@ export function buildBroCardModels(
     let progressLabel: string;
     let progress: number;
 
-    if (busy && (progressText || summaryText)) {
-      const details = uniqueDetails([
-        progressText,
-        summaryText,
-        activeRun?.block_reason ? `Blocked: ${activeRun.block_reason}` : null,
-      ]);
-      progressDetails = details.length > 0 ? details : buildBusyDetails(persona, liveState, nodeName);
+    if (busy && progressDetailsFromData.length > 0) {
+      progressDetails = progressDetailsFromData;
       taskTitle = activeTask?.title ?? activeSummary?.latest_user_visible_status ?? "Handle active runtime work";
       progressLabel = runStatus === "running" ? "Running" : runStatus ?? (taskStatus ? taskStatusLabel(taskStatus) : "Syncing");
       progress = runStatus === "completed" ? 100 : runStatus === "running" ? 60 : taskStatus ? taskStatusProgress(taskStatus) : 30;
     } else if (busy && activeTask) {
-      progressDetails = uniqueDetails([
-        activeTask.goal,
-        ...buildBusyDetails(persona, liveState, nodeName).slice(2),
-      ]);
+      progressDetails = [];
       taskTitle = activeTask.title;
       progress = taskStatusProgress(activeTask.status);
       progressLabel = taskStatusLabel(activeTask.status);
