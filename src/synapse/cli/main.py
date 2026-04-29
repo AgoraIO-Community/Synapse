@@ -162,6 +162,16 @@ def build_parser() -> argparse.ArgumentParser:
     executor_run_parser.add_argument("--base-url", required=True, help="Public Synapse service base URL.")
     executor_run_parser.add_argument("--node-id", required=True, help="Executor node id issued by Synapse.")
     executor_run_parser.add_argument("--token", required=True, help="Executor node token issued by Synapse.")
+    executor_run_parser.add_argument(
+        "--enabled-executor",
+        action="append",
+        choices=["codex", "acpx"],
+        help="Override the enabled executor families for this run. Repeat for multiple values.",
+    )
+    executor_run_parser.add_argument(
+        "--acpx-agent",
+        help="Override the ACPX agent for this run, for example codex or openclaw.",
+    )
 
     service_parser = subparsers.add_parser("service", help="Install and control the Ubuntu systemd service.")
     service_subparsers = service_parser.add_subparsers(dest="service_command", required=True)
@@ -410,7 +420,9 @@ def cmd_executor_setup(_args: argparse.Namespace) -> int:
 
 
 def cmd_executor_run(args: argparse.Namespace) -> int:
-    _ensure_executor_runtime_configured_for_run()
+    _ensure_executor_runtime_configured_for_run(
+        enabled_executors_override=args.enabled_executor or None,
+    )
     venv_python = executor_run_python_path()
     return run_checked(
         executor_node_command(
@@ -418,6 +430,8 @@ def cmd_executor_run(args: argparse.Namespace) -> int:
             base_url=args.base_url,
             node_id=args.node_id,
             token=args.token,
+            enabled_executors=args.enabled_executor or None,
+            acpx_agent=args.acpx_agent,
         ),
         cwd=executor_run_cwd(),
     )
@@ -504,8 +518,10 @@ def executor_node_command(
     base_url: str,
     node_id: str,
     token: str,
+    enabled_executors: list[str] | None = None,
+    acpx_agent: str | None = None,
 ) -> list[str]:
-    return [
+    command = [
         str(venv_python),
         "-m",
         "synapse.executors.node",
@@ -516,6 +532,11 @@ def executor_node_command(
         "--token",
         token,
     ]
+    for executor_type in enabled_executors or []:
+        command.extend(["--enabled-executor", executor_type])
+    if acpx_agent:
+        command.extend(["--acpx-agent", acpx_agent])
+    return command
 
 
 def frontend_install_command() -> list[str]:
@@ -1238,11 +1259,18 @@ def _run_executor_setup_flow() -> None:
     print(f"[write] configured {format_user_path(ENV_LOCAL)}")
 
 
-def _ensure_executor_runtime_configured_for_run() -> None:
+def _ensure_executor_runtime_configured_for_run(
+    *,
+    enabled_executors_override: list[str] | None = None,
+) -> None:
     cli_invocation = executor_cli_invocation()
     existing_values, _ = load_env_assignments(ENV_LOCAL)
     existing_config_yaml = _load_existing_connector_yaml(connector_config_path())
-    if _executor_runtime_config_complete(existing_config_yaml, existing_values):
+    if _executor_runtime_config_complete(
+        existing_config_yaml,
+        existing_values,
+        enabled_executors_override=enabled_executors_override,
+    ):
         return
     if not setup_can_prompt():
         raise CliError(
@@ -1253,7 +1281,11 @@ def _ensure_executor_runtime_configured_for_run() -> None:
     _run_executor_setup_flow()
     refreshed_values, _ = load_env_assignments(ENV_LOCAL)
     refreshed_config_yaml = _load_existing_connector_yaml(connector_config_path())
-    if not _executor_runtime_config_complete(refreshed_config_yaml, refreshed_values):
+    if not _executor_runtime_config_complete(
+        refreshed_config_yaml,
+        refreshed_values,
+        enabled_executors_override=enabled_executors_override,
+    ):
         raise CliError(
             "Local executor runtime config is still incomplete after setup. "
             f"Check the configured executor command paths and rerun `{cli_invocation} executor setup`."
@@ -1263,8 +1295,10 @@ def _ensure_executor_runtime_configured_for_run() -> None:
 def _executor_runtime_config_complete(
     existing_config_yaml: dict[str, object],
     existing_values: dict[str, str],
+    *,
+    enabled_executors_override: list[str] | None = None,
 ) -> bool:
-    enabled_executors = _existing_executor_enabled_types(existing_config_yaml)
+    enabled_executors = enabled_executors_override or _existing_executor_enabled_types(existing_config_yaml)
     if not enabled_executors:
         return False
     executors_block = _existing_executors_config(existing_config_yaml)
@@ -1651,25 +1685,17 @@ def prompt_executor_selection(*, default_selected: list[str] | None = None) -> l
     default_selected = [item for item in (default_selected or [executors[0]]) if item in executors]
     if not default_selected:
         default_selected = [executors[0]]
-    default_indices = ",".join(str(executors.index(executor_type) + 1) for executor_type in default_selected)
+    default_index = str(executors.index(default_selected[0]) + 1)
 
     while True:
-        entered = input(f"Select detached executors [{default_indices}]: ").strip()
+        entered = input(f"Select detached executor [{default_index}]: ").strip()
         if not entered:
-            return list(default_selected)
-        selected: list[str] = []
+            return [default_selected[0]]
         try:
-            for part in entered.split(","):
-                index = int(part.strip())
-                selected.append(executors[index - 1])
+            index = int(entered.strip())
+            return [executors[index - 1]]
         except (ValueError, IndexError):
-            print("Enter one or more numeric choices separated by commas.")
-            continue
-        deduped: list[str] = []
-        for executor_type in selected:
-            if executor_type not in deduped:
-                deduped.append(executor_type)
-        return deduped
+            print("Enter one numeric choice.")
 
 
 def prompt_text_value(label: str, *, default_value: str | None, required: bool = False) -> str:
