@@ -355,6 +355,61 @@ describe("Newbro voice shell", () => {
     expect(window.location.search).toBe("?sid=session-1");
   });
 
+  it("renders sidebar Bro and Node counts from the shell snapshot", async () => {
+    clientMock.getSessionSnapshot.mockResolvedValueOnce({
+      session_id: "session-1",
+      tasks: [],
+      execution_sessions: [],
+      execution_runs: [],
+      execution_modes: [],
+      bindings: [],
+      summaries: [],
+      notification_candidates: [],
+      personas: [
+        {
+          persona_id: "persona-forge",
+          name: "Forge",
+          avatar: "bro",
+          base_prompt: "",
+          executor_node_id: "node-forge",
+          status: "idle",
+          current_task_id: null,
+        },
+        {
+          persona_id: "persona-atlas",
+          name: "Atlas",
+          avatar: "atlas",
+          base_prompt: "",
+          executor_node_id: null,
+          status: "offline",
+          current_task_id: null,
+        },
+      ],
+      interaction_requests: [],
+      attention_items: [],
+      executor_capabilities: [],
+      executor_nodes: [
+        {
+          node_id: "node-forge",
+          name: "Workshop Mini",
+          enabled_executors: ["codex"],
+          connected_executors: ["codex"],
+          connection_status: "connected",
+          token_hint: "tok...1111",
+          last_connected_at: null,
+          last_seen_at: null,
+        },
+      ],
+      communication_persona_prompt: "",
+    });
+
+    render(<App />);
+
+    const sidebar = await screen.findByTestId("newbro-sidebar");
+    expect(within(sidebar).getByRole("button", { name: "Bros" })).toHaveTextContent("2");
+    expect(within(sidebar).getByRole("button", { name: "Nodes" })).toHaveTextContent("1");
+  });
+
 
   it("opens a Bro detail page when a Home card is clicked", async () => {
     render(<RouterProvider router={getRouter()} />);

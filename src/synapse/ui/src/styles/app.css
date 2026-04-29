@@ -163,7 +163,7 @@
   border: 1px solid #e5e7eb;
   border-radius: 16px;
   background: #ffffff;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.07), 0 1px 2px rgba(0, 0, 0, 0.04);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.045);
 }
 
 .command-field {
@@ -187,6 +187,71 @@
   font-weight: 600;
   letter-spacing: 0.14em;
   text-transform: uppercase;
+}
+
+.nb-home-shell {
+  display: grid;
+  min-height: 0;
+  flex: 1;
+  grid-template-columns: 1fr;
+  overflow-y: auto;
+  background: #fafbfc;
+}
+
+.nb-home-main {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 24px 28px 0;
+}
+
+.nb-home-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding-bottom: 28px;
+  scrollbar-width: thin;
+  scrollbar-color: #d1d5db transparent;
+}
+
+.nb-home-scroll::-webkit-scrollbar {
+  width: 5px;
+}
+
+.nb-home-scroll::-webkit-scrollbar-thumb {
+  background: #e5e7eb;
+  border-radius: 5px;
+}
+
+.nb-bros-panel {
+  width: 100%;
+}
+
+.nb-bros-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 14px;
+}
+
+.nb-bro-card {
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.nb-bro-card:hover {
+  background: #ffffff;
+  box-shadow: 0 16px 34px rgba(15, 23, 42, 0.08), 0 4px 12px rgba(15, 23, 42, 0.045);
+}
+
+.nb-bro-card-title {
+  min-width: 0;
+  color: #111827;
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1.12;
+  letter-spacing: -0.03em;
+  overflow-wrap: anywhere;
 }
 
 .nb-detail-shell {
@@ -294,18 +359,30 @@
   margin-bottom: 20px;
 }
 
+.nb-detail-bro-identity {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 12px;
+}
+
 .nb-detail-bro-title {
   display: flex;
+  min-width: 0;
   align-items: center;
   gap: 12px;
   flex-wrap: wrap;
+  padding-top: 2px;
 }
 
 .nb-detail-bro-title h1 {
+  min-width: 0;
   color: #111827;
   font-size: 28px;
   font-weight: 700;
+  line-height: 1.12;
   letter-spacing: -0.03em;
+  overflow-wrap: anywhere;
 }
 
 .nb-chip {
@@ -1049,6 +1126,11 @@
 }
 
 @media (min-width: 1024px) {
+  .nb-home-shell {
+    height: 100dvh;
+    overflow: hidden;
+  }
+
   .nb-detail-shell {
     height: 100dvh;
     overflow: hidden;
@@ -1057,12 +1139,26 @@
 }
 
 @media (min-width: 1280px) {
+  .nb-bros-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .nb-detail-shell {
     grid-template-columns: minmax(0, 1fr) 380px;
   }
 }
 
 @media (max-width: 1023px) {
+  .nb-home-main {
+    overflow: visible;
+    padding: 20px 16px 0;
+  }
+
+  .nb-home-scroll {
+    overflow: visible;
+    padding-bottom: 24px;
+  }
+
   .nb-detail-main {
     overflow: visible;
     padding: 20px 16px 0;

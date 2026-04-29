@@ -16,9 +16,13 @@ export type PageId = "Home" | "Bros" | "Nodes" | "Settings";
 export function Sidebar({
   activePage,
   onNavigate,
+  broCount,
+  nodeCount,
 }: {
   activePage: PageId;
   onNavigate: (page: PageId) => void;
+  broCount: number;
+  nodeCount: number;
 }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
 
@@ -32,6 +36,7 @@ export function Sidebar({
       {navItems.map((item) => {
         const Icon = item.icon;
         const isActive = item.label === activePage;
+        const badgeValue = item.label === "Bros" ? broCount : item.label === "Nodes" ? nodeCount : null;
         return (
           <button
             key={item.label}
@@ -45,11 +50,11 @@ export function Sidebar({
           >
             <Icon className="h-4 w-4 shrink-0" strokeWidth={1.9} />
             <span className="text-[13.5px]">{item.label}</span>
-            {item.label === "Bros" || item.label === "Nodes" ? (
+            {badgeValue !== null ? (
               <span className={`ml-auto rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${
                 isActive ? "bg-[#ff6a3d]/15 text-[#ff6a3d]" : "bg-[#f1f3f5] text-[#6b7280]"
               }`} aria-hidden="true">
-                {item.label === "Bros" ? "3" : "12"}
+                {badgeValue}
               </span>
             ) : null}
           </button>

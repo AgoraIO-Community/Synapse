@@ -27,10 +27,10 @@ export function BroCard({
       type="button"
       whileTap={{ scale: 0.997 }}
       onClick={() => onClick?.(bro.id)}
-      className="command-panel min-h-[132px] w-full px-3 py-4 text-left transition duration-200 hover:-translate-y-px hover:border-[#d1d5db] hover:bg-[#f8fafc] sm:min-h-[150px] sm:px-5 sm:py-5"
+      className="command-panel nb-bro-card min-h-[132px] w-full px-4 py-4 text-left transition duration-200 hover:-translate-y-px hover:border-[#d1d5db] sm:min-h-[150px] sm:px-5 sm:py-5"
     >
-      <div className="flex min-w-0 items-start gap-2.5 sm:gap-4">
-        <div className="shrink-0 scale-[0.82] origin-top-left sm:scale-100">
+      <div className="flex min-w-0 items-start gap-3">
+        <div className="shrink-0">
           <BroPortrait bro={bro} active={isBusy} talking={false} />
         </div>
 
@@ -38,7 +38,7 @@ export function BroCard({
           <div className="flex min-w-0 flex-col gap-4">
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
-                <div className="min-w-0 break-words text-[20px] font-semibold leading-tight tracking-[-0.02em] text-[#111827] sm:text-[22px]">{bro.name}</div>
+                <div className="nb-bro-card-title">{bro.name}</div>
                 <div
                   className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${
                     isBusy

@@ -433,19 +433,28 @@ function ShellFrame({
   onNavigate,
   globalMessage,
   onGlobalMessageDismiss,
+  broCount,
+  nodeCount,
   children,
 }: {
   activePage: PageId;
   onNavigate: PageNavigator;
   globalMessage?: GlobalMessage | null;
   onGlobalMessageDismiss?: () => void;
+  broCount: number;
+  nodeCount: number;
   children: ReactNode;
 }) {
   return (
     <div className="page-wash min-h-dvh overflow-x-hidden bg-[#f5f6f8] text-[#111827] antialiased">
       <WindowDots />
       <div className="grid min-h-dvh grid-cols-1 grid-rows-[auto_minmax(0,1fr)] lg:h-dvh lg:grid-cols-[248px_minmax(0,1fr)] lg:grid-rows-none lg:overflow-hidden">
-        <Sidebar activePage={activePage} onNavigate={onNavigate} />
+        <Sidebar
+          activePage={activePage}
+          onNavigate={onNavigate}
+          broCount={broCount}
+          nodeCount={nodeCount}
+        />
         <main data-testid="newbro-shell" className="relative flex min-h-0 min-w-0 flex-col overflow-x-hidden bg-[#fafbfc] lg:overflow-hidden">
           {children}
         </main>
@@ -472,23 +481,30 @@ export function HomeShellPage({
       onNavigate={onNavigate}
       globalMessage={globalMessageFor(shell)}
       onGlobalMessageDismiss={shell.clearGlobalMessage}
+      broCount={shell.runtimePersonas.length}
+      nodeCount={shell.executorNodes.length}
     >
 
       {shell.hasLoadedShellSnapshot ? (
-        <div className="flex min-h-0 flex-1 flex-col px-4 pb-[calc(1.25rem+env(safe-area-inset-bottom))] pt-5 sm:px-6 sm:pb-8 sm:pt-7 lg:min-h-dvh lg:px-8 lg:pb-8 lg:pt-8">
-          <div className="mb-5 flex flex-wrap items-end justify-between gap-4">
-            <div>
-              <div className="text-[12px] text-[#9ca3af]">
-                Workspace <span className="text-[#d1d5db]">/</span> <span className="font-medium text-[#6b7280]">Home</span>
+        <div className="nb-home-shell">
+          <section className="nb-home-main">
+            <div className="nb-detail-topbar">
+              <div className="nb-detail-crumb">
+                <span>Workspace</span>
+                <span className="nb-detail-crumb-sep">/</span>
+                <span className="nb-detail-crumb-current">Home</span>
               </div>
-              <h1 className="mt-4 text-[28px] font-bold tracking-[-0.03em] text-[#111827]">Command Center</h1>
             </div>
-            <div className="command-chip px-3 py-1.5 text-[11px]">
-              <span className="h-1.5 w-1.5 rounded-full bg-[#10b981]" />
-              Runtime standby
+            <div className="nb-detail-bro-header">
+              <div className="nb-detail-bro-title">
+                <h1>Command Center</h1>
+                <span className="nb-chip nb-chip-online">
+                  <span className="nb-pulse" />
+                  Runtime standby
+                </span>
+              </div>
             </div>
-          </div>
-          <section className="min-h-0 flex-1 lg:overflow-y-auto lg:pr-1 subtle-scrollbar">
+            <div className="nb-home-scroll">
             <BrosPanel
               bros={shell.bros}
               sessionId={shell.activeShellSessionId}
@@ -496,6 +512,7 @@ export function HomeShellPage({
                 onBroNavigate?.(broId);
               }}
             />
+            </div>
           </section>
         </div>
       ) : shell.shellError ? (
@@ -539,6 +556,8 @@ export function BroDetailShellPage({
       onNavigate={onNavigate}
       globalMessage={globalMessageFor(shell)}
       onGlobalMessageDismiss={shell.clearGlobalMessage}
+      broCount={shell.runtimePersonas.length}
+      nodeCount={shell.executorNodes.length}
     >
       {shell.hasLoadedShellSnapshot ? (
         bro ? (
@@ -589,6 +608,8 @@ export function BrosShellPage({ onNavigate }: { onNavigate: PageNavigator }) {
       onNavigate={onNavigate}
       globalMessage={globalMessageFor(shell)}
       onGlobalMessageDismiss={shell.clearGlobalMessage}
+      broCount={shell.runtimePersonas.length}
+      nodeCount={shell.executorNodes.length}
     >
       {shell.activeShellSessionId && shell.hasLoadedShellSnapshot ? (
         <div className="min-h-0 flex-1 lg:overflow-auto">
@@ -617,6 +638,8 @@ export function NodesShellPage({ onNavigate }: { onNavigate: PageNavigator }) {
       onNavigate={onNavigate}
       globalMessage={globalMessageFor(shell)}
       onGlobalMessageDismiss={shell.clearGlobalMessage}
+      broCount={shell.runtimePersonas.length}
+      nodeCount={shell.executorNodes.length}
     >
       {shell.activeShellSessionId && shell.hasLoadedShellSnapshot ? (
         <div className="min-h-0 flex-1 lg:overflow-auto">
@@ -644,6 +667,8 @@ export function SettingsShellPage({ onNavigate }: { onNavigate: PageNavigator })
       onNavigate={onNavigate}
       globalMessage={globalMessageFor(shell)}
       onGlobalMessageDismiss={shell.clearGlobalMessage}
+      broCount={shell.runtimePersonas.length}
+      nodeCount={shell.executorNodes.length}
     >
       <div className="flex flex-1 items-center justify-center px-4 py-10">
         <div className="text-[14px] text-neutral-400">Settings coming soon.</div>

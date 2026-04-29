@@ -2,6 +2,7 @@ import { ArrowLeft, Bot, CheckCircle2, Clock, Mic, PencilLine, Play, SendHorizon
 import type { CSSProperties, KeyboardEventHandler, PointerEventHandler, ReactNode } from "react";
 import type { TaskSummary } from "../../types";
 import { MarkdownText } from "../ui/markdown-text";
+import { BroPortrait } from "./BroPortrait";
 import type { BroCardModel, BroTaskRecord } from "./types";
 
 export function WindowDots() {
@@ -337,16 +338,19 @@ export function BroDetailHeader({
         </div>
       </div>
       <div className="nb-detail-bro-header">
-        <div className="nb-detail-bro-title">
-          <h1>{bro.name}</h1>
-          <span className="nb-chip nb-chip-online">
-            <span className="nb-pulse" />
-            {bro.status === "busy" ? "Runtime running" : "Runtime standby"}
-          </span>
-          <span className="nb-chip nb-chip-muted">
-            <span className="nb-pulse nb-pulse-muted" />
-            {bro.liveState}
-          </span>
+        <div className="nb-detail-bro-identity">
+          <BroPortrait bro={bro} active={bro.status === "busy"} talking={false} />
+          <div className="nb-detail-bro-title">
+            <h1>{bro.name}</h1>
+            <span className="nb-chip nb-chip-online">
+              <span className="nb-pulse" />
+              {bro.status === "busy" ? "Runtime running" : "Runtime standby"}
+            </span>
+            <span className="nb-chip nb-chip-muted">
+              <span className="nb-pulse nb-pulse-muted" />
+              {bro.liveState}
+            </span>
+          </div>
         </div>
       </div>
     </>
