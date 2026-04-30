@@ -40,8 +40,15 @@ function shellQuote(value: string): string {
   return `'${value.replace(/'/g, `'\"'\"'`)}'`;
 }
 
-export function buildExecutorRunCommand(nodeId: string, token: string): string {
-  return [
+export function buildExecutorRunCommand(
+  nodeId: string,
+  token: string,
+  options?: {
+    enabledExecutors?: string[];
+    acpxAgent?: string | null;
+  },
+): string {
+  const command = [
     "newbro",
     "executor",
     "run",
@@ -51,7 +58,14 @@ export function buildExecutorRunCommand(nodeId: string, token: string): string {
     shellQuote(nodeId),
     "--token",
     shellQuote(token),
-  ].join(" ");
+  ];
+  for (const executorType of options?.enabledExecutors ?? []) {
+    command.push("--enabled-executor", shellQuote(executorType));
+  }
+  if (options?.acpxAgent) {
+    command.push("--acpx-agent", shellQuote(options.acpxAgent));
+  }
+  return command.join(" ");
 }
 
 function withTrailingSlash(value: string): string {
@@ -354,11 +368,13 @@ export async function deletePersona(sessionId: string, personaId: string) {
 export interface ExecutorNodeCreatePayload {
   name: string;
   enabled_executors: string[];
+  acpx_agent?: string | null;
 }
 
 export interface ExecutorNodeUpdatePayload {
   name?: string;
   enabled_executors?: string[];
+  acpx_agent?: string | null;
 }
 
 export async function listExecutorNodes(sessionId: string): Promise<ExecutorNodeRecord[]> {

@@ -189,3 +189,20 @@ async def test_acpx_executor_reports_failures_from_json_output(tmp_path):
 
     assert events[-1].event_type.value == "failed"
     assert events[-1].message == "fake failure"
+
+
+@pytest.mark.anyio
+async def test_acpx_executor_pause_uses_managed_cancel(tmp_path):
+    command = _write_fake_acpx(tmp_path)
+    executor = AcpxExecutor(command=str(command))
+    assert executor.get_capabilities().supports_pause is True
+    seen: list[str] = []
+
+    async def fake_cancel_run(run_id: str) -> None:
+        seen.append(run_id)
+
+    executor.cancel_run = fake_cancel_run  # type: ignore[method-assign]
+
+    await executor.pause_run("run-pause")
+
+    assert seen == ["run-pause"]

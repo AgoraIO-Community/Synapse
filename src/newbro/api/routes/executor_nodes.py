@@ -33,6 +33,7 @@ async def create_executor_node(
         issue = await container.executor_node_manager.create_node(
             name=body.name,
             enabled_executors=body.enabled_executors,
+            acpx_agent=body.acpx_agent,
         )
     except RuntimeError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -54,6 +55,7 @@ async def update_executor_node(
             node_id,
             name=body.name if "name" in body.model_fields_set else None,
             enabled_executors=body.enabled_executors if "enabled_executors" in body.model_fields_set else None,
+            acpx_agent=body.acpx_agent if "acpx_agent" in body.model_fields_set else None,
         )
     except RuntimeError as exc:
         detail = str(exc)

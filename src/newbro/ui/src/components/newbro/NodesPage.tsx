@@ -14,6 +14,7 @@ import { SectionHeader } from "./SectionHeader";
 import type { ExecutorNodeCredentialIssue, ExecutorNodeRecord, Persona } from "../../types";
 
 const EXECUTOR_OPTIONS = ["codex", "acpx"] as const;
+const ACPX_AGENT_OPTIONS = ["codex", "openclaw"] as const;
 
 function formatTimestamp(value: string | null) {
   if (!value) return "Never";
@@ -33,13 +34,15 @@ function NodeForm({
   initial?: {
     name: string;
     enabledExecutors: string[];
+    acpxAgent?: string | null;
   };
-  onSubmit: (data: { name: string; enabledExecutors: string[] }) => void;
+  onSubmit: (data: { name: string; enabledExecutors: string[]; acpxAgent?: string | null }) => void;
   onCancel: () => void;
   submitLabel: string;
 }) {
   const [name, setName] = useState(initial?.name ?? "");
   const [enabledExecutors, setEnabledExecutors] = useState<string[]>(initial?.enabledExecutors ?? ["codex"]);
+  const [acpxAgent, setAcpxAgent] = useState(initial?.acpxAgent ?? "codex");
 
   function toggleExecutor(executorType: string) {
     setEnabledExecutors((current) =>
@@ -78,12 +81,34 @@ function NodeForm({
         </div>
       </div>
 
+      {enabledExecutors.includes("acpx") ? (
+        <div className="space-y-2">
+          <div className="text-[12px] uppercase tracking-[0.18em] text-neutral-400">ACPX Agent</div>
+          <div className="flex flex-wrap gap-2">
+            {ACPX_AGENT_OPTIONS.map((agent) => (
+              <button
+                key={agent}
+                type="button"
+                onClick={() => setAcpxAgent(agent)}
+                className={`nb-toggle-chip ${acpxAgent === agent ? "nb-toggle-chip-active" : ""}`}
+              >
+                {agent}
+              </button>
+            ))}
+          </div>
+          <div className="text-[12px] leading-5 text-neutral-500">
+            Choose which ACPX-backed agent this node should launch when started from the copied connect command.
+          </div>
+        </div>
+      ) : null}
+
       <div className="flex flex-col gap-2 sm:flex-row">
         <button
           onClick={() =>
             onSubmit({
               name: name.trim(),
               enabledExecutors,
+              acpxAgent: enabledExecutors.includes("acpx") ? acpxAgent : null,
             })
           }
           disabled={!name.trim() || enabledExecutors.length === 0}
@@ -111,7 +136,10 @@ function CredentialsPanel({
 }) {
   const [copied, setCopied] = useState(false);
   const [copyError, setCopyError] = useState<string | null>(null);
-  const command = buildExecutorRunCommand(issue.node.node_id, issue.token);
+  const command = buildExecutorRunCommand(issue.node.node_id, issue.token, {
+    enabledExecutors: issue.node.enabled_executors,
+    acpxAgent: issue.node.acpx_agent,
+  });
 
   async function handleCopy() {
     const clipboard = navigator.clipboard;
@@ -283,7 +311,7 @@ function NodeCard({
                     : "border-neutral-200 bg-white text-neutral-500"
                 }`}
               >
-                {executorType}
+                {executorType === "acpx" && node.acpx_agent ? `${executorType}:${node.acpx_agent}` : executorType}
               </div>
             ))}
           </div>
@@ -365,13 +393,14 @@ export function NodesPage({
     void refreshData();
   }, [refreshData]);
 
-  async function handleCreate(data: { name: string; enabledExecutors: string[] }) {
+  async function handleCreate(data: { name: string; enabledExecutors: string[]; acpxAgent?: string | null }) {
     setError(null);
     setStatus(null);
     try {
       const issue = await createExecutorNode(sessionId, {
         name: data.name,
         enabled_executors: data.enabledExecutors,
+        acpx_agent: data.acpxAgent ?? null,
       });
       setLatestIssue(issue);
       setMode("list");
@@ -382,7 +411,7 @@ export function NodesPage({
     }
   }
 
-  async function handleUpdate(data: { name: string; enabledExecutors: string[] }) {
+  async function handleUpdate(data: { name: string; enabledExecutors: string[]; acpxAgent?: string | null }) {
     if (!editingNodeId) return;
     setError(null);
     setStatus(null);
@@ -390,6 +419,7 @@ export function NodesPage({
       await updateExecutorNode(sessionId, editingNodeId, {
         name: data.name,
         enabled_executors: data.enabledExecutors,
+        acpx_agent: data.acpxAgent ?? null,
       });
       setMode("list");
       setEditingNodeId(null);
@@ -433,7 +463,10 @@ export function NodesPage({
     setStatus(null);
     try {
       const issue = await revealExecutorNodeConnectCommand(sessionId, nodeId);
-      const command = buildExecutorRunCommand(issue.node.node_id, issue.token);
+      const command = buildExecutorRunCommand(issue.node.node_id, issue.token, {
+        enabledExecutors: issue.node.enabled_executors,
+        acpxAgent: issue.node.acpx_agent,
+      });
       const clipboard = navigator.clipboard;
       if (!clipboard?.writeText) {
         throw new Error("Clipboard access is unavailable. Copy the visible command manually.");
@@ -538,6 +571,7 @@ export function NodesPage({
                     ? {
                         name: editingNode.name,
                         enabledExecutors: editingNode.enabled_executors,
+                        acpxAgent: editingNode.acpx_agent,
                       }
                     : undefined
                 }

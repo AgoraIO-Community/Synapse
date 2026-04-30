@@ -168,6 +168,53 @@ async def test_send_draft_assigns_runtime_bro_and_exposes_progress_state():
 
 
 @pytest.mark.anyio
+async def test_send_draft_prefers_bound_node_executor_family(monkeypatch, tmp_path):
+    monkeypatch.setattr(node_registry, "EXECUTOR_NODES_FILE", tmp_path / "executor_nodes.yaml")
+    monkeypatch.setattr(persona_pool, "PERSONAS_FILE", tmp_path / "personas.yaml")
+    app = create_app()
+    app.state.runtime_container = _runtime_container(settings=Settings(detached_executor_enabled=True))
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+        session_id = (await client.post("/api/sessions")).json()["session_id"]
+        node_issue = (
+            await client.post(
+                f"/api/sessions/{session_id}/executor-nodes",
+                json={"name": "OpenClaw Node", "enabled_executors": ["acpx"], "acpx_agent": "openclaw"},
+            )
+        ).json()
+        node_id = node_issue["node"]["node_id"]
+
+        session = app.state.runtime_container.get_session(session_id)
+        await session.blackboard.put_persona(
+            Persona(
+                persona_id="persona-rook",
+                name="Rook",
+                avatar="fox",
+                base_prompt="Be direct.",
+                executor_node_id=node_id,
+            )
+        )
+        draft = (
+            await client.post(
+                f"/api/sessions/{session_id}/draft/asr-turns",
+                json={"raw_text": "Prepare a short execution plan.", "assigned_bro_id": "persona-rook"},
+            )
+        ).json()
+
+        response = await client.post(
+            f"/api/sessions/{session_id}/draft/send",
+            json={"draft_session_id": draft["id"]},
+        )
+
+        assert response.status_code == 200
+        task_id = response.json()["task_id"]
+        snapshot = (await client.get(f"/api/sessions/{session_id}")).json()
+        task = next(item for item in snapshot["tasks"] if item["task_id"] == task_id)
+        assert task["preferred_executor"] == "acpx"
+        assert task["metadata"]["executor_node_id"] == node_id
+
+
+@pytest.mark.anyio
 async def test_rebinding_bro_rotates_detail_session_without_deleting_old_tasks(monkeypatch, tmp_path):
     monkeypatch.setattr(node_registry, "EXECUTOR_NODES_FILE", tmp_path / "executor_nodes.yaml")
     monkeypatch.setattr(persona_pool, "PERSONAS_FILE", tmp_path / "personas.yaml")

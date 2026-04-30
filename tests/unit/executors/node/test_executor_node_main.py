@@ -42,3 +42,51 @@ def test_main_returns_130_on_keyboard_interrupt(monkeypatch, capsys):
         == 130
     )
     assert "[stop] executor node interrupted" in capsys.readouterr().out
+
+
+def test_main_applies_enabled_executor_and_acpx_agent_overrides(monkeypatch):
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr(
+        executor_node_main,
+        "load_executor_node_config",
+        lambda: LoadedExecutorNodeConfig(
+            node_settings=ExecutorNodeSettings(
+                synapse_base_url="http://127.0.0.1:8000",
+                node_id="node-1",
+                token="token-1",
+                enabled_executors=["codex"],
+            ),
+            executors={"acpx": {"command": "acpx", "agent": "codex"}},
+        ),
+    )
+
+    class FakeService:
+        def __init__(self, *, settings, executors_config):
+            captured["settings"] = settings
+            captured["executors_config"] = executors_config
+
+        async def run_forever(self):
+            return None
+
+    monkeypatch.setattr(executor_node_main, "ExecutorNodeService", FakeService)
+
+    assert (
+        executor_node_main.main(
+            [
+                "--base-url",
+                "http://127.0.0.1:8000",
+                "--node-id",
+                "node-1",
+                "--token",
+                "token-1",
+                "--enabled-executor",
+                "acpx",
+                "--acpx-agent",
+                "openclaw",
+            ]
+        )
+        == 0
+    )
+    assert captured["settings"].enabled_executors == ["acpx"]
+    assert captured["executors_config"]["acpx"]["agent"] == "openclaw"

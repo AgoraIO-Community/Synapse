@@ -19,6 +19,7 @@ class ExecutorNodeRecord(BaseModel):
     node_id: str
     name: str
     enabled_executors: list[str] = Field(default_factory=list)
+    acpx_agent: str | None = None
     connected_executors: list[str] = Field(default_factory=list)
     connection_status: Literal["connected", "disconnected"] = "disconnected"
     token_hint: str | None = None

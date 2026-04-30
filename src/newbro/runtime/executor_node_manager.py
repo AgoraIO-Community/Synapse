@@ -377,10 +377,12 @@ class ExecutorNodeManager:
         *,
         name: str,
         enabled_executors: list[str],
+        acpx_agent: str | None = None,
     ):
         return await self._registry.create_node(
             name=name,
             enabled_executors=enabled_executors,
+            acpx_agent=acpx_agent,
         )
 
     async def update_node(
@@ -389,11 +391,13 @@ class ExecutorNodeManager:
         *,
         name: str | None = None,
         enabled_executors: list[str] | None = None,
+        acpx_agent: str | None = None,
     ) -> ExecutorNodeRecord:
         return await self._registry.update_node(
             node_id,
             name=name,
             enabled_executors=enabled_executors,
+            acpx_agent=acpx_agent,
             connection=self._connection_views().get(node_id),
         )
 

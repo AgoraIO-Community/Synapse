@@ -37,7 +37,8 @@ async def test_executor_node_crud_and_rotation(monkeypatch, tmp_path):
             f"/api/sessions/{session_id}/executor-nodes",
             json={
                 "name": "Studio Mac",
-                "enabled_executors": ["codex"],
+                "enabled_executors": ["acpx"],
+                "acpx_agent": "openclaw",
             },
         )
         assert create_response.status_code == 201
@@ -45,6 +46,7 @@ async def test_executor_node_crud_and_rotation(monkeypatch, tmp_path):
         node_id = created["node"]["node_id"]
         assert created["token"]
         assert created["node"]["name"] == "Studio Mac"
+        assert created["node"]["acpx_agent"] == "openclaw"
         assert created["node"]["connection_status"] == "disconnected"
 
         list_response = await client.get(f"/api/sessions/{session_id}/executor-nodes")
@@ -65,11 +67,12 @@ async def test_executor_node_crud_and_rotation(monkeypatch, tmp_path):
 
         patch_response = await client.patch(
             f"/api/sessions/{session_id}/executor-nodes/{node_id}",
-            json={"name": "Studio Mac Mini", "enabled_executors": ["codex", "acpx"]},
+            json={"name": "Studio Mac Mini", "enabled_executors": ["codex"], "acpx_agent": None},
         )
         assert patch_response.status_code == 200
         assert patch_response.json()["name"] == "Studio Mac Mini"
-        assert patch_response.json()["enabled_executors"] == ["codex", "acpx"]
+        assert patch_response.json()["enabled_executors"] == ["codex"]
+        assert patch_response.json()["acpx_agent"] is None
 
         rotate_response = await client.post(
             f"/api/sessions/{session_id}/executor-nodes/{node_id}/credentials/rotate",
@@ -143,6 +146,27 @@ async def test_delete_executor_node_rejects_bound_bros_until_unbound(monkeypatch
         delete_response = await client.delete(f"/api/sessions/{session_id}/executor-nodes/{node_id}")
         assert delete_response.status_code == 200
         assert delete_response.json() == {"deleted": node_id}
+
+
+@pytest.mark.anyio
+async def test_executor_node_rejects_multiple_executor_families(monkeypatch, tmp_path):
+    monkeypatch.setattr(node_registry, "EXECUTOR_NODES_FILE", tmp_path / "executor_nodes.yaml")
+    monkeypatch.setattr(persona_pool, "PERSONAS_FILE", tmp_path / "personas.yaml")
+    app = _build_app()
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+        session_id = (await client.post("/api/sessions")).json()["session_id"]
+        response = await client.post(
+            f"/api/sessions/{session_id}/executor-nodes",
+            json={
+                "name": "Mixed Node",
+                "enabled_executors": ["codex", "acpx"],
+                "acpx_agent": "openclaw",
+            },
+        )
+
+    assert response.status_code == 400
+    assert "exactly one executor family" in response.text
 
 
 @pytest.mark.anyio

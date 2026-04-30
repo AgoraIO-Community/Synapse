@@ -37,7 +37,7 @@ class AcpxExecutor:
             executor_type="acpx",
             supports_resume=True,
             supports_follow_up=True,
-            supports_pause=False,
+            supports_pause=True,
             supports_cancel=True,
             supports_setup=False,
         )
@@ -67,7 +67,9 @@ class AcpxExecutor:
         )
 
     async def pause_run(self, run_id: str) -> None:
-        return None
+        # Managed pause matches the current Codex semantics: stop the active
+        # prompt now, then rely on the persisted resume handle to continue later.
+        await self.cancel_run(run_id)
 
     async def run_task(
         self,
