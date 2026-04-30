@@ -5,8 +5,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from synapse.connectors.host.config import ConnectorConfigError, ConnectorHostSettings
-from synapse.connectors.voice.agora_convoai.settings import (
+from newbro.connectors.host.config import ConnectorConfigError, ConnectorHostSettings
+from newbro.connectors.voice.agora_convoai.settings import (
     DEFAULT_STT_LANGUAGES,
     AgoraConvoAISttSettings,
     _load_agora_connector_settings_from_yaml,

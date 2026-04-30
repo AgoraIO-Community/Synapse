@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT="${SYNAPSE_INSTALL_ROOT:-$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)}"
-FRONTEND_DIR="$ROOT/src/synapse/ui"
+FRONTEND_DIR="$ROOT/src/newbro/ui"
 MIN_PYTHON_MAJOR=3
 MIN_PYTHON_MINOR=12
 
@@ -254,7 +254,7 @@ bootstrap_config_files() {
   [[ -x "$venv_python" ]] || die "Expected virtualenv python at $venv_python"
   [[ -x "$venv_newbro" ]] || die "Expected installed newbro console script at $venv_newbro"
 
-  log "Creating starter Synapse config files"
+  log "Creating starter Newbro config files"
   "$venv_newbro" setup --bootstrap-defaults
 }
 

@@ -2,13 +2,13 @@ import json
 
 import pytest
 
-from synapse.blackboard import InMemoryBlackboard
-from synapse.communication.context import CommunicationContext, ExecutorRuntimeSummary
-from synapse.communication.history import ConversationEntry
-from synapse.communication.models.openai import OpenAICommunicationModel
-from synapse.communication.tools import build_default_tool_registry
-from synapse.communication.tools.base import ToolInputError
-from synapse.protocol import Task, TaskStatus
+from newbro.blackboard import InMemoryBlackboard
+from newbro.communication.context import CommunicationContext, ExecutorRuntimeSummary
+from newbro.communication.history import ConversationEntry
+from newbro.communication.models.openai import OpenAICommunicationModel
+from newbro.communication.tools import build_default_tool_registry
+from newbro.communication.tools.base import ToolInputError
+from newbro.protocol import Task, TaskStatus
 
 
 class FakeProvider:

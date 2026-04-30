@@ -1,10 +1,10 @@
 import pytest
 
-from synapse.blackboard import InMemoryBlackboard
-from synapse.communication import persona_pool
-from synapse.communication.tools import build_default_tool_registry
-from synapse.communication.tools.base import ToolInputError
-from synapse.protocol import MutationType, TaskCommandType, TaskExecutionDetailEntry
+from newbro.blackboard import InMemoryBlackboard
+from newbro.communication import persona_pool
+from newbro.communication.tools import build_default_tool_registry
+from newbro.communication.tools.base import ToolInputError
+from newbro.protocol import MutationType, TaskCommandType, TaskExecutionDetailEntry
 
 
 @pytest.fixture(autouse=True)

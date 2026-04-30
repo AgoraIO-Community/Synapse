@@ -36,6 +36,7 @@
 
 - [Guides Index](./guides/index.md)
 - [Local Development](./guides/local-dev.md)
+- [CLI, Setup, And Publishing](./guides/cli.md)
 - [Vercel UI Deployment](./guides/vercel-ui-deployment.md)
 - [Ubuntu Systemd](./guides/ubuntu-systemd.md)
 - [Add Executor Adapter](./guides/add-executor-adapter.md)
@@ -68,7 +69,7 @@
 - [0002 Execution Sessions and Runs](./rfcs/0002-execution-sessions-and-runs.md)
 - [0003 Communication Prompt Modularization](./rfcs/0003-communication-prompt-modularization.md)
 - [0004 Headless Connector Host and CLI Setup](./rfcs/0004-headless-connector-host-and-cli-setup.md)
-- [0005 Synapse x acpx Execution Runtime Integration](./rfcs/0005-acpx-execution-runtime-integration.md)
+- [0005 Newbro x acpx Execution Runtime Integration](./rfcs/0005-acpx-execution-runtime-integration.md)
 - [0006 User-Defined Persona System](./rfcs/0006-user-defined-persona-system.md)
 - [0007 Persona Workspace and Session Continuity](./rfcs/0007-persona-workspace-and-session-continuity.md)
 - [0008 Execution Detail Context And System-Prompt Audit](./rfcs/0008-execution-detail-context-and-system-prompt-audit.md)

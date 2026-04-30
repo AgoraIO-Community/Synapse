@@ -1,9 +1,9 @@
 import pytest
 
-from synapse.blackboard import InMemoryBlackboard
-from synapse.execution import SessionManager
-from synapse.executors.adapters.mock import MockExecutor
-from synapse.protocol import SessionBinding, Task
+from newbro.blackboard import InMemoryBlackboard
+from newbro.execution import SessionManager
+from newbro.executors.adapters.mock import MockExecutor
+from newbro.protocol import SessionBinding, Task
 
 
 @pytest.mark.anyio

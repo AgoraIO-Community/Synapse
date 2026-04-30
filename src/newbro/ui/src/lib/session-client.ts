@@ -1,0 +1,522 @@
+import { ensureOk } from "./http-errors";
+import type {
+  ConversationSnapshot,
+  DiagnosticTimelineResponse,
+  ExecutorNodeCredentialIssue,
+  ExecutorNodeRecord,
+  SessionResponse,
+  SessionSnapshot,
+  SessionStreamEvent,
+  TaskCommandType,
+} from "../types";
+
+const API_PREFIX = "/api";
+const configuredApiBaseUrl = getConfiguredApiBaseUrl();
+
+function getConfiguredApiBaseUrl(): URL | null {
+  const raw = import.meta.env.VITE_API_BASE_URL?.trim();
+  if (!raw) {
+    return null;
+  }
+  return new URL(raw, window.location.origin);
+}
+
+export function getEffectiveApiBaseUrl(): string {
+  if (configuredApiBaseUrl === null) {
+    const { protocol, hostname, port } = window.location;
+    if (
+      (hostname === "localhost" || hostname === "127.0.0.1") &&
+      port !== "" &&
+      port !== "8000"
+    ) {
+      return `${protocol}//${hostname}:8000`;
+    }
+    return window.location.origin;
+  }
+  return configuredApiBaseUrl.href.replace(/\/$/, "");
+}
+
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\"'\"'`)}'`;
+}
+
+export function buildExecutorRunCommand(
+  nodeId: string,
+  token: string,
+  options?: {
+    enabledExecutors?: string[];
+    acpxAgent?: string | null;
+  },
+): string {
+  const command = [
+    "newbro",
+    "executor",
+    "run",
+    "--base-url",
+    shellQuote(getEffectiveApiBaseUrl()),
+    "--node-id",
+    shellQuote(nodeId),
+    "--token",
+    shellQuote(token),
+  ];
+  for (const executorType of options?.enabledExecutors ?? []) {
+    command.push("--enabled-executor", shellQuote(executorType));
+  }
+  if (options?.acpxAgent) {
+    command.push("--acpx-agent", shellQuote(options.acpxAgent));
+  }
+  return command.join(" ");
+}
+
+function withTrailingSlash(value: string): string {
+  return value.endsWith("/") ? value : `${value}/`;
+}
+
+function normalizePath(path: string): string {
+  return path.replace(/^\/+/, "");
+}
+
+function buildHttpUrl(path: string): string {
+  if (configuredApiBaseUrl === null) {
+    return path;
+  }
+  return new URL(normalizePath(path), withTrailingSlash(configuredApiBaseUrl.href)).toString();
+}
+
+function buildWebSocketUrl(path: string): string {
+  if (configuredApiBaseUrl === null) {
+    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+    return `${protocol}//${window.location.host}${path}`;
+  }
+
+  const socketUrl = new URL(normalizePath(path), withTrailingSlash(configuredApiBaseUrl.href));
+  if (socketUrl.protocol === "https:") {
+    socketUrl.protocol = "wss:";
+  } else if (socketUrl.protocol === "http:") {
+    socketUrl.protocol = "ws:";
+  }
+  return socketUrl.toString();
+}
+
+export async function createSession(): Promise<SessionResponse> {
+  const response = await fetch(buildHttpUrl(`${API_PREFIX}/sessions`), {
+    method: "POST",
+  });
+  return (await ensureOk(response)).json();
+}
+
+export async function getSessionSnapshot(sessionId: string): Promise<SessionSnapshot> {
+  const response = await fetch(buildHttpUrl(`${API_PREFIX}/sessions/${sessionId}`));
+  return (await ensureOk(response)).json();
+}
+
+export interface MessageResponse {
+  message_id: string;
+  reply_text: string;
+  conversational_act: string;
+  affected_task_ids: string[];
+}
+
+export async function sendSessionMessage(sessionId: string, text: string): Promise<MessageResponse> {
+  const response = await fetch(buildHttpUrl(`${API_PREFIX}/sessions/${sessionId}/messages`), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text }),
+  });
+  return (await ensureOk(response)).json();
+}
+
+export async function getConversationSnapshot(sessionId: string): Promise<ConversationSnapshot> {
+  const response = await fetch(buildHttpUrl(`${API_PREFIX}/sessions/${sessionId}/conversation`));
+  return (await ensureOk(response)).json();
+}
+
+export async function getDiagnosticTimeline(
+  sessionId: string,
+  params: {
+    afterSequence?: number;
+    taskId?: string;
+    runId?: string;
+    executionSessionId?: string;
+    requestId?: string;
+    eventPrefix?: string;
+    minLevel?: string;
+    limit?: number;
+  } = {},
+): Promise<DiagnosticTimelineResponse> {
+  const query = new URLSearchParams();
+  if (params.afterSequence !== undefined) {
+    query.set("after_sequence", String(params.afterSequence));
+  }
+  if (params.taskId) {
+    query.set("task_id", params.taskId);
+  }
+  if (params.runId) {
+    query.set("run_id", params.runId);
+  }
+  if (params.executionSessionId) {
+    query.set("execution_session_id", params.executionSessionId);
+  }
+  if (params.requestId) {
+    query.set("request_id", params.requestId);
+  }
+  if (params.eventPrefix) {
+    query.set("event_prefix", params.eventPrefix);
+  }
+  if (params.minLevel) {
+    query.set("min_level", params.minLevel);
+  }
+  if (params.limit !== undefined) {
+    query.set("limit", String(params.limit));
+  }
+  const suffix = query.size > 0 ? `?${query.toString()}` : "";
+  const response = await fetch(
+    buildHttpUrl(`${API_PREFIX}/sessions/${sessionId}/diagnostics/timeline${suffix}`),
+  );
+  return (await ensureOk(response)).json();
+}
+
+function openSocket<TEvent>(
+  path: string,
+  handlers: {
+    onOpen: () => void;
+    onMessage: (event: TEvent) => void;
+    onClose: () => void;
+    onError: () => void;
+  },
+): WebSocket {
+  const socket = new WebSocket(buildWebSocketUrl(path));
+
+  socket.addEventListener("open", handlers.onOpen);
+  socket.addEventListener("close", handlers.onClose);
+  socket.addEventListener("error", handlers.onError);
+  socket.addEventListener("message", (messageEvent) => {
+    const parsed = JSON.parse(messageEvent.data) as TEvent;
+    handlers.onMessage(parsed);
+  });
+
+  return socket;
+}
+
+export function openSessionStream(
+  sessionId: string,
+  handlers: {
+    onOpen: () => void;
+    onMessage: (event: SessionStreamEvent) => void;
+    onClose: () => void;
+    onError: () => void;
+  },
+): WebSocket {
+  return openSocket<SessionStreamEvent>(`${API_PREFIX}/sessions/${sessionId}/stream`, handlers);
+}
+
+export function sendSocketMessage(socket: WebSocket, requestId: string, text: string) {
+  socket.send(
+    JSON.stringify({
+      type: "send_message",
+      request_id: requestId,
+      text,
+    }),
+  );
+}
+
+export function sendSocketCommand(
+  socket: WebSocket,
+  requestId: string,
+  commandType: TaskCommandType,
+  targetTaskId: string,
+) {
+  socket.send(
+    JSON.stringify({
+      type: "send_command",
+      request_id: requestId,
+      command_type: commandType,
+      task_id: targetTaskId,
+    }),
+  );
+}
+
+export function sendSocketInteractionResolution(
+  socket: WebSocket,
+  requestId: string,
+  interactionRequestId: string,
+  action: "approve" | "deny" | "answer" | "confirm" | "cancel",
+  options: {
+    answerText?: string;
+    optionId?: string;
+    reason?: string;
+  } = {},
+) {
+  socket.send(
+    JSON.stringify({
+      type: "resolve_interaction_request",
+      request_id: requestId,
+      interaction_request_id: interactionRequestId,
+      action,
+      answer_text: options.answerText,
+      option_id: options.optionId,
+      reason: options.reason,
+    }),
+  );
+}
+
+export function sendSocketDraftAsrTurn(
+  socket: WebSocket,
+  requestId: string,
+  payload: {
+    raw_text: string;
+    normalized_text?: string;
+    confidence?: number;
+    assigned_bro_id?: string;
+  },
+) {
+  socket.send(
+    JSON.stringify({
+      type: "submit_asr_turn",
+      request_id: requestId,
+      raw_text: payload.raw_text,
+      normalized_text: payload.normalized_text,
+      confidence: payload.confidence,
+      assigned_bro_id: payload.assigned_bro_id,
+    }),
+  );
+}
+
+export async function resolveInteractionRequest(
+  sessionId: string,
+  interactionRequestId: string,
+  payload: {
+    action: "approve" | "deny" | "answer" | "confirm" | "cancel";
+    answer_text?: string;
+    option_id?: string;
+    reason?: string;
+  },
+) {
+  const response = await fetch(
+    buildHttpUrl(
+      `${API_PREFIX}/sessions/${sessionId}/interaction-requests/${interactionRequestId}/resolve`,
+    ),
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    },
+  );
+  return (await ensureOk(response)).json();
+}
+
+
+// --- Persona API ---
+
+export interface PersonaCreatePayload {
+  name: string;
+  avatar?: string;
+  base_prompt?: string;
+  executor_node_id?: string | null;
+}
+
+export interface PersonaUpdatePayload {
+  name?: string;
+  avatar?: string;
+  base_prompt?: string;
+  executor_node_id?: string | null;
+}
+
+export async function listPersonas(sessionId: string) {
+  const response = await fetch(buildHttpUrl(`${API_PREFIX}/sessions/${sessionId}/personas`));
+  return (await ensureOk(response)).json();
+}
+
+export async function createPersona(sessionId: string, payload: PersonaCreatePayload) {
+  const response = await fetch(buildHttpUrl(`${API_PREFIX}/sessions/${sessionId}/personas`), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return (await ensureOk(response)).json();
+}
+
+export async function updatePersona(
+  sessionId: string,
+  personaId: string,
+  payload: PersonaUpdatePayload,
+) {
+  const response = await fetch(
+    buildHttpUrl(`${API_PREFIX}/sessions/${sessionId}/personas/${personaId}`),
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    },
+  );
+  return (await ensureOk(response)).json();
+}
+
+export async function deletePersona(sessionId: string, personaId: string) {
+  const response = await fetch(
+    buildHttpUrl(`${API_PREFIX}/sessions/${sessionId}/personas/${personaId}`),
+    {
+      method: "DELETE",
+    },
+  );
+  return (await ensureOk(response)).json();
+}
+
+
+// --- Executor Nodes API ---
+
+export interface ExecutorNodeCreatePayload {
+  name: string;
+  enabled_executors: string[];
+  acpx_agent?: string | null;
+}
+
+export interface ExecutorNodeUpdatePayload {
+  name?: string;
+  enabled_executors?: string[];
+  acpx_agent?: string | null;
+}
+
+export async function listExecutorNodes(sessionId: string): Promise<ExecutorNodeRecord[]> {
+  const response = await fetch(buildHttpUrl(`${API_PREFIX}/sessions/${sessionId}/executor-nodes`));
+  return (await ensureOk(response)).json();
+}
+
+export async function createExecutorNode(
+  sessionId: string,
+  payload: ExecutorNodeCreatePayload,
+): Promise<ExecutorNodeCredentialIssue> {
+  const response = await fetch(buildHttpUrl(`${API_PREFIX}/sessions/${sessionId}/executor-nodes`), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return (await ensureOk(response)).json();
+}
+
+export async function updateExecutorNode(
+  sessionId: string,
+  nodeId: string,
+  payload: ExecutorNodeUpdatePayload,
+): Promise<ExecutorNodeRecord> {
+  const response = await fetch(
+    buildHttpUrl(`${API_PREFIX}/sessions/${sessionId}/executor-nodes/${nodeId}`),
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    },
+  );
+  return (await ensureOk(response)).json();
+}
+
+export async function rotateExecutorNodeCredentials(
+  sessionId: string,
+  nodeId: string,
+): Promise<ExecutorNodeCredentialIssue> {
+  const response = await fetch(
+    buildHttpUrl(`${API_PREFIX}/sessions/${sessionId}/executor-nodes/${nodeId}/credentials/rotate`),
+    {
+      method: "POST",
+    },
+  );
+  return (await ensureOk(response)).json();
+}
+
+export async function revealExecutorNodeConnectCommand(
+  sessionId: string,
+  nodeId: string,
+): Promise<ExecutorNodeCredentialIssue> {
+  const response = await fetch(
+    buildHttpUrl(`${API_PREFIX}/sessions/${sessionId}/executor-nodes/${nodeId}/connect-command`),
+    {
+      method: "POST",
+    },
+  );
+  return (await ensureOk(response)).json();
+}
+
+export async function deleteExecutorNode(sessionId: string, nodeId: string) {
+  const response = await fetch(
+    buildHttpUrl(`${API_PREFIX}/sessions/${sessionId}/executor-nodes/${nodeId}`),
+    {
+      method: "DELETE",
+    },
+  );
+  return (await ensureOk(response)).json();
+}
+
+
+// --- Voice Target API ---
+
+export async function setVoiceTarget(sessionId: string, targetPersonaId: string): Promise<void> {
+  await ensureOk(
+    await fetch(buildHttpUrl(`${API_PREFIX}/sessions/${sessionId}/voice-target`), {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ target_persona_id: targetPersonaId }),
+    }),
+  );
+}
+
+export async function submitDraftAsrTurn(
+  sessionId: string,
+  payload: {
+    raw_text: string;
+    normalized_text?: string;
+    confidence?: number;
+    assigned_bro_id?: string;
+  },
+) {
+  const response = await fetch(buildHttpUrl(`${API_PREFIX}/sessions/${sessionId}/draft/asr-turns`), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return (await ensureOk(response)).json();
+}
+
+export async function sendDraft(
+  sessionId: string,
+  payload: {
+    draft_session_id?: string;
+  } = {},
+) {
+  const response = await fetch(buildHttpUrl(`${API_PREFIX}/sessions/${sessionId}/draft/send`), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return (await ensureOk(response)).json();
+}
+
+export async function submitTaskCommand(
+  sessionId: string,
+  payload: {
+    command_type: TaskCommandType;
+    task_id?: string | null;
+    reason?: string | null;
+    payload?: Record<string, unknown>;
+  },
+) {
+  const response = await fetch(buildHttpUrl(`${API_PREFIX}/sessions/${sessionId}/commands`), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return (await ensureOk(response)).json();
+}
+
+export async function clearDraft(
+  sessionId: string,
+  payload: {
+    draft_session_id?: string;
+  } = {},
+) {
+  const response = await fetch(buildHttpUrl(`${API_PREFIX}/sessions/${sessionId}/draft/clear`), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return (await ensureOk(response)).json();
+}

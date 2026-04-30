@@ -4,14 +4,14 @@ import json
 import pytest
 import httpx
 
-from synapse.connectors.voice.agora_convoai.models import (
+from newbro.connectors.voice.agora_convoai.models import (
     SttSessionHeartbeatRequest,
     SttSessionLeaveRequest,
     SttSessionPrepareRequest,
     SttSessionStartRequest,
 )
-from synapse.connectors.voice.agora_convoai.settings import AgoraConvoAIConnectorSettings
-from synapse.connectors.voice.agora_convoai.stt_service import AgoraSttService, _redact_stt_join_payload
+from newbro.connectors.voice.agora_convoai.settings import AgoraConvoAIConnectorSettings
+from newbro.connectors.voice.agora_convoai.stt_service import AgoraSttService, _redact_stt_join_payload
 
 
 class _Clock:

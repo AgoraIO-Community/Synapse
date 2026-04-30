@@ -1,7 +1,7 @@
 import pytest
 
-from synapse.observability.logger import DiagnosticLogger
-from synapse.observability.store import InMemoryDiagnosticStore
+from newbro.observability.logger import DiagnosticLogger
+from newbro.observability.store import InMemoryDiagnosticStore
 
 
 def test_logger_requires_reason_code_for_warning_error_events():

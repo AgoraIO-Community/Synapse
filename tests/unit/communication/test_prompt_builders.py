@@ -1,9 +1,9 @@
 import json
 
-from synapse.communication.context import CommunicationContext, CommunicationTaskBrief, ExecutorRuntimeSummary
-from synapse.communication.history import ConversationEntry
-from synapse.communication.prompts import build_notification_messages, build_reply_messages
-from synapse.protocol import (
+from newbro.communication.context import CommunicationContext, CommunicationTaskBrief, ExecutorRuntimeSummary
+from newbro.communication.history import ConversationEntry
+from newbro.communication.prompts import build_notification_messages, build_reply_messages
+from newbro.protocol import (
     NotificationCandidate,
     NotificationCandidateType,
     NotificationPriority,

@@ -1,6 +1,6 @@
 # Implementation Phases
 
-This document is the canonical phased implementation roadmap for Synapse.
+This document is the canonical phased implementation roadmap for Newbro.
 
 The build order is deliberately separated from the final architecture description.
 
@@ -12,7 +12,7 @@ Freeze the package layout, tooling, and contributor-facing repository skeleton b
 
 ### What Gets Built
 
-- `src/synapse/` target layout is fixed in docs
+- `src/newbro/` target layout is fixed in docs
 - package skeletons are created
 - top-level repo structure is fixed:
   - `tests/`

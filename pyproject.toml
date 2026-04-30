@@ -1,10 +1,10 @@
 [project]
 name = "newbro-cli"
 version = "0.1.2"
-description = "Newbro CLI for the Synapse communication-brain / execution-brain runtime prototype"
+description = "Newbro CLI for the communication-brain / execution-brain runtime prototype"
 readme = "README.md"
 requires-python = ">=3.12"
-keywords = ["newbro", "synapse", "cli", "agent-runtime", "communication-brain", "execution-brain"]
+keywords = ["newbro", "cli", "agent-runtime", "communication-brain", "execution-brain"]
 dependencies = [
   "agora-agent-server-sdk>=1.1.1",
   "agora-token-builder>=1.0.0",
@@ -33,11 +33,11 @@ release = [
 ]
 
 [project.scripts]
-newbro = "synapse.cli.main:main"
+newbro = "newbro.cli.main:main"
 
 [project.urls]
-Repository = "https://github.com/AgoraIO/Synapse"
-Documentation = "https://github.com/AgoraIO/Synapse#readme"
+Repository = "https://github.com/AgoraIO/newbro"
+Documentation = "https://github.com/AgoraIO/newbro#readme"
 
 [build-system]
 requires = ["setuptools>=68"]
@@ -48,7 +48,7 @@ package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["synapse*"]
+include = ["newbro*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

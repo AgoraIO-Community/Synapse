@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import importlib
 
-from synapse.executors.node.config import ExecutorNodeSettings, LoadedExecutorNodeConfig
+from newbro.executors.node.config import ExecutorNodeSettings, LoadedExecutorNodeConfig
 
-executor_node_main = importlib.import_module("synapse.executors.node.__main__")
+executor_node_main = importlib.import_module("newbro.executors.node.__main__")
 
 
 def test_main_returns_130_on_keyboard_interrupt(monkeypatch, capsys):

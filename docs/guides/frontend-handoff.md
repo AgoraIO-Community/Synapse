@@ -1,8 +1,8 @@
 # Frontend Handoff
 
-This document records the current handoff state for `src/synapse/ui/` after the
+This document records the current handoff state for `src/newbro/ui/` after the
 root shell was rebuilt to match the provided JSX layout and then wired to a
-Synapse-backed interaction-memory flow.
+Newbro-backed interaction-memory flow.
 
 ## Current Product State
 
@@ -35,8 +35,8 @@ Current behavior:
 - pressing `Start` prepares and activates a gateway-backed voice session
 - the connector attaches that voice session to the existing shell
   `synapse_session_id`
-- `Interaction memory` hydrates from Synapse durable conversation history on
-  open and then continues from Synapse user-message and assistant stream events
+- `Interaction memory` hydrates from Newbro durable conversation history on
+  open and then continues from Newbro user-message and assistant stream events
 - pressing `Stop` tears the voice session down without changing the shell
 - the stopped transcript remains visible until the next live session replaces it
 - left-sidebar route navigation preserves the active `sid`
@@ -50,15 +50,15 @@ The current root page does **not** expose:
 
 ## Important Files
 
-- `src/synapse/ui/src/App.tsx`
-- `src/synapse/ui/src/components/newbro/*`
-- `src/synapse/ui/src/__tests__/App.test.tsx`
-- `src/synapse/ui/src/routes/__root.tsx`
+- `src/newbro/ui/src/App.tsx`
+- `src/newbro/ui/src/components/newbro/*`
+- `src/newbro/ui/src/__tests__/App.test.tsx`
+- `src/newbro/ui/src/routes/__root.tsx`
 
 ## Verified Commands
 
 ```bash
-cd src/synapse/ui
+cd src/newbro/ui
 npm test
 npm run build
 ```
@@ -71,7 +71,7 @@ If work continues on this shell, choose one direction explicitly before
 implementing:
 
 1. polish the current voice-transcript shell further
-2. add more Synapse runtime surfaces into this layout deliberately
+2. add more Newbro runtime surfaces into this layout deliberately
 3. expose the older runtime shell on a secondary route
 
 Do not mix those directions casually; the UI contract stays cleaner if one is
@@ -83,5 +83,5 @@ chosen first.
   requires runtime changes.
 - Preserve the componentized structure under `src/components/newbro/`.
 - Keep browser-local voice toolkit transcript separate from the adopted
-  interaction-memory contract; the left pane now follows Synapse conversation
+  interaction-memory contract; the left pane now follows Newbro conversation
   state instead of Agora transcript turns.

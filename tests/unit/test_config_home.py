@@ -5,7 +5,7 @@ import shutil
 
 import pytest
 
-from synapse.config_home import ensure_newbro_home
+from newbro.config_home import ensure_newbro_home
 
 
 def test_ensure_newbro_home_moves_legacy_directory(tmp_path: Path):
@@ -85,7 +85,7 @@ def test_ensure_newbro_home_warns_when_copy_succeeds_but_cleanup_fails(
         return original_rmtree(path, *args, **kwargs)
 
     monkeypatch.setattr(Path, "rename", failing_rename)
-    monkeypatch.setattr("synapse.config_home.shutil.rmtree", failing_rmtree)
+    monkeypatch.setattr("newbro.config_home.shutil.rmtree", failing_rmtree)
 
     migrated = ensure_newbro_home(legacy_home=legacy_home, new_home=new_home)
 

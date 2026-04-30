@@ -1,6 +1,6 @@
 # Repository Structure
 
-For open source, Synapse should move toward a `src` layout organized by domain boundaries.
+For open source, Newbro should move toward a `src` layout organized by domain boundaries.
 
 Recommended repository structure:
 
@@ -20,7 +20,7 @@ Recommended repository structure:
 ├─ evals/
 ├─ scripts/
 └─ src/
-   └─ synapse/
+   └─ newbro/
       ├─ __init__.py
       ├─ protocol/
       ├─ blackboard/
@@ -36,10 +36,10 @@ Recommended repository structure:
       └─ infrastructure/
 ```
 
-Recommended package structure inside `src/synapse/`:
+Recommended package structure inside `src/newbro/`:
 
 ```text
-src/synapse/
+src/newbro/
 ├─ protocol/
 ├─ blackboard/
 ├─ communication/
@@ -68,9 +68,9 @@ Organizing rule:
 
 The most stable public boundaries should be:
 
-- `synapse.protocol`
-- `synapse.blackboard.interfaces`
-- `synapse.executors.core`
+- `newbro.protocol`
+- `newbro.blackboard.interfaces`
+- `newbro.executors.core`
 
 This keeps the project easier to understand and extend in open source.
 
@@ -93,5 +93,5 @@ Additional repository-level guidance:
 Migration rule:
 
 - current `runtime/` remains a temporary prototype structure during migration
-- target package identity is `synapse`
+- target package identity is `newbro`
 - avoid introducing a second public package name

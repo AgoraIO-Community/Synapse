@@ -7,11 +7,11 @@ on:
       - main
     paths:
       - ".github/workflows/deploy-ui-vercel.yml"
-      - "src/synapse/ui/**"
+      - "src/newbro/ui/**"
   pull_request:
     paths:
       - ".github/workflows/deploy-ui-vercel.yml"
-      - "src/synapse/ui/**"
+      - "src/newbro/ui/**"
 
 permissions:
   contents: read
@@ -32,7 +32,7 @@ jobs:
       VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
     defaults:
       run:
-        working-directory: src/synapse/ui
+        working-directory: src/newbro/ui
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -113,7 +113,7 @@ jobs:
       VITE_GATEWAY_BASE_URL: https://newbro.plutoless.com
     defaults:
       run:
-        working-directory: src/synapse/ui
+        working-directory: src/newbro/ui
     steps:
       - name: Checkout
         uses: actions/checkout@v4

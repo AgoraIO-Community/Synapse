@@ -1,6 +1,6 @@
 # Memories
 
-Short log of important design decisions and changes for Synapse.
+Short log of important design decisions and changes for Newbro.
 
 ## 2026-04-04
 
@@ -46,7 +46,7 @@ Short log of important design decisions and changes for Synapse.
 - Tightened `control_task` so the communication tool surface accepts only canonical protocol command tokens such as `resume_task`, and invalid LLM-emitted aliases now round-trip through the OpenAI tool loop instead of crashing the message route.
 - Switched the communication LLM path to a traditional OpenAI-compatible `chat.completions` loop that replays the local 30-message conversation history each turn instead of using Responses API conversation-state handles.
 - Tightened executor selection so `create_task` rejects unknown `preferred_executor` ids and queued tasks with already-invalid executor ids now fail with a summary instead of crashing execution.
-- Added a real Codex app-server executor path in `src/synapse`, wired runtime bootstrap to enable it via `SYNAPSE_CODEX_EXECUTOR_ENABLED`, and made Codex the default executor when enabled successfully while keeping mock available for explicit fallback and tests.
+- Added a real Codex app-server executor path in `src/newbro`, wired runtime bootstrap to enable it via `SYNAPSE_CODEX_EXECUTOR_ENABLED`, and made Codex the default executor when enabled successfully while keeping mock available for explicit fallback and tests.
 - Changed session message and command handling to schedule execution in a background loop instead of awaiting executor completion inline, so Codex-backed work no longer blocks the HTTP request path and snapshot updates flow over the existing session stream.
 - Reused the session websocket as a bidirectional mixed stream, keeping snapshot/debug events while adding websocket `send_message` / `send_command` actions plus transient assistant-response events and hiding internal communication tool calls from the frontend transport.
 - Reworked the communication tool surface around `add_task_note`, `add_constraint`, and `list_tasks`, removed silent latest-task fallback for ambiguous references, and added communication eval scaffolding for tool choice and spoken-reply quality regression checks.
@@ -86,28 +86,28 @@ Short log of important design decisions and changes for Synapse.
 ## 2026-04-13
 
 - Renamed the public package, CLI, docs, env prefixes, and example bridge surface from `synopse` to `synapse`, and added a repo-root `synapse` bootstrap launcher plus a first-class Python CLI for setup, doctor, and local app startup.
-- Split local bootstrap so `install.sh` now installs supported dev dependencies and repo packages, while `synapse setup` became an env-configuration wizard for the root `.env.local` with a non-interactive automation path.
-- Added a separate headless gateway host plus first-party `src/synapse/gateways/` modules, promoted Agora ConvoAI into the new gateway module structure, and extended the CLI so gateway config can be prompted from `synapse setup` or `synapse gateway setup` and auto-started from `synapse dev` / `synapse start`.
+- Split local bootstrap so `install.sh` now installs supported dev dependencies and repo packages, while `newbro setup` became an env-configuration wizard for the root `.env.local` with a non-interactive automation path.
+- Added a separate headless gateway host plus first-party `src/newbro/gateways/` modules, promoted Agora ConvoAI into the new gateway module structure, and extended the CLI so gateway config can be prompted from `newbro setup` or `newbro gateway setup` and auto-started from `newbro dev` / `newbro start`.
 
 ## 2026-04-14
 
 - Switched gateway host configuration to a shared `config/gateway.yaml` contract referenced by `SYNAPSE_GATEWAY_CONFIG_FILE`, renamed public gateway config naming from `modules` to `gateways`, and moved Agora ConvoAI ASR/TTS selection to YAML-backed managed or BYOK settings.
 - Updated the Agora gateway prepare flow so frontend requests can override `agent_instructions`, `agent_greeting`, `agent_uid`, and `user_uid` per session while keeping the Synapse bridge-backed LLM path internal.
 - Moved the live runtime env and gateway YAML out of the repo and into `~/.synapse/.env` plus `~/.synapse/config.yaml`, keeping repo files as setup templates only.
-- Moved the main React/Vite frontend workspace from repo-root `frontend/` to `src/synapse/ui/`, while keeping `synapse frontend`, `synapse dev`, and `install.sh` wired to the new location.
-- Moved the Agora example browser client from `examples/agora_conversational_ai/frontend/` to repo-root `exmaple-ui/` while keeping `src/synapse/ui/` as the main CLI-managed frontend workspace.
+- Moved the main React/Vite frontend workspace from repo-root `frontend/` to `src/newbro/ui/`, while keeping `synapse frontend`, `newbro dev`, and `install.sh` wired to the new location.
+- Moved the Agora example browser client from `examples/agora_conversational_ai/frontend/` to repo-root `exmaple-ui/` while keeping `src/newbro/ui/` as the main CLI-managed frontend workspace.
 - Removed the CLI dependency on a tracked repo `.env.example` and moved the setup wizard to a code-defined env template while keeping `~/.synapse/.env` as the rendered config destination.
-- Updated `install.sh` to create starter `~/.synapse/.env` and `~/.synapse/config.yaml` files during bootstrap without overwriting existing user config, leaving `synapse setup` for filling in real values afterward.
+- Updated `install.sh` to create starter `~/.synapse/.env` and `~/.synapse/config.yaml` files during bootstrap without overwriting existing user config, leaving `newbro setup` for filling in real values afterward.
 - Pinned Agora ConvoAI gateway setup to the `US` region, removed interactive prompts for token TTL and speak/request tuning, and changed the managed Minimax default voice to `English_magnetic_voiced_man`.
-- Removed the legacy `examples/agora_conversational_ai` bridge package and its dedicated integration tests, leaving the first-party `src/synapse/gateways/agora_convoai/` gateway module plus repo-root `exmaple-ui/` as the supported Agora path.
-- Added a first-class `synapse service` CLI for Ubuntu/systemd deployment from a repo checkout, installing one combined `synapse.service` unit that runs `synapse start` as the deploy user and keeps runtime config in `~/.synapse`.
+- Removed the legacy `examples/agora_conversational_ai` bridge package and its dedicated integration tests, leaving the first-party `src/newbro/gateways/agora_convoai/` gateway module plus repo-root `exmaple-ui/` as the supported Agora path.
+- Added a first-class `synapse service` CLI for Ubuntu/systemd deployment from a repo checkout, installing one combined `newbro.service` unit that runs `newbro start` as the deploy user and keeps runtime config in `~/.synapse`.
 - Allowed `synapse service install` to run as `root`, with the installed systemd unit now running as the invoking user and reading runtime config from that user’s `~/.synapse` home.
-- Moved the Codex executor command path out of `SYNAPSE_CODEX_COMMAND` env and into `~/.synapse/config.yaml` under `runtime.codex_command`, while keeping `synapse setup` responsible for prompting and migrating the effective path.
+- Moved the Codex executor command path out of `SYNAPSE_CODEX_COMMAND` env and into `~/.synapse/config.yaml` under `runtime.codex_command`, while keeping `newbro setup` responsible for prompting and migrating the effective path.
 
 ## 2026-04-15
 
-- Reworked the main frontend in `src/synapse/ui/` into a chat-first dual-pane workbench with `Conversation` on the left and `Workbench` on the right, keeping debug detail as a secondary surface instead of the primary layout.
-- Upgraded the main frontend workspace to Vite 8, introduced TanStack Router and TanStack Query for frontend app structure and durable read-model state, and moved the session HTTP/WebSocket client code under `src/synapse/ui/src/lib/`.
+- Reworked the main frontend in `src/newbro/ui/` into a chat-first dual-pane workbench with `Conversation` on the left and `Workbench` on the right, keeping debug detail as a secondary surface instead of the primary layout.
+- Upgraded the main frontend workspace to Vite 8, introduced TanStack Router and TanStack Query for frontend app structure and durable read-model state, and moved the session HTTP/WebSocket client code under `src/newbro/ui/src/lib/`.
 - Added a documented `Frontend Workbench` guide under `docs/guides/` so the current main UI intent, stack, and data-flow boundaries are part of the stable docs.
 
 ## 2026-04-16
@@ -121,8 +121,8 @@ Short log of important design decisions and changes for Synapse.
 
 ## 2026-04-17
 
-- Added configurable frontend transport base support through `VITE_API_BASE_URL`, plus backend `SYNAPSE_CORS_ALLOWED_ORIGINS`, so the main UI under `src/synapse/ui/` can be deployed on a separate public origin such as Vercel while keeping local same-origin behavior as the default.
-- Added a first-party GitHub Actions Vercel deployment workflow for `src/synapse/ui/`, with pull-request previews and production deploys from `main`.
+- Added configurable frontend transport base support through `VITE_API_BASE_URL`, plus backend `SYNAPSE_CORS_ALLOWED_ORIGINS`, so the main UI under `src/newbro/ui/` can be deployed on a separate public origin such as Vercel while keeping local same-origin behavior as the default.
+- Added a first-party GitHub Actions Vercel deployment workflow for `src/newbro/ui/`, with pull-request previews and production deploys from `main`.
 
 ## 2026-04-18
 
@@ -133,8 +133,8 @@ Short log of important design decisions and changes for Synapse.
 - Reworked the main frontend voice path into a top-centered `Text` / `Voice` mode switch that recreates a fresh session on each mode change, rebinds the whole shell to the gateway-returned voice `synapse_session_id` while voice mode is active, and shows live Agora transcript turns in the left pane.
 - Promoted the left-pane mode switch into a larger hero-adjacent control and changed the main frontend to boot into `Voice` mode by default instead of `Text`.
 - Reworked voice mode so it now boots idle by default, uses an attached left-edge mode rail on desktop, and exposes explicit `Start` / `Stop` plus microphone `Mute` / `Unmute` controls before and during live voice interaction.
-- Vendored `src/synapse/ui/vendor/agora-rtm/` and pointed the frontend workspace at that local package so plain `npm install` works on Vercel without `--legacy-peer-deps` despite the published Agora RTM package's incompatible peer declaration.
-- Added `@rolldown/binding-linux-x64-gnu` as a root optional dependency in `src/synapse/ui/` so Vite 8 builds on Linux/Vercel do not fail when npm skips Rolldown's nested native binding package.
+- Vendored `src/newbro/ui/vendor/agora-rtm/` and pointed the frontend workspace at that local package so plain `npm install` works on Vercel without `--legacy-peer-deps` despite the published Agora RTM package's incompatible peer declaration.
+- Added `@rolldown/binding-linux-x64-gnu` as a root optional dependency in `src/newbro/ui/` so Vite 8 builds on Linux/Vercel do not fail when npm skips Rolldown's nested native binding package.
 
 ## 2026-04-21
 
@@ -142,36 +142,36 @@ Short log of important design decisions and changes for Synapse.
 - Extended `query_task_detail` to return bounded execution detail and command history, and added always-on `system_messages` audit logging on `comm.llm.request_built` for Communication Brain message turns.
 - Filtered low-value Codex progress chatter out of task execution detail, made run/task projection writes change-aware, and demoted repetitive progress-refresh blackboard logs out of normal `INFO` output.
 - Cut real executor runtime over to a detached executor-host process with a dedicated `/api/executors/control` websocket, keeping Synapse as the durable control plane while `mock` remains the only in-process executor.
-- Added executor-node-aware execution state including `waiting_executor`, persisted `executor_node_id` on execution lineage/binding objects, opaque workspace ids for `session_affinity`, and dedicated `synapse executor setup` / `synapse executor run` CLI flows.
+- Added executor-node-aware execution state including `waiting_executor`, persisted `executor_node_id` on execution lineage/binding objects, opaque workspace ids for `session_affinity`, and dedicated `newbro executor setup` / `newbro executor run` CLI flows.
 
 ## 2026-04-22
 
 - Removed detached executor host-token auth and the unused control-channel heartbeat from the adopted V1 contract, leaving websocket connect/disconnect as the only liveness signal.
-- Made detached-executor enablement and executor-family selection control-plane config under `synapse setup`, while `synapse executor setup` now owns only executor-side host config and generates a stable local `node_id`.
-- Changed `synapse start` / systemd deployment so the main FastAPI origin now serves the built frontend UI from `/`, while same-origin `/gateway/...` requests are proxied back to the separate gateway host.
-- Replaced the adopted Caddy-based `synapse start` front door with an in-repo `synapse.edge` transport layer that serves the built UI and proxies API, websocket, and gateway traffic to internal backend and gateway listeners.
-- Made detached executor host foreground lifecycle explicit so `synapse executor run` now prints start, connect, ready, disconnect, retry, and interrupt state instead of failing silently during control-channel connection issues.
-- Merged the temporary `synapse.edge` transport back into the main Synapse service so `synapse start` now runs one public service process that serves the built UI, exposes `/api/sessions` and `/api/executors/control`, and mounts enabled `/gateway/...` routes directly.
-- Renamed the executor substrate packages to `src/synapse/executors/{core,adapters,host}`, moved connector runtime code under `src/synapse/connectors/{base,host,voice/...}`, and renamed the public connector contract to `connector_host`, `connectors`, `SYNAPSE_CONNECTOR_*`, `VITE_CONNECTOR_BASE_URL`, `synapse connector ...`, and `/api/connectors/...`.
-- Renamed the detached executor worker contract from `host` to `node`, moving code under `src/synapse/executors/node` and renaming the current executor control-plane fields to `executor_node`, `executor_node_id`, and `node_id`.
+- Made detached-executor enablement and executor-family selection control-plane config under `newbro setup`, while `newbro executor setup` now owns only executor-side host config and generates a stable local `node_id`.
+- Changed `newbro start` / systemd deployment so the main FastAPI origin now serves the built frontend UI from `/`, while same-origin `/gateway/...` requests are proxied back to the separate gateway host.
+- Replaced the adopted Caddy-based `newbro start` front door with an in-repo `newbro.edge` transport layer that serves the built UI and proxies API, websocket, and gateway traffic to internal backend and gateway listeners.
+- Made detached executor host foreground lifecycle explicit so `newbro executor run` now prints start, connect, ready, disconnect, retry, and interrupt state instead of failing silently during control-channel connection issues.
+- Merged the temporary `newbro.edge` transport back into the main Synapse service so `newbro start` now runs one public service process that serves the built UI, exposes `/api/sessions` and `/api/executors/control`, and mounts enabled `/gateway/...` routes directly.
+- Renamed the executor substrate packages to `src/newbro/executors/{core,adapters,host}`, moved connector runtime code under `src/newbro/connectors/{base,host,voice/...}`, and renamed the public connector contract to `connector_host`, `connectors`, `SYNAPSE_CONNECTOR_*`, `VITE_CONNECTOR_BASE_URL`, `synapse connector ...`, and `/api/connectors/...`.
+- Renamed the detached executor worker contract from `host` to `node`, moving code under `src/newbro/executors/node` and renaming the current executor control-plane fields to `executor_node`, `executor_node_id`, and `node_id`.
 
 ## 2026-04-23
 
 - Moved the adopted public runtime contract under `/api/*`, including session HTTP routes, connector routes, health/OpenAPI/docs endpoints, and both websocket paths, so frontend-serving origins can proxy all non-frontend traffic with a single `/api/` rule.
 - Replaced the main frontend root shell with a componentized `Newbro` command-center concept layout, using a light persona-to-card adapter with seeded sample fallbacks instead of the prior live workbench root experience.
 - Wired the `Newbro` shell's `Interaction memory` panel to live Agora transcript state, with explicit top-bar start/stop/mute controls, shell rebinding to the gateway-backed voice `synapse_session_id`, and retained transcript history after stop.
-- Added operator-managed executor-node CRUD with issued node-token enrollment, per-Bro `executor_node_id` binding, derived Bro liveness from the bound node's live control-channel connection state, and a copyable `synapse executor run --base-url ... --node-id ... --token ...` connect command in the UI.
-- Removed the local `executor_node.enabled` gate and made `synapse executor run` reuse the local executor setup flow automatically when executor-family or command-path config is missing.
+- Added operator-managed executor-node CRUD with issued node-token enrollment, per-Bro `executor_node_id` binding, derived Bro liveness from the bound node's live control-channel connection state, and a copyable `newbro executor run --base-url ... --node-id ... --token ...` connect command in the UI.
+- Removed the local `executor_node.enabled` gate and made `newbro executor run` reuse the local executor setup flow automatically when executor-family or command-path config is missing.
 - Restored a persistent node-card `Copy connect command` path by storing revealable raw node tokens server-side for explicit on-demand copy while keeping hash-based auth verification.
 - Routed the left sidebar pages through TanStack Router so `Home`, `Bros`, `Nodes`, and `Settings` keep their URL and survive refresh/direct open while sharing one live shell state.
 - Changed browser voice mode to attach to the existing shell Synapse session instead of swapping to a connector-created voice session, and made the Agora connector default its channel name to that `session_id` with a generated unique fallback only when no session id is supplied.
 - Added browser URL session resume through `?sid=...`, so the frontend now reopens an existing shell session when possible, rewrites `sid` to the active session id, and falls back to a fresh session with a warning when resume fails.
 - Moved the `Interaction memory` pane off browser-local Agora transcript state so it now hydrates from Synapse durable conversation history on open and then continues from local user sends plus Synapse assistant stream events.
-- Folded connector configuration into `synapse setup`, removed host-side detached executor prompts from that flow, and treated detached execution as an always-on control-plane capability while executor nodes remain the place where enabled executor families are declared.
+- Folded connector configuration into `newbro setup`, removed host-side detached executor prompts from that flow, and treated detached execution as an always-on control-plane capability while executor nodes remain the place where enabled executor families are declared.
 - Added a first-class Synapse `user_message_appended` stream event and moved the `Interaction memory` pane fully onto Synapse user/assistant stream events after bootstrap, removing local user echo from the frontend.
-- Changed `synapse service install` to restart `synapse.service` after installing and enabling the unit, so service-hosted deployments pick up the latest checkout immediately.
+- Changed `synapse service install` to restart `newbro.service` after installing and enabling the unit, so service-hosted deployments pick up the latest checkout immediately.
 - Renamed the public package and CLI surface to `newbro-cli` / `newbro`, moved user config and workspace storage to `~/.newbro` with one-time migration from `~/.synapse`, and updated executor connect commands plus the systemd unit name to `newbro.service`.
-- Removed the stale repo-root `synapse.py` launcher, kept `./newbro` as the only root bootstrap launcher, and made `newbro service install` fail fast when the installed `newbro` console script is missing or not executable.
+- Removed the stale repo-root `newbro.py` launcher, kept `./newbro` as the only root bootstrap launcher, and made `newbro service install` fail fast when the installed `newbro` console script is missing or not executable.
 
 - Adopted `newbro v0` as a draft-to-execute workflow: ASR turns update a mutable Draft, Send creates an immutable Task contract, and changing direction requires stopping and starting a new Draft.
 - Changed Bro Detail ASR to use connector-managed STT sessions with fast RTC prepare, unique Agora-safe channels per page start, press-to-talk microphone control, explicit leave stop, and heartbeat timeout cleanup after more than 60 seconds without heartbeat.
@@ -190,3 +190,9 @@ Short log of important design decisions and changes for Synapse.
 - Changed Draft Brain rewriting to use the LLM-backed Draft Cleaner prompt and fail when no LLM draft rewriter is configured, removing deterministic draft generation from the active runtime path.
 - Changed Draft Cleaner output to plain sendable task text, with websocket `submit_asr_turn` streaming transient `draft_output_*` events while durable snapshots keep the existing `DraftSession` shape.
 - Simplified the Draft protocol model to `text` and update summary; Send maps `Draft.text` into the immutable Task contract.
+
+## 2026-04-30
+
+- Changed the Codex executor adapter to normalize `agentMessage` commentary deltas into progress events so `ExecutionRun.latest_progress_message` updates during a run rather than only after completed assistant items.
+- Removed the global Communication Persona prompt/config surface; worker Bro behavior is now configured through each persona's own `base_prompt`, and session snapshots no longer expose `communication_persona_prompt`.
+- Renamed the active Python package namespace and source tree from `synapse` / `src/synapse` to `newbro` / `src/newbro`; `import synapse` is no longer supported, while existing `SYNAPSE_*` environment variables remain unchanged.

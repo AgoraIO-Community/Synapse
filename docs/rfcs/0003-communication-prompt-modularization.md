@@ -20,7 +20,7 @@ That file currently mixes:
 - provider transport invocation
 
 This RFC proposes moving prompt assembly into a dedicated
-`synapse.communication.prompts` package while preserving current behavior.
+`newbro.communication.prompts` package while preserving current behavior.
 
 The immediate target is the two currently implemented prompt paths:
 
@@ -42,7 +42,7 @@ but it becomes harder to maintain as prompt tuning grows.
 
 ## Goals
 
-- introduce a dedicated `synapse.communication.prompts` package
+- introduce a dedicated `newbro.communication.prompts` package
 - separate prompt assembly from `OpenAICommunicationModel`
 - preserve current behavior and message ordering where practical
 - keep runtime context as a structured payload instead of mixing it into prose
@@ -252,6 +252,6 @@ be added once there are real independent prompt entrypoints for them.
 
 When this proposal is implemented and treated as current design, stable docs may
 be updated to mention the concrete prompt-package structure under
-`synapse.communication.prompts`.
+`newbro.communication.prompts`.
 
 Until then, this RFC is design intent only.

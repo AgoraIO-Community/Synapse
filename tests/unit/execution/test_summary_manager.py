@@ -1,5 +1,5 @@
-from synapse.execution import SummaryManager
-from synapse.protocol import ExecutionRun, RunStatus, Task, TaskStatus
+from newbro.execution import SummaryManager
+from newbro.protocol import ExecutionRun, RunStatus, Task, TaskStatus
 
 
 def test_summary_manager_builds_blocked_summary():

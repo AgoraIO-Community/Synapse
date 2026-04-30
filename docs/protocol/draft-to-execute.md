@@ -53,7 +53,7 @@ mic disabled locally
 ```
 
 Each prepare call creates a fresh Agora `channel_name` instead of reusing the
-Synapse session id. The channel is ASCII-safe, bounded to the Agora channel name
+Newbro session id. The channel is ASCII-safe, bounded to the Agora channel name
 limits, and returned by the connector so the browser RTC join and STT bot join
 use the same channel.
 
@@ -89,7 +89,7 @@ does not merge translated transcript text into this original transcript stream.
 ## Draft Session
 
 A `DraftSession` is the mutable pre-send workspace for one potential task.
-The v0 runtime keeps one active draft session per Synapse session.
+The v0 runtime keeps one active draft session per Newbro session.
 
 Fields:
 

@@ -1,13 +1,13 @@
 import pytest
 
-from synapse.blackboard import InMemoryBlackboard
-from synapse.communication.context import (
+from newbro.blackboard import InMemoryBlackboard
+from newbro.communication.context import (
     DEFAULT_HISTORY_LIMIT,
     CommunicationContextBuilder,
 )
-from synapse.communication.history import InMemoryConversationHistory
-from synapse.executors.core import ExecutorCapabilities
-from synapse.protocol import Task, TaskExecutionDetailEntry
+from newbro.communication.history import InMemoryConversationHistory
+from newbro.executors.core import ExecutorCapabilities
+from newbro.protocol import Task, TaskExecutionDetailEntry
 
 
 @pytest.mark.anyio

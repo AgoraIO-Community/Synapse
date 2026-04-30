@@ -2,8 +2,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from synapse.protocol import Draft
-from synapse.runtime.drafts import (
+from newbro.protocol import Draft
+from newbro.runtime.drafts import (
     DRAFT_CLEANER_SYSTEM_PROMPT,
     DraftRewriteInput,
     DraftRewriteInvalidOutput,

@@ -51,7 +51,7 @@ The intended operator flow is:
    to preconfigure local executor families and command paths
 3. copy the generated connect command from the `Nodes` page
 4. start the node with that command, for example:
-   `newbro executor run --base-url https://synapse.example.com --node-id node-1234 --token secret`
+   `newbro executor run --base-url https://newbro.example.com --node-id node-1234 --token secret`
 
 If local executor runtime config is still missing when you run that command,
 `./newbro executor run` now launches the same local setup flow automatically
@@ -62,7 +62,7 @@ terminal:
 
 - `[start]` after local config is loaded
 - `[connect]` before each control-channel dial attempt
-- `[ready]` only after the node registers successfully with Synapse
+- `[ready]` only after the node registers successfully with Newbro
 - `[warn]` plus `[retry]` when connection or registration fails and the node is
   retrying
 - `[stop]` on manual interrupt
@@ -79,7 +79,7 @@ Backend-only and frontend-only commands:
 
 `./newbro start` is the production-style runtime entrypoint used by the
 systemd service path. It expects an existing frontend production build and runs
-one main Synapse service on the public port. That service serves the built UI
+one main Newbro service on the public port. That service serves the built UI
 from `/`, keeps the normal API and websocket routes on the same origin, and
 mounts `/api/connectors/...` routes directly when connectors are enabled.
 

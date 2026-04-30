@@ -1,14 +1,14 @@
 from datetime import UTC, datetime
 
-from synapse.communication.model import LlmTraceRecord
-from synapse.blackboard import BlackboardWriteEvent, BlackboardWriteKind
-from synapse.observability.emitters.blackboard import BlackboardDiagnosticEmitter
-from synapse.notification.policy import NotificationDeliveryGroup, NotificationDeliveryPlan
-from synapse.observability.emitters.communication import CommunicationDiagnosticEmitter
-from synapse.observability.emitters.notification import NotificationDiagnosticEmitter
-from synapse.observability.logger import DiagnosticLogger
-from synapse.observability.store import InMemoryDiagnosticStore
-from synapse.protocol import (
+from newbro.communication.model import LlmTraceRecord
+from newbro.blackboard import BlackboardWriteEvent, BlackboardWriteKind
+from newbro.observability.emitters.blackboard import BlackboardDiagnosticEmitter
+from newbro.notification.policy import NotificationDeliveryGroup, NotificationDeliveryPlan
+from newbro.observability.emitters.communication import CommunicationDiagnosticEmitter
+from newbro.observability.emitters.notification import NotificationDiagnosticEmitter
+from newbro.observability.logger import DiagnosticLogger
+from newbro.observability.store import InMemoryDiagnosticStore
+from newbro.protocol import (
     NotificationCandidate,
     NotificationCandidateType,
     NotificationDeliveryStatus,

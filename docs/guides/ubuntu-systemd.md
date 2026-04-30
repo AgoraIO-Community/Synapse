@@ -1,6 +1,6 @@
 # Ubuntu Systemd
 
-Synapse now supports a repo-checkout Ubuntu deployment path through the CLI:
+Newbro now supports a repo-checkout Ubuntu deployment path through the CLI:
 
 ```bash
 ./newbro service install
@@ -25,7 +25,7 @@ The installed service runs:
 
 That means:
 
-- one main Synapse service listens on the public port and becomes the single
+- one main Newbro service listens on the public port and becomes the single
   browser-facing origin
 - the production frontend build is served from the same origin at `/`
 - the normal API and websocket routes live on that same service origin
@@ -42,7 +42,7 @@ That means:
   `./newbro service install`, and it reads the shared runtime-plus-connector
   config from that user’s home directory.
 - This path builds the production frontend during `newbro service install` and
-  serves the built UI directly from the main Synapse service.
+  serves the built UI directly from the main Newbro service.
 - `newbro service install` now starts or restarts the service automatically, so
   use it as the normal “deploy the current checkout” command.
 - If the Codex executor is enabled, set an absolute `runtime.codex_command` in
@@ -52,7 +52,7 @@ That means:
   not required for this service-hosted UI path.
 - If Agora or another external caller must reach
   `/api/connectors/agora-convoai/chat/completions`, set `connector_host.public_base_url` in
-  `~/.newbro/config.yaml` to the public Synapse service origin.
+  `~/.newbro/config.yaml` to the public Newbro service origin.
 
 Runtime config lives in:
 

@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from synapse.connectors.host.config import load_connector_config
+from newbro.connectors.host.config import load_connector_config
 
 
 def force_yaml_fallback(monkeypatch) -> None:

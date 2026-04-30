@@ -8,14 +8,14 @@ from fastapi import APIRouter
 from httpx import ASGITransport, AsyncClient
 import websockets
 
-import synapse.connectors.host.app as connector_host_app_module
-from synapse.connectors.host.app import create_app
-from synapse.connectors.host.config import ConnectorHostSettings
-from synapse.connectors.base import BaseConnectorModule, ConnectorModuleRegistry
-from synapse.connectors.base.transport import HttpSynapseConnectorTransport
-from synapse.connectors.voice.agora_convoai.module import create_headless_app
-from synapse.connectors.voice.agora_convoai.service import AgoraSDKConvoAIService
-from synapse.connectors.voice.agora_convoai.settings import AgoraConvoAIConnectorSettings
+import newbro.connectors.host.app as connector_host_app_module
+from newbro.connectors.host.app import create_app
+from newbro.connectors.host.config import ConnectorHostSettings
+from newbro.connectors.base import BaseConnectorModule, ConnectorModuleRegistry
+from newbro.connectors.base.transport import HttpNewbroConnectorTransport
+from newbro.connectors.voice.agora_convoai.module import create_headless_app
+from newbro.connectors.voice.agora_convoai.service import AgoraSDKConvoAIService
+from newbro.connectors.voice.agora_convoai.settings import AgoraConvoAIConnectorSettings
 
 
 class FakeConnectorModule(BaseConnectorModule):
@@ -128,7 +128,7 @@ async def test_connector_host_applies_cors_to_connector_routes(monkeypatch):
 
 
 def test_http_synapse_connector_transport_disables_proxy_env():
-    transport = HttpSynapseConnectorTransport("http://127.0.0.1:8000")
+    transport = HttpNewbroConnectorTransport("http://127.0.0.1:8000")
     try:
         assert transport._http._trust_env is False
     finally:
@@ -172,7 +172,7 @@ async def test_http_synapse_connector_transport_passes_proxy_none_to_websockets(
 
     monkeypatch.setattr(websockets, "connect", fake_connect)
 
-    transport = HttpSynapseConnectorTransport("http://127.0.0.1:8000")
+    transport = HttpNewbroConnectorTransport("http://127.0.0.1:8000")
     try:
         events = []
         async for event in transport.stream_message("session-1", "hello", request_id="req-1"):
@@ -434,7 +434,7 @@ async def test_agora_connector_activate_ignores_proxy_env_for_synapse_upstream(m
     monkeypatch.setenv("HTTP_PROXY", "http://proxy.invalid:9999")
     monkeypatch.setenv("HTTPS_PROXY", "http://proxy.invalid:9999")
     monkeypatch.setattr(
-        "synapse.connectors.voice.agora_convoai.module.HttpSynapseConnectorTransport",
+        "newbro.connectors.voice.agora_convoai.module.HttpNewbroConnectorTransport",
         FakeTransport,
     )
     monkeypatch.setattr(
@@ -571,7 +571,7 @@ async def test_agora_connector_activate_reuses_existing_synapse_session_binding(
             self.enable_error_message = kwargs.get("enable_error_message")
 
     monkeypatch.setattr(
-        "synapse.connectors.voice.agora_convoai.module.HttpSynapseConnectorTransport",
+        "newbro.connectors.voice.agora_convoai.module.HttpNewbroConnectorTransport",
         FakeTransport,
     )
     monkeypatch.setattr(

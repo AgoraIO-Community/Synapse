@@ -4,12 +4,12 @@ import pytest
 from fastapi import APIRouter
 from httpx import ASGITransport, AsyncClient
 
-import synapse.connectors.host.app as connector_host_app_module
-from synapse.executors.node import registry as node_registry
-from synapse.connectors.host.config import ConnectorHostSettings
-from synapse.connectors.base import BaseConnectorModule, ConnectorModuleRegistry
-from synapse.runtime import Settings
-from synapse.service.app import create_app
+import newbro.connectors.host.app as connector_host_app_module
+from newbro.executors.node import registry as node_registry
+from newbro.connectors.host.config import ConnectorHostSettings
+from newbro.connectors.base import BaseConnectorModule, ConnectorModuleRegistry
+from newbro.runtime import Settings
+from newbro.service.app import create_app
 
 from tests.helpers.asgi_websocket import ASGIWebSocketSession
 

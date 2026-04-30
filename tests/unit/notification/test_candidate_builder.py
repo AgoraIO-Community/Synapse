@@ -1,7 +1,7 @@
 from datetime import UTC, datetime
 
-from synapse.notification import NotificationCandidateBuilder
-from synapse.protocol import (
+from newbro.notification import NotificationCandidateBuilder
+from newbro.protocol import (
     ExecutionRun,
     NotificationCandidate,
     NotificationCandidateType,

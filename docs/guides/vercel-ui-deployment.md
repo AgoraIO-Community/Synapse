@@ -1,6 +1,6 @@
 # Vercel UI Deployment
 
-Use this path when `src/synapse/ui/` is deployed on Vercel and the main Synapse
+Use this path when `src/newbro/ui/` is deployed on Vercel and the main Newbro
 backend stays on a separate HTTPS origin on your own server.
 
 ## Required Runtime Contract
@@ -37,7 +37,7 @@ The main shell's `Voice` mode now attaches to the already-active shell
 main-backend origin and the public connector origin are both reachable from the
 browser while voice mode is started, stopped, and used live.
 
-If your main Synapse service already mounts `/api/connectors/...` routes directly, you
+If your main Newbro service already mounts `/api/connectors/...` routes directly, you
 may set `VITE_CONNECTOR_BASE_URL` to the same public origin as
 `VITE_API_BASE_URL`.
 
@@ -53,7 +53,7 @@ SYNAPSE_CORS_ALLOWED_ORIGINS=https://app.example.com
 If you also use Vercel preview deployments, include those exact preview origins
 as additional comma-separated values.
 
-The main Synapse API should remain the upstream for browser session traffic.
+The main Newbro API should remain the upstream for browser session traffic.
 The connector host is a separate vendor-facing process and is not the frontend's
 session API origin.
 
@@ -75,13 +75,13 @@ VITE_API_BASE_URL=https://api.example.com
 VITE_CONNECTOR_BASE_URL=https://connectors.example.com
 ```
 
-That value is consumed by `src/synapse/ui/src/lib/session-client.ts` and is
+That value is consumed by `src/newbro/ui/src/lib/session-client.ts` and is
 used for both HTTPS requests and websocket URL derivation.
 `VITE_CONNECTOR_BASE_URL` is consumed by
-`src/synapse/ui/src/lib/connector-client.ts` for voice connector calls only.
+`src/newbro/ui/src/lib/connector-client.ts` for voice connector calls only.
 
 The frontend workspace now vendors the `agora-rtm` package locally under
-`src/synapse/ui/vendor/agora-rtm/` because the published `agora-rtm` npm
+`src/newbro/ui/vendor/agora-rtm/` because the published `agora-rtm` npm
 package still declares an incompatible peer on `agora-rtc-sdk-ng@4.23.0` while
 the Agora voice toolkit requires `agora-rtc-sdk-ng>=4.23.4`. Keep Vercel on the
 default `npm install` path; do not add `--legacy-peer-deps` for this project.
@@ -102,11 +102,11 @@ GitHub Actions.
 ## Reverse Proxy Shape
 
 If your public backend origin is served through Nginx, proxy the session routes
-to the main Synapse API on `127.0.0.1:8000`.
+to the main Newbro API on `127.0.0.1:8000`.
 
 If you choose not to expose a separate `VITE_CONNECTOR_BASE_URL`, the same public
 origin must still expose `/api/connectors/agora-convoai/*`, either directly from the
-main Synapse service or by forwarding those routes to a standalone connector host.
+main Newbro service or by forwarding those routes to a standalone connector host.
 
 Typical requirements:
 

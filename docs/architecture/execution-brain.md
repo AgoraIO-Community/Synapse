@@ -24,8 +24,8 @@ Long-running executor activity should continue in the background while websocket
 subscribers receive updated session snapshots as blackboard state changes.
 
 For real executors, the live executor session no longer lives inside the main
-Synapse API process. Execution Brain dispatches runs to the detached executor
-host and keeps durable state in Synapse while the host owns live Codex or ACPX
+Newbro API process. Execution Brain dispatches runs to the detached executor
+host and keeps durable state in Newbro while the host owns live Codex or ACPX
 runtime continuity.
 
 It should not depend on Communication Brain internals.

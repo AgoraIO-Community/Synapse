@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from synapse.blackboard.backends import InMemoryBlackboard
-from synapse.protocol import (
+from newbro.blackboard.backends import InMemoryBlackboard
+from newbro.protocol import (
     AttentionItem,
     AttentionItemKind,
     AttentionItemStatus,

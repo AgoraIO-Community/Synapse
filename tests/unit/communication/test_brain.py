@@ -1,13 +1,13 @@
 import pytest
 
-from synapse.blackboard import InMemoryBlackboard
-from synapse.communication import CommunicationBrain
-from synapse.communication.model import CommunicationModelResult, ToolCall
-from synapse.communication.tools import build_default_tool_registry
-from synapse.communication.models import ScriptedCommunicationModel
-from synapse.communication.models.scripted import ScriptedPlan
-from synapse.communication.history import InMemoryConversationHistory
-from synapse.protocol import (
+from newbro.blackboard import InMemoryBlackboard
+from newbro.communication import CommunicationBrain
+from newbro.communication.model import CommunicationModelResult, ToolCall
+from newbro.communication.tools import build_default_tool_registry
+from newbro.communication.models import ScriptedCommunicationModel
+from newbro.communication.models.scripted import ScriptedPlan
+from newbro.communication.history import InMemoryConversationHistory
+from newbro.protocol import (
     InteractionRequest,
     InteractionRequestKind,
     InteractionRequestStatus,

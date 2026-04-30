@@ -5,11 +5,11 @@ import asyncio
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from synapse.api.app import create_app
-from synapse.communication.models import ScriptedCommunicationModel
-from synapse.communication.models.scripted import ScriptedPlan
-from synapse.executors.node import registry as node_registry
-from synapse.protocol import (
+from newbro.api.app import create_app
+from newbro.communication.models import ScriptedCommunicationModel
+from newbro.communication.models.scripted import ScriptedPlan
+from newbro.executors.node import registry as node_registry
+from newbro.protocol import (
     BindingStatus,
     ExecutionRun,
     ExecutionSession,
@@ -21,7 +21,7 @@ from synapse.protocol import (
     Task,
     TaskStatus,
 )
-from synapse.runtime import Settings
+from newbro.runtime import Settings
 
 from tests.helpers.asgi_websocket import ASGIWebSocketSession
 

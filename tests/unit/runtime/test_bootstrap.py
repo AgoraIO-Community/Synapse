@@ -1,7 +1,7 @@
-from synapse.communication.models import OpenAICommunicationModel, ScriptedCommunicationModel
-from synapse.runtime import Settings, build_runtime_container
-from synapse.runtime import bootstrap as bootstrap_module
-from synapse.runtime.drafts import OpenAIDraftRewriter
+from newbro.communication.models import OpenAICommunicationModel, ScriptedCommunicationModel
+from newbro.runtime import Settings, build_runtime_container
+from newbro.runtime import bootstrap as bootstrap_module
+from newbro.runtime.drafts import OpenAIDraftRewriter
 
 
 class FakeProvider:

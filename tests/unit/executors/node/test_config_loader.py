@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from synapse.executors.node.config import load_executor_node_config
+from newbro.executors.node.config import load_executor_node_config
 
 
 def test_load_executor_node_config_reads_enabled_executors(tmp_path: Path):

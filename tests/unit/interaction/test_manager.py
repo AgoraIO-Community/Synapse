@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import pytest
 
-from synapse.blackboard import InMemoryBlackboard
-from synapse.blackboard.store import BlackboardWriteEvent, BlackboardWriteKind
-from synapse.interaction import InteractionManager
-from synapse.protocol import (
+from newbro.blackboard import InMemoryBlackboard
+from newbro.blackboard.store import BlackboardWriteEvent, BlackboardWriteKind
+from newbro.interaction import InteractionManager
+from newbro.protocol import (
     AttentionItemKind,
     AttentionItemStatus,
     ExecutionRun,

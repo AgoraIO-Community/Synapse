@@ -1,7 +1,7 @@
 import pytest
 
-from synapse.executors.adapters.mock import MockExecutor
-from synapse.executors.core import ExecutorRegistry, UnknownExecutorError
+from newbro.executors.adapters.mock import MockExecutor
+from newbro.executors.core import ExecutorRegistry, UnknownExecutorError
 
 
 def test_registry_register_and_get():

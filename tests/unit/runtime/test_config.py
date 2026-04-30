@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from synapse.runtime import config as config_module
+from newbro.runtime import config as config_module
 
 
 def configure_runtime_paths(monkeypatch, *, env_file: Path, config_file: Path) -> None:
