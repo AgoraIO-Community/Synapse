@@ -3,6 +3,7 @@
 This directory contains contributor-oriented operational guides.
 
 - [Local Development](./local-dev.md)
+- [CLI, Setup, And Publishing](./cli.md)
 - [Vercel UI Deployment](./vercel-ui-deployment.md)
 - [Ubuntu Systemd](./ubuntu-systemd.md)
 - [Add Executor Adapter](./add-executor-adapter.md)
