@@ -12,4 +12,4 @@ src_str = str(SRC)
 if src_str not in sys.path:
     sys.path.insert(0, src_str)
 
-runpy.run_path(str(SRC / "synapse" / "__main__.py"), run_name="__main__")
+runpy.run_path(str(SRC / "newbro" / "__main__.py"), run_name="__main__")

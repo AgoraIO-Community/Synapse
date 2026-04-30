@@ -1,6 +1,6 @@
 # Mutation and Command Protocol
 
-Synapse separates:
+Newbro separates:
 
 - `TaskMutation`
 - `TaskCommand`

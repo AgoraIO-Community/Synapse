@@ -1,6 +1,6 @@
 # Interaction Request and Attention
 
-`InteractionRequest` and `AttentionItem` are the runtime objects Synapse uses
+`InteractionRequest` and `AttentionItem` are the runtime objects Newbro uses
 to turn executor-side blockage into actionable user-facing UI.
 
 They complement, but do not replace:
@@ -91,7 +91,7 @@ contains:
 - method
 - params
 
-That allows Synapse to respond to the live Codex callback directly instead of
+That allows Newbro to respond to the live Codex callback directly instead of
 always converting the interaction into a follow-up run.
 
 ## AttentionItem
@@ -218,15 +218,15 @@ the adapter:
 
 When the user resolves the request:
 
-1. Synapse marks the `InteractionRequest` and `AttentionItem`
-2. Synapse sends a native response back to Codex using the saved callback data
+1. Newbro marks the `InteractionRequest` and `AttentionItem`
+2. Newbro sends a native response back to Codex using the saved callback data
 3. the same live Codex session continues the same turn
 
 This is the preferred path for Codex approval and question flows.
 
 ### Generic Fallback
 
-If no native response path is available, Synapse can still fall back to the
+If no native response path is available, Newbro can still fall back to the
 older V1 continuation model:
 
 - synthesize a follow-up instruction

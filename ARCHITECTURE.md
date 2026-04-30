@@ -1,6 +1,6 @@
-# Synapse Architecture
+# Newbro Architecture
 
-Synapse is a backend-first runtime built around a dual-brain model:
+Newbro is a backend-first runtime built around a dual-brain model:
 
 - `Communication Brain`
 - `Execution Brain`
@@ -10,7 +10,7 @@ The design goal is not a single-threaded assistant that thinks, talks, and execu
 
 ## Status
 
-- This document is the stable architecture target for Synapse `v2`.
+- This document is the stable architecture target for Newbro `v2`.
 - Detailed subsystem and protocol references remain under `docs/architecture/`, `docs/protocol/`, and `docs/roadmap/`.
 - `ExecutionMode = undecided / lightweight / managed` is now treated as a stable execution projection, while richer mode-dependent behavior remains implementation work for later phases.
 
@@ -20,12 +20,12 @@ The design goal is not a single-threaded assistant that thinks, talks, and execu
 - `ExecutionSession` is executor-side lineage or runtime context for a task.
 - `ExecutionRun` is one concrete execution attempt inside a session.
 - `SessionBinding` is the current lease or active binding projection between a task and an execution session.
-- `Executor Host` is the detached worker process that owns live real-executor sessions and connects back to Synapse over the executor-control websocket.
+- `Executor Host` is the detached worker process that owns live real-executor sessions and connects back to Newbro over the executor-control websocket.
 - `list_tasks` in this document means the Communication Brain's task-retrieval and disambiguation tool. It does not mean "dump every stored task without intent."
 
 ## Design Goal
 
-Synapse should let users interact with the system as if they were talking to a person who can both converse and work:
+Newbro should let users interact with the system as if they were talking to a person who can both converse and work:
 
 - users can hand off tasks conversationally
 - the assistant can acknowledge, clarify, and continue talking while work happens asynchronously
@@ -118,7 +118,7 @@ Not:
 
 Task-first routing is the default.
 
-- only clear social, subjective, or Synapse-meta conversation should remain pure chat
+- only clear social, subjective, or Newbro-meta conversation should remain pure chat
 - actionable requests should usually become tasks, even when phrased as questions
 - capability-gated requests such as checking machine state, reading the current workspace, or running commands are one important subset of those task requests
 - when only a mock executor is available, ordinary task requests should be blocked by default unless they are explicitly mock-safe
@@ -157,7 +157,7 @@ The first-version classification rule is:
 
 The important boundary is that executors provide execution signals, while Execution Brain owns classification decisions and writes the resulting projection back to blackboard-facing state.
 
-Real executors now run outside the main Synapse API process.
+Real executors now run outside the main Newbro API process.
 
 - the control plane keeps durable `Task`, `ExecutionSession`, `ExecutionRun`, and `SessionBinding` state
 - a detached `Executor Host` owns live Codex and ACPX runtime sessions
@@ -166,7 +166,7 @@ Real executors now run outside the main Synapse API process.
 
 ## Observability
 
-Synapse should instrument boundary crossings and runtime decisions with one
+Newbro should instrument boundary crossings and runtime decisions with one
 canonical diagnostic event schema.
 
 The first version keeps observability diagnosis-focused:
@@ -307,7 +307,7 @@ The principle is simple:
 
 ## Repository Structure
 
-Synapse should stay organized by domain boundaries rather than by generic web-backend layers.
+Newbro should stay organized by domain boundaries rather than by generic web-backend layers.
 
 Recommended core modules:
 

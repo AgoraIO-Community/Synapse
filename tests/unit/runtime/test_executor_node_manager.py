@@ -4,9 +4,9 @@ import asyncio
 
 import pytest
 
-from synapse.executors.node.registry import ExecutorNodeRegistry
-from synapse.protocol import ExecutorNodeExecutor, RegisterNodeMessage
-from synapse.runtime.executor_node_manager import ExecutorNodeManager, RunDispatchState
+from newbro.executors.node.registry import ExecutorNodeRegistry
+from newbro.protocol import ExecutorNodeExecutor, RegisterNodeMessage
+from newbro.runtime.executor_node_manager import ExecutorNodeManager, RunDispatchState
 
 
 @pytest.mark.anyio

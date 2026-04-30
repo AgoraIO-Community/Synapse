@@ -1,11 +1,11 @@
 import pytest
 
-from synapse.blackboard import InMemoryBlackboard
-from synapse.communication import CommunicationBrain
-from synapse.communication.model import ToolCall
-from synapse.communication.models import ScriptedCommunicationModel
-from synapse.communication.models.scripted import ScriptedPlan
-from synapse.protocol import Task, TaskSummary
+from newbro.blackboard import InMemoryBlackboard
+from newbro.communication import CommunicationBrain
+from newbro.communication.model import ToolCall
+from newbro.communication.models import ScriptedCommunicationModel
+from newbro.communication.models.scripted import ScriptedPlan
+from newbro.protocol import Task, TaskSummary
 
 
 @pytest.mark.anyio

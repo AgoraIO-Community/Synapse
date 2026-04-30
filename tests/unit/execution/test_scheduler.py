@@ -1,8 +1,8 @@
 import pytest
 
-from synapse.blackboard import BlackboardQueryService, InMemoryBlackboard
-from synapse.execution import Scheduler
-from synapse.protocol import Task, TaskStatus
+from newbro.blackboard import BlackboardQueryService, InMemoryBlackboard
+from newbro.execution import Scheduler
+from newbro.protocol import Task, TaskStatus
 
 
 @pytest.mark.anyio

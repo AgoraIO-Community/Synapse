@@ -1729,9 +1729,9 @@ The Python package should remain `synapse`, so the project name and package iden
 
 The three most important stable boundaries for contributors and integrators are:
 
-- `synapse.protocol`
-- `synapse.blackboard.interfaces`
-- `synapse.executor_core`
+- `newbro.protocol`
+- `newbro.blackboard.interfaces`
+- `newbro.executor_core`
 
 These are the parts most likely to matter to:
 
@@ -1928,7 +1928,7 @@ Recommended structure:
 
 The startup entrypoint should move to:
 
-- `uvicorn synapse.api.app:app --reload`
+- `uvicorn newbro.api.app:app --reload`
 
 Business logic should not live in route handlers.
 

@@ -1,4 +1,4 @@
-# Synapse
+# Newbro
 
 Backend-first prototype for a communication-brain / execution-brain runtime.
 
@@ -11,7 +11,7 @@ Backend-first prototype for a communication-brain / execution-brain runtime.
 
 ## CLI
 
-Synapse requires Python 3.12 or newer.
+Newbro requires Python 3.12 or newer.
 
 For a fresh clone, use the repo bootstrap launcher:
 
@@ -43,7 +43,7 @@ For automation, use:
 OPENAI_API_KEY=... ./newbro setup --non-interactive
 ```
 
-If you already have legacy Synapse config under `~/.synapse` and `~/.newbro`
+If you already have legacy Newbro config under `~/.synapse` and `~/.newbro`
 does not exist yet, the CLI migrates that home directory to `~/.newbro` on the
 first run.
 
@@ -55,12 +55,11 @@ Install the public package with:
 python3 -m pip install newbro-cli
 newbro --help
 newbro executor setup
-newbro executor run --base-url https://synapse.example.com --node-id node-1234 --token secret
+newbro executor run --base-url https://newbro.example.com --node-id node-1234 --token secret
 ```
 
-The published package name is `newbro-cli` and the installed console script is
-`newbro`, but the Python module namespace is still `synapse` in this release.
-Use `import synapse` for Python imports; `import newbro` is not supported.
+The published package name is `newbro-cli`, the installed console script is
+`newbro`, and the Python module namespace is `newbro`.
 
 `~/.newbro/.env` is auto-loaded by the backend at startup. You do not need to export
 variables manually. OpenAI is required for normal development and demo runtime,
@@ -68,7 +67,7 @@ so set `OPENAI_API_KEY` in `~/.newbro/.env` before starting the app.
 
 ## Optional ACPX Executor
 
-If you want Synapse to delegate execution through `acpx` instead of the direct
+If you want Newbro to delegate execution through `acpx` instead of the direct
 Codex executor, install ACPX first:
 
 ```bash
@@ -98,7 +97,7 @@ Optional overrides:
 # SYNAPSE_ACPX_TIMEOUT_SECONDS=300
 ```
 
-If both ACPX and the direct Codex executor are enabled, Synapse prefers ACPX.
+If both ACPX and the direct Codex executor are enabled, Newbro prefers ACPX.
 
 ## Common Commands
 
@@ -163,10 +162,10 @@ enables the unit, and restarts the service so the latest code is live
 immediately.
 
 The installed `newbro.service` unit runs `newbro start`, so it serves one
-main Synapse service on the public port.
+main Newbro service on the public port.
 
 This path stays inside the repo checkout. The main service serves
-`src/synapse/ui/dist` at `/`, keeps the normal API and websocket routes on the
+`src/newbro/ui/dist` at `/`, keeps the normal API and websocket routes on the
 same origin, and mounts `/api/connectors/...` routes directly when connectors are
 enabled.
 
@@ -197,7 +196,7 @@ process for direct connector testing or separate deployment.
 does not reload Python code changes, so restart it after editing backend,
 connector modules, or other Python service code.
 
-The connector host talks to the Synapse backend directly using the configured
+The connector host talks to the Newbro backend directly using the configured
 `SYNAPSE_CONNECTOR_SYNAPSE_BASE_URL` and does not use proxy environment variables
 for its internal upstream traffic.
 
@@ -210,7 +209,7 @@ for its internal upstream traffic.
 Frontend build check:
 
 ```bash
-cd src/synapse/ui
+cd src/newbro/ui
 npm run build
 ```
 
@@ -236,7 +235,7 @@ publishes package version `0.1.2` even if the checked-in `pyproject.toml`
 version has not been bumped yet.
 
 This workflow uses PyPI Trusted Publishing, so configure the `newbro-cli` PyPI
-project to trust the `AgoraIO/Synapse` GitHub repository and the
+project to trust the `AgoraIO/Newbro` GitHub repository and the
 `publish-pypi.yml` workflow before creating the first release tag.
 
 For manual publishing or recovery, use the helper script. Pass `--version` when
@@ -251,7 +250,7 @@ PYPI_TOKEN='pypi-...' ./scripts/publish_pypi.sh --version v0.1.2 --testpypi
 
 ## Deploy UI to Vercel
 
-The main UI lives under `src/synapse/ui/`.
+The main UI lives under `src/newbro/ui/`.
 
 Before deploying the frontend separately, make sure the backend is reachable on
 its own public HTTPS origin, that the public backend origin preserves secure
@@ -265,7 +264,7 @@ SYNAPSE_CORS_ALLOWED_ORIGINS=https://app.example.com,https://your-project.vercel
 Then deploy from the UI workspace:
 
 ```bash
-cd src/synapse/ui
+cd src/newbro/ui
 npx vercel env add VITE_API_BASE_URL production
 npx vercel env add VITE_CONNECTOR_BASE_URL production
 npx vercel --prod
@@ -293,7 +292,7 @@ connector_host:
 ```
 
 If the backend is served behind Nginx on your server, proxy the public session
-routes to the main Synapse API on port `8000`, proxy `/api/connectors/...` to the
+routes to the main Newbro API on port `8000`, proxy `/api/connectors/...` to the
 connector host on `8010`, and keep websocket upgrade headers intact for
 `/api/sessions/{session_id}/stream`. See
 [`docs/guides/vercel-ui-deployment.md`](./docs/guides/vercel-ui-deployment.md)
@@ -302,7 +301,7 @@ for the full deployment contract and an example reverse-proxy shape.
 This repo also includes a GitHub Actions workflow at
 `.github/workflows/deploy-ui-vercel.yml`:
 
-- pull requests deploy a Vercel preview for `src/synapse/ui`
+- pull requests deploy a Vercel preview for `src/newbro/ui`
 - pushes to `main` deploy production
 - `workflow_dispatch` can trigger a manual production deploy
 

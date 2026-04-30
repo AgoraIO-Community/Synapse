@@ -1,6 +1,6 @@
 # V2 Overview
 
-Synapse `v2` is a blackboard-centered dual-brain runtime.
+Newbro `v2` is a blackboard-centered dual-brain runtime.
 
 For the unified open-source architecture overview, start with
 [../../ARCHITECTURE.md](../../ARCHITECTURE.md).

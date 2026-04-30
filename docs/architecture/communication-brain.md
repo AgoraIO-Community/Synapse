@@ -36,7 +36,7 @@ Core communication policy:
 - focused task-bundle context should be exposed to the LLM so short follow-up corrections such as "it should be X", "actually X", "to X", "from X", and "X instead of Y" can be interpreted without hardcoding domain- or language-specific parsing into the runtime
 - ambiguous follow-up corrections should ask a clarification when the corrected field is not clear enough to map safely
 - explicit follow-up corrections that change a focused task bundle's core identity may replace that whole bundle instead of partially mutating only one task
-- task-first routing is the default; only clear social, subjective, or Synapse-meta conversation should remain pure chat
+- task-first routing is the default; only clear social, subjective, or Newbro-meta conversation should remain pure chat
 - actionable requests should usually become tasks even when phrased as questions
 - fact-checking, claim verification, current-world information, and other live external-fact requests should normally route toward `create_task` rather than unsupported pure-chat answers
 - when a live verification request is missing a required operand such as location, ticker, date, or target claim, the communication brain should ask a short clarification before task creation

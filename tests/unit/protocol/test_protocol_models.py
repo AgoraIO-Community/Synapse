@@ -1,4 +1,4 @@
-from synapse.protocol import (
+from newbro.protocol import (
     AssignmentLease,
     ConversationEffect,
     ExecutionMode,

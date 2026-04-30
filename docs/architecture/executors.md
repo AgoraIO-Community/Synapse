@@ -1,6 +1,6 @@
 # Executors
 
-Synapse should expose a clean separation between:
+Newbro should expose a clean separation between:
 
 - executor core abstractions
 - concrete executor adapters
@@ -25,7 +25,7 @@ Current deployment direction:
 - `mock` remains an in-process adapter
 - real executors such as `codex` and `acpx` run inside the detached executor
   node
-- the main Synapse API process registers hosted executor proxies rather than
+- the main Newbro API process registers hosted executor proxies rather than
   launching real executor subprocesses directly
 - the control plane does not ask the operator to choose detached executor
   families; executor nodes declare their enabled families through
@@ -34,20 +34,20 @@ Current deployment direction:
 Executor-node note:
 
 - the detached node owns live executor-native session continuity
-- Synapse keeps durable execution lineage and user-facing control semantics
+- Newbro keeps durable execution lineage and user-facing control semantics
 - executor-native continuity still remains optional across executor families
-- Synapse persists an operator-managed executor-node registry, including
+- Newbro persists an operator-managed executor-node registry, including
   node id, enabled executor families, and issued enrollment credentials
-- detached nodes authenticate to Synapse with `node_id` and `token` on
+- detached nodes authenticate to Newbro with `node_id` and `token` on
   `WS /api/executors/control`
-- the executor node's Synapse URL is a client-side runtime input passed to
+- the executor node's Newbro URL is a client-side runtime input passed to
   `newbro executor run --base-url ...`, not server-owned node metadata
 - local executor-family/tool config no longer uses an `executor_node.enabled`
   toggle; `newbro executor run` may trigger the same local setup flow when
   executor commands or enabled families are missing
 - each Bro may be bound to one executor node; a Bro is considered live only
-  when its bound node is currently connected back to Synapse
-- detached executor nodes connect to the main Synapse service origin through
+  when its bound node is currently connected back to Newbro
+- detached executor nodes connect to the main Newbro service origin through
   `WS /api/executors/control`
 - foreground `newbro executor run` output should make connect, ready,
   disconnect, and retry state explicit, and should only report ready after the

@@ -11,7 +11,7 @@ import textwrap
 REPO_ROOT = Path(__file__).resolve().parents[3]
 INSTALL_SCRIPT = REPO_ROOT / "install.sh"
 BOOTSTRAP_COMMAND = "venv-newbro setup --bootstrap-defaults"
-LEGACY_BOOTSTRAP_COMMAND = "venv-python -m synapse setup --bootstrap-defaults"
+LEGACY_BOOTSTRAP_COMMAND = "venv-python -m newbro setup --bootstrap-defaults"
 
 
 def write_executable(path: Path, content: str) -> None:
@@ -20,10 +20,10 @@ def write_executable(path: Path, content: str) -> None:
 
 
 def prepare_repo_root(root: Path) -> None:
-    (root / "src" / "synapse" / "ui").mkdir(parents=True)
+    (root / "src" / "newbro" / "ui").mkdir(parents=True)
     (root / "pyproject.toml").write_text("[project]\nname='newbro-cli'\n", encoding="utf-8")
-    (root / "src" / "synapse" / "ui" / "package.json").write_text(
-        '{"name":"synapse-frontend"}\n',
+    (root / "src" / "newbro" / "ui" / "package.json").write_text(
+        '{"name":"newbro-frontend"}\n',
         encoding="utf-8",
     )
 

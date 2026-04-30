@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import pytest
 
-from synapse.blackboard import InMemoryBlackboard
-from synapse.execution import RunManager
-from synapse.executors.core import ExecutorEvent, ExecutorEventType
-from synapse.protocol import ExecutionRun, RunStatus, Task, TaskStatus
+from newbro.blackboard import InMemoryBlackboard
+from newbro.execution import RunManager
+from newbro.executors.core import ExecutorEvent, ExecutorEventType
+from newbro.protocol import ExecutionRun, RunStatus, Task, TaskStatus
 
 
 @pytest.mark.anyio

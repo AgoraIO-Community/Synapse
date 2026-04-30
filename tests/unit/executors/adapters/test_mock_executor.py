@@ -1,7 +1,7 @@
 import pytest
 
-from synapse.executors.adapters.mock import MockExecutor
-from synapse.protocol import ExecutionRun, Task
+from newbro.executors.adapters.mock import MockExecutor
+from newbro.protocol import ExecutionRun, Task
 
 
 @pytest.mark.anyio

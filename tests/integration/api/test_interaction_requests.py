@@ -4,13 +4,13 @@ import logging
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from synapse.api.app import create_app
-from synapse.communication.models import ScriptedCommunicationModel
-from synapse.communication.models.scripted import ScriptedPlan
-from synapse.executors.core import ExecutorCapabilities, ExecutorEvent, ExecutorEventType, ExecutorSession
-from synapse.protocol import Task, TaskStatus
-from synapse.runtime import Settings
-from synapse.runtime.container import RuntimeContainer
+from newbro.api.app import create_app
+from newbro.communication.models import ScriptedCommunicationModel
+from newbro.communication.models.scripted import ScriptedPlan
+from newbro.executors.core import ExecutorCapabilities, ExecutorEvent, ExecutorEventType, ExecutorSession
+from newbro.protocol import Task, TaskStatus
+from newbro.runtime import Settings
+from newbro.runtime.container import RuntimeContainer
 
 
 class BlockingExecutor:

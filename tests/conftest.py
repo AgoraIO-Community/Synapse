@@ -11,7 +11,7 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from synapse.runtime import config as config_module
+from newbro.runtime import config as config_module
 
 
 @pytest.fixture(autouse=True)

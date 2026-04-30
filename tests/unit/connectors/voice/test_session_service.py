@@ -4,15 +4,15 @@ from dataclasses import dataclass
 
 import pytest
 
-from synapse.connectors.base import ConnectorBindingRegistry
-from synapse.connectors.voice.agora_convoai.models import (
+from newbro.connectors.base import ConnectorBindingRegistry
+from newbro.connectors.voice.agora_convoai.models import (
     ConnectorSessionActivateRequest,
     ConnectorSessionDiagnostics,
     ConnectorSessionPrepareRequest,
 )
-from synapse.connectors.voice.agora_convoai.service import ActivatedConvoAISession, PreparedConvoAISession
-from synapse.connectors.voice.agora_convoai.session_service import AgoraConnectorSessionService
-from synapse.connectors.voice.agora_convoai.settings import AgoraConvoAIConnectorSettings
+from newbro.connectors.voice.agora_convoai.service import ActivatedConvoAISession, PreparedConvoAISession
+from newbro.connectors.voice.agora_convoai.session_service import AgoraConnectorSessionService
+from newbro.connectors.voice.agora_convoai.settings import AgoraConvoAIConnectorSettings
 
 
 @dataclass
@@ -171,8 +171,8 @@ async def test_prepare_session_generates_unique_channel_name_without_requested_b
     first = await session_service.prepare_session(ConnectorSessionPrepareRequest())
     second = await session_service.prepare_session(ConnectorSessionPrepareRequest())
 
-    assert first.channel_name.startswith("synapse-voice-")
-    assert second.channel_name.startswith("synapse-voice-")
+    assert first.channel_name.startswith("newbro-voice-")
+    assert second.channel_name.startswith("newbro-voice-")
     assert first.channel_name != second.channel_name
 
 

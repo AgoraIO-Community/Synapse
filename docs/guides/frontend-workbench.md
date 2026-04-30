@@ -1,6 +1,6 @@
 # Frontend Workbench
 
-The main frontend under `src/synapse/ui/` renders the `Newbro` command-center
+The main frontend under `src/newbro/ui/` renders the `Newbro` command-center
 shell at `/`.
 
 It keeps the protocol-first runtime behavior, but the active shell now uses a
@@ -65,22 +65,22 @@ Current behavior:
   sample bros
 - Bro liveness is derived from `persona.executor_node_id` plus the matching
   executor node connection state
-- the `Bros` page edits persona prompt, avatar, and node binding
+- the `Bros` page edits each worker Bro's base prompt, avatar, and node binding
 - the `Nodes` page creates, edits, rotates, and deletes executor nodes and
   shows the token on create/rotate plus a persistent on-demand
   `Copy connect command` action on ordinary node cards
 - sidebar navigation preserves the current `sid` query parameter across
   `Home`, `Bros`, `Nodes`, and `Settings`
-- `Interaction memory` hydrates from Synapse durable conversation history when
-  the page/session opens, then continues from Synapse user-message and
+- `Interaction memory` hydrates from Newbro durable conversation history when
+  the page/session opens, then continues from Newbro user-message and
   assistant stream events instead of relying on local user echo or
   browser-local Agora transcript turns
 - pressing `Start` prepares a connector-backed voice session against the
   current shell `session_id`, so the voice binding attaches to the existing
-  Synapse session instead of swapping the shell to a new one
+  Newbro session instead of swapping the shell to a new one
 - when the browser does not pass an explicit `channel_name`, the connector uses
   that current shell `session_id` as the Agora channel and falls back to a
-  unique generated channel only if no Synapse session id is available
+  unique generated channel only if no Newbro session id is available
 - pressing `Stop` tears down only the live voice session and retains the last
   transcript until the next live session replaces it
 - Bro Detail draft input uses a separate connector-managed Agora STT path: the
@@ -128,8 +128,8 @@ reference:
 
 - Do not change backend or protocol contracts for cosmetic reasons.
 - Keep the transport/runtime separation intact: the left-pane interaction
-  memory comes from Synapse conversation state, while the voice connector owns
+  memory comes from Newbro conversation state, while the voice connector owns
   RTC/RTM/session lifecycle and browser-local microphone/media behavior.
-- Treat `src/synapse/ui/` as the only active frontend.
+- Treat `src/newbro/ui/` as the only active frontend.
 - Do not reintroduce the old chat/workbench root experience unless a later task
   explicitly broadens scope.

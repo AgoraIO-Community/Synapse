@@ -1,6 +1,6 @@
 # Roadmap
 
-This directory contains the maintained implementation roadmap for Synapse.
+This directory contains the maintained implementation roadmap for Newbro.
 
 Use these docs when you want to know:
 

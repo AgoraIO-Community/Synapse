@@ -6,8 +6,8 @@ import textwrap
 
 import pytest
 
-from synapse.executors.adapters.codex import CodexExecutor
-from synapse.protocol import ExecutionRun, Task
+from newbro.executors.adapters.codex import CodexExecutor
+from newbro.protocol import ExecutionRun, Task
 
 
 def _write_fake_codex(tmp_path, *, auth_ok: bool = True):

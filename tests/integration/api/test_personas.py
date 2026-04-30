@@ -3,12 +3,12 @@ from __future__ import annotations
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from synapse.api.app import create_app
-from synapse.communication import persona_pool
-from synapse.communication.models import ScriptedCommunicationModel
-from synapse.communication.models.scripted import ScriptedPlan
-from synapse.runtime import Settings
-from synapse.runtime.container import RuntimeContainer
+from newbro.api.app import create_app
+from newbro.communication import persona_pool
+from newbro.communication.models import ScriptedCommunicationModel
+from newbro.communication.models.scripted import ScriptedPlan
+from newbro.runtime import Settings
+from newbro.runtime.container import RuntimeContainer
 
 
 def _build_app():

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from synapse.yaml_support import _load_simple_yaml
+from newbro.yaml_support import _load_simple_yaml
 
 
 def test_simple_yaml_loader_accepts_inline_empty_flow_values(tmp_path: Path):

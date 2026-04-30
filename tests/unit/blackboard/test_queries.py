@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import pytest
 
-from synapse.blackboard.backends import InMemoryBlackboard
-from synapse.blackboard.queries import BlackboardQueryService
-from synapse.protocol import Task, TaskCommand, TaskCommandType, TaskMutation, TaskStatus
+from newbro.blackboard.backends import InMemoryBlackboard
+from newbro.blackboard.queries import BlackboardQueryService
+from newbro.protocol import Task, TaskCommand, TaskCommandType, TaskMutation, TaskStatus
 
 
 @pytest.mark.anyio

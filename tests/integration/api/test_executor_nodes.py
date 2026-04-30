@@ -3,14 +3,14 @@ from __future__ import annotations
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from synapse.api.app import create_app
-from synapse.communication import persona_pool
-from synapse.executors.node import registry as node_registry
-from synapse.executors.node.registry import _hash_token
-from synapse.communication.models import ScriptedCommunicationModel
-from synapse.communication.models.scripted import ScriptedPlan
-from synapse.runtime import Settings
-from synapse.runtime.container import RuntimeContainer
+from newbro.api.app import create_app
+from newbro.communication import persona_pool
+from newbro.executors.node import registry as node_registry
+from newbro.executors.node.registry import _hash_token
+from newbro.communication.models import ScriptedCommunicationModel
+from newbro.communication.models.scripted import ScriptedPlan
+from newbro.runtime import Settings
+from newbro.runtime.container import RuntimeContainer
 
 
 def _build_app():
@@ -119,7 +119,6 @@ async def test_delete_executor_node_rejects_bound_bros_until_unbound(monkeypatch
         (tmp_path / "personas.yaml").write_text(
             "\n".join(
                 [
-                    'communication_persona_prompt: ""',
                     "personas:",
                     '  - name: "Alex"',
                     f'    persona_id: "{persona_response.json()["persona_id"]}"',

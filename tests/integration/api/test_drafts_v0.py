@@ -1,14 +1,14 @@
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from synapse.api.app import create_app
-from synapse.communication import persona_pool
-from synapse.runtime.config import Settings
-from synapse.runtime.container import RuntimeContainer
-from synapse.runtime.drafts import DraftRewriteInput, DraftRewriter
-from synapse.communication.models.scripted import ScriptedCommunicationModel, ScriptedPlan
-from synapse.executors.node import registry as node_registry
-from synapse.protocol import Draft, Persona
+from newbro.api.app import create_app
+from newbro.communication import persona_pool
+from newbro.runtime.config import Settings
+from newbro.runtime.container import RuntimeContainer
+from newbro.runtime.drafts import DraftRewriteInput, DraftRewriter
+from newbro.communication.models.scripted import ScriptedCommunicationModel, ScriptedPlan
+from newbro.executors.node import registry as node_registry
+from newbro.protocol import Draft, Persona
 
 
 class FakeDraftRewriter(DraftRewriter):

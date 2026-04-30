@@ -1,4 +1,4 @@
-from synapse.executors.core import (
+from newbro.executors.core import (
     ExecutorCapabilities,
     ExecutorEvent,
     ExecutorEventType,

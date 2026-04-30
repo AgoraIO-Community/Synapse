@@ -5,10 +5,10 @@ import asyncio
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from synapse.api.app import create_app
-from synapse.infrastructure.llm import OpenAIProvider
-from synapse.protocol import Task
-from synapse.runtime import Settings, build_runtime_container
+from newbro.api.app import create_app
+from newbro.infrastructure.llm import OpenAIProvider
+from newbro.protocol import Task
+from newbro.runtime import Settings, build_runtime_container
 
 
 class FakeProvider:

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from synapse.connectors.host.registry import create_connector_module_registry
+from newbro.connectors.host.registry import create_connector_module_registry
 
 
 class _FakeModule:
@@ -32,7 +32,7 @@ def test_create_connector_module_registry_loads_modules_lazily(monkeypatch):
     spec = _FakeSpec(slug="fake", load_counter=loaded, init_counter=initialized)
 
     monkeypatch.setattr(
-        "synapse.connectors.host.registry.list_connector_module_specs",
+        "newbro.connectors.host.registry.list_connector_module_specs",
         lambda: [spec],
     )
 
@@ -60,7 +60,7 @@ def test_create_connector_module_registry_filters_out_unrequested_modules(monkey
     ]
 
     monkeypatch.setattr(
-        "synapse.connectors.host.registry.list_connector_module_specs",
+        "newbro.connectors.host.registry.list_connector_module_specs",
         lambda: fake_specs,
     )
 

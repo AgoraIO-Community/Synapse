@@ -1,8 +1,8 @@
 import pytest
 
-from synapse.blackboard import InMemoryBlackboard
-from synapse.execution import AssignmentManager
-from synapse.protocol import Task
+from newbro.blackboard import InMemoryBlackboard
+from newbro.execution import AssignmentManager
+from newbro.protocol import Task
 
 
 @pytest.mark.anyio

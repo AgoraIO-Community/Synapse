@@ -1,8 +1,8 @@
 import pytest
 
-from synapse.blackboard import InMemoryBlackboard
-from synapse.execution.mode_manager import ExecutionModeManager
-from synapse.protocol import ExecutionMode, RunStatus
+from newbro.blackboard import InMemoryBlackboard
+from newbro.execution.mode_manager import ExecutionModeManager
+from newbro.protocol import ExecutionMode, RunStatus
 
 
 @pytest.mark.anyio

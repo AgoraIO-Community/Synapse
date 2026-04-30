@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from io import StringIO
 
-from synapse.observability.bootstrap import build_stdout_sink
-from synapse.observability.schema import DiagnosticEvent
-from synapse.observability.sinks.pretty import PrettyDiagnosticSink, render_pretty_event
-from synapse.observability.sinks.stdout import StdoutDiagnosticSink
-from synapse.runtime.config import Settings
+from newbro.observability.bootstrap import build_stdout_sink
+from newbro.observability.schema import DiagnosticEvent
+from newbro.observability.sinks.pretty import PrettyDiagnosticSink, render_pretty_event
+from newbro.observability.sinks.stdout import StdoutDiagnosticSink
+from newbro.runtime.config import Settings
 
 
 class TtyStringIO(StringIO):
@@ -91,7 +91,7 @@ def test_pretty_sink_renders_multiline_block_for_comm_llm_request_built():
             "system_messages": [
                 {
                     "role": "system",
-                    "content": "You are the Communication Brain for Synapse.",
+                    "content": "You are the Communication Brain for Newbro.",
                 },
                 {
                     "role": "system",
@@ -109,7 +109,7 @@ def test_pretty_sink_renders_multiline_block_for_comm_llm_request_built():
     assert "prompt_sections: identity, runtime_context" in rendered
     assert "available_tools: create_task, query_task_detail" in rendered
     assert "system[0:identity]:" in rendered
-    assert "You are the Communication Brain for Synapse." in rendered
+    assert "You are the Communication Brain for Newbro." in rendered
     assert "system[1:runtime_context]:" in rendered
     assert '"conversation_id": "conv-1"' in rendered
     assert '"task_execution_details"' in rendered

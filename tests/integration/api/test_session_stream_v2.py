@@ -4,15 +4,15 @@ import pytest
 from fastapi import FastAPI, WebSocket
 from httpx import ASGITransport, AsyncClient
 
-from synapse.api.app import create_app
-from synapse.communication.model import ToolCall
-from synapse.communication.models import ScriptedCommunicationModel
-from synapse.communication.models.scripted import ScriptedPlan
-from synapse.runtime import build_runtime_container
-from synapse.protocol import Draft, Task, TaskStatus
-from synapse.runtime import Settings
-from synapse.runtime.container import RuntimeContainer
-from synapse.runtime.drafts import DraftRewriteInput, DraftRewriteUpstreamError, DraftRewriter
+from newbro.api.app import create_app
+from newbro.communication.model import ToolCall
+from newbro.communication.models import ScriptedCommunicationModel
+from newbro.communication.models.scripted import ScriptedPlan
+from newbro.runtime import build_runtime_container
+from newbro.protocol import Draft, Task, TaskStatus
+from newbro.runtime import Settings
+from newbro.runtime.container import RuntimeContainer
+from newbro.runtime.drafts import DraftRewriteInput, DraftRewriteUpstreamError, DraftRewriter
 
 from tests.helpers.asgi_websocket import ASGIWebSocketSession
 

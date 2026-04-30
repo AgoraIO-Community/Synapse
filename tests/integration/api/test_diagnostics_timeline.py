@@ -3,12 +3,12 @@ import asyncio
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from synapse.api.app import create_app
-from synapse.communication.model import CommunicationModelResult, ToolCall
-from synapse.communication.models import ScriptedCommunicationModel
-from synapse.communication.models.scripted import ScriptedPlan
-from synapse.runtime import Settings
-from synapse.runtime.container import RuntimeContainer
+from newbro.api.app import create_app
+from newbro.communication.model import CommunicationModelResult, ToolCall
+from newbro.communication.models import ScriptedCommunicationModel
+from newbro.communication.models.scripted import ScriptedPlan
+from newbro.runtime import Settings
+from newbro.runtime.container import RuntimeContainer
 
 
 async def _wait_for_timeline_event(client: AsyncClient, session_id: str, predicate, timeout: float = 1.0):

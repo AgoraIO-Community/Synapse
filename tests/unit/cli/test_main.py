@@ -4,9 +4,9 @@ import builtins
 import importlib
 from pathlib import Path
 
-from synapse.config_home import ConfigHomeMigrationResult
+from newbro.config_home import ConfigHomeMigrationResult
 
-cli_main = importlib.import_module("synapse.cli.main")
+cli_main = importlib.import_module("newbro.cli.main")
 
 
 class FakeCompletedProcess:
@@ -62,7 +62,7 @@ def test_frontend_dev_command_passes_explicit_vite_config_for_npm(monkeypatch):
 
 def configure_repo_paths(monkeypatch, root: Path) -> None:
     monkeypatch.setattr(cli_main, "ROOT", root)
-    monkeypatch.setattr(cli_main, "FRONTEND", root / "src" / "synapse" / "ui")
+    monkeypatch.setattr(cli_main, "FRONTEND", root / "src" / "newbro" / "ui")
     monkeypatch.setattr(cli_main, "VENV_DIR", root / ".venv")
     monkeypatch.setattr(cli_main, "LEGACY_SYNAPSE_HOME_DIR", root / ".synapse")
     monkeypatch.setattr(cli_main, "NEWBRO_HOME_DIR", root / ".newbro")
@@ -110,19 +110,19 @@ def test_main_prints_non_fatal_newbro_home_migration_warning(
         "ensure_newbro_home",
         lambda **_kwargs: ConfigHomeMigrationResult(
             migrated=True,
-            warning="Migrated config to ~/.newbro but could not remove ~/.synapse.",
+            warning="Migrated config to ~/.newbro but could not remove ~/.newbro.",
         ),
     )
     monkeypatch.setattr(cli_main, "bootstrap_setup_files", lambda: None)
 
     assert cli_main.main(["setup", "--bootstrap-defaults"]) == 0
 
-    assert "[warn] Migrated config to ~/.newbro but could not remove ~/.synapse." in capsys.readouterr().err
+    assert "[warn] Migrated config to ~/.newbro but could not remove ~/.newbro." in capsys.readouterr().err
 
 
 def test_setup_interactive_updates_env_file(monkeypatch, tmp_path: Path):
     root = tmp_path
-    (root / "src" / "synapse" / "ui").mkdir(parents=True)
+    (root / "src" / "newbro" / "ui").mkdir(parents=True)
     (root / ".newbro").mkdir(parents=True, exist_ok=True)
     (root / ".newbro" / ".env").write_text(
         "SYNAPSE_OPENAI_MODEL=gpt-4.1-mini\nEXTRA_FLAG=keep-me\n",
@@ -154,7 +154,7 @@ def test_setup_interactive_updates_env_file(monkeypatch, tmp_path: Path):
 
 def test_setup_interactive_can_configure_connector_host(monkeypatch, tmp_path: Path):
     root = tmp_path
-    (root / "src" / "synapse" / "ui").mkdir(parents=True)
+    (root / "src" / "newbro" / "ui").mkdir(parents=True)
     (root / ".newbro").mkdir(parents=True, exist_ok=True)
 
     configure_repo_paths(monkeypatch, root)
@@ -168,7 +168,7 @@ def test_setup_interactive_can_configure_connector_host(monkeypatch, tmp_path: P
         "Connector host [0.0.0.0]: ",
         "Connector port [8010]: ",
         "Connector public base URL [http://127.0.0.1:8000]: ",
-        "Synapse service base URL for connector callbacks [http://127.0.0.1:8000]: ",
+        "Newbro service base URL for connector callbacks [http://127.0.0.1:8000]: ",
         "ASR credential mode [managed]: ",
         "ASR model [nova-3]: ",
         "ASR language [en-US]: ",
@@ -200,7 +200,7 @@ def test_setup_interactive_can_configure_connector_host(monkeypatch, tmp_path: P
 
 def test_executor_setup_uses_detected_codex_command_default(monkeypatch, tmp_path: Path):
     root = tmp_path
-    (root / "src" / "synapse" / "ui").mkdir(parents=True)
+    (root / "src" / "newbro" / "ui").mkdir(parents=True)
     (root / ".newbro").mkdir(parents=True, exist_ok=True)
     (root / ".newbro" / "config.yaml").write_text(
         "\n".join(
@@ -253,7 +253,7 @@ def test_executor_setup_migrates_legacy_codex_command_over_detected_default(
     tmp_path: Path,
 ):
     root = tmp_path
-    (root / "src" / "synapse" / "ui").mkdir(parents=True)
+    (root / "src" / "newbro" / "ui").mkdir(parents=True)
     (root / ".newbro").mkdir(parents=True, exist_ok=True)
     (root / ".newbro" / ".env").write_text(
         "\n".join(
@@ -312,7 +312,7 @@ def test_executor_setup_migrates_legacy_codex_command_over_detected_default(
 
 def test_connector_setup_writes_connector_module_env(monkeypatch, tmp_path: Path):
     root = tmp_path
-    (root / "src" / "synapse" / "ui").mkdir(parents=True)
+    (root / "src" / "newbro" / "ui").mkdir(parents=True)
 
     configure_repo_paths(monkeypatch, root)
     monkeypatch.setattr(cli_main, "setup_can_prompt", lambda: True)
@@ -327,7 +327,7 @@ def test_connector_setup_writes_connector_module_env(monkeypatch, tmp_path: Path
         "Connector host [0.0.0.0]: ",
         "Connector port [8010]: ",
         "Connector public base URL [http://127.0.0.1:8000]: ",
-        "Synapse service base URL for connector callbacks [http://127.0.0.1:8000]: ",
+        "Newbro service base URL for connector callbacks [http://127.0.0.1:8000]: ",
         "ASR credential mode [managed]: ",
         "ASR model [nova-3]: ",
         "ASR language [en-US]: ",
@@ -364,7 +364,7 @@ def test_connector_setup_writes_connector_module_env(monkeypatch, tmp_path: Path
 
 def test_connector_setup_decline_disables_existing_connector_config(monkeypatch, tmp_path: Path):
     root = tmp_path
-    (root / "src" / "synapse" / "ui").mkdir(parents=True)
+    (root / "src" / "newbro" / "ui").mkdir(parents=True)
     configure_repo_paths(monkeypatch, root)
     monkeypatch.setattr(cli_main, "setup_can_prompt", lambda: True)
     (root / ".newbro").mkdir(parents=True, exist_ok=True)
@@ -401,7 +401,7 @@ def test_connector_setup_reads_existing_legacy_empty_connectors_config_with_yaml
     tmp_path: Path,
 ):
     root = tmp_path
-    (root / "src" / "synapse" / "ui").mkdir(parents=True)
+    (root / "src" / "newbro" / "ui").mkdir(parents=True)
     (root / ".newbro").mkdir(parents=True, exist_ok=True)
     (root / ".newbro" / "config.yaml").write_text(
         "\n".join(
@@ -435,7 +435,7 @@ def test_connector_setup_reads_existing_legacy_empty_connectors_config_with_yaml
         "Connector host [0.0.0.0]: ",
         "Connector port [8010]: ",
         "Connector public base URL [http://127.0.0.1:8000]: ",
-        "Synapse service base URL for connector callbacks [http://127.0.0.1:8000]: ",
+        "Newbro service base URL for connector callbacks [http://127.0.0.1:8000]: ",
         "ASR credential mode [managed]: ",
         "ASR model [nova-3]: ",
         "ASR language [en-US]: ",
@@ -465,7 +465,7 @@ def test_connector_setup_reads_existing_legacy_empty_connectors_config_with_yaml
 
 def test_connector_listing_and_settings_do_not_require_fastapi(monkeypatch, tmp_path: Path):
     root = tmp_path
-    (root / "src" / "synapse" / "ui").mkdir(parents=True)
+    (root / "src" / "newbro" / "ui").mkdir(parents=True)
     (root / ".newbro").mkdir(parents=True, exist_ok=True)
     (root / ".newbro" / ".env").write_text(
         "\n".join(
@@ -510,7 +510,7 @@ def test_connector_listing_and_settings_do_not_require_fastapi(monkeypatch, tmp_
 
 def test_setup_non_interactive_uses_existing_and_env(monkeypatch, tmp_path: Path):
     root = tmp_path
-    (root / "src" / "synapse" / "ui").mkdir(parents=True)
+    (root / "src" / "newbro" / "ui").mkdir(parents=True)
 
     configure_repo_paths(monkeypatch, root)
     monkeypatch.setenv("OPENAI_API_KEY", "sk-env")
@@ -529,7 +529,7 @@ def test_setup_non_interactive_uses_existing_and_env(monkeypatch, tmp_path: Path
 
 def test_executor_setup_migrates_legacy_codex_command_to_config(monkeypatch, tmp_path: Path):
     root = tmp_path
-    (root / "src" / "synapse" / "ui").mkdir(parents=True)
+    (root / "src" / "newbro" / "ui").mkdir(parents=True)
     (root / ".newbro").mkdir(parents=True, exist_ok=True)
     (root / ".newbro" / ".env").write_text(
         "\n".join(
@@ -586,7 +586,7 @@ def test_executor_setup_migrates_legacy_codex_command_to_config(monkeypatch, tmp
 
 def test_executor_setup_works_without_runtime_config(monkeypatch, tmp_path: Path):
     root = tmp_path
-    (root / "src" / "synapse" / "ui").mkdir(parents=True)
+    (root / "src" / "newbro" / "ui").mkdir(parents=True)
     (root / ".newbro").mkdir(parents=True, exist_ok=True)
 
     configure_repo_paths(monkeypatch, root)
@@ -605,7 +605,7 @@ def test_executor_setup_works_without_runtime_config(monkeypatch, tmp_path: Path
 
 def test_setup_non_interactive_tolerates_malformed_existing_config(monkeypatch, tmp_path: Path, capsys):
     root = tmp_path
-    (root / "src" / "synapse" / "ui").mkdir(parents=True)
+    (root / "src" / "newbro" / "ui").mkdir(parents=True)
     (root / ".newbro").mkdir(parents=True, exist_ok=True)
     (root / ".newbro" / ".env").write_text(
         "\n".join(
@@ -635,7 +635,7 @@ def test_setup_non_interactive_tolerates_malformed_existing_config(monkeypatch, 
 
 def test_setup_non_interactive_requires_openai(monkeypatch, tmp_path: Path, capsys):
     root = tmp_path
-    (root / "src" / "synapse" / "ui").mkdir(parents=True)
+    (root / "src" / "newbro" / "ui").mkdir(parents=True)
 
     configure_repo_paths(monkeypatch, root)
 
@@ -645,7 +645,7 @@ def test_setup_non_interactive_requires_openai(monkeypatch, tmp_path: Path, caps
 
 def test_setup_bootstrap_defaults_creates_env_and_connector_config(monkeypatch, tmp_path: Path):
     root = tmp_path
-    (root / "src" / "synapse" / "ui").mkdir(parents=True)
+    (root / "src" / "newbro" / "ui").mkdir(parents=True)
 
     configure_repo_paths(monkeypatch, root)
     monkeypatch.setenv("OPENAI_API_KEY", "sk-shell-secret")
@@ -679,7 +679,7 @@ def test_setup_bootstrap_defaults_creates_env_and_connector_config(monkeypatch, 
 
 def test_setup_bootstrap_defaults_preserves_existing_files(monkeypatch, tmp_path: Path):
     root = tmp_path
-    (root / "src" / "synapse" / "ui").mkdir(parents=True)
+    (root / "src" / "newbro" / "ui").mkdir(parents=True)
     (root / ".newbro").mkdir(parents=True, exist_ok=True)
     (root / ".newbro" / ".env").write_text("OPENAI_API_KEY=existing\n", encoding="utf-8")
     (root / ".newbro" / "config.yaml").write_text("version: 1\n", encoding="utf-8")
@@ -693,7 +693,7 @@ def test_setup_bootstrap_defaults_preserves_existing_files(monkeypatch, tmp_path
 
 def test_setup_bootstrap_defaults_ignores_malformed_codex_shell_env(monkeypatch, tmp_path: Path):
     root = tmp_path
-    (root / "src" / "synapse" / "ui").mkdir(parents=True)
+    (root / "src" / "newbro" / "ui").mkdir(parents=True)
 
     configure_repo_paths(monkeypatch, root)
     monkeypatch.setenv("SYNAPSE_CODEX_EXECUTOR_ENABLED", "not-a-bool")
@@ -808,7 +808,7 @@ def test_dev_uses_repo_venv_and_frontend_command(monkeypatch, tmp_path: Path):
     monkeypatch.setattr(cli_main, "frontend_dev_command", lambda host, port: ["npm", "run", "dev", "--", "--host", host, "--port", str(port)])
 
     assert cli_main.main(["dev"]) == 0
-    assert spawned[0][0][:4] == [str(venv_python), "-m", "uvicorn", "synapse.service.app:app"]
+    assert spawned[0][0][:4] == [str(venv_python), "-m", "uvicorn", "newbro.service.app:app"]
     assert spawned[1][0] == ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "5173"]
     assert len(spawned) == 2
 
@@ -817,7 +817,7 @@ def test_start_runs_single_service_process(monkeypatch, tmp_path: Path):
     venv_python = tmp_path / ".venv" / "bin" / "python"
     venv_python.parent.mkdir(parents=True, exist_ok=True)
     venv_python.write_text("", encoding="utf-8")
-    dist_dir = tmp_path / "src" / "synapse" / "ui" / "dist"
+    dist_dir = tmp_path / "src" / "newbro" / "ui" / "dist"
     dist_dir.mkdir(parents=True, exist_ok=True)
     (dist_dir / "index.html").write_text("<html>ok</html>", encoding="utf-8")
 
@@ -859,7 +859,7 @@ def test_start_runs_single_service_process(monkeypatch, tmp_path: Path):
                 str(venv_python),
                 "-m",
                 "uvicorn",
-                "synapse.service.app:app",
+                "newbro.service.app:app",
                 "--host",
                 "0.0.0.0",
                 "--port",
@@ -934,8 +934,8 @@ def test_service_install_bootstraps_runtime_and_enables_unit(monkeypatch, tmp_pa
     assert commands[0] == ([cli_main.sys.executable, "-m", "venv", str(tmp_path / ".venv")], tmp_path)
     assert commands[1] == ([str(venv_python), "-m", "pip", "install", "--upgrade", "pip"], tmp_path)
     assert commands[2] == ([str(venv_python), "-m", "pip", "install", "-e", "."], tmp_path)
-    assert commands[3] == (["bun", "install"], tmp_path / "src" / "synapse" / "ui")
-    assert commands[4] == (["bun", "run", "build"], tmp_path / "src" / "synapse" / "ui")
+    assert commands[3] == (["bun", "install"], tmp_path / "src" / "newbro" / "ui")
+    assert commands[4] == (["bun", "run", "build"], tmp_path / "src" / "newbro" / "ui")
     assert commands[5][0][0:8] == ["sudo", "install", "-o", "root", "-g", "root", "-m", "0644"]
     assert commands[5][0][-1] == str(cli_main.service_unit_path())
     assert commands[6] == (["sudo", "systemctl", "daemon-reload"], tmp_path)
@@ -983,8 +983,8 @@ def test_service_install_allows_root_and_uses_direct_systemctl(monkeypatch, tmp_
     assert commands[0] == ([cli_main.sys.executable, "-m", "venv", str(tmp_path / ".venv")], tmp_path)
     assert commands[1] == ([str(venv_python), "-m", "pip", "install", "--upgrade", "pip"], tmp_path)
     assert commands[2] == ([str(venv_python), "-m", "pip", "install", "-e", "."], tmp_path)
-    assert commands[3] == (["bun", "install"], tmp_path / "src" / "synapse" / "ui")
-    assert commands[4] == (["bun", "run", "build"], tmp_path / "src" / "synapse" / "ui")
+    assert commands[3] == (["bun", "install"], tmp_path / "src" / "newbro" / "ui")
+    assert commands[4] == (["bun", "run", "build"], tmp_path / "src" / "newbro" / "ui")
     assert commands[5][0][0:7] == ["install", "-o", "root", "-g", "root", "-m", "0644"]
     assert commands[5][0][-1] == str(cli_main.service_unit_path())
     assert commands[6] == (["systemctl", "daemon-reload"], tmp_path)
@@ -1076,19 +1076,19 @@ def test_render_service_unit_includes_expected_values():
     unit = cli_main.render_service_unit(
         user="deploy",
         home=Path("/home/deploy"),
-        workdir=Path("/srv/synapse"),
-        cli_bin=Path("/srv/synapse/.venv/bin/newbro"),
+        workdir=Path("/srv/newbro"),
+        cli_bin=Path("/srv/newbro/.venv/bin/newbro"),
         host="0.0.0.0",
         public_port=8000,
     )
 
     assert "User=deploy" in unit
-    assert "WorkingDirectory=/srv/synapse" in unit
+    assert "WorkingDirectory=/srv/newbro" in unit
     assert 'Environment="HOME=/home/deploy"' in unit
-    assert 'Environment="PATH=/srv/synapse/.venv/bin:/home/deploy/.local/bin:/home/deploy/.bun/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"' in unit
+    assert 'Environment="PATH=/srv/newbro/.venv/bin:/home/deploy/.local/bin:/home/deploy/.bun/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"' in unit
     assert "Description=Newbro service" in unit
     assert (
-        "ExecStart=/srv/synapse/.venv/bin/newbro start --host 0.0.0.0 --port 8000"
+        "ExecStart=/srv/newbro/.venv/bin/newbro start --host 0.0.0.0 --port 8000"
         in unit
     )
     assert "Restart=on-failure" in unit
@@ -1099,15 +1099,15 @@ def test_render_service_unit_supports_root_values():
     unit = cli_main.render_service_unit(
         user="root",
         home=Path("/root"),
-        workdir=Path("/srv/synapse"),
-        cli_bin=Path("/srv/synapse/.venv/bin/newbro"),
+        workdir=Path("/srv/newbro"),
+        cli_bin=Path("/srv/newbro/.venv/bin/newbro"),
         host="0.0.0.0",
         public_port=8000,
     )
 
     assert "User=root" in unit
     assert 'Environment="HOME=/root"' in unit
-    assert 'Environment="PATH=/srv/synapse/.venv/bin:/root/.local/bin:/root/.bun/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"' in unit
+    assert 'Environment="PATH=/srv/newbro/.venv/bin:/root/.local/bin:/root/.bun/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"' in unit
 
 
 def test_start_requires_production_frontend_build(monkeypatch, tmp_path: Path, capsys):
@@ -1213,7 +1213,7 @@ def test_executor_run_uses_current_python_when_installed_from_package(monkeypatc
             [
                 "/opt/newbro/bin/python3",
                 "-m",
-                "synapse.executors.node",
+                "newbro.executors.node",
                 "--base-url",
                 "https://newbro.plutoless.com",
                 "--node-id",

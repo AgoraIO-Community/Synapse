@@ -1,10 +1,10 @@
 import pytest
 
-from synapse.blackboard import InMemoryBlackboard
-from synapse.execution import ExecutionBrain
-from synapse.executors.adapters.mock import MockExecutor
-from synapse.executors.core import ExecutorRegistry
-from synapse.protocol import Task, TaskStatus
+from newbro.blackboard import InMemoryBlackboard
+from newbro.execution import ExecutionBrain
+from newbro.executors.adapters.mock import MockExecutor
+from newbro.executors.core import ExecutorRegistry
+from newbro.protocol import Task, TaskStatus
 
 
 @pytest.mark.anyio

@@ -4,11 +4,11 @@ import asyncio
 
 import pytest
 
-from synapse.executors.adapters import HostedExecutor
-from synapse.executors.node.registry import ExecutorNodeRegistry
-from synapse.executors.core import ExecutorEventType, ExecutorSession
-from synapse.protocol import ExecutionRun, ExecutorNodeExecutor, RegisterNodeMessage, Task
-from synapse.runtime.executor_node_manager import ExecutorNodeManager
+from newbro.executors.adapters import HostedExecutor
+from newbro.executors.node.registry import ExecutorNodeRegistry
+from newbro.executors.core import ExecutorEventType, ExecutorSession
+from newbro.protocol import ExecutionRun, ExecutorNodeExecutor, RegisterNodeMessage, Task
+from newbro.runtime.executor_node_manager import ExecutorNodeManager
 
 
 class FakeWebSocket:

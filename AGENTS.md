@@ -1,7 +1,7 @@
 # AGENTS.md
 
 ## Project
-Synapse is a backend-first prototype for a communication-brain / execution-brain runtime.
+Newbro is a backend-first prototype for a communication-brain / execution-brain runtime.
 
 Core concepts:
 - Communication Brain

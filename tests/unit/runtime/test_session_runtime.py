@@ -2,9 +2,9 @@ import asyncio
 
 import pytest
 
-from synapse.communication.models import ScriptedCommunicationModel
-from synapse.communication.models.scripted import ScriptedPlan
-from synapse.protocol import (
+from newbro.communication.models import ScriptedCommunicationModel
+from newbro.communication.models.scripted import ScriptedPlan
+from newbro.protocol import (
     AgentResumeHandle,
     AttentionItem,
     AttentionItemKind,
@@ -27,10 +27,10 @@ from synapse.protocol import (
     TaskCommandType,
     TaskExecutionMode,
 )
-from synapse.executors.core import ExecutorCapabilities, ExecutorEvent, ExecutorEventType, ExecutorSession
-from synapse.protocol import Task, TaskStatus
-from synapse.runtime import Settings
-from synapse.runtime.session import create_session_runtime
+from newbro.executors.core import ExecutorCapabilities, ExecutorEvent, ExecutorEventType, ExecutorSession
+from newbro.protocol import Task, TaskStatus
+from newbro.runtime import Settings
+from newbro.runtime.session import create_session_runtime
 
 
 @pytest.mark.anyio
@@ -209,7 +209,7 @@ class FakeNativeClient:
 
 class FakeNativeCodexSession:
     def __init__(self) -> None:
-        from synapse.executors.adapters.codex.session import CodexExecutorSession
+        from newbro.executors.adapters.codex.session import CodexExecutorSession
 
         self.session = CodexExecutorSession(
             session_id="codex-session-native",

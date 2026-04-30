@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import logging
 
-from synapse.api.logging import DiagnosticsTimelineAccessFilter, install_access_log_filters
-from synapse.runtime.config import Settings
+from newbro.api.logging import DiagnosticsTimelineAccessFilter, install_access_log_filters
+from newbro.runtime.config import Settings
 
 
 def _access_record(method: str, path: str) -> logging.LogRecord:

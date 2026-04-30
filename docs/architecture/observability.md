@@ -1,6 +1,6 @@
 # Observability
 
-Synapse uses a diagnosis-first observability model.
+Newbro uses a diagnosis-first observability model.
 
 The goal is to answer, within a few minutes of an incident:
 
@@ -143,7 +143,7 @@ Phase 1 prioritizes boundary and decision events:
 
 ## Boundaries And Storage
 
-Observability code lives in `synapse.observability` as a first-class package.
+Observability code lives in `newbro.observability` as a first-class package.
 
 Instrumentation is added at the runtime edges:
 

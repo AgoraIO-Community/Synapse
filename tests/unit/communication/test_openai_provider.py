@@ -3,9 +3,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from synapse.communication.tools.base import ToolInputError
-from synapse.infrastructure.llm import OpenAIProvider
-from synapse.runtime import Settings
+from newbro.communication.tools.base import ToolInputError
+from newbro.infrastructure.llm import OpenAIProvider
+from newbro.runtime import Settings
 
 
 def _tool_completion(*, name: str, arguments: dict[str, object]) -> SimpleNamespace:

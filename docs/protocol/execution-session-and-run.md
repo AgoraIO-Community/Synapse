@@ -55,7 +55,7 @@ Detached-executor additions:
 - `SessionBinding.executor_node_id`
   - records which node the current binding is associated with
 - `TaskStatus = waiting_executor`
-  - task is accepted and durable state exists, but Synapse is waiting for the
+  - task is accepted and durable state exists, but Newbro is waiting for the
     detached executor node to become available
 - `RunStatus = waiting_executor`
   - the current run has been created but is waiting on detached-host availability
