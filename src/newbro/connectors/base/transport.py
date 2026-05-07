@@ -62,6 +62,16 @@ class HttpNewbroConnectorTransport:
             trust_env=False,
         )
 
+    @property
+    def base_url(self) -> str:
+        """Configured Newbro API base URL (no trailing slash)."""
+        return self._base_url
+
+    @property
+    def request_timeout_seconds(self) -> float:
+        """Default request timeout used for the shared client."""
+        return self._request_timeout_seconds
+
     async def create_session(self) -> str:
         response = await self._request("POST", f"{API_PREFIX}/sessions")
         payload = response.json()

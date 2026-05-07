@@ -236,9 +236,9 @@ def _parse_yaml_tts_settings(raw_tts, source_path: Path) -> AgoraConvoAITTSSetti
         raise ConnectorConfigError(
             f"Unsupported managed TTS vendor/model '{settings.vendor}/{settings.model}' in {source_path}"
         )
-    if settings.credential_mode == "byok" and settings.vendor != "elevenlabs":
+    if settings.credential_mode == "byok" and settings.vendor not in {"elevenlabs", "minimax"}:
         raise ConnectorConfigError(
-            f"Unsupported BYOK TTS vendor '{settings.vendor}' in {source_path}; use 'elevenlabs'"
+            f"Unsupported BYOK TTS vendor '{settings.vendor}' in {source_path}; use 'elevenlabs' or 'minimax'"
         )
     return settings
 

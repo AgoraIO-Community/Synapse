@@ -435,6 +435,17 @@ def _build_tts_vendor(
             f"Unsupported managed TTS vendor: {settings.tts.vendor}"
         )
 
+    if settings.tts.vendor == "minimax":
+        mm_kwargs: dict[str, object] = {
+            "key": str(_require(settings.tts.api_key, _tts_api_key_requirement_name(settings))),
+            "model": settings.tts.model,
+        }
+        if settings.tts.voice:
+            mm_kwargs["voice_id"] = settings.tts.voice
+        if settings.tts.sample_rate is not None:
+            mm_kwargs["sample_rate"] = settings.tts.sample_rate
+        return MiniMaxTTS(**mm_kwargs)
+
     if settings.tts.vendor != "elevenlabs":
         raise ConvoAIConfigurationError(f"Unsupported BYOK TTS vendor: {settings.tts.vendor}")
 
