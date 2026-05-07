@@ -1,7 +1,7 @@
 name: Claude Code Review
 
 on:
-  pull_request:
+  pull_request_target:
     types: [opened, synchronize]
     # Optional: Only run on specific file changes
     branches: ["main", "release/**"]
@@ -53,8 +53,11 @@ jobs:
           # Mark as safe directory
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
-      - name: Checkout repository
+      - name: Checkout repository (PR head)
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
 
       - name: Clean up previous Claude Code review comments
         # Workaround for comment accumulation issue
@@ -94,7 +97,7 @@ jobs:
         uses: anthropics/claude-code-action@v1
         env:
           ANTHROPIC_BASE_URL: "${{ secrets.ANTHROPIC_BASE_URL }}"
-          GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
+          GITHUB_TOKEN: ${{ github.token }}
         with:
           anthropic_api_key: "${{ secrets.ANTHROPIC_API_KEY }}"
           show_full_output: true
