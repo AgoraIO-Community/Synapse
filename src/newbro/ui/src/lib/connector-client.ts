@@ -19,6 +19,13 @@ export interface ConnectorConfig {
    * prepare-session diagnostics block.
    */
   data_channel?: string;
+  /**
+   * True when the operator has set `connectors.agora-convoai.conversation_brain_prompt`
+   * in their config. The frontend uses this to decide whether to show the new
+   * phone-call UI (full LLM-powered conversation + dispatch trigger) or the
+   * legacy push-to-talk drafting UI.
+   */
+  conversation_brain_enabled?: boolean;
 }
 
 export interface ConnectorSessionPrepareRequest {

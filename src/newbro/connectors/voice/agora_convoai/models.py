@@ -36,6 +36,11 @@ class ConnectorConfigResponse(BaseModel):
     # the frontend can mirror channel selection (e.g. skip RTM client init when
     # the backend is using `datastream`). Defaults to `rtm` when not configured.
     data_channel: str = "rtm"
+    # True iff `connectors.agora-convoai.conversation_brain_prompt` is set in the
+    # operator config. The frontend uses this to decide whether to render the
+    # phone-call UI (full LLM-powered conversation + dispatch trigger) or the
+    # legacy push-to-talk drafting UI.
+    conversation_brain_enabled: bool = False
 
 
 class ConnectorSessionPrepareRequest(BaseModel):

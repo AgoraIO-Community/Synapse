@@ -1,4 +1,4 @@
-import { ArrowLeft, Bot, CheckCircle2, Clock, Mic, PencilLine, Play, SendHorizontal, Trash2 } from "lucide-react";
+import { ArrowLeft, Bot, CheckCircle2, Clock, Mic, MicOff, PencilLine, Phone, PhoneOff, Play, SendHorizontal, Trash2 } from "lucide-react";
 import type { CSSProperties, KeyboardEventHandler, PointerEventHandler, ReactNode } from "react";
 import type { TaskSummary } from "../../types";
 import { MarkdownText } from "../ui/markdown-text";
@@ -81,13 +81,30 @@ export function VoicePad({
   );
 }
 
+export type TranscriptTurnView = {
+  id: string;
+  speaker: "user" | "agent";
+  text: string;
+  status?: string;
+};
+
 export function LiveTranscriptPanel({
   active,
   transcriptText,
+  turns,
+  agentState,
 }: {
   active: boolean;
-  transcriptText: string;
+  transcriptText?: string;
+  turns?: TranscriptTurnView[];
+  agentState?: string;
 }) {
+  const hasTurns = turns && turns.length > 0;
+  const stateLabel = (() => {
+    if (!active) return "Standby";
+    if (!agentState || agentState === "idle") return "Listening";
+    return agentState.charAt(0).toUpperCase() + agentState.slice(1);
+  })();
   return (
     <div className="nb-card nb-transcript-card">
       <div className="nb-transcript-head">
@@ -98,13 +115,107 @@ export function LiveTranscriptPanel({
           </div>
           <span className="nb-chip">
             <span className={`nb-pulse ${active ? "" : "nb-pulse-muted"}`} />
-            {active ? "Listening" : "Standby"}
+            {stateLabel}
           </span>
         </div>
       </div>
-      <div className={`nb-transcript-body ${transcriptText ? "" : "nb-transcript-empty"}`}>
-        {transcriptText || "Latest transcript will appear here."}
+      {hasTurns ? (
+        <div className="nb-transcript-body flex flex-col gap-3">
+          {turns!.map((turn) => (
+            <div
+              key={turn.id}
+              className={`flex flex-col gap-1 rounded-[14px] px-3 py-2 ${
+                turn.speaker === "agent"
+                  ? "bg-[#fff0ec] text-[#111827]"
+                  : "bg-white/70 text-foreground"
+              }`}
+            >
+              <span className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+                {turn.speaker === "agent" ? "Bro" : "You"}
+                {turn.status && turn.status !== "final" ? ` · ${turn.status}` : ""}
+              </span>
+              <span className="text-[14px] leading-6 whitespace-pre-wrap">{turn.text}</span>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className={`nb-transcript-body ${transcriptText ? "" : "nb-transcript-empty"}`}>
+          {transcriptText || (active ? "Say something — I'm listening." : "Start a call to begin talking.")}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function CallControl({
+  phase,
+  isMuted,
+  agentState,
+  onStart,
+  onEnd,
+  onToggleMute,
+  disabled,
+  errorMessage,
+}: {
+  phase: "idle" | "loading" | "connected" | "error";
+  isMuted: boolean;
+  agentState: string;
+  onStart: () => void;
+  onEnd: () => void;
+  onToggleMute: () => void;
+  disabled?: boolean;
+  errorMessage?: string | null;
+}) {
+  const inCall = phase === "connected";
+  const isLoading = phase === "loading";
+  const stateBadge = (() => {
+    if (phase === "error") return "Error";
+    if (isLoading) return "Connecting…";
+    if (!inCall) return "Ready to call";
+    if (!agentState || agentState === "idle") return "Listening";
+    return agentState.charAt(0).toUpperCase() + agentState.slice(1);
+  })();
+  return (
+    <div className="nb-talk-dock flex flex-col items-center gap-3">
+      <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+        {inCall ? "Live Call" : "Phone Call Mode"}
       </div>
+      <div className="flex items-center gap-3">
+        {inCall ? (
+          <button
+            type="button"
+            aria-label={isMuted ? "Unmute microphone" : "Mute microphone"}
+            onClick={onToggleMute}
+            className={`grid h-12 w-12 place-items-center rounded-full border ${
+              isMuted ? "border-[#fcb3a3] bg-[#fff0ec] text-[#ff6a3d]" : "border-[#e5e7eb] bg-white text-[#111827]"
+            } shadow-[0_2px_8px_rgba(0,0,0,0.05)]`}
+          >
+            {isMuted ? <MicOff /> : <Mic />}
+          </button>
+        ) : null}
+        <button
+          type="button"
+          disabled={disabled || isLoading}
+          onClick={inCall ? onEnd : onStart}
+          className={`flex h-14 items-center gap-3 rounded-full px-7 text-[15px] font-semibold tracking-[0.02em] shadow-[0_4px_18px_rgba(255,106,61,0.25)] transition disabled:opacity-50 ${
+            inCall
+              ? "bg-[#111827] text-white hover:bg-[#1f2937]"
+              : "bg-[#ff6a3d] text-white hover:bg-[#ff7d56]"
+          }`}
+        >
+          {inCall ? <PhoneOff /> : <Phone />}
+          <span>{isLoading ? "Connecting…" : inCall ? "End Call" : "Start Call"}</span>
+        </button>
+      </div>
+      <div className="flex items-center gap-2 text-[12px] text-muted-foreground">
+        <span className={`nb-pulse ${inCall ? "" : "nb-pulse-muted"}`} aria-hidden="true" />
+        <span>{stateBadge}</span>
+      </div>
+      {errorMessage ? (
+        <div className="max-w-[420px] rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-center text-[12px] leading-5 text-red-600">
+          {errorMessage}
+        </div>
+      ) : null}
     </div>
   );
 }

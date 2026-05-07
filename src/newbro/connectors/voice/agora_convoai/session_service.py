@@ -97,6 +97,9 @@ class AgoraConnectorSessionService:
             ),
             missing_requirements=missing,
             data_channel=self._settings.data_channel,
+            conversation_brain_enabled=bool(
+                (self._settings.conversation_brain_prompt or "").strip()
+            ),
         )
 
     async def prepare_session(

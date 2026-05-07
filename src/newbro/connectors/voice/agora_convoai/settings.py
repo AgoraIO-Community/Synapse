@@ -70,6 +70,17 @@ class AgoraConvoAIConnectorSettings:
     # channel instead, which can be useful when the browser cannot reach Agora's
     # RTM presence edge (e.g. some China networks reaching US-region projects).
     data_channel: str = "rtm"
+    # System prompt and dispatch trigger for the optional conversation-brain mode.
+    # When `conversation_brain_prompt` is set, the chat/completions bridge proxies
+    # the conversation to the configured LLM (via SYNAPSE_OPENAI_* env) using this
+    # prompt. When empty (default), the bridge keeps the legacy "Draft updated."
+    # behaviour for backward compatibility.
+    conversation_brain_prompt: str = ""
+    # Comma-separated phrases (case-insensitive). When the user's latest message
+    # exactly matches one of these (after trimming punctuation), the bridge
+    # summarises the conversation into a task spec and dispatches it to the
+    # executor instead of forwarding the message to the LLM.
+    dispatch_trigger_phrases: str = ""
 
 
 DEFAULT_ENV_FILE = SYNAPSE_ENV_FILE
@@ -151,6 +162,8 @@ def _load_agora_connector_settings_from_yaml(loaded_connector_config) -> AgoraCo
             str(raw_connector.get("data_channel", "rtm")).lower(),
             source_path=source_path,
         ),
+        conversation_brain_prompt=str(raw_connector.get("conversation_brain_prompt", "") or ""),
+        dispatch_trigger_phrases=str(raw_connector.get("dispatch_trigger_phrases", "") or ""),
     )
 
 
