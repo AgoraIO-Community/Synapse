@@ -65,6 +65,11 @@ class AgoraConvoAIConnectorSettings:
     speak_priority: str = "APPEND"
     speak_interruptable: bool = True
     request_timeout_seconds: float = 10.0
+    # Agora signalling channel for control + transcripts. "rtm" is the default and
+    # works for most users; "datastream" routes those messages over the RTC stream
+    # channel instead, which can be useful when the browser cannot reach Agora's
+    # RTM presence edge (e.g. some China networks reaching US-region projects).
+    data_channel: str = "rtm"
 
 
 DEFAULT_ENV_FILE = SYNAPSE_ENV_FILE
@@ -142,7 +147,20 @@ def _load_agora_connector_settings_from_yaml(loaded_connector_config) -> AgoraCo
             source_path=source_path,
         ),
         request_timeout_seconds=float(raw_connector.get("request_timeout_seconds", 10.0)),
+        data_channel=_validate_data_channel(
+            str(raw_connector.get("data_channel", "rtm")).lower(),
+            source_path=source_path,
+        ),
     )
+
+
+def _validate_data_channel(value: str, *, source_path: Path) -> str:
+    if value not in {"rtm", "datastream"}:
+        raise ConnectorConfigError(
+            f"Unsupported 'connectors.agora-convoai.data_channel' value '{value}' in {source_path}; "
+            "use 'rtm' (default) or 'datastream'"
+        )
+    return value
 
 
 def _parse_yaml_asr_settings(raw_asr, source_path: Path) -> AgoraConvoAIASRSettings:

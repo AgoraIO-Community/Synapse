@@ -201,9 +201,9 @@ class AgoraSDKConvoAIService:
             name=f"newbro_agent_{uuid4().hex[:8]}",
             instructions=agent_instructions,
             greeting=agent_greeting,
-            advanced_features=AdvancedFeatures(enable_rtm=True),
+            advanced_features=AdvancedFeatures(enable_rtm=(self._settings.data_channel == "rtm")),
             parameters=SessionParams(
-                data_channel="rtm",
+                data_channel=self._settings.data_channel,
                 enable_metrics=True,
                 enable_error_message=True,
                 transcript={
@@ -240,8 +240,8 @@ class AgoraSDKConvoAIService:
             rtc_uid=resolved_user_uid,
             rtm_user_id=user_rtm_uid,
             enable_string_uid=False,
-            enable_rtm=True,
-            data_channel="rtm",
+            enable_rtm=(self._settings.data_channel == "rtm"),
+            data_channel=self._settings.data_channel,
             enable_metrics=True,
             enable_error_message=True,
         )
@@ -331,8 +331,8 @@ class AgoraSDKConvoAIService:
             rtc_uid=bootstrap.uid,
             rtm_user_id=bootstrap.user_rtm_uid,
             enable_string_uid=False,
-            enable_rtm=True,
-            data_channel="rtm",
+            enable_rtm=(self._settings.data_channel == "rtm"),
+            data_channel=self._settings.data_channel,
             enable_metrics=True,
             enable_error_message=True,
         )

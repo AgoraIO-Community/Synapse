@@ -12,6 +12,13 @@ export interface ConnectorConfig {
     user_uid?: number;
   };
   missing_requirements: string[];
+  /**
+   * Mirror of the operator's `connectors.agora-convoai.data_channel` setting.
+   * Either "rtm" (default) or "datastream". Frontend uses this for diagnostics;
+   * the actual decision to skip RTM init is driven by `enable_rtm` in the
+   * prepare-session diagnostics block.
+   */
+  data_channel?: string;
 }
 
 export interface ConnectorSessionPrepareRequest {

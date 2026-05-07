@@ -113,6 +113,18 @@ export function useVoiceSession() {
         return;
       }
 
+      // ConvoAI agent embeds audio-PTS metadata that the toolkit needs for
+      // transcript-audio alignment (especially WORD mode). Must be enabled
+      // BEFORE createClient. setParameter is on the namespace, not the client.
+      try {
+        (AgoraRTC as { setParameter?: (k: string, v: unknown) => void }).setParameter?.(
+          "ENABLE_AUDIO_PTS_METADATA",
+          true,
+        );
+      } catch {
+        // Older SDK versions may not expose setParameter; harmless.
+      }
+
       rtcClient = AgoraRTC.createClient({ mode: "rtc", codec: "vp8" });
       rtcClient.on("user-published", async (user: any, mediaType: string) => {
         await rtcClient.subscribe(user, mediaType);
@@ -126,13 +138,21 @@ export function useVoiceSession() {
         }
       });
 
-      rtmClient = new AgoraRTM.RTM(prepared.app_id, prepared.user_rtm_uid);
-      await rtmClient.login({ token: prepared.token });
-      await rtmClient.subscribe(prepared.channel_name, { withMessage: true });
+      // RTM is the default channel for control + transcript messages from the
+      // ConvoAI agent. The backend reports whether RTM is enabled for this
+      // session (controlled by the operator's `data_channel` config). When RTM
+      // is off the backend uses RTC datastream instead and we skip RTM init —
+      // useful when the browser cannot reach Agora's RTM presence edge.
+      const rtmEnabled = prepared.diagnostics?.enable_rtm !== false;
+      if (rtmEnabled) {
+        rtmClient = new AgoraRTM.RTM(prepared.app_id, prepared.user_rtm_uid);
+        await rtmClient.login({ token: prepared.token });
+        await rtmClient.subscribe(prepared.channel_name, { withMessage: true });
+      }
 
       voiceAi = await AgoraVoiceAI.init({
         rtcEngine: rtcClient,
-        rtmConfig: { rtmEngine: rtmClient },
+        ...(rtmClient ? { rtmConfig: { rtmEngine: rtmClient } } : {}),
         renderMode: TranscriptHelperMode.AUTO,
       });
 

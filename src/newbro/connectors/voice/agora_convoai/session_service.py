@@ -96,6 +96,7 @@ class AgoraConnectorSessionService:
                 user_uid=self._settings.user_uid,
             ),
             missing_requirements=missing,
+            data_channel=self._settings.data_channel,
         )
 
     async def prepare_session(
