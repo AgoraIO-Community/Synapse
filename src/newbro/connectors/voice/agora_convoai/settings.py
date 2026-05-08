@@ -66,6 +66,9 @@ class AgoraConvoAIConnectorSettings:
     sdk_debug: bool = False
     default_profile: str = DEFAULT_PROFILE
     default_display_name: str = DEFAULT_DISPLAY_NAME
+    data_channel: str = "rtm"
+    conversation_brain_prompt: str = ""
+    dispatch_trigger_phrases: tuple[str, ...] = ()
     speak_priority: str = "APPEND"
     speak_interruptable: bool = True
     request_timeout_seconds: float = 10.0
@@ -102,6 +105,9 @@ def load_agora_connector_settings(*, env_file: Path | None = None) -> AgoraConvo
             sdk_debug=False,
             default_profile=DEFAULT_PROFILE,
             default_display_name=DEFAULT_DISPLAY_NAME,
+            data_channel="rtm",
+            conversation_brain_prompt="",
+            dispatch_trigger_phrases=(),
             speak_priority="APPEND",
             speak_interruptable=True,
             request_timeout_seconds=10.0,
@@ -149,6 +155,11 @@ def _load_agora_connector_settings_from_yaml(loaded_connector_config) -> AgoraCo
         sdk_debug=False,
         default_profile=DEFAULT_PROFILE,
         default_display_name=DEFAULT_DISPLAY_NAME,
+        data_channel=str(raw_connector.get("data_channel", "rtm")).lower(),
+        conversation_brain_prompt=str(raw_connector.get("conversation_brain_prompt", "") or ""),
+        dispatch_trigger_phrases=_parse_csv_list(
+            raw_connector.get("dispatch_trigger_phrases", ""),
+        ),
         speak_priority=str(raw_connector.get("speak_priority", "APPEND")).upper(),
         speak_interruptable=_parse_bool_scalar(
             raw_connector.get("speak_interruptable", True),
@@ -285,3 +296,13 @@ def _parse_bool_scalar(value: object, *, field_name: str, source_path: Path) -> 
         if normalized in {"0", "false", "no", "off"}:
             return False
     raise ConnectorConfigError(f"'{field_name}' must be a boolean in {source_path}")
+
+
+def _parse_csv_list(value: object) -> tuple[str, ...]:
+    if value in (None, ""):
+        return ()
+    if isinstance(value, str):
+        return tuple(part.strip() for part in value.split(",") if part.strip())
+    if isinstance(value, list):
+        return tuple(str(item).strip() for item in value if str(item).strip())
+    return (str(value).strip(),) if str(value).strip() else ()

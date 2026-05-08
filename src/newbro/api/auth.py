@@ -32,6 +32,9 @@ class AuthenticatedPrincipal:
 class AuthState:
     enabled: bool
     allow_unauthenticated_websockets: bool
+    api_bearer_token: str | None = None
+    cloudflare_access_service_client_id: str | None = None
+    cloudflare_access_service_client_secret: str | None = None
 
 
 @dataclass(slots=True)
@@ -76,6 +79,9 @@ def build_auth_state(settings: Settings) -> AuthState:
     return AuthState(
         enabled=settings.api_auth_required,
         allow_unauthenticated_websockets=settings.allow_unauthenticated_session_websockets,
+        api_bearer_token=settings.api_bearer_token,
+        cloudflare_access_service_client_id=settings.cloudflare_access_service_client_id,
+        cloudflare_access_service_client_secret=settings.cloudflare_access_service_client_secret,
     )
 
 
@@ -91,13 +97,14 @@ def install_auth_state(app, settings: Settings) -> None:
 
 
 def require_http_api_auth(request: Request) -> AuthenticatedPrincipal | None:
+    auth_state = getattr(request.app.state, "auth_state", AuthState(False, False))
     return _require_scope_auth(
         carrier=request,
-        auth_state=getattr(request.app.state, "auth_state", AuthState(False, False)),
+        auth_state=auth_state,
         verifier=getattr(request.app.state, "cloudflare_access_verifier", None),
-        expected_api_token=request.app.state.runtime_container.settings.api_bearer_token,
-        access_client_id=request.app.state.runtime_container.settings.cloudflare_access_service_client_id,
-        access_client_secret=request.app.state.runtime_container.settings.cloudflare_access_service_client_secret,
+        expected_api_token=auth_state.api_bearer_token,
+        access_client_id=auth_state.cloudflare_access_service_client_id,
+        access_client_secret=auth_state.cloudflare_access_service_client_secret,
         unauthorized_status=401,
         missing_error="API authentication required.",
         invalid_error="Invalid API credentials.",
@@ -116,9 +123,9 @@ def require_websocket_api_auth(
         carrier=websocket,
         auth_state=auth_state,
         verifier=getattr(websocket.app.state, "cloudflare_access_verifier", None),
-        expected_api_token=websocket.app.state.runtime_container.settings.api_bearer_token,
-        access_client_id=websocket.app.state.runtime_container.settings.cloudflare_access_service_client_id,
-        access_client_secret=websocket.app.state.runtime_container.settings.cloudflare_access_service_client_secret,
+        expected_api_token=auth_state.api_bearer_token,
+        access_client_id=auth_state.cloudflare_access_service_client_id,
+        access_client_secret=auth_state.cloudflare_access_service_client_secret,
         unauthorized_status=4401,
         missing_error="WebSocket authentication required.",
         invalid_error="Invalid WebSocket credentials.",
@@ -126,8 +133,11 @@ def require_websocket_api_auth(
 
 
 def require_executor_control_auth(websocket: WebSocket) -> AuthenticatedPrincipal | None:
-    settings = websocket.app.state.runtime_container.settings
-    if not settings.executor_control_ws_auth_enabled:
+    auth_state = getattr(websocket.app.state, "auth_state", AuthState(False, False))
+    settings = getattr(getattr(websocket.app.state, "runtime_container", None), "settings", None)
+    if settings is not None and not settings.executor_control_ws_auth_enabled:
+        return None
+    if settings is None and not auth_state.enabled:
         return None
     return require_websocket_api_auth(websocket)
 

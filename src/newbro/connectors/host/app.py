@@ -3,7 +3,9 @@ from __future__ import annotations
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from newbro.api.auth import install_auth_state
 from newbro.api.paths import api_path
+from newbro.runtime import Settings
 
 from .config import ConnectorHostSettings, load_connector_host_settings
 from .registry import create_connector_module_registry
@@ -34,6 +36,7 @@ def create_app(settings: ConnectorHostSettings | None = None) -> FastAPI:
         docs_url=api_path("/docs"),
         redoc_url=api_path("/redoc"),
     )
+    install_auth_state(app, Settings())
     if settings.cors_allowed_origins:
         app.add_middleware(
             CORSMiddleware,

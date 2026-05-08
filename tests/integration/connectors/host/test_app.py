@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from dataclasses import replace
 
 import pytest
 from fastapi import APIRouter
@@ -13,9 +14,14 @@ from newbro.connectors.host.app import create_app
 from newbro.connectors.host.config import ConnectorHostSettings
 from newbro.connectors.base import BaseConnectorModule, ConnectorModuleRegistry
 from newbro.connectors.base.transport import HttpNewbroConnectorTransport
+from newbro.api.auth import install_auth_state
 from newbro.connectors.voice.agora_convoai.module import create_headless_app
 from newbro.connectors.voice.agora_convoai.service import AgoraSDKConvoAIService
-from newbro.connectors.voice.agora_convoai.settings import AgoraConvoAIConnectorSettings
+from newbro.connectors.voice.agora_convoai.settings import (
+    AgoraConvoAIASRSettings,
+    AgoraConvoAIConnectorSettings,
+)
+from newbro.runtime import Settings
 
 
 class FakeConnectorModule(BaseConnectorModule):
@@ -38,6 +44,30 @@ class FakeConnectorModule(BaseConnectorModule):
             return {"prepared": True}
 
         return router
+
+
+def _install_test_auth(app) -> None:
+    install_auth_state(
+        app,
+        Settings(
+            api_auth_required=True,
+            api_bearer_token="test-token",
+        ),
+    )
+
+
+def _make_test_agora_settings(**overrides) -> AgoraConvoAIConnectorSettings:
+    base = AgoraConvoAIConnectorSettings(
+        app_id="agora-app",
+        app_certificate="app-certificate",
+        asr=AgoraConvoAIASRSettings(
+            vendor="deepgram",
+            credential_mode="managed",
+            model="nova-3",
+            language="zh-CN",
+        ),
+    )
+    return replace(base, **overrides)
 
 
 @pytest.mark.anyio
@@ -245,12 +275,8 @@ async def test_agora_connector_prepare_route_uses_real_loader_path_before_fake_s
         ),
     )
 
-    app = create_headless_app(
-        AgoraConvoAIConnectorSettings(
-            app_id="agora-app",
-            app_certificate="app-certificate",
-        )
-    )
+    app = create_headless_app(_make_test_agora_settings())
+    _install_test_auth(app)
 
     async with AsyncClient(
         transport=ASGITransport(app=app),
@@ -258,6 +284,7 @@ async def test_agora_connector_prepare_route_uses_real_loader_path_before_fake_s
     ) as client:
         response = await client.post(
             "/api/connectors/agora-convoai/sessions/prepare",
+            headers={"Authorization": "Bearer test-token"},
             json={
                 "profile": "VOICE",
                 "channel_name": "demo-room",
@@ -330,12 +357,8 @@ async def test_agora_connector_prepare_defaults_channel_name_to_synapse_session_
         ),
     )
 
-    app = create_headless_app(
-        AgoraConvoAIConnectorSettings(
-            app_id="agora-app",
-            app_certificate="app-certificate",
-        )
-    )
+    app = create_headless_app(_make_test_agora_settings())
+    _install_test_auth(app)
 
     async with AsyncClient(
         transport=ASGITransport(app=app),
@@ -343,6 +366,7 @@ async def test_agora_connector_prepare_defaults_channel_name_to_synapse_session_
     ) as client:
         response = await client.post(
             "/api/connectors/agora-convoai/sessions/prepare",
+            headers={"Authorization": "Bearer test-token"},
             json={
                 "profile": "VOICE",
                 "synapse_session_id": "session-1234",
@@ -364,6 +388,9 @@ async def test_agora_connector_activate_ignores_proxy_env_for_synapse_upstream(m
             base_url: str,
             *,
             request_timeout_seconds: float = 10.0,
+            bearer_token: str | None = None,
+            cloudflare_access_client_id: str | None = None,
+            cloudflare_access_client_secret: str | None = None,
         ) -> None:
             self.base_url = base_url
             self.request_timeout_seconds = request_timeout_seconds
@@ -456,13 +483,12 @@ async def test_agora_connector_activate_ignores_proxy_env_for_synapse_upstream(m
     )
 
     app = create_headless_app(
-        AgoraConvoAIConnectorSettings(
+        _make_test_agora_settings(
             synapse_base_url="http://127.0.0.1:8000",
-            app_id="agora-app",
-            app_certificate="app-certificate",
             convoai_area="US",
         )
     )
+    _install_test_auth(app)
 
     async with AsyncClient(
         transport=ASGITransport(app=app),
@@ -470,6 +496,7 @@ async def test_agora_connector_activate_ignores_proxy_env_for_synapse_upstream(m
     ) as client:
         prepared = await client.post(
             "/api/connectors/agora-convoai/sessions/prepare",
+            headers={"Authorization": "Bearer test-token"},
             json={
                 "profile": "VOICE",
                 "channel_name": "demo-room",
@@ -482,6 +509,7 @@ async def test_agora_connector_activate_ignores_proxy_env_for_synapse_upstream(m
 
         activated = await client.post(
             "/api/connectors/agora-convoai/sessions/activate",
+            headers={"Authorization": "Bearer test-token"},
             json={"prepared_session_id": prepared_session_id},
         )
 
@@ -502,6 +530,9 @@ async def test_agora_connector_activate_reuses_existing_synapse_session_binding(
             base_url: str,
             *,
             request_timeout_seconds: float = 10.0,
+            bearer_token: str | None = None,
+            cloudflare_access_client_id: str | None = None,
+            cloudflare_access_client_secret: str | None = None,
         ) -> None:
             self.base_url = base_url
             self.request_timeout_seconds = request_timeout_seconds
@@ -593,13 +624,12 @@ async def test_agora_connector_activate_reuses_existing_synapse_session_binding(
     )
 
     app = create_headless_app(
-        AgoraConvoAIConnectorSettings(
+        _make_test_agora_settings(
             synapse_base_url="http://127.0.0.1:8000",
-            app_id="agora-app",
-            app_certificate="app-certificate",
             convoai_area="US",
         )
     )
+    _install_test_auth(app)
 
     async with AsyncClient(
         transport=ASGITransport(app=app),
@@ -607,6 +637,7 @@ async def test_agora_connector_activate_reuses_existing_synapse_session_binding(
     ) as client:
         prepared = await client.post(
             "/api/connectors/agora-convoai/sessions/prepare",
+            headers={"Authorization": "Bearer test-token"},
             json={
                 "profile": "VOICE",
                 "synapse_session_id": "session-existing",
@@ -620,6 +651,7 @@ async def test_agora_connector_activate_reuses_existing_synapse_session_binding(
 
         activated = await client.post(
             "/api/connectors/agora-convoai/sessions/activate",
+            headers={"Authorization": "Bearer test-token"},
             json={"prepared_session_id": prepared_session_id},
         )
 

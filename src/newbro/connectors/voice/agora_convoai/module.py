@@ -9,6 +9,7 @@ from uuid import uuid4
 from fastapi import APIRouter, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
+from newbro.api.auth import require_http_api_auth
 from newbro.api.paths import API_PREFIX, api_path
 from newbro.connectors.base import (
     BaseConnectorModule,
@@ -99,13 +100,16 @@ class AgoraConvoAIConnectorModule(BaseConnectorModule):
             }
 
         @router.get("/config", response_model=ConnectorConfigResponse)
-        async def config() -> ConnectorConfigResponse:
+        async def config(request: Request) -> ConnectorConfigResponse:
+            require_http_api_auth(request)
             return session_service.get_config()
 
         @router.post("/sessions/prepare", response_model=ConnectorSessionPrepareResponse)
         async def prepare_session(
             payload: ConnectorSessionPrepareRequest,
+            request: Request,
         ) -> ConnectorSessionPrepareResponse:
+            require_http_api_auth(request)
             try:
                 return await session_service.prepare_session(payload)
             except ConvoAIConfigurationError as exc:
@@ -116,7 +120,9 @@ class AgoraConvoAIConnectorModule(BaseConnectorModule):
         @router.post("/sessions/activate", response_model=ConnectorSessionActivateResponse)
         async def activate_session(
             payload: ConnectorSessionActivateRequest,
+            request: Request,
         ) -> ConnectorSessionActivateResponse:
+            require_http_api_auth(request)
             try:
                 return await session_service.activate_session(payload)
             except KeyError as exc:
@@ -133,7 +139,9 @@ class AgoraConvoAIConnectorModule(BaseConnectorModule):
         @router.post("/sessions/stop", response_model=ConnectorSessionStopResponse)
         async def stop_session(
             payload: ConnectorSessionStopRequest,
+            request: Request,
         ) -> ConnectorSessionStopResponse:
+            require_http_api_auth(request)
             try:
                 return await session_service.stop_session(payload)
             except KeyError as exc:
@@ -145,7 +153,9 @@ class AgoraConvoAIConnectorModule(BaseConnectorModule):
         @router.post("/stt/sessions/prepare", response_model=SttSessionPrepareResponse)
         async def prepare_stt_session(
             payload: SttSessionPrepareRequest,
+            request: Request,
         ) -> SttSessionPrepareResponse:
+            require_http_api_auth(request)
             try:
                 return stt_service.prepare_session(payload)
             except ConvoAIConfigurationError as exc:
@@ -154,7 +164,9 @@ class AgoraConvoAIConnectorModule(BaseConnectorModule):
         @router.post("/stt/sessions/start", response_model=SttSessionStartResponse)
         async def start_stt_session(
             payload: SttSessionStartRequest,
+            request: Request,
         ) -> SttSessionStartResponse:
+            require_http_api_auth(request)
             try:
                 return await stt_service.start_session(payload)
             except KeyError as exc:
@@ -167,7 +179,9 @@ class AgoraConvoAIConnectorModule(BaseConnectorModule):
         @router.post("/stt/sessions/heartbeat", response_model=SttSessionHeartbeatResponse)
         async def heartbeat_stt_session(
             payload: SttSessionHeartbeatRequest,
+            request: Request,
         ) -> SttSessionHeartbeatResponse:
+            require_http_api_auth(request)
             try:
                 return stt_service.heartbeat_session(payload)
             except KeyError as exc:
@@ -176,7 +190,9 @@ class AgoraConvoAIConnectorModule(BaseConnectorModule):
         @router.post("/stt/sessions/leave", response_model=SttSessionStopResponse)
         async def leave_stt_session(
             payload: SttSessionLeaveRequest,
+            request: Request,
         ) -> SttSessionStopResponse:
+            require_http_api_auth(request)
             try:
                 return await stt_service.leave_session(payload)
             except KeyError as exc:
@@ -185,7 +201,8 @@ class AgoraConvoAIConnectorModule(BaseConnectorModule):
                 raise HTTPException(status_code=502, detail=str(exc)) from exc
 
         @router.get("/stt/sessions/{stt_session_id}", response_model=SttSessionQueryResponse)
-        async def query_stt_session(stt_session_id: str) -> SttSessionQueryResponse:
+        async def query_stt_session(stt_session_id: str, request: Request) -> SttSessionQueryResponse:
+            require_http_api_auth(request)
             try:
                 return await stt_service.query_session(stt_session_id)
             except KeyError as exc:
@@ -196,7 +213,9 @@ class AgoraConvoAIConnectorModule(BaseConnectorModule):
         @router.post("/stt/sessions/stop", response_model=SttSessionStopResponse)
         async def stop_stt_session(
             payload: SttSessionStopRequest,
+            request: Request,
         ) -> SttSessionStopResponse:
+            require_http_api_auth(request)
             try:
                 return await stt_service.stop_session(payload.stt_session_id)
             except KeyError as exc:
@@ -209,6 +228,7 @@ class AgoraConvoAIConnectorModule(BaseConnectorModule):
             payload: ChatCompletionRequest,
             request: Request,
         ):
+            require_http_api_auth(request)
             binding_id = _resolve_binding_id(request)
             binding = binding_registry.get(binding_id)
             if binding is None:
