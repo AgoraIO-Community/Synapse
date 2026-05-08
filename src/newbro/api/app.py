@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from newbro.api.auth import install_auth_state
 from newbro.api.logging import install_access_log_filters
 from newbro.api.paths import API_PREFIX, api_path
 from newbro.api.routes.commands import router as commands_router
@@ -28,6 +29,7 @@ def create_app(*, settings: Settings | None = None) -> FastAPI:
         redoc_url=api_path("/redoc"),
     )
     app.state.runtime_container = container
+    install_auth_state(app, container.settings)
 
     install_access_log_filters(container.settings)
     if container.settings.cors_allowed_origins:

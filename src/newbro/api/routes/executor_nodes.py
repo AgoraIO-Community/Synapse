@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Request
 
+from newbro.api.auth import require_http_api_auth
 from newbro.api.models import ExecutorNodeCreateRequest, ExecutorNodeUpdateRequest
 
 router = APIRouter()
@@ -16,6 +17,7 @@ def _require_session(container, session_id: str):
 
 @router.get("/sessions/{session_id}/executor-nodes")
 async def list_executor_nodes(session_id: str, request: Request):
+    require_http_api_auth(request)
     container = request.app.state.runtime_container
     _require_session(container, session_id)
     return await container.executor_node_manager.list_nodes()
@@ -27,6 +29,7 @@ async def create_executor_node(
     body: ExecutorNodeCreateRequest,
     request: Request,
 ):
+    require_http_api_auth(request)
     container = request.app.state.runtime_container
     _require_session(container, session_id)
     try:
@@ -48,6 +51,7 @@ async def update_executor_node(
     body: ExecutorNodeUpdateRequest,
     request: Request,
 ):
+    require_http_api_auth(request)
     container = request.app.state.runtime_container
     _require_session(container, session_id)
     try:
@@ -71,6 +75,7 @@ async def rotate_executor_node_credentials(
     node_id: str,
     request: Request,
 ):
+    require_http_api_auth(request)
     container = request.app.state.runtime_container
     _require_session(container, session_id)
     try:
@@ -89,6 +94,7 @@ async def reveal_executor_node_connect_command(
     node_id: str,
     request: Request,
 ):
+    require_http_api_auth(request)
     container = request.app.state.runtime_container
     _require_session(container, session_id)
     try:
@@ -112,6 +118,7 @@ async def delete_executor_node(
     node_id: str,
     request: Request,
 ):
+    require_http_api_auth(request)
     container = request.app.state.runtime_container
     _require_session(container, session_id)
     bound_personas = await container.bound_persona_names_for_node(node_id)

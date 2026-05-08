@@ -165,13 +165,14 @@ def test_setup_interactive_can_configure_connector_host(monkeypatch, tmp_path: P
 
     allowed_empty_prompts = {
         "Select connectors [1]: ",
-        "Connector host [0.0.0.0]: ",
+        "Connector host [127.0.0.1]: ",
         "Connector port [8010]: ",
         "Connector public base URL [http://127.0.0.1:8000]: ",
         "Newbro service base URL for connector callbacks [http://127.0.0.1:8000]: ",
-        "ASR credential mode [managed]: ",
-        "ASR model [nova-3]: ",
-        "ASR language [en-US]: ",
+        "ASR vendor [openai]: ",
+        "ASR credential mode [shared]: ",
+        "ASR model [gpt-4o-transcribe]: ",
+        "ASR language [zh]: ",
         "TTS vendor [minimax]: ",
         "TTS model [speech_2_6_turbo]: ",
         "TTS voice [English_magnetic_voiced_man]: ",
@@ -209,7 +210,7 @@ def test_executor_setup_uses_detected_codex_command_default(monkeypatch, tmp_pat
                 "runtime: {}",
                 "connector_host:",
                 "  enabled: false",
-                "  host: 0.0.0.0",
+                "  host: 127.0.0.1",
                 "  port: 8010",
                 '  public_base_url: "http://127.0.0.1:8000"',
                 '  synapse_base_url: "http://127.0.0.1:8000"',
@@ -273,7 +274,7 @@ def test_executor_setup_migrates_legacy_codex_command_over_detected_default(
                 "runtime: {}",
                 "connector_host:",
                 "  enabled: false",
-                "  host: 0.0.0.0",
+                "  host: 127.0.0.1",
                 "  port: 8010",
                 '  public_base_url: "http://127.0.0.1:8000"',
                 '  synapse_base_url: "http://127.0.0.1:8000"',
@@ -324,13 +325,14 @@ def test_connector_setup_writes_connector_module_env(monkeypatch, tmp_path: Path
         "Configure connector host [y/N]: ",
         "Configure connector host [Y/n]: ",
         "Select connectors [1]: ",
-        "Connector host [0.0.0.0]: ",
+        "Connector host [127.0.0.1]: ",
         "Connector port [8010]: ",
         "Connector public base URL [http://127.0.0.1:8000]: ",
         "Newbro service base URL for connector callbacks [http://127.0.0.1:8000]: ",
-        "ASR credential mode [managed]: ",
-        "ASR model [nova-3]: ",
-        "ASR language [en-US]: ",
+        "ASR vendor [openai]: ",
+        "ASR credential mode [shared]: ",
+        "ASR model [gpt-4o-transcribe]: ",
+        "ASR language [zh]: ",
         "TTS vendor [minimax]: ",
         "TTS model [speech_2_6_turbo]: ",
         "TTS voice [English_magnetic_voiced_man]: ",
@@ -357,7 +359,9 @@ def test_connector_setup_writes_connector_module_env(monkeypatch, tmp_path: Path
     assert "- agora-convoai" in connector_config
     assert "app_id: $AGORA_APP_ID" in connector_config
     assert "convoai_area: US" in connector_config
-    assert "credential_mode: managed" in connector_config
+    assert "vendor: openai" in connector_config
+    assert "credential_mode: shared" in connector_config
+    assert "model: gpt-4o-transcribe" in connector_config
     assert "vendor: minimax" in connector_config
     assert "voice: English_magnetic_voiced_man" in connector_config
 
@@ -409,7 +413,7 @@ def test_connector_setup_reads_existing_legacy_empty_connectors_config_with_yaml
                 "version: 1",
                 "connector_host:",
                 "  enabled: false",
-                "  host: 0.0.0.0",
+                "  host: 127.0.0.1",
                 "  port: 8010",
                 '  public_base_url: "http://127.0.0.1:8000"',
                 '  synapse_base_url: "http://127.0.0.1:8000"',
@@ -432,13 +436,14 @@ def test_connector_setup_reads_existing_legacy_empty_connectors_config_with_yaml
 
     allowed_empty_prompts = {
         "Select connectors [1]: ",
-        "Connector host [0.0.0.0]: ",
+        "Connector host [127.0.0.1]: ",
         "Connector port [8010]: ",
         "Connector public base URL [http://127.0.0.1:8000]: ",
         "Newbro service base URL for connector callbacks [http://127.0.0.1:8000]: ",
-        "ASR credential mode [managed]: ",
-        "ASR model [nova-3]: ",
-        "ASR language [en-US]: ",
+        "ASR vendor [openai]: ",
+        "ASR credential mode [shared]: ",
+        "ASR model [gpt-4o-transcribe]: ",
+        "ASR language [zh]: ",
         "TTS vendor [minimax]: ",
         "TTS model [speech_2_6_turbo]: ",
         "TTS voice [English_magnetic_voiced_man]: ",
@@ -549,7 +554,7 @@ def test_executor_setup_migrates_legacy_codex_command_to_config(monkeypatch, tmp
                 "runtime: {}",
                 "connector_host:",
                 "  enabled: false",
-                "  host: 0.0.0.0",
+                "  host: 127.0.0.1",
                 "  port: 8010",
                 '  public_base_url: "http://127.0.0.1:8000"',
                 '  synapse_base_url: "http://127.0.0.1:8000"',
@@ -809,7 +814,7 @@ def test_dev_uses_repo_venv_and_frontend_command(monkeypatch, tmp_path: Path):
 
     assert cli_main.main(["dev"]) == 0
     assert spawned[0][0][:4] == [str(venv_python), "-m", "uvicorn", "newbro.service.app:app"]
-    assert spawned[1][0] == ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "5173"]
+    assert spawned[1][0] == ["npm", "run", "dev", "--", "--host", "127.0.0.1", "--port", "5173"]
     assert len(spawned) == 2
 
 
@@ -830,7 +835,7 @@ def test_start_runs_single_service_process(monkeypatch, tmp_path: Path):
                 "version: 1",
                 "connector_host:",
                 "  enabled: true",
-                "  host: 0.0.0.0",
+                "  host: 127.0.0.1",
                 "  port: 8010",
                 '  public_base_url: "http://127.0.0.1:8000"',
                 "  enabled_connectors:",
@@ -861,7 +866,7 @@ def test_start_runs_single_service_process(monkeypatch, tmp_path: Path):
                 "uvicorn",
                 "newbro.service.app:app",
                 "--host",
-                "0.0.0.0",
+                "127.0.0.1",
                 "--port",
                 "8000",
             ],
@@ -1078,7 +1083,7 @@ def test_render_service_unit_includes_expected_values():
         home=Path("/home/deploy"),
         workdir=Path("/srv/newbro"),
         cli_bin=Path("/srv/newbro/.venv/bin/newbro"),
-        host="0.0.0.0",
+        host="127.0.0.1",
         public_port=8000,
     )
 
@@ -1088,7 +1093,7 @@ def test_render_service_unit_includes_expected_values():
     assert 'Environment="PATH=/srv/newbro/.venv/bin:/home/deploy/.local/bin:/home/deploy/.bun/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"' in unit
     assert "Description=Newbro service" in unit
     assert (
-        "ExecStart=/srv/newbro/.venv/bin/newbro start --host 0.0.0.0 --port 8000"
+        "ExecStart=/srv/newbro/.venv/bin/newbro start --host 127.0.0.1 --port 8000"
         in unit
     )
     assert "Restart=on-failure" in unit
@@ -1101,7 +1106,7 @@ def test_render_service_unit_supports_root_values():
         home=Path("/root"),
         workdir=Path("/srv/newbro"),
         cli_bin=Path("/srv/newbro/.venv/bin/newbro"),
-        host="0.0.0.0",
+        host="127.0.0.1",
         public_port=8000,
     )
 

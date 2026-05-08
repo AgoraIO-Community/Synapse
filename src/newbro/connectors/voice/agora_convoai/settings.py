@@ -1,5 +1,6 @@
 from __future__ import annotations
 from dataclasses import dataclass, field
+import os
 from pathlib import Path
 
 from newbro.config_home import SYNAPSE_ENV_FILE
@@ -17,10 +18,10 @@ DEFAULT_STT_LANGUAGES = ("zh-CN",)
 
 @dataclass(slots=True)
 class AgoraConvoAIASRSettings:
-    vendor: str = "deepgram"
-    credential_mode: str = "managed"
-    model: str = "nova-3"
-    language: str = "en-US"
+    vendor: str = "openai"
+    credential_mode: str = "shared"
+    model: str = "gpt-4o-transcribe"
+    language: str = "zh"
     api_key: str | None = None
 
 
@@ -48,6 +49,9 @@ class AgoraConvoAIConnectorSettings:
     uses_yaml_config: bool = False
     service_base_url: str = "http://127.0.0.1:8010"
     synapse_base_url: str = "http://127.0.0.1:8000"
+    synapse_api_bearer_token: str | None = None
+    cloudflare_access_client_id: str | None = None
+    cloudflare_access_client_secret: str | None = None
     app_id: str | None = None
     app_certificate: str | None = None
     convoai_area: str = "US"
@@ -65,22 +69,7 @@ class AgoraConvoAIConnectorSettings:
     speak_priority: str = "APPEND"
     speak_interruptable: bool = True
     request_timeout_seconds: float = 10.0
-    # Agora signalling channel for control + transcripts. "rtm" is the default and
-    # works for most users; "datastream" routes those messages over the RTC stream
-    # channel instead, which can be useful when the browser cannot reach Agora's
-    # RTM presence edge (e.g. some China networks reaching US-region projects).
-    data_channel: str = "rtm"
-    # System prompt and dispatch trigger for the optional conversation-brain mode.
-    # When `conversation_brain_prompt` is set, the chat/completions bridge proxies
-    # the conversation to the configured LLM (via SYNAPSE_OPENAI_* env) using this
-    # prompt. When empty (default), the bridge keeps the legacy "Draft updated."
-    # behaviour for backward compatibility.
-    conversation_brain_prompt: str = ""
-    # Comma-separated phrases (case-insensitive). When the user's latest message
-    # exactly matches one of these (after trimming punctuation), the bridge
-    # summarises the conversation into a task spec and dispatches it to the
-    # executor instead of forwarding the message to the LLM.
-    dispatch_trigger_phrases: str = ""
+    openai_api_key: str | None = None
 
 
 DEFAULT_ENV_FILE = SYNAPSE_ENV_FILE
@@ -95,6 +84,10 @@ def load_agora_connector_settings(*, env_file: Path | None = None) -> AgoraConvo
             uses_yaml_config=True,
             service_base_url=loaded_connector_config.host_settings.public_base_url,
             synapse_base_url=loaded_connector_config.host_settings.synapse_base_url,
+            synapse_api_bearer_token=os.getenv("SYNAPSE_API_BEARER_TOKEN") or None,
+            cloudflare_access_client_id=os.getenv("SYNAPSE_CLOUDFLARE_ACCESS_CLIENT_ID") or None,
+            cloudflare_access_client_secret=os.getenv("SYNAPSE_CLOUDFLARE_ACCESS_CLIENT_SECRET")
+            or None,
             app_id=None,
             app_certificate=None,
             convoai_area="US",
@@ -112,6 +105,7 @@ def load_agora_connector_settings(*, env_file: Path | None = None) -> AgoraConvo
             speak_priority="APPEND",
             speak_interruptable=True,
             request_timeout_seconds=10.0,
+            openai_api_key=os.getenv("OPENAI_API_KEY") or None,
         )
     return _load_agora_connector_settings_from_yaml(loaded_connector_config)
 
@@ -137,6 +131,10 @@ def _load_agora_connector_settings_from_yaml(loaded_connector_config) -> AgoraCo
         uses_yaml_config=True,
         service_base_url=host_settings.public_base_url,
         synapse_base_url=host_settings.synapse_base_url,
+        synapse_api_bearer_token=os.getenv("SYNAPSE_API_BEARER_TOKEN") or None,
+        cloudflare_access_client_id=os.getenv("SYNAPSE_CLOUDFLARE_ACCESS_CLIENT_ID") or None,
+        cloudflare_access_client_secret=os.getenv("SYNAPSE_CLOUDFLARE_ACCESS_CLIENT_SECRET")
+        or None,
         app_id=_read_optional_string(raw_connector, "app_id", source_path),
         app_certificate=_read_optional_string(raw_connector, "app_certificate", source_path),
         convoai_area="US",
@@ -158,22 +156,8 @@ def _load_agora_connector_settings_from_yaml(loaded_connector_config) -> AgoraCo
             source_path=source_path,
         ),
         request_timeout_seconds=float(raw_connector.get("request_timeout_seconds", 10.0)),
-        data_channel=_validate_data_channel(
-            str(raw_connector.get("data_channel", "rtm")).lower(),
-            source_path=source_path,
-        ),
-        conversation_brain_prompt=str(raw_connector.get("conversation_brain_prompt", "") or ""),
-        dispatch_trigger_phrases=str(raw_connector.get("dispatch_trigger_phrases", "") or ""),
+        openai_api_key=os.getenv("OPENAI_API_KEY") or None,
     )
-
-
-def _validate_data_channel(value: str, *, source_path: Path) -> str:
-    if value not in {"rtm", "datastream"}:
-        raise ConnectorConfigError(
-            f"Unsupported 'connectors.agora-convoai.data_channel' value '{value}' in {source_path}; "
-            "use 'rtm' (default) or 'datastream'"
-        )
-    return value
 
 
 def _parse_yaml_asr_settings(raw_asr, source_path: Path) -> AgoraConvoAIASRSettings:
@@ -182,23 +166,31 @@ def _parse_yaml_asr_settings(raw_asr, source_path: Path) -> AgoraConvoAIASRSetti
     if not isinstance(raw_asr, dict):
         raise ConnectorConfigError(f"'connectors.agora-convoai.asr' must be a mapping in {source_path}")
     settings = AgoraConvoAIASRSettings(
-        vendor=str(raw_asr.get("vendor", "deepgram")).lower(),
-        credential_mode=str(raw_asr.get("credential_mode", "managed")).lower(),
-        model=str(raw_asr.get("model", "nova-3")),
-        language=str(raw_asr.get("language", "en-US")),
+        vendor=str(raw_asr.get("vendor", "openai")).lower(),
+        credential_mode=str(raw_asr.get("credential_mode", "shared")).lower(),
+        model=str(raw_asr.get("model", "gpt-4o-transcribe")),
+        language=str(raw_asr.get("language", "zh")),
         api_key=_read_optional_string(raw_asr, "api_key", source_path),
     )
-    if settings.vendor != "deepgram":
+    if settings.vendor not in {"deepgram", "openai"}:
         raise ConnectorConfigError(
-            f"Unsupported ASR vendor '{settings.vendor}' in {source_path}; use 'deepgram'"
+            f"Unsupported ASR vendor '{settings.vendor}' in {source_path}; use 'openai' or 'deepgram'"
         )
-    if settings.credential_mode not in {"managed", "byok"}:
+    supported_credential_modes = {
+        "deepgram": {"managed", "byok"},
+        "openai": {"shared", "byok"},
+    }
+    if settings.credential_mode not in supported_credential_modes[settings.vendor]:
         raise ConnectorConfigError(
             f"Unsupported ASR credential_mode '{settings.credential_mode}' in {source_path}"
         )
-    if settings.credential_mode == "managed" and settings.model not in {"nova-2", "nova-3"}:
+    if settings.vendor == "deepgram" and settings.credential_mode == "managed" and settings.model not in {"nova-2", "nova-3"}:
         raise ConnectorConfigError(
             f"Unsupported managed ASR model '{settings.model}' in {source_path}"
+        )
+    if settings.vendor == "openai" and settings.model not in {"gpt-4o-transcribe", "whisper-1"}:
+        raise ConnectorConfigError(
+            f"Unsupported OpenAI ASR model '{settings.model}' in {source_path}"
         )
     return settings
 
@@ -267,9 +259,9 @@ def _parse_yaml_tts_settings(raw_tts, source_path: Path) -> AgoraConvoAITTSSetti
         raise ConnectorConfigError(
             f"Unsupported managed TTS vendor/model '{settings.vendor}/{settings.model}' in {source_path}"
         )
-    if settings.credential_mode == "byok" and settings.vendor not in {"elevenlabs", "minimax"}:
+    if settings.credential_mode == "byok" and settings.vendor != "elevenlabs":
         raise ConnectorConfigError(
-            f"Unsupported BYOK TTS vendor '{settings.vendor}' in {source_path}; use 'elevenlabs' or 'minimax'"
+            f"Unsupported BYOK TTS vendor '{settings.vendor}' in {source_path}; use 'elevenlabs'"
         )
     return settings
 

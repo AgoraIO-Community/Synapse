@@ -61,6 +61,7 @@ the combined Newbro service through systemd. See
 
 - [CLI, setup, executors, and package publishing](./docs/guides/cli.md)
 - [Local development details](./docs/guides/local-dev.md)
+- [Cloudflare Pages deployment](./docs/guides/cloudflare-pages-deployment.md)
 - [Architecture overview](./ARCHITECTURE.md)
 - [Docs index](./docs/README.md)
 - [Vercel UI deployment](./docs/guides/vercel-ui-deployment.md)

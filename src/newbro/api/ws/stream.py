@@ -2,8 +2,10 @@ import asyncio
 from uuid import uuid4
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import HTTPException
 from pydantic import ValidationError
 
+from newbro.api.auth import require_websocket_api_auth
 from newbro.api.models import (
     ClearDraftSocketAction,
     ResolveInteractionRequestSocketAction,
@@ -32,6 +34,11 @@ router = APIRouter()
 
 @router.websocket("/sessions/{session_id}/stream")
 async def session_stream(websocket: WebSocket, session_id: str):
+    try:
+        require_websocket_api_auth(websocket)
+    except HTTPException:
+        await websocket.close(code=4401)
+        return
     container = websocket.app.state.runtime_container
     try:
         session = container.get_session(session_id)

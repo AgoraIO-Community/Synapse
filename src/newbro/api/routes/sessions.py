@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
+from newbro.api.auth import require_http_api_auth
 from newbro.api.models import DiagnosticTimelineResponse, SessionResponse
 from newbro.observability.schema import LEVEL_PRIORITY
 
@@ -11,6 +12,7 @@ router = APIRouter()
 async def create_session(
     request: Request,
 ) -> SessionResponse:
+    require_http_api_auth(request)
     container = request.app.state.runtime_container
     session = container.create_session()
     session.observability.api.session_created(conversation_id=session.session_id)
@@ -22,6 +24,7 @@ async def get_session(
     session_id: str,
     request: Request,
 ):
+    require_http_api_auth(request)
     container = request.app.state.runtime_container
     try:
         session = container.get_session(session_id)
@@ -35,6 +38,7 @@ async def get_session_conversation(
     session_id: str,
     request: Request,
 ):
+    require_http_api_auth(request)
     container = request.app.state.runtime_container
     try:
         session = container.get_session(session_id)
@@ -48,6 +52,7 @@ async def list_tasks(
     session_id: str,
     request: Request,
 ):
+    require_http_api_auth(request)
     container = request.app.state.runtime_container
     try:
         session = container.get_session(session_id)
@@ -73,6 +78,7 @@ async def get_session_diagnostic_timeline(
     min_level: str | None = None,
     limit: int = 200,
 ) -> DiagnosticTimelineResponse:
+    require_http_api_auth(request)
     container = request.app.state.runtime_container
     try:
         session = container.get_session(session_id)
@@ -106,6 +112,7 @@ async def set_voice_target(
     body: VoiceTargetRequest,
     request: Request,
 ):
+    require_http_api_auth(request)
     container = request.app.state.runtime_container
     try:
         session = container.get_session(session_id)
@@ -120,6 +127,7 @@ async def clear_voice_target(
     session_id: str,
     request: Request,
 ):
+    require_http_api_auth(request)
     container = request.app.state.runtime_container
     try:
         session = container.get_session(session_id)

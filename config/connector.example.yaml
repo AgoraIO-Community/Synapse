@@ -5,7 +5,7 @@ runtime:
 
 connector_host:
   enabled: true
-  host: 0.0.0.0
+  host: 127.0.0.1
   port: 8010
   # Unified-service default: point browser and external callers at the main
   # Newbro service origin that serves /connectors/... routes.
@@ -25,10 +25,10 @@ connectors:
     speak_interruptable: true
     request_timeout_seconds: 10.0
     asr:
-      vendor: deepgram
-      credential_mode: managed
-      model: nova-3
-      language: en-US
+      vendor: openai
+      credential_mode: shared
+      model: gpt-4o-transcribe
+      language: zh
     stt:
       enabled: true
       languages:

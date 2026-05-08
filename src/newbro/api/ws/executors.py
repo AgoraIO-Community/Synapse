@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import ValidationError
 
+from newbro.api.auth import require_executor_control_auth
 from newbro.protocol import (
     AckMessage,
     NodeStatusMessage,
@@ -17,6 +18,11 @@ router = APIRouter()
 
 @router.websocket("/executors/control")
 async def executor_control(websocket: WebSocket):
+    try:
+        require_executor_control_auth(websocket)
+    except HTTPException:
+        await websocket.close(code=4401)
+        return
     container = websocket.app.state.runtime_container
     await websocket.accept()
     registered = False

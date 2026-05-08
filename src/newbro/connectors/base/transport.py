@@ -53,24 +53,23 @@ class HttpNewbroConnectorTransport:
         base_url: str,
         *,
         request_timeout_seconds: float = 10.0,
+        bearer_token: str | None = None,
+        cloudflare_access_client_id: str | None = None,
+        cloudflare_access_client_secret: str | None = None,
     ) -> None:
         self._base_url = base_url.rstrip("/")
         self._request_timeout_seconds = request_timeout_seconds
+        self._headers = _build_auth_headers(
+            bearer_token=bearer_token,
+            cloudflare_access_client_id=cloudflare_access_client_id,
+            cloudflare_access_client_secret=cloudflare_access_client_secret,
+        )
         self._http = httpx.AsyncClient(
             base_url=self._base_url,
             timeout=request_timeout_seconds,
             trust_env=False,
+            headers=self._headers,
         )
-
-    @property
-    def base_url(self) -> str:
-        """Configured Newbro API base URL (no trailing slash)."""
-        return self._base_url
-
-    @property
-    def request_timeout_seconds(self) -> float:
-        """Default request timeout used for the shared client."""
-        return self._request_timeout_seconds
 
     async def create_session(self) -> str:
         response = await self._request("POST", f"{API_PREFIX}/sessions")
@@ -114,6 +113,7 @@ class HttpNewbroConnectorTransport:
                 proxy=None,
                 open_timeout=self._request_timeout_seconds,
                 close_timeout=self._request_timeout_seconds,
+                additional_headers=self._headers,
             ) as websocket:
                 await self._recv_json(websocket, timeout=self._request_timeout_seconds)
                 payload: dict[str, object] = {
@@ -162,6 +162,7 @@ class HttpNewbroConnectorTransport:
                 proxy=None,
                 open_timeout=self._request_timeout_seconds,
                 close_timeout=self._request_timeout_seconds,
+                additional_headers=self._headers,
             ) as websocket:
                 await self._recv_json(websocket, timeout=self._request_timeout_seconds)
                 while True:
@@ -220,3 +221,18 @@ class HttpNewbroConnectorTransport:
         scheme = "wss" if parsed.scheme == "https" else "ws"
         path = parsed.path.rstrip("/") + f"{API_PREFIX}/sessions/{session_id}/stream"
         return urlunparse((scheme, parsed.netloc, path, "", "", ""))
+
+
+def _build_auth_headers(
+    *,
+    bearer_token: str | None,
+    cloudflare_access_client_id: str | None,
+    cloudflare_access_client_secret: str | None,
+) -> dict[str, str]:
+    headers: dict[str, str] = {}
+    if bearer_token:
+        headers["Authorization"] = f"Bearer {bearer_token}"
+    if cloudflare_access_client_id and cloudflare_access_client_secret:
+        headers["CF-Access-Client-Id"] = cloudflare_access_client_id
+        headers["CF-Access-Client-Secret"] = cloudflare_access_client_secret
+    return headers

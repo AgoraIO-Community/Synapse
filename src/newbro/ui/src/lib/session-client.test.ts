@@ -25,6 +25,12 @@ function okJsonResponse(payload: object): Response {
   });
 }
 
+function expectJsonHeaders(headers: Headers, expected: Record<string, string> = {}) {
+  for (const [key, value] of Object.entries(expected)) {
+    expect(headers.get(key)).toBe(value);
+  }
+}
+
 describe("session-client transport base URL handling", () => {
   afterEach(() => {
     vi.resetModules();
@@ -48,9 +54,12 @@ describe("session-client transport base URL handling", () => {
       onError: vi.fn(),
     });
 
-    expect(fetchMock).toHaveBeenCalledWith("/api/sessions", {
-      method: "POST",
-    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("/api/sessions");
+    expect(init.credentials).toBe("include");
+    expect(init.method).toBe("POST");
+    expectJsonHeaders(init.headers as Headers);
     expect(MockWebSocket.instances[0]?.url).toBe(
       `${window.location.protocol === "https:" ? "wss:" : "ws:"}//${window.location.host}/api/sessions/session-1/stream`,
     );
@@ -72,9 +81,11 @@ describe("session-client transport base URL handling", () => {
       onError: vi.fn(),
     });
 
-    expect(fetchMock).toHaveBeenCalledWith("https://api.example.com/api/sessions", {
-      method: "POST",
-    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("https://api.example.com/api/sessions");
+    expect(init.credentials).toBe("include");
+    expect(init.method).toBe("POST");
     expect(MockWebSocket.instances[0]?.url).toBe("wss://api.example.com/api/sessions/session-1/stream");
   });
 
@@ -92,9 +103,10 @@ describe("session-client transport base URL handling", () => {
 
     await client.getConversationSnapshot("session-1");
 
-    expect(fetchMock).toHaveBeenCalledWith(
-      "https://api.example.com/runtime/api/sessions/session-1/conversation",
-    );
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("https://api.example.com/runtime/api/sessions/session-1/conversation");
+    expect(init.credentials).toBe("include");
   });
 
   it("builds an executor run command from the effective backend base URL", async () => {
@@ -141,9 +153,11 @@ describe("session-client transport base URL handling", () => {
     const client = await import("./session-client");
     const revealed = await client.revealExecutorNodeConnectCommand("session-1", "node-1");
 
-    expect(fetchMock).toHaveBeenCalledWith("/api/sessions/session-1/executor-nodes/node-1/connect-command", {
-      method: "POST",
-    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("/api/sessions/session-1/executor-nodes/node-1/connect-command");
+    expect(init.credentials).toBe("include");
+    expect(init.method).toBe("POST");
     expect(revealed.token).toBe("token-1");
   });
 
@@ -164,15 +178,35 @@ describe("session-client transport base URL handling", () => {
       reason: "Stopped from Bro detail Runner Brain.",
     });
 
-    expect(fetchMock).toHaveBeenCalledWith("/api/sessions/session-1/commands", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("/api/sessions/session-1/commands");
+    expect(init.credentials).toBe("include");
+    expect(init.method).toBe("POST");
+    expectJsonHeaders(init.headers as Headers, { "Content-Type": "application/json" });
+    expect(init.body).toBe(
+      JSON.stringify({
         command_type: "cancel_task",
         task_id: "task-1",
         reason: "Stopped from Bro detail Runner Brain.",
       }),
-    });
+    );
+  });
+
+  it("adds a bearer token when explicitly configured for non-Access deployments", async () => {
+    vi.stubEnv("VITE_API_BEARER_TOKEN", "edge-token");
+    const fetchMock = vi.fn(async () => okJsonResponse({ session_id: "session-1" }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = await import("./session-client");
+    await client.createSession();
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("/api/sessions");
+    expect(init.credentials).toBe("include");
+    expect(init.method).toBe("POST");
+    expectJsonHeaders(init.headers as Headers, { Authorization: "Bearer edge-token" });
   });
 });
 

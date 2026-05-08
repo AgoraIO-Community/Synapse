@@ -4,6 +4,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException, Request
 
+from newbro.api.auth import require_http_api_auth
 from newbro.api.models import PersonaCreateRequest, PersonaUpdateRequest
 from newbro.communication.persona_pool import load_personas_from_file, save_personas_to_file
 from newbro.protocol import Persona
@@ -13,6 +14,7 @@ router = APIRouter()
 
 @router.get("/sessions/{session_id}/personas")
 async def list_personas(session_id: str, request: Request):
+    require_http_api_auth(request)
     container = request.app.state.runtime_container
     try:
         container.get_session(session_id)
@@ -27,6 +29,7 @@ async def create_persona(
     body: PersonaCreateRequest,
     request: Request,
 ):
+    require_http_api_auth(request)
     container = request.app.state.runtime_container
     try:
         container.get_session(session_id)
@@ -59,6 +62,7 @@ async def update_persona(
     body: PersonaUpdateRequest,
     request: Request,
 ):
+    require_http_api_auth(request)
     container = request.app.state.runtime_container
     try:
         container.get_session(session_id)
@@ -104,6 +108,7 @@ async def delete_persona(
     persona_id: str,
     request: Request,
 ):
+    require_http_api_auth(request)
     container = request.app.state.runtime_container
     try:
         container.get_session(session_id)
