@@ -60,3 +60,27 @@ def test_yaml_stt_languages_reject_invalid_scalar() -> None:
                 }
             )
         )
+
+
+def test_yaml_asr_settings_support_microsoft_byok() -> None:
+    settings = _load_agora_connector_settings_from_yaml(
+        _loaded_config(
+            {
+                "app_id": "app-id",
+                "app_certificate": "app-cert",
+                "asr": {
+                    "vendor": "microsoft",
+                    "credential_mode": "byok",
+                    "model": "default",
+                    "language": "zh-CN",
+                    "region": "eastus",
+                    "api_key": "ms-key",
+                },
+            }
+        )
+    )
+
+    assert settings.asr.vendor == "microsoft"
+    assert settings.asr.credential_mode == "byok"
+    assert settings.asr.language == "zh-CN"
+    assert settings.asr.region == "eastus"

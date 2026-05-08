@@ -23,6 +23,7 @@ class AgoraConvoAIASRSettings:
     model: str = "gpt-4o-transcribe"
     language: str = "zh"
     api_key: str | None = None
+    region: str | None = None
 
 
 @dataclass(slots=True)
@@ -182,14 +183,16 @@ def _parse_yaml_asr_settings(raw_asr, source_path: Path) -> AgoraConvoAIASRSetti
         model=str(raw_asr.get("model", "gpt-4o-transcribe")),
         language=str(raw_asr.get("language", "zh")),
         api_key=_read_optional_string(raw_asr, "api_key", source_path),
+        region=_read_optional_string(raw_asr, "region", source_path),
     )
-    if settings.vendor not in {"deepgram", "openai"}:
+    if settings.vendor not in {"deepgram", "openai", "microsoft"}:
         raise ConnectorConfigError(
-            f"Unsupported ASR vendor '{settings.vendor}' in {source_path}; use 'openai' or 'deepgram'"
+            f"Unsupported ASR vendor '{settings.vendor}' in {source_path}; use 'openai', 'deepgram', or 'microsoft'"
         )
     supported_credential_modes = {
         "deepgram": {"managed", "byok"},
         "openai": {"shared", "byok"},
+        "microsoft": {"byok"},
     }
     if settings.credential_mode not in supported_credential_modes[settings.vendor]:
         raise ConnectorConfigError(
@@ -203,6 +206,15 @@ def _parse_yaml_asr_settings(raw_asr, source_path: Path) -> AgoraConvoAIASRSetti
         raise ConnectorConfigError(
             f"Unsupported OpenAI ASR model '{settings.model}' in {source_path}"
         )
+    if settings.vendor == "microsoft":
+        if settings.model not in {"default", ""}:
+            raise ConnectorConfigError(
+                f"Unsupported Microsoft ASR model '{settings.model}' in {source_path}"
+            )
+        if not settings.region:
+            raise ConnectorConfigError(
+                f"Missing Microsoft ASR region in {source_path}; set connectors.agora-convoai.asr.region"
+            )
     return settings
 
 

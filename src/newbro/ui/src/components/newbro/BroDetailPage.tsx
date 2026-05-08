@@ -647,6 +647,7 @@ export function BroDetailPage({
 
   useEffect(() => {
     const timer = window.setInterval(() => {
+      if (phoneCallModeEnabled) return;
       const sttSessionId = resourcesRef.current?.sttSession?.stt_session_id;
       if (sttSessionId) {
         void heartbeatSttSession(sttSessionId).catch((error) => {
@@ -657,7 +658,7 @@ export function BroDetailPage({
       }
     }, HEARTBEAT_INTERVAL_MS);
     return () => window.clearInterval(timer);
-  }, []);
+  }, [phoneCallModeEnabled, onGlobalError]);
 
   async function setMicEnabled(enabled: boolean) {
     const micTrack = resourcesRef.current?.micTrack;

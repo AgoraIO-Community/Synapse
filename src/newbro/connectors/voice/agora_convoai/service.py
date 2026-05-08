@@ -27,6 +27,8 @@ AGORA_CONVOAI_SDK_LOADER_SIGNATURE = (
     "agora_agent:AsyncAgora",
     "agora_agent.agentkit:AdvancedFeatures",
     "agora_agent.agentkit:DeepgramSTT",
+    "agora_agent.agentkit:MicrosoftSTT",
+    "agora_agent.agentkit:OpenAISTT",
     "agora_agent.agentkit:ElevenLabsTTS",
     "agora_agent.agentkit:MiniMaxTTS",
     "agora_agent.agentkit:OpenAI",
@@ -159,6 +161,8 @@ class AgoraSDKConvoAIService:
             Agent,
             _AsyncAgentSession,
             DeepgramSTT,
+            MicrosoftSTT,
+            OpenAISTT,
             _OpenAI,
             ElevenLabsTTS,
             MiniMaxTTS,
@@ -214,7 +218,14 @@ class AgoraSDKConvoAIService:
                 enable_dump=True,
             ),
         )
-        agent = agent.with_stt(_build_asr_vendor(self._settings, DeepgramSTT=DeepgramSTT))
+        agent = agent.with_stt(
+            _build_asr_vendor(
+                self._settings,
+                DeepgramSTT=DeepgramSTT,
+                MicrosoftSTT=MicrosoftSTT,
+                OpenAISTT=OpenAISTT,
+            )
+        )
         agent = agent.with_tts(
             _build_tts_vendor(
                 self._settings,
@@ -278,8 +289,21 @@ class AgoraSDKConvoAIService:
             raise KeyError(f"Unknown prepared session id: {prepared_session_id}") from exc
 
         bootstrap = state.bootstrap
-        AsyncAgentSession = self._load_sdk_types()[3]
-        OpenAI = self._load_sdk_types()[5]
+        (
+            _AsyncAgora,
+            _Area,
+            _Agent,
+            AsyncAgentSession,
+            _DeepgramSTT,
+            _MicrosoftSTT,
+            _OpenAISTT,
+            OpenAI,
+            _ElevenLabsTTS,
+            _MiniMaxTTS,
+            _OpenAITTS,
+            _AdvancedFeatures,
+            _SessionParams,
+        ) = self._load_sdk_types()
         agent = state.agent.with_llm(
             OpenAI(
                 base_url=chat_completions_url,
@@ -380,6 +404,8 @@ class AgoraSDKConvoAIService:
         from agora_agent.agentkit import (
             AdvancedFeatures,
             DeepgramSTT,
+            MicrosoftSTT,
+            OpenAISTT,
             ElevenLabsTTS,
             MiniMaxTTS,
             OpenAI,
@@ -393,6 +419,8 @@ class AgoraSDKConvoAIService:
             Agent,
             AsyncAgentSession,
             DeepgramSTT,
+            MicrosoftSTT,
+            OpenAISTT,
             OpenAI,
             ElevenLabsTTS,
             MiniMaxTTS,
@@ -402,18 +430,38 @@ class AgoraSDKConvoAIService:
         )
 
 
-def _build_asr_vendor(settings: AgoraConvoAIConnectorSettings, *, DeepgramSTT):
-    if settings.asr.vendor != "deepgram":
-        raise ConvoAIConfigurationError(f"Unsupported ASR vendor: {settings.asr.vendor}")
+def _build_asr_vendor(
+    settings: AgoraConvoAIConnectorSettings,
+    *,
+    DeepgramSTT,
+    MicrosoftSTT,
+    OpenAISTT,
+):
     kwargs: dict[str, object] = {
         "language": settings.asr.language,
         "model": settings.asr.model,
     }
-    if settings.asr.credential_mode == "byok":
-        kwargs["api_key"] = str(
+    if settings.asr.vendor == "deepgram":
+        if settings.asr.credential_mode == "byok":
+            kwargs["api_key"] = str(
+                _require(settings.asr.api_key, _asr_api_key_requirement_name(settings))
+            )
+        return DeepgramSTT(**kwargs)
+    if settings.asr.vendor == "microsoft":
+        kwargs.pop("model", None)
+        kwargs["key"] = str(
             _require(settings.asr.api_key, _asr_api_key_requirement_name(settings))
         )
-    return DeepgramSTT(**kwargs)
+        kwargs["region"] = str(
+            _require(settings.asr.region, _asr_region_requirement_name(settings))
+        )
+        return MicrosoftSTT(**kwargs)
+    if settings.asr.vendor == "openai":
+        kwargs["api_key"] = str(
+            _require(_resolve_openai_asr_api_key(settings), _asr_api_key_requirement_name(settings))
+        )
+        return OpenAISTT(**kwargs)
+    raise ConvoAIConfigurationError(f"Unsupported ASR vendor: {settings.asr.vendor}")
 
 
 def _build_tts_vendor(
@@ -460,7 +508,10 @@ def _build_tts_vendor(
 
 
 def _build_session_preset(settings: AgoraConvoAIConnectorSettings) -> str | None:
-    asr_preset_map = {"nova-2": "deepgram_nova_2", "nova-3": "deepgram_nova_3"}
+    asr_preset_map = {
+        ("deepgram", "nova-2"): "deepgram_nova_2",
+        ("deepgram", "nova-3"): "deepgram_nova_3",
+    }
     tts_preset_map = {
         ("minimax", "speech_2_6_turbo"): "minimax_speech_2_6_turbo",
         ("minimax", "speech_2_8_turbo"): "minimax_speech_2_8_turbo",
@@ -468,10 +519,10 @@ def _build_session_preset(settings: AgoraConvoAIConnectorSettings) -> str | None
     }
     presets: list[str] = []
     if settings.asr.credential_mode == "managed":
-        preset = asr_preset_map.get(settings.asr.model)
+        preset = asr_preset_map.get((settings.asr.vendor, settings.asr.model))
         if preset is None:
             raise ConvoAIConfigurationError(
-                f"Unsupported managed ASR model: {settings.asr.model}"
+                f"Unsupported managed ASR vendor/model: {settings.asr.vendor}/{settings.asr.model}"
             )
         presets.append(preset)
     if settings.tts.credential_mode == "managed":
@@ -501,11 +552,31 @@ def _app_certificate_requirement_name(settings: AgoraConvoAIConnectorSettings) -
 
 
 def _asr_api_key_requirement_name(settings: AgoraConvoAIConnectorSettings) -> str:
+    if settings.asr.vendor == "openai" and settings.asr.credential_mode == "shared":
+        return "OPENAI_API_KEY"
+    if settings.uses_yaml_config:
+        return "connectors.agora-convoai.asr.api_key"
     return (
-        "connectors.agora-convoai.asr.api_key"
-        if settings.uses_yaml_config
-        else "SYNAPSE_CONNECTOR_AGORA_CONVOAI_DEEPGRAM_API_KEY"
+        "SYNAPSE_CONNECTOR_AGORA_CONVOAI_OPENAI_API_KEY"
+        if settings.asr.vendor == "openai"
+        else (
+            "SYNAPSE_CONNECTOR_AGORA_CONVOAI_MICROSOFT_KEY"
+            if settings.asr.vendor == "microsoft"
+            else "SYNAPSE_CONNECTOR_AGORA_CONVOAI_DEEPGRAM_API_KEY"
+        )
     )
+
+
+def _resolve_openai_asr_api_key(settings: AgoraConvoAIConnectorSettings) -> str | None:
+    if settings.asr.credential_mode == "shared":
+        return settings.asr.api_key or settings.openai_api_key
+    return settings.asr.api_key
+
+
+def _asr_region_requirement_name(settings: AgoraConvoAIConnectorSettings) -> str:
+    if settings.uses_yaml_config:
+        return "connectors.agora-convoai.asr.region"
+    return "SYNAPSE_CONNECTOR_AGORA_CONVOAI_MICROSOFT_REGION"
 
 
 def _tts_api_key_requirement_name(settings: AgoraConvoAIConnectorSettings) -> str:

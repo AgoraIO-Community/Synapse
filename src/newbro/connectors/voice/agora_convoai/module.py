@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 import json
+import logging
+import re
 import time
 from typing import Any, AsyncIterator
 from uuid import uuid4
@@ -49,6 +51,59 @@ from .session_service import AgoraConnectorSessionService
 from .stt_service import AgoraSttService
 from .settings import AGORA_BRIDGE_MODEL, AgoraConvoAIConnectorSettings, load_agora_connector_settings
 
+logger = logging.getLogger(__name__)
+
+
+class _VoiceTranscriptStore:
+    def __init__(self, *, per_session_limit: int = 200) -> None:
+        self._per_session_limit = per_session_limit
+        self._turns_by_session: dict[str, list[dict[str, object]]] = {}
+        self._last_ts = 0
+        self._last_user_text_by_session: dict[str, str] = {}
+
+    def append(self, session_id: str, *, speaker: str, text: str) -> None:
+        cleaned = text.strip()
+        if not cleaned:
+            return
+        ts = max(int(time.time() * 1000), self._last_ts + 1)
+        self._last_ts = ts
+        turns = self._turns_by_session.setdefault(session_id, [])
+        turns.append(
+            {
+                "id": f"{speaker}-{uuid4().hex[:8]}",
+                "speaker": speaker,
+                "text": cleaned,
+                "ts": ts,
+            }
+        )
+        if len(turns) > self._per_session_limit:
+            del turns[:-self._per_session_limit]
+
+    def since(self, session_id: str, *, since: int) -> dict[str, object]:
+        turns = self._turns_by_session.get(session_id, [])
+        filtered = [turn for turn in turns if int(turn["ts"]) > since]
+        latest_ts = int(filtered[-1]["ts"]) if filtered else since
+        return {"turns": filtered, "latest_ts": latest_ts}
+
+    def next_user_delta(self, session_id: str, raw_text: str) -> str | None:
+        cleaned = _normalize_user_source_text(raw_text)
+        if not cleaned:
+            return None
+        previous = self._last_user_text_by_session.get(session_id)
+        self._last_user_text_by_session[session_id] = cleaned
+        if previous is None:
+            return cleaned
+        if cleaned == previous:
+            return None
+        if cleaned.startswith(previous):
+            delta = cleaned[len(previous):].strip()
+            return delta or None
+        overlap = _longest_suffix_prefix_overlap(previous, cleaned)
+        if overlap > 0:
+            delta = cleaned[overlap:].strip()
+            return delta or None
+        return cleaned
+
 
 class AgoraConvoAIConnectorModule(BaseConnectorModule):
     slug = "agora-convoai"
@@ -67,6 +122,7 @@ class AgoraConvoAIConnectorModule(BaseConnectorModule):
         )
         service = AgoraSDKConvoAIService(settings)
         stt_service = AgoraSttService(settings)
+        transcript_store = _VoiceTranscriptStore()
         binding_registry = ConnectorBindingRegistry(transport, speaker=service)
         session_service = AgoraConnectorSessionService(
             binding_registry,
@@ -234,9 +290,51 @@ class AgoraConvoAIConnectorModule(BaseConnectorModule):
             if binding is None:
                 raise HTTPException(status_code=404, detail="Unknown connector binding.")
 
-            user_text = _extract_latest_user_text(payload.messages)
+            raw_user_text = _extract_latest_user_text(payload.messages)
+            if raw_user_text is None:
+                logger.info(
+                    "Agora chat/completions request had no explicit user turn; treating as no-op. messages=%s",
+                    _summarize_messages(payload.messages),
+                )
+                if payload.stream:
+                    return StreamingResponse(
+                        _empty_stream_completion(
+                            model_name=payload.model or AGORA_BRIDGE_MODEL,
+                        ),
+                        media_type="text/event-stream",
+                        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+                    )
+                return JSONResponse(
+                    _build_completion_response(
+                        completion_id=f"chatcmpl-{uuid4().hex[:8]}",
+                        created=int(time.time()),
+                        model_name=payload.model or AGORA_BRIDGE_MODEL,
+                        reply_text="",
+                    )
+                )
+            user_text = transcript_store.next_user_delta(binding.synapse_session_id, raw_user_text)
             if user_text is None:
-                raise HTTPException(status_code=400, detail="No user message found in messages.")
+                logger.info(
+                    "Agora chat/completions request produced no new user delta; treating as no-op. raw=%r",
+                    raw_user_text,
+                )
+                if payload.stream:
+                    return StreamingResponse(
+                        _empty_stream_completion(
+                            model_name=payload.model or AGORA_BRIDGE_MODEL,
+                        ),
+                        media_type="text/event-stream",
+                        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+                    )
+                return JSONResponse(
+                    _build_completion_response(
+                        completion_id=f"chatcmpl-{uuid4().hex[:8]}",
+                        created=int(time.time()),
+                        model_name=payload.model or AGORA_BRIDGE_MODEL,
+                        reply_text="",
+                    )
+                )
+            transcript_store.append(binding.synapse_session_id, speaker="user", text=user_text)
 
             # Read voice target persona from the live session if available.
             target_persona_id: str | None = None
@@ -256,23 +354,43 @@ class AgoraConvoAIConnectorModule(BaseConnectorModule):
                         user_text=user_text,
                         model_name=payload.model or AGORA_BRIDGE_MODEL,
                         target_persona_id=target_persona_id,
+                        transcript_store=transcript_store,
                     ),
                     media_type="text/event-stream",
                     headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
                 )
 
             try:
-                await transport.submit_asr_turn(binding.synapse_session_id, user_text)
+                reply_text = await _complete_message(
+                    transport=transport,
+                    synapse_session_id=binding.synapse_session_id,
+                    user_text=user_text,
+                    target_persona_id=target_persona_id,
+                )
+                transcript_store.append(binding.synapse_session_id, speaker="agent", text=reply_text)
                 return JSONResponse(
                     _build_completion_response(
                         completion_id=f"chatcmpl-{uuid4().hex[:8]}",
                         created=int(time.time()),
                         model_name=payload.model or AGORA_BRIDGE_MODEL,
-                        reply_text="Draft updated.",
+                        reply_text=reply_text,
                     )
                 )
             except NewbroConnectorError as exc:
                 raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+        @router.get("/voice-transcripts/{session_id}")
+        async def voice_transcripts(
+            session_id: str,
+            request: Request,
+        ) -> dict[str, object]:
+            require_http_api_auth(request)
+            raw_since = request.query_params.get("since", "0")
+            try:
+                since = int(raw_since)
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail="since must be an integer.") from exc
+            return transcript_store.since(session_id, since=since)
 
         return router
 
@@ -295,19 +413,35 @@ async def _stream_completion(
     user_text: str,
     model_name: str,
     target_persona_id: str | None = None,
+    transcript_store: _VoiceTranscriptStore,
 ) -> AsyncIterator[str]:
     completion_id = f"chatcmpl-{uuid4().hex[:8]}"
     created = int(time.time())
     try:
-        await transport.submit_asr_turn(synapse_session_id, user_text)
+        reply_text = await _complete_message(
+            transport=transport,
+            synapse_session_id=synapse_session_id,
+            user_text=user_text,
+            target_persona_id=target_persona_id,
+        )
+        transcript_store.append(synapse_session_id, speaker="agent", text=reply_text)
         yield _sse_payload(
             _build_stream_chunk(
                 completion_id=completion_id,
                 created=created,
                 model_name=model_name,
-                delta={"role": "assistant", "content": "Draft updated."},
+                delta={"role": "assistant"},
             )
         )
+        if reply_text:
+            yield _sse_payload(
+                _build_stream_chunk(
+                    completion_id=completion_id,
+                    created=created,
+                    model_name=model_name,
+                    delta={"content": reply_text},
+                )
+            )
         yield _sse_payload(
             _build_stream_chunk(
                 completion_id=completion_id,
@@ -321,6 +455,40 @@ async def _stream_completion(
     except NewbroConnectorError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
+
+async def _empty_stream_completion(*, model_name: str) -> AsyncIterator[str]:
+    completion_id = f"chatcmpl-{uuid4().hex[:8]}"
+    created = int(time.time())
+    yield _sse_payload(
+        _build_stream_chunk(
+            completion_id=completion_id,
+            created=created,
+            model_name=model_name,
+            delta={},
+            finish_reason="stop",
+        )
+    )
+    yield "data: [DONE]\n\n"
+
+
+async def _complete_message(
+    *,
+    transport: HttpNewbroConnectorTransport,
+    synapse_session_id: str,
+    user_text: str,
+    target_persona_id: str | None,
+) -> str:
+    result = await transport.send_message(
+        synapse_session_id,
+        user_text,
+        target_persona_id=target_persona_id,
+        timeout_seconds=60.0,
+    )
+    reply_text = result.reply_text.strip()
+    if reply_text:
+        return reply_text
+    raise NewbroConnectorError("Newbro did not return assistant reply text.")
+
 def _resolve_binding_id(request: Request) -> str:
     binding_id = request.query_params.get("binding_id")
     if binding_id:
@@ -333,9 +501,15 @@ def _resolve_binding_id(request: Request) -> str:
 
 def _extract_latest_user_text(messages: list[dict[str, Any]]) -> str | None:
     for message in reversed(messages):
-        if message.get("role") != "user":
+        role = message.get("role")
+        normalized_role = role.strip().lower() if isinstance(role, str) else None
+        if normalized_role != "user":
             continue
-        text = _extract_message_text(message.get("content"))
+        text = _extract_message_text(
+            message.get("content")
+            if "content" in message
+            else message.get("text", message.get("input"))
+        )
         if text:
             return text
     return None
@@ -345,25 +519,79 @@ def _extract_message_text(content: object) -> str | None:
     if isinstance(content, str):
         stripped = content.strip()
         return stripped or None
-    if not isinstance(content, list):
-        return None
-    parts: list[str] = []
-    for item in content:
-        if not isinstance(item, dict):
-            continue
-        text = item.get("text")
-        if isinstance(text, str):
-            stripped = text.strip()
-            if stripped:
-                parts.append(stripped)
-            continue
-        if isinstance(text, dict):
-            value = text.get("value")
-            if isinstance(value, str) and value.strip():
-                parts.append(value.strip())
-    if not parts:
-        return None
-    return "\n".join(parts)
+    if isinstance(content, list):
+        parts: list[str] = []
+        for item in content:
+            extracted = _extract_message_text(item)
+            if extracted:
+                parts.append(extracted)
+        return "\n".join(parts) if parts else None
+    if isinstance(content, dict):
+        for key in ("text", "value", "content", "input_text", "input", "message", "transcript"):
+            if key not in content:
+                continue
+            extracted = _extract_message_text(content.get(key))
+            if extracted:
+                return extracted
+    return None
+
+
+def _summarize_messages(messages: list[dict[str, Any]]) -> list[dict[str, str | None]]:
+    summary: list[dict[str, str | None]] = []
+    for message in messages:
+        summary.append(
+            {
+                "role": str(message.get("role")) if message.get("role") is not None else None,
+                "text": (_extract_message_text(message.get("content")) or _extract_message_text(message.get("text")) or "")[:120],
+            }
+        )
+    return summary
+
+
+def _looks_like_agent_greeting_echo(text: str) -> bool:
+    normalized = " ".join(text.strip().lower().split())
+    return normalized in {
+        "can i help you?",
+        "can i help you？",
+        "hello. how can i help you today?",
+        "hello. how can i help you today？",
+        "how can i help you today?",
+        "how can i help you today？",
+    }
+
+
+def _normalize_user_source_text(text: str) -> str:
+    cleaned = text.strip()
+    if not cleaned:
+        return ""
+    cleaned = _strip_leading_greeting_echo(cleaned)
+    return cleaned.strip()
+
+
+def _strip_leading_greeting_echo(text: str) -> str:
+    patterns = (
+        r"^\s*can i help you[?？!.。]*\s*",
+        r"^\s*hello\.?\s*how can i help you today[?？!.。]*\s*",
+        r"^\s*how can i help you today[?？!.。]*\s*",
+    )
+    stripped = text
+    changed = True
+    while changed:
+        changed = False
+        for pattern in patterns:
+            next_value, count = re.subn(pattern, "", stripped, flags=re.IGNORECASE)
+            if count > 0:
+                stripped = next_value
+                changed = True
+    return stripped
+
+
+def _longest_suffix_prefix_overlap(previous: str, current: str) -> int:
+    max_len = min(len(previous), len(current))
+    for length in range(max_len, 0, -1):
+        if previous[-length:] == current[:length]:
+            return length
+    return 0
 
 
 def _build_completion_response(

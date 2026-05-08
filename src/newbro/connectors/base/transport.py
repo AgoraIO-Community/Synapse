@@ -25,7 +25,14 @@ class NewbroConnectorTransport(Protocol):
     async def create_session(self) -> str:
         ...
 
-    async def send_message(self, session_id: str, text: str) -> NewbroMessageResult:
+    async def send_message(
+        self,
+        session_id: str,
+        text: str,
+        *,
+        target_persona_id: str | None = None,
+        timeout_seconds: float | None = None,
+    ) -> NewbroMessageResult:
         ...
 
     async def submit_asr_turn(self, session_id: str, text: str) -> None:
@@ -79,11 +86,22 @@ class HttpNewbroConnectorTransport:
             raise NewbroConnectorError("Newbro session creation returned no session_id.")
         return session_id
 
-    async def send_message(self, session_id: str, text: str) -> NewbroMessageResult:
+    async def send_message(
+        self,
+        session_id: str,
+        text: str,
+        *,
+        target_persona_id: str | None = None,
+        timeout_seconds: float | None = None,
+    ) -> NewbroMessageResult:
+        payload: dict[str, object] = {"text": text, "source": "connector"}
+        if target_persona_id:
+            payload["target_persona_id"] = target_persona_id
         response = await self._request(
             "POST",
             f"{API_PREFIX}/sessions/{session_id}/messages",
-            json={"text": text, "source": "connector"},
+            json=payload,
+            timeout=timeout_seconds or self._request_timeout_seconds,
         )
         payload = response.json()
         reply_text = payload.get("reply_text")

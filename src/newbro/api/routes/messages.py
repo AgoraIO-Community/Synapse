@@ -26,6 +26,7 @@ async def submit_message(
         request_id,
         request.text,
         source=request.source,
+        target_persona_id=request.target_persona_id,
         start_processing=False,
     )
     session.observability.api.message_accepted(

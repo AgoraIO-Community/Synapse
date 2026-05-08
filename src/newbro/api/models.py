@@ -16,6 +16,7 @@ class SessionResponse(BaseModel):
 class MessageRequest(BaseModel):
     text: str
     source: Literal["user", "connector"] = "user"
+    target_persona_id: str | None = None
 
 
 class ToolInvocationSummary(BaseModel):
