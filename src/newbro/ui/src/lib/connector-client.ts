@@ -1,3 +1,4 @@
+import { buildApiRequestInit } from "./api-auth";
 import { ensureOk } from "./http-errors";
 export interface ConnectorConfig {
   ready: boolean;
@@ -115,7 +116,10 @@ function buildConnectorHttpUrl(path: string): string {
 }
 
 export async function getConnectorConfig(): Promise<ConnectorConfig> {
-  const response = await fetch(buildConnectorHttpUrl(`${API_PREFIX}/connectors/agora-convoai/config`));
+  const response = await fetch(
+    buildConnectorHttpUrl(`${API_PREFIX}/connectors/agora-convoai/config`),
+    buildApiRequestInit(),
+  );
   return (await ensureOk(response)).json();
 }
 
@@ -124,11 +128,11 @@ export async function prepareConnectorSession(
 ): Promise<ConnectorPrepareResponse> {
   const response = await fetch(
     buildConnectorHttpUrl(`${API_PREFIX}/connectors/agora-convoai/sessions/prepare`),
-    {
+    buildApiRequestInit({
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
-    },
+    }),
   );
   return (await ensureOk(response)).json();
 }
@@ -138,11 +142,11 @@ export async function activateConnectorSession(
 ): Promise<ConnectorActivateResponse> {
   const response = await fetch(
     buildConnectorHttpUrl(`${API_PREFIX}/connectors/agora-convoai/sessions/activate`),
-    {
+    buildApiRequestInit({
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
-    },
+    }),
   );
   return (await ensureOk(response)).json();
 }
@@ -150,11 +154,11 @@ export async function activateConnectorSession(
 export async function stopConnectorSession(bindingId: string): Promise<void> {
   const response = await fetch(
     buildConnectorHttpUrl(`${API_PREFIX}/connectors/agora-convoai/sessions/stop`),
-    {
+    buildApiRequestInit({
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ binding_id: bindingId }),
-    },
+    }),
   );
   await ensureOk(response);
 }
@@ -218,11 +222,11 @@ export interface SttSessionHeartbeatResponse {
 export async function prepareSttSession(payload: SttSessionPrepareRequest): Promise<SttSessionPrepareResponse> {
   const response = await fetch(
     buildConnectorHttpUrl(`${API_PREFIX}/connectors/agora-convoai/stt/sessions/prepare`),
-    {
+    buildApiRequestInit({
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
-    },
+    }),
   );
   return (await ensureOk(response)).json();
 }
@@ -230,11 +234,11 @@ export async function prepareSttSession(payload: SttSessionPrepareRequest): Prom
 export async function startSttSession(payload: SttSessionStartRequest): Promise<SttSessionStartResponse> {
   const response = await fetch(
     buildConnectorHttpUrl(`${API_PREFIX}/connectors/agora-convoai/stt/sessions/start`),
-    {
+    buildApiRequestInit({
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
-    },
+    }),
   );
   return (await ensureOk(response)).json();
 }
@@ -242,6 +246,7 @@ export async function startSttSession(payload: SttSessionStartRequest): Promise<
 export async function querySttSession(sttSessionId: string): Promise<SttSessionQueryResponse> {
   const response = await fetch(
     buildConnectorHttpUrl(`${API_PREFIX}/connectors/agora-convoai/stt/sessions/${sttSessionId}`),
+    buildApiRequestInit(),
   );
   return (await ensureOk(response)).json();
 }
@@ -249,11 +254,11 @@ export async function querySttSession(sttSessionId: string): Promise<SttSessionQ
 export async function heartbeatSttSession(sttSessionId: string): Promise<SttSessionHeartbeatResponse> {
   const response = await fetch(
     buildConnectorHttpUrl(`${API_PREFIX}/connectors/agora-convoai/stt/sessions/heartbeat`),
-    {
+    buildApiRequestInit({
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ stt_session_id: sttSessionId }),
-    },
+    }),
   );
   return (await ensureOk(response)).json();
 }
@@ -261,11 +266,11 @@ export async function heartbeatSttSession(sttSessionId: string): Promise<SttSess
 export async function leaveSttSession(payload: { stt_session_id?: string; prepared_stt_session_id?: string }): Promise<void> {
   const response = await fetch(
     buildConnectorHttpUrl(`${API_PREFIX}/connectors/agora-convoai/stt/sessions/leave`),
-    {
+    buildApiRequestInit({
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
-    },
+    }),
   );
   await ensureOk(response);
 }
@@ -273,11 +278,11 @@ export async function leaveSttSession(payload: { stt_session_id?: string; prepar
 export async function stopSttSession(sttSessionId: string): Promise<void> {
   const response = await fetch(
     buildConnectorHttpUrl(`${API_PREFIX}/connectors/agora-convoai/stt/sessions/stop`),
-    {
+    buildApiRequestInit({
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ stt_session_id: sttSessionId }),
-    },
+    }),
   );
   await ensureOk(response);
 }

@@ -25,7 +25,14 @@ class NewbroConnectorTransport(Protocol):
     async def create_session(self) -> str:
         ...
 
-    async def send_message(self, session_id: str, text: str) -> NewbroMessageResult:
+    async def send_message(
+        self,
+        session_id: str,
+        text: str,
+        *,
+        target_persona_id: str | None = None,
+        timeout_seconds: float | None = None,
+    ) -> NewbroMessageResult:
         ...
 
     async def submit_asr_turn(self, session_id: str, text: str) -> None:
@@ -53,13 +60,22 @@ class HttpNewbroConnectorTransport:
         base_url: str,
         *,
         request_timeout_seconds: float = 10.0,
+        bearer_token: str | None = None,
+        cloudflare_access_client_id: str | None = None,
+        cloudflare_access_client_secret: str | None = None,
     ) -> None:
         self._base_url = base_url.rstrip("/")
         self._request_timeout_seconds = request_timeout_seconds
+        self._headers = _build_auth_headers(
+            bearer_token=bearer_token,
+            cloudflare_access_client_id=cloudflare_access_client_id,
+            cloudflare_access_client_secret=cloudflare_access_client_secret,
+        )
         self._http = httpx.AsyncClient(
             base_url=self._base_url,
             timeout=request_timeout_seconds,
             trust_env=False,
+            headers=self._headers,
         )
 
     async def create_session(self) -> str:
@@ -70,11 +86,22 @@ class HttpNewbroConnectorTransport:
             raise NewbroConnectorError("Newbro session creation returned no session_id.")
         return session_id
 
-    async def send_message(self, session_id: str, text: str) -> NewbroMessageResult:
+    async def send_message(
+        self,
+        session_id: str,
+        text: str,
+        *,
+        target_persona_id: str | None = None,
+        timeout_seconds: float | None = None,
+    ) -> NewbroMessageResult:
+        payload: dict[str, object] = {"text": text, "source": "connector"}
+        if target_persona_id:
+            payload["target_persona_id"] = target_persona_id
         response = await self._request(
             "POST",
             f"{API_PREFIX}/sessions/{session_id}/messages",
-            json={"text": text, "source": "connector"},
+            json=payload,
+            timeout=timeout_seconds or self._request_timeout_seconds,
         )
         payload = response.json()
         reply_text = payload.get("reply_text")
@@ -104,6 +131,7 @@ class HttpNewbroConnectorTransport:
                 proxy=None,
                 open_timeout=self._request_timeout_seconds,
                 close_timeout=self._request_timeout_seconds,
+                additional_headers=self._headers,
             ) as websocket:
                 await self._recv_json(websocket, timeout=self._request_timeout_seconds)
                 payload: dict[str, object] = {
@@ -152,6 +180,7 @@ class HttpNewbroConnectorTransport:
                 proxy=None,
                 open_timeout=self._request_timeout_seconds,
                 close_timeout=self._request_timeout_seconds,
+                additional_headers=self._headers,
             ) as websocket:
                 await self._recv_json(websocket, timeout=self._request_timeout_seconds)
                 while True:
@@ -210,3 +239,18 @@ class HttpNewbroConnectorTransport:
         scheme = "wss" if parsed.scheme == "https" else "ws"
         path = parsed.path.rstrip("/") + f"{API_PREFIX}/sessions/{session_id}/stream"
         return urlunparse((scheme, parsed.netloc, path, "", "", ""))
+
+
+def _build_auth_headers(
+    *,
+    bearer_token: str | None,
+    cloudflare_access_client_id: str | None,
+    cloudflare_access_client_secret: str | None,
+) -> dict[str, str]:
+    headers: dict[str, str] = {}
+    if bearer_token:
+        headers["Authorization"] = f"Bearer {bearer_token}"
+    if cloudflare_access_client_id and cloudflare_access_client_secret:
+        headers["CF-Access-Client-Id"] = cloudflare_access_client_id
+        headers["CF-Access-Client-Secret"] = cloudflare_access_client_secret
+    return headers

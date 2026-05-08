@@ -74,6 +74,7 @@ DEFAULT_ENV_TEMPLATE_LINES = (
     f"# Shared Newbro credentials written by `{CLI_NAME} setup` to {format_user_path(ENV_LOCAL)}",
     "# AGORA_APP_ID=",
     "# AGORA_APP_CERTIFICATE=",
+    "# SYNAPSE_CONNECTOR_AGORA_CONVOAI_OPENAI_API_KEY=",
     "# DEEPGRAM_API_KEY=",
     "# ELEVENLABS_API_KEY=",
 )
@@ -126,7 +127,7 @@ def build_parser() -> argparse.ArgumentParser:
     _add_host_port(backend_parser, backend_port=8000)
 
     frontend_parser = subparsers.add_parser("frontend", help="Run the frontend dev server.")
-    frontend_parser.add_argument("--host", default="0.0.0.0")
+    frontend_parser.add_argument("--host", default="127.0.0.1")
     frontend_parser.add_argument("--port", type=int, default=5173)
 
     doctor_parser = subparsers.add_parser("doctor", help="Check local development prerequisites.")
@@ -137,7 +138,7 @@ def build_parser() -> argparse.ArgumentParser:
         "start",
         help="Run the production Newbro service without reload.",
     )
-    start_parser.add_argument("--host", default="0.0.0.0")
+    start_parser.add_argument("--host", default="127.0.0.1")
     start_parser.add_argument("--port", type=int, default=START_PUBLIC_PORT)
 
     connector_parser = subparsers.add_parser("connector", help="Configure and run the connector host.")
@@ -179,7 +180,7 @@ def build_parser() -> argparse.ArgumentParser:
         "install",
         help="Install or update the systemd unit for this repo checkout.",
     )
-    service_install_parser.add_argument("--host", default="0.0.0.0")
+    service_install_parser.add_argument("--host", default="127.0.0.1")
     service_install_parser.add_argument("--port", type=int, default=START_PUBLIC_PORT)
     service_subparsers.add_parser("start", help="Start the installed systemd service.")
     service_subparsers.add_parser("stop", help="Stop the installed systemd service.")
@@ -189,7 +190,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def _add_host_port(parser: argparse.ArgumentParser, backend_port: int, frontend_port: int | None = None, include_frontend_port: bool = False) -> None:
-    parser.add_argument("--host", default="0.0.0.0")
+    parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=backend_port)
     if include_frontend_port:
         parser.add_argument("--frontend-port", type=int, default=frontend_port or 5173)
@@ -1098,7 +1099,7 @@ def resolve_connector_setup_values(
         "Connector host",
         default_value=_existing_yaml_value(existing_config_yaml, "connector_host", "host")
         or pick_env_value(CONNECTOR_HOST_KEY, existing_values, environ)
-        or "0.0.0.0",
+        or "127.0.0.1",
         required=True,
     )
     port = prompt_text_value(
@@ -1391,30 +1392,54 @@ def resolve_agora_connector_setup_values(
     env_updates["AGORA_APP_ID"] = app_id
     env_updates["AGORA_APP_CERTIFICATE"] = app_certificate
 
+    asr_vendor = prompt_choice_value(
+        "ASR vendor",
+        choices=["openai", "deepgram"],
+        default_value=str(_existing_nested_value(existing_connector, "asr", "vendor") or "openai"),
+    )
     asr_mode = prompt_choice_value(
         "ASR credential mode",
-        choices=["managed", "byok"],
+        choices=["shared", "byok"] if asr_vendor == "openai" else ["managed", "byok"],
         default_value=str(
-            _existing_nested_value(existing_connector, "asr", "credential_mode") or "managed"
+            _existing_nested_value(existing_connector, "asr", "credential_mode")
+            or ("shared" if asr_vendor == "openai" else "managed")
         ),
     )
     asr_model = prompt_choice_value(
         "ASR model",
-        choices=["nova-3", "nova-2"],
-        default_value=str(_existing_nested_value(existing_connector, "asr", "model") or "nova-3"),
+        choices=["gpt-4o-transcribe", "whisper-1"] if asr_vendor == "openai" else ["nova-3", "nova-2"],
+        default_value=str(
+            _existing_nested_value(existing_connector, "asr", "model")
+            or ("gpt-4o-transcribe" if asr_vendor == "openai" else "nova-3")
+        ),
     )
     asr_language = prompt_text_value(
         "ASR language",
-        default_value=str(_existing_nested_value(existing_connector, "asr", "language") or "en-US"),
+        default_value=str(
+            _existing_nested_value(existing_connector, "asr", "language")
+            or ("zh" if asr_vendor == "openai" else "en-US")
+        ),
         required=True,
     )
     asr_block: dict[str, object] = {
-        "vendor": "deepgram",
+        "vendor": asr_vendor,
         "credential_mode": asr_mode,
         "model": asr_model,
         "language": asr_language,
     }
-    if asr_mode == "byok":
+    if asr_mode == "byok" and asr_vendor == "openai":
+        openai_asr_api_key = prompt_secret_value(
+            "OpenAI ASR API Key",
+            default_value=pick_env_value(
+                "SYNAPSE_CONNECTOR_AGORA_CONVOAI_OPENAI_API_KEY",
+                existing_values,
+                environ,
+            )
+            or pick_env_value("OPENAI_API_KEY", existing_values, environ),
+        )
+        env_updates["SYNAPSE_CONNECTOR_AGORA_CONVOAI_OPENAI_API_KEY"] = openai_asr_api_key
+        asr_block["api_key"] = "$SYNAPSE_CONNECTOR_AGORA_CONVOAI_OPENAI_API_KEY"
+    elif asr_mode == "byok":
         deepgram_api_key = prompt_secret_value(
             "Deepgram API Key",
             default_value=pick_env_value("DEEPGRAM_API_KEY", existing_values, environ),
@@ -1936,7 +1961,7 @@ def _resolved_runtime_config(
 def _default_connector_host_config() -> dict[str, object]:
     return {
         "enabled": False,
-        "host": "0.0.0.0",
+        "host": "127.0.0.1",
         "port": 8010,
         "public_base_url": "http://127.0.0.1:8000",
         "synapse_base_url": "http://127.0.0.1:8000",

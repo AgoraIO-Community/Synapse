@@ -68,8 +68,33 @@ class AgoraConnectorSessionService:
             missing.append(
                 "connectors.agora-convoai.asr.api_key"
                 if self._settings.uses_yaml_config
-                else "SYNAPSE_CONNECTOR_AGORA_CONVOAI_DEEPGRAM_API_KEY"
+                else (
+                    "SYNAPSE_CONNECTOR_AGORA_CONVOAI_OPENAI_API_KEY"
+                    if self._settings.asr.vendor == "openai"
+                    else (
+                        "SYNAPSE_CONNECTOR_AGORA_CONVOAI_MICROSOFT_KEY"
+                        if self._settings.asr.vendor == "microsoft"
+                        else "SYNAPSE_CONNECTOR_AGORA_CONVOAI_DEEPGRAM_API_KEY"
+                    )
+                )
             )
+        if (
+            self._settings.asr.vendor == "microsoft"
+            and self._settings.asr.credential_mode == "byok"
+            and not self._settings.asr.region
+        ):
+            missing.append(
+                "connectors.agora-convoai.asr.region"
+                if self._settings.uses_yaml_config
+                else "SYNAPSE_CONNECTOR_AGORA_CONVOAI_MICROSOFT_REGION"
+            )
+        if (
+            self._settings.asr.vendor == "openai"
+            and self._settings.asr.credential_mode == "shared"
+            and not self._settings.asr.api_key
+            and not self._settings.openai_api_key
+        ):
+            missing.append("OPENAI_API_KEY")
         if self._settings.tts.credential_mode == "byok" and not self._settings.tts.api_key:
             missing.append(
                 "connectors.agora-convoai.tts.api_key"
@@ -96,6 +121,10 @@ class AgoraConnectorSessionService:
                 user_uid=self._settings.user_uid,
             ),
             missing_requirements=missing,
+            data_channel=self._settings.data_channel,
+            conversation_brain_enabled=bool(
+                (self._settings.conversation_brain_prompt or "").strip()
+            ),
         )
 
     async def prepare_session(

@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
+from newbro.api.auth import require_http_api_auth
 from newbro.protocol import DraftSession
 from newbro.runtime.drafts import (
     DraftRewriteInvalidOutput,
@@ -42,6 +43,7 @@ class ClearDraftResponse(BaseModel):
 
 @router.get("/sessions/{session_id}/draft", response_model=DraftSession | None)
 async def get_draft(session_id: str, http_request: Request) -> DraftSession | None:
+    require_http_api_auth(http_request)
     session = _get_session(http_request, session_id)
     return session.draft_manager.active_session
 
@@ -52,6 +54,7 @@ async def submit_asr_turn(
     request: AsrTurnRequest,
     http_request: Request,
 ) -> DraftSession:
+    require_http_api_auth(http_request)
     session = _get_session(http_request, session_id)
     try:
         draft_session = await session.append_asr_turn_to_draft(
@@ -80,6 +83,7 @@ async def send_draft(
     request: SendDraftRequest,
     http_request: Request,
 ) -> SendDraftResponse:
+    require_http_api_auth(http_request)
     session = _get_session(http_request, session_id)
     try:
         task = await session.send_draft(draft_session_id=request.draft_session_id)
@@ -100,6 +104,7 @@ async def clear_draft(
     request: ClearDraftRequest,
     http_request: Request,
 ) -> ClearDraftResponse:
+    require_http_api_auth(http_request)
     session = _get_session(http_request, session_id)
     active = session.draft_manager.active_session
     if request.draft_session_id is not None and active is not None and active.id != request.draft_session_id:

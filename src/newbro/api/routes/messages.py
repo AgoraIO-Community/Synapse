@@ -2,6 +2,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException, Request
 
+from newbro.api.auth import require_http_api_auth
 from newbro.api.models import MessageRequest, MessageResponse, ToolInvocationSummary
 
 router = APIRouter()
@@ -13,6 +14,7 @@ async def submit_message(
     request: MessageRequest,
     http_request: Request,
 ) -> MessageResponse:
+    require_http_api_auth(http_request)
     container = http_request.app.state.runtime_container
     try:
         session = container.get_session(session_id)
@@ -24,6 +26,7 @@ async def submit_message(
         request_id,
         request.text,
         source=request.source,
+        target_persona_id=request.target_persona_id,
         start_processing=False,
     )
     session.observability.api.message_accepted(

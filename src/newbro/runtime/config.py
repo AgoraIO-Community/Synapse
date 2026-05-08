@@ -63,6 +63,14 @@ class Settings:
     log_llm_details: bool = False
     diagnostic_max_events: int = 500
     cors_allowed_origins: tuple[str, ...] = ()
+    api_auth_required: bool = False
+    api_bearer_token: str | None = None
+    cloudflare_access_team_domain: str | None = None
+    cloudflare_access_audience: str | None = None
+    cloudflare_access_service_client_id: str | None = None
+    cloudflare_access_service_client_secret: str | None = None
+    allow_unauthenticated_session_websockets: bool = False
+    executor_control_ws_auth_enabled: bool = True
     git_sha: str | None = None
 
 
@@ -181,6 +189,24 @@ def load_settings() -> Settings:
         log_llm_details=_get_bool("SYNAPSE_LOG_LLM_DETAILS", False),
         diagnostic_max_events=int(os.getenv("SYNAPSE_DIAGNOSTIC_MAX_EVENTS", "500")),
         cors_allowed_origins=_get_csv("SYNAPSE_CORS_ALLOWED_ORIGINS"),
+        api_auth_required=_get_bool("SYNAPSE_API_AUTH_REQUIRED", False),
+        api_bearer_token=os.getenv("SYNAPSE_API_BEARER_TOKEN") or None,
+        cloudflare_access_team_domain=os.getenv("SYNAPSE_CLOUDFLARE_ACCESS_TEAM_DOMAIN") or None,
+        cloudflare_access_audience=os.getenv("SYNAPSE_CLOUDFLARE_ACCESS_AUDIENCE") or None,
+        cloudflare_access_service_client_id=os.getenv("SYNAPSE_CLOUDFLARE_ACCESS_CLIENT_ID")
+        or None,
+        cloudflare_access_service_client_secret=os.getenv(
+            "SYNAPSE_CLOUDFLARE_ACCESS_CLIENT_SECRET"
+        )
+        or None,
+        allow_unauthenticated_session_websockets=_get_bool(
+            "SYNAPSE_ALLOW_UNAUTHENTICATED_SESSION_WEBSOCKETS",
+            False,
+        ),
+        executor_control_ws_auth_enabled=_get_bool(
+            "SYNAPSE_EXECUTOR_CONTROL_WS_AUTH_ENABLED",
+            True,
+        ),
         git_sha=os.getenv("SYNAPSE_GIT_SHA") or None,
     )
 

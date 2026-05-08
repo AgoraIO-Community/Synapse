@@ -21,6 +21,9 @@ class ExecutorNodeSettings:
     node_id: str = ""
     token: str = ""
     enabled_executors: list[str] = field(default_factory=list)
+    api_bearer_token: str = ""
+    cloudflare_access_client_id: str = ""
+    cloudflare_access_client_secret: str = ""
 
 
 @dataclass(slots=True)
@@ -119,6 +122,9 @@ def _parse_node_settings(raw_host: Any, config_path: Path) -> ExecutorNodeSettin
         node_id=str(raw_host.get("node_id", "")),
         token=str(raw_host.get("token", "")),
         enabled_executors=enabled_executors,
+        api_bearer_token=str(raw_host.get("api_bearer_token", "")),
+        cloudflare_access_client_id=str(raw_host.get("cloudflare_access_client_id", "")),
+        cloudflare_access_client_secret=str(raw_host.get("cloudflare_access_client_secret", "")),
     )
 
 

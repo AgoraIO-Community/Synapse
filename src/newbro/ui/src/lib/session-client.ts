@@ -1,3 +1,4 @@
+import { buildApiRequestInit } from "./api-auth";
 import { ensureOk } from "./http-errors";
 import type {
   ConversationSnapshot,
@@ -99,14 +100,17 @@ function buildWebSocketUrl(path: string): string {
 }
 
 export async function createSession(): Promise<SessionResponse> {
-  const response = await fetch(buildHttpUrl(`${API_PREFIX}/sessions`), {
+  const response = await fetch(buildHttpUrl(`${API_PREFIX}/sessions`), buildApiRequestInit({
     method: "POST",
-  });
+  }));
   return (await ensureOk(response)).json();
 }
 
 export async function getSessionSnapshot(sessionId: string): Promise<SessionSnapshot> {
-  const response = await fetch(buildHttpUrl(`${API_PREFIX}/sessions/${sessionId}`));
+  const response = await fetch(
+    buildHttpUrl(`${API_PREFIX}/sessions/${sessionId}`),
+    buildApiRequestInit(),
+  );
   return (await ensureOk(response)).json();
 }
 
@@ -118,16 +122,19 @@ export interface MessageResponse {
 }
 
 export async function sendSessionMessage(sessionId: string, text: string): Promise<MessageResponse> {
-  const response = await fetch(buildHttpUrl(`${API_PREFIX}/sessions/${sessionId}/messages`), {
+  const response = await fetch(buildHttpUrl(`${API_PREFIX}/sessions/${sessionId}/messages`), buildApiRequestInit({
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ text }),
-  });
+  }));
   return (await ensureOk(response)).json();
 }
 
 export async function getConversationSnapshot(sessionId: string): Promise<ConversationSnapshot> {
-  const response = await fetch(buildHttpUrl(`${API_PREFIX}/sessions/${sessionId}/conversation`));
+  const response = await fetch(
+    buildHttpUrl(`${API_PREFIX}/sessions/${sessionId}/conversation`),
+    buildApiRequestInit(),
+  );
   return (await ensureOk(response)).json();
 }
 
@@ -172,6 +179,7 @@ export async function getDiagnosticTimeline(
   const suffix = query.size > 0 ? `?${query.toString()}` : "";
   const response = await fetch(
     buildHttpUrl(`${API_PREFIX}/sessions/${sessionId}/diagnostics/timeline${suffix}`),
+    buildApiRequestInit(),
   );
   return (await ensureOk(response)).json();
 }
@@ -296,11 +304,11 @@ export async function resolveInteractionRequest(
     buildHttpUrl(
       `${API_PREFIX}/sessions/${sessionId}/interaction-requests/${interactionRequestId}/resolve`,
     ),
-    {
+    buildApiRequestInit({
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
-    },
+    }),
   );
   return (await ensureOk(response)).json();
 }
@@ -323,16 +331,19 @@ export interface PersonaUpdatePayload {
 }
 
 export async function listPersonas(sessionId: string) {
-  const response = await fetch(buildHttpUrl(`${API_PREFIX}/sessions/${sessionId}/personas`));
+  const response = await fetch(
+    buildHttpUrl(`${API_PREFIX}/sessions/${sessionId}/personas`),
+    buildApiRequestInit(),
+  );
   return (await ensureOk(response)).json();
 }
 
 export async function createPersona(sessionId: string, payload: PersonaCreatePayload) {
-  const response = await fetch(buildHttpUrl(`${API_PREFIX}/sessions/${sessionId}/personas`), {
+  const response = await fetch(buildHttpUrl(`${API_PREFIX}/sessions/${sessionId}/personas`), buildApiRequestInit({
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
-  });
+  }));
   return (await ensureOk(response)).json();
 }
 
@@ -343,11 +354,11 @@ export async function updatePersona(
 ) {
   const response = await fetch(
     buildHttpUrl(`${API_PREFIX}/sessions/${sessionId}/personas/${personaId}`),
-    {
+    buildApiRequestInit({
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
-    },
+    }),
   );
   return (await ensureOk(response)).json();
 }
@@ -355,9 +366,9 @@ export async function updatePersona(
 export async function deletePersona(sessionId: string, personaId: string) {
   const response = await fetch(
     buildHttpUrl(`${API_PREFIX}/sessions/${sessionId}/personas/${personaId}`),
-    {
+    buildApiRequestInit({
       method: "DELETE",
-    },
+    }),
   );
   return (await ensureOk(response)).json();
 }
@@ -378,7 +389,10 @@ export interface ExecutorNodeUpdatePayload {
 }
 
 export async function listExecutorNodes(sessionId: string): Promise<ExecutorNodeRecord[]> {
-  const response = await fetch(buildHttpUrl(`${API_PREFIX}/sessions/${sessionId}/executor-nodes`));
+  const response = await fetch(
+    buildHttpUrl(`${API_PREFIX}/sessions/${sessionId}/executor-nodes`),
+    buildApiRequestInit(),
+  );
   return (await ensureOk(response)).json();
 }
 
@@ -386,11 +400,11 @@ export async function createExecutorNode(
   sessionId: string,
   payload: ExecutorNodeCreatePayload,
 ): Promise<ExecutorNodeCredentialIssue> {
-  const response = await fetch(buildHttpUrl(`${API_PREFIX}/sessions/${sessionId}/executor-nodes`), {
+  const response = await fetch(buildHttpUrl(`${API_PREFIX}/sessions/${sessionId}/executor-nodes`), buildApiRequestInit({
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
-  });
+  }));
   return (await ensureOk(response)).json();
 }
 
@@ -401,11 +415,11 @@ export async function updateExecutorNode(
 ): Promise<ExecutorNodeRecord> {
   const response = await fetch(
     buildHttpUrl(`${API_PREFIX}/sessions/${sessionId}/executor-nodes/${nodeId}`),
-    {
+    buildApiRequestInit({
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
-    },
+    }),
   );
   return (await ensureOk(response)).json();
 }
@@ -416,9 +430,9 @@ export async function rotateExecutorNodeCredentials(
 ): Promise<ExecutorNodeCredentialIssue> {
   const response = await fetch(
     buildHttpUrl(`${API_PREFIX}/sessions/${sessionId}/executor-nodes/${nodeId}/credentials/rotate`),
-    {
+    buildApiRequestInit({
       method: "POST",
-    },
+    }),
   );
   return (await ensureOk(response)).json();
 }
@@ -429,9 +443,9 @@ export async function revealExecutorNodeConnectCommand(
 ): Promise<ExecutorNodeCredentialIssue> {
   const response = await fetch(
     buildHttpUrl(`${API_PREFIX}/sessions/${sessionId}/executor-nodes/${nodeId}/connect-command`),
-    {
+    buildApiRequestInit({
       method: "POST",
-    },
+    }),
   );
   return (await ensureOk(response)).json();
 }
@@ -439,9 +453,9 @@ export async function revealExecutorNodeConnectCommand(
 export async function deleteExecutorNode(sessionId: string, nodeId: string) {
   const response = await fetch(
     buildHttpUrl(`${API_PREFIX}/sessions/${sessionId}/executor-nodes/${nodeId}`),
-    {
+    buildApiRequestInit({
       method: "DELETE",
-    },
+    }),
   );
   return (await ensureOk(response)).json();
 }
@@ -451,11 +465,11 @@ export async function deleteExecutorNode(sessionId: string, nodeId: string) {
 
 export async function setVoiceTarget(sessionId: string, targetPersonaId: string): Promise<void> {
   await ensureOk(
-    await fetch(buildHttpUrl(`${API_PREFIX}/sessions/${sessionId}/voice-target`), {
+    await fetch(buildHttpUrl(`${API_PREFIX}/sessions/${sessionId}/voice-target`), buildApiRequestInit({
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ target_persona_id: targetPersonaId }),
-    }),
+    })),
   );
 }
 
@@ -468,11 +482,11 @@ export async function submitDraftAsrTurn(
     assigned_bro_id?: string;
   },
 ) {
-  const response = await fetch(buildHttpUrl(`${API_PREFIX}/sessions/${sessionId}/draft/asr-turns`), {
+  const response = await fetch(buildHttpUrl(`${API_PREFIX}/sessions/${sessionId}/draft/asr-turns`), buildApiRequestInit({
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
-  });
+  }));
   return (await ensureOk(response)).json();
 }
 
@@ -482,11 +496,11 @@ export async function sendDraft(
     draft_session_id?: string;
   } = {},
 ) {
-  const response = await fetch(buildHttpUrl(`${API_PREFIX}/sessions/${sessionId}/draft/send`), {
+  const response = await fetch(buildHttpUrl(`${API_PREFIX}/sessions/${sessionId}/draft/send`), buildApiRequestInit({
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
-  });
+  }));
   return (await ensureOk(response)).json();
 }
 
@@ -499,11 +513,11 @@ export async function submitTaskCommand(
     payload?: Record<string, unknown>;
   },
 ) {
-  const response = await fetch(buildHttpUrl(`${API_PREFIX}/sessions/${sessionId}/commands`), {
+  const response = await fetch(buildHttpUrl(`${API_PREFIX}/sessions/${sessionId}/commands`), buildApiRequestInit({
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
-  });
+  }));
   return (await ensureOk(response)).json();
 }
 
@@ -513,10 +527,10 @@ export async function clearDraft(
     draft_session_id?: string;
   } = {},
 ) {
-  const response = await fetch(buildHttpUrl(`${API_PREFIX}/sessions/${sessionId}/draft/clear`), {
+  const response = await fetch(buildHttpUrl(`${API_PREFIX}/sessions/${sessionId}/draft/clear`), buildApiRequestInit({
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
-  });
+  }));
   return (await ensureOk(response)).json();
 }

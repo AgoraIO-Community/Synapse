@@ -11,6 +11,11 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
+TEST_HOME = ROOT / ".pytest-home"
+TEST_HOME.mkdir(exist_ok=True)
+os.environ["HOME"] = str(TEST_HOME)
+os.environ["USERPROFILE"] = str(TEST_HOME)
+
 from newbro.runtime import config as config_module
 
 

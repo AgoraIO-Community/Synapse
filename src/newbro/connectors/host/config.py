@@ -17,7 +17,7 @@ class ConnectorConfigError(RuntimeError):
 @dataclass(slots=True)
 class ConnectorHostSettings:
     enabled: bool = False
-    host: str = "0.0.0.0"
+    host: str = "127.0.0.1"
     port: int = 8010
     public_base_url: str = "http://127.0.0.1:8010"
     synapse_base_url: str = "http://127.0.0.1:8000"
@@ -135,7 +135,7 @@ def _parse_host_settings(raw_host: Any, config_path: Path) -> ConnectorHostSetti
             field_name="connector_host.enabled",
             config_path=config_path,
         ),
-        host=str(raw_host.get("host", "0.0.0.0")),
+        host=str(raw_host.get("host", "127.0.0.1")),
         port=int(raw_host.get("port", 8010)),
         public_base_url=str(raw_host.get("public_base_url", "http://127.0.0.1:8010")),
         synapse_base_url=str(raw_host.get("synapse_base_url", "http://127.0.0.1:8000")),

@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import {
+  getConnectorConfig,
   heartbeatSttSession,
   leaveSttSession,
   prepareSttSession,
@@ -8,9 +9,10 @@ import {
   type SttSessionStartResponse,
 } from "../../lib/connector-client";
 import { clearDraft, sendDraft, submitDraftAsrTurn, submitTaskCommand } from "../../lib/session-client";
-import { loadAgoraBrowserStack } from "../../lib/voice-runtime";
+import { loadAgoraBrowserStack, type VoiceTranscriptTurn } from "../../lib/voice-runtime";
 import { describeProtobufTranscriptPayload, describeTranscriptPayload, extractTranscriptText, type ExtractedSttTranscript } from "./stt-transcript";
-import { BroDetailHeader, DraftBrainPanel, LiveTranscriptPanel, RunnerBrainPanel, VoicePad } from "./visual";
+import { BroDetailHeader, CallControl, DraftBrainPanel, LiveTranscriptPanel, RunnerBrainPanel, VoicePad, type TranscriptTurnView } from "./visual";
+import { useVoiceSession } from "./useVoiceSession";
 import type { BroCardModel, BroTaskRecord } from "./types";
 import type { DraftOutputCompletedStreamEvent, DraftOutputDeltaStreamEvent, DraftOutputFailedStreamEvent, DraftOutputStartedStreamEvent, TaskSummary } from "../../types";
 
@@ -330,6 +332,13 @@ export function BroDetailPage({
   const [stoppingTask, setStoppingTask] = useState(false);
   const [taskActionError, setTaskActionError] = useState<string | null>(null);
   const [mobileDetailPage, setMobileDetailPage] = useState<MobileDetailPage>("draft");
+  const [showManualDraft, setShowManualDraft] = useState(false);
+  const { state: voiceSession, start: startVoice, stop: stopVoice, toggleMute: toggleVoiceMute } = useVoiceSession();
+  // Bypass-channel transcripts: the backend chat-completions handler records every user
+  // input + agent reply, and we poll them here while in a call. This replaces Agora's
+  // datastream/RTM transcript channel which is unreliable from China.
+  const [bypassTurns, setBypassTurns] = useState<{ id: string; speaker: "user" | "agent"; text: string; ts: number }[]>([]);
+  const bypassCursorRef = useRef<number>(0);
   const resourcesRef = useRef<SttResources | null>(null);
   const submittedRef = useRef<Set<string>>(new Set());
   const acceptedTranscriptRef = useRef("");
@@ -548,7 +557,31 @@ export function BroDetailPage({
     scheduleSilenceCommit();
   }, [scheduleSilenceCommit]);
 
+  // Discover whether the operator opted into the conversation-brain mode
+  // (i.e. set `conversation_brain_prompt` in the connector config). When ON
+  // we render the phone-call UI; when OFF we keep the upstream push-to-talk
+  // drafting UI so existing users see no behavioural change.
+  const [phoneCallModeEnabled, setPhoneCallModeEnabled] = useState(false);
   useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const cfg = await getConnectorConfig();
+        if (!cancelled) setPhoneCallModeEnabled(Boolean(cfg.conversation_brain_enabled));
+      } catch {
+        // If we can't read the connector config, default to legacy mode.
+        if (!cancelled) setPhoneCallModeEnabled(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    // Skip the legacy STT auto-start when phone-call mode is active — the two
+    // would fight for the microphone. useVoiceSession owns the mic in that mode.
+    if (phoneCallModeEnabled) return;
     mountedRef.current = true;
     const generation = ++generationRef.current;
     let rtcClient: any | null = null;
@@ -614,6 +647,7 @@ export function BroDetailPage({
 
   useEffect(() => {
     const timer = window.setInterval(() => {
+      if (phoneCallModeEnabled) return;
       const sttSessionId = resourcesRef.current?.sttSession?.stt_session_id;
       if (sttSessionId) {
         void heartbeatSttSession(sttSessionId).catch((error) => {
@@ -624,7 +658,7 @@ export function BroDetailPage({
       }
     }, HEARTBEAT_INTERVAL_MS);
     return () => window.clearInterval(timer);
-  }, []);
+  }, [phoneCallModeEnabled, onGlobalError]);
 
   async function setMicEnabled(enabled: boolean) {
     const micTrack = resourcesRef.current?.micTrack;
@@ -745,6 +779,68 @@ export function BroDetailPage({
   const readyForMic = sttPhase === "ready_mic_off" || sttPhase === "draft_updating";
   const capturing = micActive;
   const transcriptText = acceptedTranscript;
+  const inCall = voiceSession.phase === "connected";
+  const callConnecting = voiceSession.phase === "loading";
+  const transcriptTurns = useMemo<TranscriptTurnView[]>(() => {
+    // Prefer bypass-channel turns (always populated). Fall back to Agora toolkit turns if any.
+    if (bypassTurns.length > 0) {
+      return bypassTurns.map((t) => ({ id: t.id, speaker: t.speaker, text: t.text }));
+    }
+    return voiceSession.transcript
+      .filter((turn) => typeof turn.text === "string" && turn.text.trim().length > 0)
+      .map((turn, index) => {
+        const turnIdRaw = turn.turn_id != null ? String(turn.turn_id) : `turn-${index}`;
+        const uidRaw = turn.uid != null ? String(turn.uid) : "";
+        const speaker: "user" | "agent" = uidRaw === "9001" ? "agent" : "user";
+        return {
+          id: `${uidRaw || "anon"}-${turnIdRaw}-${index}`,
+          speaker,
+          text: turn.text!.trim(),
+          status: turn.status,
+        };
+      });
+  }, [voiceSession.transcript, bypassTurns]);
+
+  // Poll backend transcript bypass endpoint while a phone call is active.
+  // Only runs in conversation-brain mode — the legacy push-to-talk flow uses
+  // the existing draft pipeline and does not populate the bypass store.
+  useEffect(() => {
+    if (!phoneCallModeEnabled) return;
+    if (voiceSession.phase !== "connected" || !sessionId) return;
+    let cancelled = false;
+    let timer: number | null = null;
+    const tick = async () => {
+      try {
+        const since = bypassCursorRef.current;
+        const res = await fetch(
+          `/api/connectors/agora-convoai/voice-transcripts/${encodeURIComponent(sessionId)}?since=${since}`,
+        );
+        if (!res.ok) throw new Error(`status ${res.status}`);
+        const data = (await res.json()) as {
+          turns: { id: string; speaker: "user" | "agent"; text: string; ts: number }[];
+          latest_ts: number;
+        };
+        if (cancelled) return;
+        if (data.turns && data.turns.length > 0) {
+          setBypassTurns((prev) => [...prev, ...data.turns]);
+          bypassCursorRef.current = data.latest_ts;
+        }
+      } catch {
+        // Poll errors are non-fatal — we retry on the next tick.
+      } finally {
+        if (!cancelled) {
+          timer = window.setTimeout(tick, 1500);
+        }
+      }
+    };
+    bypassCursorRef.current = 0;
+    setBypassTurns([]);
+    void tick();
+    return () => {
+      cancelled = true;
+      if (timer !== null) window.clearTimeout(timer);
+    };
+  }, [phoneCallModeEnabled, voiceSession.phase, sessionId]);
   const draftReady = Boolean(draftSession?.current_draft);
   const draftActionPending = sendingDraft || clearingDraft;
   const canSendDraft = bro.source === "runtime";
@@ -802,37 +898,81 @@ export function BroDetailPage({
         <h2 className="sr-only">Draft workspace for {bro.name}</h2>
 
         <div className={`${mobileDetailPage === "draft" ? "flex" : "hidden"} mt-4 nb-detail-scroll nb-draft-tab-content lg:mt-0 lg:block`}>
-            <DraftBrainPanel
-              draftText={draftText}
-              summary={draftSession?.current_draft?.last_update_summary}
-              canSend={canSendDraft}
-              sendDisabled={!sessionId || !draftReady || draftActionPending}
-              clearDisabled={!sessionId || !draftReady || draftActionPending}
-              sending={sendingDraft}
-              clearing={clearingDraft}
-              error={draftActionError}
-              onSend={() => {
-                void handleSendDraft();
-              }}
-              onClear={() => {
-                void handleClearDraft();
-              }}
-            />
+          {phoneCallModeEnabled ? (
+            <>
+              <LiveTranscriptPanel
+                active={inCall}
+                turns={transcriptTurns}
+                agentState={voiceSession.agentState}
+              />
 
-          <LiveTranscriptPanel active={capturing} transcriptText={transcriptText} />
+              <CallControl
+                phase={voiceSession.phase}
+                isMuted={voiceSession.isMicMuted}
+                agentState={voiceSession.agentState}
+                disabled={!sessionId}
+                errorMessage={voiceSession.error}
+                onStart={() => { void startVoice(sessionId); }}
+                onEnd={() => { void stopVoice(); }}
+                onToggleMute={() => { void toggleVoiceMute(); }}
+              />
 
-            <VoicePad
-              active={capturing}
-              disabled={!sessionId || !readyForMic || sttPhase === "draft_updating" || draftActionPending}
-              onPointerDown={handleMicPointerDown}
-              onPointerUp={handleMicPointerUp}
-              onPointerCancel={(event) => handleMicPointerUp(event)}
-              onKeyDown={handleMicKeyDown}
-              onKeyUp={handleMicKeyUp}
-              onBlur={() => {
-                if (activePointerIdRef.current === null) void setMicEnabled(false);
-              }}
-            />
+              <div className="mt-3 flex justify-center">
+                <button
+                  type="button"
+                  onClick={() => setShowManualDraft((prev) => !prev)}
+                  className="text-[12px] uppercase tracking-[0.16em] text-muted-foreground hover:text-foreground"
+                >
+                  {showManualDraft ? "Hide manual draft" : "Manual draft (advanced)"}
+                </button>
+              </div>
+
+              {showManualDraft ? (
+                <DraftBrainPanel
+                  draftText={draftText}
+                  summary={draftSession?.current_draft?.last_update_summary}
+                  canSend={canSendDraft}
+                  sendDisabled={!sessionId || !draftReady || draftActionPending}
+                  clearDisabled={!sessionId || !draftReady || draftActionPending}
+                  sending={sendingDraft}
+                  clearing={clearingDraft}
+                  error={draftActionError}
+                  onSend={() => { void handleSendDraft(); }}
+                  onClear={() => { void handleClearDraft(); }}
+                />
+              ) : null}
+            </>
+          ) : (
+            <>
+              <DraftBrainPanel
+                draftText={draftText}
+                summary={draftSession?.current_draft?.last_update_summary}
+                canSend={canSendDraft}
+                sendDisabled={!sessionId || !draftReady || draftActionPending}
+                clearDisabled={!sessionId || !draftReady || draftActionPending}
+                sending={sendingDraft}
+                clearing={clearingDraft}
+                error={draftActionError}
+                onSend={() => { void handleSendDraft(); }}
+                onClear={() => { void handleClearDraft(); }}
+              />
+
+              <LiveTranscriptPanel active={capturing} transcriptText={transcriptText} />
+
+              <VoicePad
+                active={capturing}
+                disabled={!sessionId || !readyForMic || sttPhase === "draft_updating" || draftActionPending}
+                onPointerDown={handleMicPointerDown}
+                onPointerUp={handleMicPointerUp}
+                onPointerCancel={(event) => handleMicPointerUp(event)}
+                onKeyDown={handleMicKeyDown}
+                onKeyUp={handleMicKeyUp}
+                onBlur={() => {
+                  if (activePointerIdRef.current === null) void setMicEnabled(false);
+                }}
+              />
+            </>
+          )}
         </div>
         {mobileDetailPage === "status" ? (
           <div className="mt-4 nb-detail-scroll lg:hidden">

@@ -113,6 +113,7 @@ class ExecutorNodeService:
                     proxy=None,
                     open_timeout=10.0,
                     close_timeout=10.0,
+                    additional_headers=_build_control_headers(self._settings),
                 ) as websocket:
                     await self._send_json(
                         websocket,
@@ -388,6 +389,16 @@ def _format_executor_types(executor_types: list[str]) -> str:
     if not executor_types:
         return "none"
     return ",".join(executor_types)
+
+
+def _build_control_headers(settings: ExecutorNodeSettings) -> dict[str, str]:
+    headers: dict[str, str] = {}
+    if settings.api_bearer_token:
+        headers["Authorization"] = f"Bearer {settings.api_bearer_token}"
+    if settings.cloudflare_access_client_id and settings.cloudflare_access_client_secret:
+        headers["CF-Access-Client-Id"] = settings.cloudflare_access_client_id
+        headers["CF-Access-Client-Secret"] = settings.cloudflare_access_client_secret
+    return headers
 
 
 def _format_exception_summary(error: BaseException) -> str:
