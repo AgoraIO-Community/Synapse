@@ -22,6 +22,7 @@ import { readSessionIdFromUrl, replaceSessionIdInUrl } from "./lib/session-url";
 import { BroDetailPage } from "./components/newbro/BroDetailPage";
 import { BrosPage } from "./components/newbro/BrosPage";
 import { BrosPanel } from "./components/newbro/BrosPanel";
+import { MobileWalkie } from "./components/newbro/mobile/MobileWalkie";
 import { NodesPage } from "./components/newbro/NodesPage";
 import { Sidebar, type PageId } from "./components/newbro/Sidebar";
 import { buildBroCardModels, buildBroTaskRecords } from "./components/newbro/adapters";
@@ -526,6 +527,36 @@ export function HomeShellPage({
         <ShellLoadingPanel />
       )}
     </ShellFrame>
+  );
+}
+
+export function MobileWalkieShellPage() {
+  const shell = useNewbroShell();
+  const globalMessage = globalMessageFor(shell);
+
+  if (shell.hasLoadedShellSnapshot) {
+    return (
+      <>
+        <MobileWalkie bros={shell.bros} onSubmitMessage={shell.sendMessage} />
+        {globalMessage ? (
+          <GlobalMessageBanner message={globalMessage} onDismiss={shell.clearGlobalMessage} />
+        ) : null}
+      </>
+    );
+  }
+
+  if (shell.shellError) {
+    return (
+      <div className="nb-mobile-stage">
+        <ShellApiErrorPanel detail={shell.shellError} />
+      </div>
+    );
+  }
+
+  return (
+    <div className="nb-mobile-stage">
+      <ShellLoadingPanel />
+    </div>
   );
 }
 

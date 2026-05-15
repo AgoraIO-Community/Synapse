@@ -434,6 +434,140 @@ describe("Newbro voice shell", () => {
     expect(screen.queryByText("Ready · mic off")).not.toBeInTheDocument();
   });
 
+  it("renders the dedicated mobile walkie route with live runtime channels", async () => {
+    clientMock.getSessionSnapshot.mockResolvedValueOnce({
+      session_id: "session-existing",
+      tasks: [
+        {
+          task_id: "task-mobile",
+          root_task_id: "task-mobile",
+          parent_task_id: null,
+          title: "Sketch mobile handoff",
+          goal: "Sketch mobile handoff details.",
+          status: "running",
+          priority: 5,
+          interruptible: true,
+          requires_confirmation: false,
+          preferred_executor: "codex",
+          session_affinity: "workspace-task-mobile",
+          task_revision: 0,
+          latest_instruction: "Sketch mobile handoff details.",
+          metadata: { persona_id: "persona-atlas" },
+        },
+      ],
+      execution_sessions: [],
+      execution_runs: [
+        {
+          run_id: "run-mobile",
+          task_id: "task-mobile",
+          execution_session_id: "exec-session-mobile",
+          executor_type: "codex",
+          status: "running",
+          claimed_by: "worker-1",
+          run_revision: 0,
+          latest_progress_message: "Inspecting the mobile UI export.",
+          output_summary: null,
+          block_reason: null,
+          failure_reason: null,
+          metadata: {},
+        },
+      ],
+      execution_modes: [],
+      bindings: [],
+      summaries: [],
+      notification_candidates: [],
+      personas: [
+        {
+          persona_id: "persona-atlas",
+          name: "Atlas",
+          avatar: "fox",
+          base_prompt: "",
+          executor_node_id: "node-1",
+          status: "busy",
+          current_task_id: "task-mobile",
+        },
+        {
+          persona_id: "persona-forge",
+          name: "Forge",
+          avatar: "bro",
+          base_prompt: "",
+          executor_node_id: null,
+          status: "idle",
+          current_task_id: null,
+        },
+      ],
+      interaction_requests: [],
+      attention_items: [],
+      executor_capabilities: [],
+      executor_nodes: [
+        {
+          node_id: "node-1",
+          name: "Studio Mac",
+          enabled_executors: ["codex"],
+          connected_executors: ["codex"],
+          connection_status: "connected",
+          token_hint: "tok...1111",
+          last_connected_at: null,
+          last_seen_at: null,
+        },
+      ],
+    });
+    window.history.replaceState({}, "", "/mobile?sid=session-existing");
+
+    render(<RouterProvider router={getRouter()} />);
+
+    expect(await screen.findByTestId("mobile-walkie")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Walkie" })).toBeInTheDocument();
+    expect(screen.getByText("1 live · 0 queued · 1 idle")).toBeInTheDocument();
+    expect(screen.getByTestId("mobile-bro-row-persona-atlas")).toHaveTextContent("Sketch mobile handoff");
+    expect(window.location.pathname).toBe("/mobile");
+    expect(window.location.search).toBe("?sid=session-existing");
+  });
+
+  it("selects a mobile bro channel and submits text through the shell socket", async () => {
+    clientMock.getSessionSnapshot.mockResolvedValueOnce({
+      session_id: "session-existing",
+      tasks: [],
+      execution_sessions: [],
+      execution_runs: [],
+      execution_modes: [],
+      bindings: [],
+      summaries: [],
+      notification_candidates: [],
+      personas: [
+        {
+          persona_id: "persona-forge",
+          name: "Forge",
+          avatar: "bro",
+          base_prompt: "",
+          executor_node_id: null,
+          status: "idle",
+          current_task_id: null,
+        },
+      ],
+      interaction_requests: [],
+      attention_items: [],
+      executor_capabilities: [],
+      executor_nodes: [],
+    });
+    window.history.replaceState({}, "", "/mobile?sid=session-existing");
+
+    render(<RouterProvider router={getRouter()} />);
+
+    const forgeChannel = await screen.findByTestId("mobile-channel-persona-forge");
+    fireEvent.click(forgeChannel);
+
+    expect(await screen.findByTestId("mobile-bro-focus-persona-forge")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Message"), {
+      target: { value: "Please draft the launch note" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+
+    await waitFor(() => expect(clientMock.sendSocketMessage).toHaveBeenCalled());
+    expect(clientMock.sendSocketMessage.mock.calls.at(-1)?.[2]).toBe("Please draft the launch note");
+  });
+
   it("publishes the Bro detail mic before muting it", async () => {
     window.history.replaceState({}, "", "/bros/forge?sid=session-existing");
 
